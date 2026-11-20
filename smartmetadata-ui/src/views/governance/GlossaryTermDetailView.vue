@@ -19,20 +19,24 @@ import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
-import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, patchGlossaryTerm, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { listCustomProperties } from '@/api/customProperties';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getGlossaryTermVersionPath } from '@/catalog/versionPaths';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
+import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
+import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import OntologyTermRelationsGraph from '@/features/ontology/OntologyTermRelationsGraph.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
+import { extensionPatch } from '@/governance/assetPatch';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
-import type { ActivityEvent, Conversation } from '@/types/collaboration';
+import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { GlossaryTerm } from '@/types/governance';
 
@@ -48,6 +52,10 @@ const activeTab = ref('overview');
 const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
+const customProperties = ref<CustomPropertyDef[]>([]);
+const customPropsError = ref('');
+const propsOpen = ref(false);
+const propsSaving = ref(false);
 const editOpen = ref(false);
 const editKey = ref(0);
 const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
@@ -64,6 +72,24 @@ const termPermissions = useEntityPermissions(
   { deleted: () => term.value?.deleted === true },
 );
 const canEditDescription = computed(() => termPermissions.canEditDescription.value);
+/**
+ * Custom-properties read gate (official GlossaryTermsV1:
+ * viewCustomPropertiesPermission is the derived canViewCustomFields
+ * flag): null while the term or the permission fetch is still
+ * resolving, so the panel renders nothing instead of flashing the
+ * table or the placeholder.
+ */
+const customPropsCanView = computed<boolean | null>(() =>
+  !term.value || termPermissions.isLoading.value ? null : termPermissions.can('ViewCustomFields'),
+);
+/**
+ * Pin GlossaryTermUtils buildCustomPropertiesTab: hasEditAccess is
+ * EditAll || EditCustomFields, and the term page has no version view.
+ * Deleted-gating comes from the derived flags, as for every edit flag.
+ */
+const canEditCustomProperties = computed(
+  () => termPermissions.canEditAll.value || termPermissions.can('EditCustomFields'),
+);
 watch(
   () => termPermissions.error.value,
   (error) => {
@@ -138,10 +164,10 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // absent on purpose, so their cells stay empty (same disclosure format
 // as AssetDetailView): DATA_PRODUCTS — the GlossaryTerm spec carries it,
 // but GLOSSARY_TERM_FIELDS does not request it and `mapTerm` does not
-// map it, so there is no supporting data; CUSTOM_PROPERTIES — the spec
-// carries `extension`, but the GlossaryTerm type carries none and this
-// view loads no custom-property defs, so the widget would need a defs
-// fetch; EXPERTS — the GlossaryTerm spec carries no such field;
+// map it, so there is no supporting data; CUSTOM_PROPERTIES — the fixed
+// custom-properties tab loads the defs and renders the table (B-15), but
+// no widget surface is built for it: the B-15 scope is fixed content
+// only, so the cell stays empty; EXPERTS — the GlossaryTerm spec carries no such field;
 // WORKFLOW_HISTORY — no workflow-history data source exists in this
 // view; KNOWLEDGE_ARTICLE — no knowledge-article data source exists in
 // the product. OWNERS never surfaces as a content key here: the
@@ -208,6 +234,13 @@ async function load(): Promise<void> {
       conversations.value = [];
       collaborationError.value = error instanceof Error ? error.message : t('crud.loadFailed');
     }
+    try {
+      customProperties.value = await listCustomProperties('glossaryTerm');
+      customPropsError.value = '';
+    } catch (error) {
+      customProperties.value = [];
+      customPropsError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    }
   } catch (error) {
     term.value = null;
     assets.value = [];
@@ -272,6 +305,24 @@ async function onSave(): Promise<void> {
     message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
+  }
+}
+
+/** Domain pattern: patch the extension back, then reload the term. */
+async function onSaveCustomProperties(next: Record<string, unknown>): Promise<void> {
+  if (!term.value) {
+    return;
+  }
+  propsSaving.value = true;
+  try {
+    await patchGlossaryTerm(term.value.id, extensionPatch(term.value.extension, next));
+    propsOpen.value = false;
+    message.success(t('asset.propsUpdated'));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
+  } finally {
+    propsSaving.value = false;
   }
 }
 
@@ -486,83 +537,7 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #glossary_terms>
-      <GenericTab v-if="customizedEntryFor('glossary_terms')" :layout="widgetLayoutFor('glossary_terms')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="term.description"
-              :entity-name="term.displayName || term.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(termTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && term" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(termGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TIER && term" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ termTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && term" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.reviewers')">{{ joinRefNames(term.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && term" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(term.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
       <SmTable
-        v-else
         row-key="id"
         test-id="term-children-table"
         :columns="assetColumns"
@@ -585,82 +560,7 @@ onMounted(() => {
       </SmTable>
     </template>
     <template #assets>
-      <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="term.description"
-              :entity-name="term.displayName || term.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(termTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && term" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(termGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TIER && term" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ termTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && term" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.reviewers')">{{ joinRefNames(term.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && term" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(term.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
-      <template v-else>
+      <template>
         <Typography.Title :level="5">{{ t('terms.relatedEntities') }}</Typography.Title>
         <Typography.Paragraph type="secondary">
           {{ t('terms.relatedLead') }}
@@ -690,83 +590,7 @@ onMounted(() => {
       </template>
     </template>
     <template #activity_feed>
-      <GenericTab v-if="customizedEntryFor('activity_feed')" :layout="widgetLayoutFor('activity_feed')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="term.description"
-              :entity-name="term.displayName || term.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(termTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && term" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(termGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TIER && term" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ termTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && term" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.reviewers')">{{ joinRefNames(term.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && term" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(term.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
       <AssetActivityPanel
-        v-else
         :activity="activity"
         :conversations="conversations"
         :collaboration-error="collaborationError"
@@ -790,82 +614,22 @@ onMounted(() => {
       />
     </template>
     <template #custom_properties>
-      <GenericTab v-if="customizedEntryFor('custom_properties')" :layout="widgetLayoutFor('custom_properties')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="term.description"
-              :entity-name="term.displayName || term.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(termTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && term" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(termGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TIER && term" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ termTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && term" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.reviewers')">{{ joinRefNames(term.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && term" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(term.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
-      <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.termCustomProperties')" />
+      <div style="margin-bottom: 12px">
+        <Button
+          data-testid="edit-term-custom-properties"
+          :disabled="!term || !canEditCustomProperties || !customProperties.length"
+          @click="propsOpen = true"
+        >
+          {{ t('asset.editCustomProperties') }}
+        </Button>
+      </div>
+      <AssetCustomPropertiesPanel
+        :defs="customProperties"
+        :values="term?.extension || {}"
+        :error="customPropsError"
+        entity-type="glossaryTerm"
+        :can-view="customPropsCanView"
+      />
     </template>
     <template #data_observability>
       <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="GlossaryTerm">
@@ -946,6 +710,14 @@ onMounted(() => {
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.dataObservability')" />
     </template>
   </EntityDetailShell>
+  <CustomPropertiesEditModal
+    :open="propsOpen"
+    :defs="customProperties"
+    :values="term?.extension || {}"
+    :saving="propsSaving"
+    @save="onSaveCustomProperties"
+    @cancel="propsOpen = false"
+  />
   <FormModal
     :open="editOpen"
     :title="t('terms.editTitle')"

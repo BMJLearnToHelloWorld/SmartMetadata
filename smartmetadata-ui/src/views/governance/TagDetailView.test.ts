@@ -383,6 +383,25 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
+
+  it('keeps the real activity panel when an entry resolves for the dead activity-feed mount (B-15)', async () => {
+    stubWithDoc(
+      tagDoc([
+        {
+          id: 'activity_feed',
+          name: 'activity_feed',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    // The former GenericTab mount on activity_feed is gone: no widget
+    // cell renders, the activity panel stays.
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').text()).toContain('description changed');
+    wrapper.unmount();
+  });
 });
 
 describe('TagDetailView description gate (D-4)', () => {

@@ -257,6 +257,7 @@ describe('glossaryTerms API', () => {
               {},
               'not-an-object',
             ],
+            extension: { region: 'EU' },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -272,7 +273,11 @@ describe('glossaryTerms API', () => {
       { name: 'HealthCare.gov', endpoint: 'https://example.com/glossary' },
       { name: 'Name only', endpoint: undefined },
     ]);
+    // B-15: extension arrives in the same response and is mapped so the
+    // custom-properties tab can read the term's values.
+    expect(term.extension).toEqual({ region: 'EU' });
     expect(lastFetch().url).toContain('reviewers');
     expect(lastFetch().url).toContain('domains');
+    expect(lastFetch().url).toContain('extension');
   });
 });

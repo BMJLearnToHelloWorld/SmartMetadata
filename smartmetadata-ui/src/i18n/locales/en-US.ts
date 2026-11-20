@@ -1475,7 +1475,6 @@ const enUS = {
       tagAssets: 'Tag assets are not served by this console yet.',
       dataObservability: 'Data observability is not served by this console yet.',
       relationsGraph: 'Relations graph is not served for glossary terms yet.',
-      termCustomProperties: 'Custom property values are not carried on this glossary term.',
     },
     name: 'Name',
     noCustomProperties: 'No custom properties defined',
