@@ -46,6 +46,7 @@ export type ConnectionFieldControl =
   | 'textarea'
   | 'map'
   | 'fileOrInput'
+  | 'filterPattern'
   | 'authSelect';
 
 export interface ConnectionFieldOption {
@@ -2645,6 +2646,7 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       },
       {
         ...basicAuthPasswordField,
+        required: true,
         description: 'Password to access the service.',
         branch: 'basicAuth',
         testId: 'service-alation-password',
@@ -2658,6 +2660,7 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         description: 'Access Token for the API',
         group: 'authType',
         branch: 'apiToken',
+        required: true,
         testId: 'service-alation-access-token',
         hintKey: 'connection.secretHint',
         showWhen: alationAuthGate('apiToken'),
@@ -2973,11 +2976,11 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   {
     types: ['Collibra'],
     // Pin collibraConnection.json property order: username, password,
-    // hostPort, enableEnrichment, connectionOptions, connectionArguments.
-    // The glossary/domain filter leaves are NOT modeled here (D-A2-3): the
-    // product has a separate filter step that already maps Collibra to
-    // them (serviceFilterFields.ts), and two editors for the same keys
-    // would be two sources of truth.
+    // hostPort, glossaryFilterPattern, domainFilterPattern,
+    // enableEnrichment, connectionOptions, connectionArguments. The two
+    // filter leaves live in BOTH places, as in pin: the connection form
+    // (Scope section, via OPTIONAL_SCOPE_PROPERTIES) and the standalone
+    // filter step; both read/write the same `connection.config` keys.
     fields: [
       {
         ...usernameRequired,
@@ -2986,9 +2989,24 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       },
       {
         ...basicAuthPasswordField,
+        required: true,
         description: 'Password to access the Collibra.',
       },
       hostPort('Host and port of the Collibra service.'),
+      {
+        key: 'glossaryFilterPattern',
+        control: 'filterPattern',
+        title: 'Glossary Filter Pattern',
+        description: 'Regex to only include/exclude glossaries that match the pattern.',
+        testId: 'service-collibra-glossary-filter-pattern',
+      },
+      {
+        key: 'domainFilterPattern',
+        control: 'filterPattern',
+        title: 'Domain Filter Pattern',
+        description: 'Regex to only include/exclude domains that match the pattern.',
+        testId: 'service-collibra-domain-filter-pattern',
+      },
       {
         key: 'enableEnrichment',
         control: 'toggle',
@@ -3165,6 +3183,7 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         labelKey: 'connection.clientSecret',
         title: 'Client Secret',
         description: 'Application (client) secret from Azure Active Directory',
+        required: true,
         testId: 'service-sharepoint-client-secret',
         hintKey: 'connection.secretHint',
       },
@@ -3511,7 +3530,7 @@ export function connectionFieldSchema(field: ConnectionFieldDef): GroupableSchem
     schema.type = field.schemaType;
   } else if (field.control === 'toggle') {
     schema.type = 'boolean';
-  } else if (field.control === 'map') {
+  } else if (field.control === 'map' || field.control === 'filterPattern') {
     schema.type = 'object';
   } else if (field.control === 'number') {
     schema.type = 'number';
@@ -3639,10 +3658,18 @@ export function buildConnectionSections(
  * not count). Approximates pin's RJSF validateForm count for the
  * test-connection card; the card's validator uses this, not the section
  * badges (which count selector presence for auth groups).
+ *
+ * `isCreate` (default true) is the create/edit split for secret leaves:
+ * on create the form starts empty, so a blank required password counts;
+ * on edit a blank password means "keep the stored secret" (the product
+ * never prefills password fields), so it must not count — the equivalent
+ * of pin's masked-password sentinel, which always passes the count on
+ * edit (ServiceConnectionUtils.ts:311-317).
  */
 export function missingRequiredConnectionFields(
   serviceType: string,
   form: ServiceFormValues,
+  isCreate = true,
 ): number {
   const record = form as unknown as Record<string, unknown>;
   return connectionFieldsForType(serviceType).filter((field) => {
@@ -3650,6 +3677,9 @@ export function missingRequiredConnectionFields(
       return false;
     }
     const value = record[field.key as string] ?? field.defaultValue;
+    if (!isCreate && field.control === 'password' && !isFilledValue(value)) {
+      return false;
+    }
     return !isFilledValue(value);
   }).length;
 }

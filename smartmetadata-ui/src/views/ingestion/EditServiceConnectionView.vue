@@ -378,11 +378,19 @@ onMounted(() => {
             v-if="currentStep === 2 && service && kind"
             data-testid="edit-connection-step-filters"
           >
+            <!-- Named, reasoned deviation from pin (EditConnectionFormPage.tsx:383
+              seeds the filter step from the STORED serviceDetails): when step 1
+              changed a filter-pattern key (e.g. Collibra's
+              glossaryFilterPattern), seeding from the stored config would show
+              the stale value and silently overwrite the step-1 edit on save.
+              Seed from the step-1 merged config when it exists (symmetric
+              with the create wizard's step2Config seeding), falling back to
+              the stored config on the keep-existing path. -->
             <FiltersConfigForm
               ref="filtersFormRef"
               :kind="kind"
               :service-type="service.serviceType"
-              :initial-config="service.connection?.config"
+              :initial-config="serviceConfig?.connection?.config ?? service.connection?.config"
               :show-connected-message="testConnectionPassed"
               :connected-host="connectedHost"
               @save="handleFiltersSave"

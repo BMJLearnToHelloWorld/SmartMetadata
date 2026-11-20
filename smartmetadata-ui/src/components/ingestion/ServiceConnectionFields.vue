@@ -7,6 +7,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Form, Input, InputNumber, Radio, Select, Typography } from 'ant-design-vue';
 import FileOrInputField from '@/components/ingestion/FileOrInputField.vue';
+import FilterPatternCard from '@/components/ingestion/FilterPatternCard.vue';
 import FormSectionCard from '@/components/ingestion/FormSectionCard.vue';
 import MapEditor from '@/components/ingestion/MapEditor.vue';
 import ToggleField from '@/components/shared/ToggleField.vue';
@@ -27,6 +28,7 @@ import {
   type ConnectionFormSection,
 } from '@/ingestion/connectionFields';
 import type { FieldFocusMeta } from '@/ingestion/fieldFocus';
+import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
 import type { ServiceConnectionConfig, ServiceFormValues } from '@/types/ingestion';
 
 /**
@@ -221,6 +223,7 @@ function fieldKey(field: ConnectionFieldDef, group: ConnectionFormGroup, index: 
                 'svc-field-plain':
                   field.control === 'toggle' ||
                   field.control === 'map' ||
+                  field.control === 'filterPattern' ||
                   field.control === 'fileOrInput',
               },
             ]"
@@ -330,6 +333,14 @@ function fieldKey(field: ConnectionFieldDef, group: ConnectionFormGroup, index: 
               :title="fieldLabel(field)"
               :test-id="field.testId"
               @update:model-value="(value) => setField(field, stringifyMapFieldValue(value))"
+            />
+            <FilterPatternCard
+              v-else-if="field.control === 'filterPattern'"
+              :field-name="String(field.key)"
+              :model-value="record[field.key] as FilterPatternConfig | undefined"
+              :schema-title="field.title"
+              @update:model-value="(value) => setField(field, value)"
+              @focus="reportFocus(field, group, section)"
             />
             <FileOrInputField
               v-else-if="field.control === 'fileOrInput'"

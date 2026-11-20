@@ -6,6 +6,9 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CONNECTION_FIELD_GROUPS,
@@ -14,6 +17,7 @@ import {
   clearInactiveAuthBranchFields,
   clearInactiveBranchFields,
   connectionDisplayHost,
+  connectionFieldSchema,
   connectionFieldsForType,
   filterPatternDefaultExcludes,
   filterPatternSchemaMeta,
@@ -28,6 +32,7 @@ import {
   type ConnectionFieldGroup,
 } from './connectionFields';
 import { createEmptyServiceForm } from './connections';
+import { SERVICE_FILTER_PATTERN_FIELDS } from './ingestionSchemas';
 import type { ServiceConnectionConfig, ServiceFormValues } from '../types/ingestion';
 
 const IAM_KEYS = [
@@ -1715,17 +1720,33 @@ describe('A2 A-class field sets (T-2)', () => {
     expect(connectionFieldsForType('Alation').map((field) => field.key)).toEqual(ALATION_KEYS);
   });
 
-  it('returns the Collibra field set in pin schema order (connection form: 6 leaves)', () => {
-    // Pin collibraConnection.json order minus the glossary/domain filter
-    // leaves, which live in the filter step (D-A2-3), not in this form.
+  it('returns the Collibra field set in pin schema order (connection form: 8 leaves)', () => {
+    // Pin collibraConnection.json order, including the glossary/domain
+    // filter leaves (D-A2-3): they render in the connection form's Scope
+    // section AND in the filter step, both on the same config keys.
     expect(connectionFieldsForType('Collibra').map((field) => field.key)).toEqual([
       'username',
       'password',
       'hostPort',
+      'glossaryFilterPattern',
+      'domainFilterPattern',
       'enableEnrichment',
       'connectionOptions',
       'connectionArguments',
     ]);
+    const fields = connectionFieldsForType('Collibra');
+    expect(fields.find((field) => field.key === 'glossaryFilterPattern')).toMatchObject({
+      control: 'filterPattern',
+      title: 'Glossary Filter Pattern',
+      description: 'Regex to only include/exclude glossaries that match the pattern.',
+      testId: 'service-collibra-glossary-filter-pattern',
+    });
+    expect(fields.find((field) => field.key === 'domainFilterPattern')).toMatchObject({
+      control: 'filterPattern',
+      title: 'Domain Filter Pattern',
+      description: 'Regex to only include/exclude domains that match the pattern.',
+      testId: 'service-collibra-domain-filter-pattern',
+    });
     const enrichment = connectionFieldsForType('Collibra').find(
       (field) => field.key === 'enableEnrichment',
     );
@@ -1825,7 +1846,7 @@ describe('A2 A-class field sets (T-2)', () => {
     ).toEqual(['gcpValues', 'gcpCredentialsPath', 'gcpExternalAccount', 'gcpADC']);
   });
 
-  it('marks non-secret leaves required and leaves secret leaves unmarked (secret-required gap)', () => {
+  it('marks secret leaves required exactly where pin requires them (A2 covered fix)', () => {
     // Deduplicated: the two-copy nested defs (Postgres/Mysql username and
     // hostPort) carry the same required flag on both copies.
     const required = (type: string): string[] => [
@@ -1836,23 +1857,25 @@ describe('A2 A-class field sets (T-2)', () => {
       ),
     ];
     expect(required('VertexAI')).toEqual(['location']);
-    // Alation: hostPort + username (top) + alationDbUsername/hostPort/
+    // Alation: hostPort + username/password (basicAuth branch) +
+    // alationAccessToken (apiToken branch) + alationDbUsername/hostPort/
     // database (nested Postgres) + authAwsRegion (the shared IAM defs
-    // mark the region required, as for Mysql/Postgres). The three secret
-    // leaves (password, alationAccessToken, alationDbPassword) stay
-    // unmarked — the known secret-required gap, pending Bai's ruling
-    // (A2-BENCHMARK §6 ③).
+    // mark the region required, as for Mysql/Postgres). The nested
+    // alationDbPassword stays unmarked: pin's nested Postgres/Mysql
+    // required arrays do not contain a password.
     expect(required('Alation')).toEqual([
       'hostPort',
       'username',
+      'password',
+      'alationAccessToken',
       'alationDbUsername',
       'authAwsRegion',
       'alationDbHostPort',
       'alationDbDatabase',
     ]);
-    expect(required('Collibra')).toEqual(['username', 'hostPort']);
+    expect(required('Collibra')).toEqual(['username', 'password', 'hostPort']);
     expect(required('MetadataES')).toEqual([]);
-    expect(required('SharePoint')).toEqual(['clientId', 'tenantId', 'siteUrl']);
+    expect(required('SharePoint')).toEqual(['clientId', 'clientSecret', 'tenantId', 'siteUrl']);
   });
 
   it('gates the Alation nested leaves on the connection + nested auth selectors', () => {
@@ -1902,45 +1925,322 @@ describe('A2 A-class field sets (T-2)', () => {
     const empty = createEmptyServiceForm();
     expect(missingRequiredConnectionFields('VertexAI', empty)).toBe(1);
     expect(missingRequiredConnectionFields('VertexAI', { ...empty, location: 'us-central1' })).toBe(0);
-    expect(missingRequiredConnectionFields('Alation', empty)).toBe(5);
+    // Alation empty: hostPort + top password (basicAuth is the default
+    // branch) + nested alationDbUsername/hostPort/database = 6.
+    expect(missingRequiredConnectionFields('Alation', empty)).toBe(6);
     expect(
       missingRequiredConnectionFields('Alation', {
         ...empty,
         alationDbAuthBranch: 'iam',
       }),
-    ).toBe(6);
+    ).toBe(7);
     expect(
       missingRequiredConnectionFields('Alation', {
         ...empty,
         alationConnectionBranch: 'mysql',
       }),
-    ).toBe(4);
+    ).toBe(5);
     expect(
       missingRequiredConnectionFields('Alation', {
         ...empty,
         alationConnectionBranch: 'none',
       }),
-    ).toBe(2);
+    ).toBe(3);
     expect(
       missingRequiredConnectionFields('Alation', {
         ...empty,
         hostPort: 'alation:443',
         username: 'api-user',
+        password: 'secret',
         alationDbUsername: 'db-user',
         alationDbHostPort: 'db:5432',
         alationDbDatabase: 'alation',
       }),
     ).toBe(0);
-    expect(missingRequiredConnectionFields('Collibra', empty)).toBe(2);
+    // apiToken branch: the top password is hidden, the access token is
+    // required instead (hostPort + token + nested 3 = 5).
+    expect(
+      missingRequiredConnectionFields('Alation', {
+        ...empty,
+        alationAuthBranch: 'apiToken',
+      }),
+    ).toBe(5);
+    expect(
+      missingRequiredConnectionFields('Alation', {
+        ...empty,
+        alationAuthBranch: 'apiToken',
+        hostPort: 'alation:443',
+        alationAccessToken: 'tok',
+        alationDbUsername: 'db-user',
+        alationDbHostPort: 'db:5432',
+        alationDbDatabase: 'alation',
+      }),
+    ).toBe(0);
+    expect(missingRequiredConnectionFields('Collibra', empty)).toBe(3);
     expect(missingRequiredConnectionFields('MetadataES', empty)).toBe(0);
-    expect(missingRequiredConnectionFields('SharePoint', empty)).toBe(3);
+    expect(missingRequiredConnectionFields('SharePoint', empty)).toBe(4);
     expect(
       missingRequiredConnectionFields('SharePoint', {
         ...empty,
         clientId: 'cid',
+        clientSecret: 'csec',
         tenantId: 'tid',
         siteUrl: 'https://org.sharepoint.com/sites/x',
       }),
     ).toBe(0);
+  });
+
+  it('does not count a blank required secret on edit (blank means keep)', () => {
+    const empty = createEmptyServiceForm();
+    // Create (default isCreate): the blank secrets count.
+    expect(missingRequiredConnectionFields('Collibra', empty)).toBe(3);
+    expect(missingRequiredConnectionFields('SharePoint', empty)).toBe(4);
+    expect(missingRequiredConnectionFields('Alation', empty)).toBe(6);
+    // Edit (isCreate false): a blank password/clientSecret/accessToken is
+    // "keep the stored secret", so only the non-secret blanks count.
+    expect(missingRequiredConnectionFields('Collibra', empty, false)).toBe(2);
+    expect(missingRequiredConnectionFields('SharePoint', empty, false)).toBe(3);
+    expect(missingRequiredConnectionFields('Alation', empty, false)).toBe(5);
+    expect(
+      missingRequiredConnectionFields(
+        'Alation',
+        { ...empty, alationAuthBranch: 'apiToken' },
+        false,
+      ),
+    ).toBe(4);
+    // A filled secret still counts as filled in both modes.
+    expect(
+      missingRequiredConnectionFields(
+        'Collibra',
+        { ...empty, username: 'u', password: 'p', hostPort: 'h:443' },
+        false,
+      ),
+    ).toBe(0);
+  });
+});
+
+describe('A2 JSON-oracle field parity (§1.4 ⑥, covered fix)', () => {
+  // The oracle is the copied official connection JSON
+  // (public/jsons/connectionSchemas/connections/<kind>/<type>Connection.json,
+  // md5-identical to pin a3012259ca) — read from disk, never hand-transcribed.
+  // A vitest JSON import has no precedent in this tree, so the tests read
+  // the files with readFileSync; no build config is changed for tests.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const loadConnectionJson = (relativePath: string): ConnectionSchemaJson =>
+    JSON.parse(
+      readFileSync(join(here, '../../public/jsons/connectionSchemas', relativePath), 'utf8'),
+    ) as ConnectionSchemaJson;
+
+  interface ConnectionSchemaJson {
+    properties?: Record<
+      string,
+      {
+        title?: string;
+        description?: string;
+        enum?: string[];
+        oneOf?: Array<{ title?: string; required?: string[] }>;
+      }
+    >;
+    required?: string[];
+  }
+
+  const HIDDEN = new Set(['type', 'supportsMetadataExtraction', 'policyAgentConfig']);
+  const FILTER_19 = new Set(SERVICE_FILTER_PATTERN_FIELDS as readonly string[]);
+  /** JSON top-level props that belong in the connection form, in pin order. */
+  const formProps = (json: ConnectionSchemaJson): string[] =>
+    Object.keys(json.properties ?? {}).filter(
+      (key) => !HIDDEN.has(key) && !FILTER_19.has(key),
+    );
+  const productKeys = (type: string): string[] =>
+    connectionFieldsForType(type).map((field) => field.key as string);
+  const productRequired = (type: string): string[] => [
+    ...new Set(
+      connectionFieldsForType(type)
+        .filter((field) => field.required)
+        .map((field) => field.key as string),
+    ),
+  ];
+
+  it('Collibra matches collibraConnection.json: field set, order, required, filter-leaf text', () => {
+    const json = loadConnectionJson('connections/metadata/collibraConnection.json');
+    // No 19-item filter field and no hidden key is dropped here: the
+    // glossary/domain leaves are NOT in the 19-item exclusion, so the
+    // oracle's form props are exactly the product keys, in pin order.
+    expect(formProps(json)).toEqual([
+      'username',
+      'password',
+      'hostPort',
+      'glossaryFilterPattern',
+      'domainFilterPattern',
+      'enableEnrichment',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productKeys('Collibra')).toEqual(formProps(json));
+    expect(json.required).toEqual(['username', 'password', 'hostPort']);
+    expect(productRequired('Collibra')).toEqual(json.required);
+    // The filter leaves carry the pin JSON title/description verbatim.
+    for (const key of ['glossaryFilterPattern', 'domainFilterPattern'] as const) {
+      const field = connectionFieldsForType('Collibra').find((entry) => entry.key === key);
+      expect(field?.title).toBe(json.properties?.[key]?.title);
+      expect(field?.description).toBe(json.properties?.[key]?.description);
+      expect(field?.control).toBe('filterPattern');
+      expect(connectionFieldSchema(field as ConnectionFieldDef).type).toBe('object');
+    }
+  });
+
+  it('SharePoint matches sharePointConnection.json: field set, order, required', () => {
+    const json = loadConnectionJson('connections/drive/sharePointConnection.json');
+    // The directory/file/spreadsheet/worksheet leaves are 19-item filter
+    // fields: they belong to the filter step, not this form.
+    expect(formProps(json)).toEqual([
+      'clientId',
+      'clientSecret',
+      'tenantId',
+      'siteUrl',
+      'siteName',
+      'driveId',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productKeys('SharePoint')).toEqual(formProps(json));
+    expect(json.required).toEqual(['clientId', 'clientSecret', 'tenantId', 'siteUrl']);
+    expect(productRequired('SharePoint')).toEqual(json.required);
+  });
+
+  it('MetadataES matches metadataESConnection.json: field set, order, enums, no required', () => {
+    const json = loadConnectionJson('connections/metadata/metadataESConnection.json');
+    // The schema/table/database leaves are 19-item filter fields; the
+    // `entities` prop is renamed to the `metadataESEntities` form key.
+    expect(formProps(json)).toEqual([
+      'entities',
+      'recreateIndex',
+      'runMode',
+      'searchIndexMappingLanguage',
+      'batchSize',
+    ]);
+    expect(
+      productKeys('MetadataES').map((key) =>
+        key === 'metadataESEntities' ? 'entities' : key,
+      ),
+    ).toEqual(formProps(json));
+    expect(json.required ?? []).toEqual([]);
+    expect(productRequired('MetadataES')).toEqual([]);
+    const fields = connectionFieldsForType('MetadataES');
+    expect(
+      fields.find((field) => field.key === 'runMode')?.options?.map((option) => option.value),
+    ).toEqual(json.properties?.['runMode']?.enum);
+    expect(
+      fields
+        .find((field) => field.key === 'searchIndexMappingLanguage')
+        ?.options?.map((option) => option.value),
+    ).toEqual(json.properties?.['searchIndexMappingLanguage']?.enum);
+  });
+
+  it('VertexAI matches vertexaiConnection.json: required leaves and credential oneOf', () => {
+    const json = loadConnectionJson('connections/mlmodel/vertexaiConnection.json');
+    expect(json.required).toEqual(['credentials', 'location']);
+    // `mlModelFilterPattern` is a 19-item filter field (filter step only);
+    // `location` is required in both the JSON and the product; `credentials`
+    // (a GCP oneOf) is represented by the credentials-variant selector.
+    expect(formProps(json)).toEqual(['credentials', 'location']);
+    expect(productKeys('VertexAI')).not.toContain('mlModelFilterPattern');
+    expect(productKeys('VertexAI')).toContain('location');
+    const location = connectionFieldsForType('VertexAI').find(
+      (field) => field.key === 'location',
+    );
+    expect(location?.required).toBe(true);
+    const branch = connectionFieldsForType('VertexAI').find(
+      (field) => field.key === 'authGcpConfigBranch',
+    );
+    expect(branch?.options?.map((option) => option.value)).toEqual([
+      'gcpValues',
+      'gcpCredentialsPath',
+      'gcpExternalAccount',
+      'gcpADC',
+    ]);
+    // The VertexAI privateKey leaf is NOT required: the JSON's only
+    // required array is [credentials, location] and no GCP variant
+    // carries a required array.
+    expect(productRequired('VertexAI')).toEqual(['location']);
+  });
+
+  it('Alation matches alationConnection.json: top-level order, oneOf branches, branch required', () => {
+    const json = loadConnectionJson('connections/metadata/alationConnection.json');
+    // Top-level props minus hidden/filter leaves, in pin order.
+    expect(formProps(json)).toEqual([
+      'hostPort',
+      'authType',
+      'connection',
+      'projectName',
+      'paginationLimit',
+      'includeUndeployedDatasources',
+      'includeHiddenDatasources',
+      'ingestDatasources',
+      'ingestUsersAndGroups',
+      'ingestDomains',
+      'ingestKnowledgeArticles',
+      'ingestDashboards',
+      'alationTagClassificationName',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    // The non-oneOf top-level leaves appear as product keys in the same
+    // relative order; the authType/connection oneOfs expand into the
+    // branch selectors + nested leaves.
+    const scalarProps = formProps(json).filter(
+      (key) => key !== 'authType' && key !== 'connection',
+    );
+    const productScalars = productKeys('Alation').filter((key) => scalarProps.includes(key));
+    expect(productScalars).toEqual(scalarProps);
+    expect(json.required).toEqual(['hostPort', 'authType']);
+    expect(
+      connectionFieldsForType('Alation').find((field) => field.key === 'hostPort')?.required,
+    ).toBe(true);
+    const authBranch = connectionFieldsForType('Alation').find(
+      (field) => field.key === 'alationAuthBranch',
+    );
+    expect(authBranch?.options?.map((option) => option.value)).toEqual(['basicAuth', 'apiToken']);
+    expect(authBranch?.options?.map((option) => option.title)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((branch) => branch.title),
+    );
+    // Branch required arrays come from the JSON oneOf itself: BasicAuth
+    // requires username + password, ApiAccessTokenAuth requires accessToken.
+    const [basicAuth, apiToken] = json.properties?.['authType']?.oneOf ?? [];
+    expect(basicAuth?.required).toEqual(['username', 'password']);
+    expect(apiToken?.required).toEqual(['accessToken']);
+    const fields = connectionFieldsForType('Alation');
+    const visibleRequired = (form: Partial<ServiceFormValues>): string[] => [
+      ...new Set(
+        fields
+          .filter(
+            (field) =>
+              field.required && field.key && isConnectionFieldVisible(field, form),
+          )
+          .map((field) => field.key as string),
+      ),
+    ];
+    expect(visibleRequired({ alationAuthBranch: 'basicAuth' })).toContain('username');
+    expect(visibleRequired({ alationAuthBranch: 'basicAuth' })).toContain('password');
+    expect(visibleRequired({ alationAuthBranch: 'basicAuth' })).not.toContain('alationAccessToken');
+    expect(visibleRequired({ alationAuthBranch: 'apiToken' })).toContain('alationAccessToken');
+    expect(visibleRequired({ alationAuthBranch: 'apiToken' })).not.toContain('password');
+    // Nested connection oneOf required arrays: Postgres requires
+    // hostPort/username/database, Mysql requires hostPort/username.
+    const connectionBranches = json.properties?.['connection']?.oneOf ?? [];
+    expect(connectionBranches[0]?.required).toEqual(['hostPort', 'username', 'database']);
+    expect(connectionBranches[1]?.required).toEqual(['hostPort', 'username']);
+    expect(productRequired('Alation')).toContain('alationDbHostPort');
+    expect(productRequired('Alation')).toContain('alationDbUsername');
+    expect(productRequired('Alation')).toContain('alationDbDatabase');
+    expect(productRequired('Alation')).not.toContain('alationDbPassword');
+    const connectionBranch = fields.find(
+      (field) => field.key === 'alationConnectionBranch',
+    );
+    expect(connectionBranch?.options?.map((option) => option.value)).toEqual([
+      'postgres',
+      'mysql',
+      'none',
+    ]);
   });
 });
