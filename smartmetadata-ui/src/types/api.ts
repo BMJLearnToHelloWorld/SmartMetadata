@@ -272,6 +272,38 @@ export interface StoredProcedureCode {
   code?: string;
 }
 
+/**
+ * Table partition column (official `PartitionColumnDetails`,
+ * openmetadata-spec table.json `tablePartition.columns`): the column
+ * name plus its partition interval type. `interval` is not carried:
+ * the PartitionedKeys widget renders name/type only.
+ */
+export interface PartitionColumnDetails {
+  columnName: string;
+  intervalType?: string;
+}
+
+/**
+ * Table constraint (official generated `TableConstraint`,
+ * openmetadata-spec table.json `tableConstraints`): the constraint
+ * type, its columns, and — for foreign keys — the referred columns
+ * plus the relationship type.
+ */
+export type TableConstraintType =
+  | 'PRIMARY_KEY'
+  | 'UNIQUE'
+  | 'FOREIGN_KEY'
+  | 'SORT_KEY'
+  | 'DIST_KEY'
+  | 'CLUSTER_KEY';
+
+export interface TableConstraint {
+  constraintType?: TableConstraintType;
+  columns?: string[];
+  referredColumns?: string[];
+  relationshipType?: string;
+}
+
 export interface AssetDetail {
   entityType: string;
   id?: string;
@@ -285,6 +317,16 @@ export interface AssetDetail {
   database?: EntityRef;
   databaseSchema?: EntityRef;
   partitions?: number;
+  /**
+   * Table-only widget data (official Table SCHEMA tab right column,
+   * y=7/8/9): partition columns, table constraints, and alternate
+   * fully qualified names. The server returns them only when the
+   * table field set asks for them (`entityRoutes.ts`).
+   */
+  tablePartition?: { columns: PartitionColumnDetails[] };
+  tableConstraints?: TableConstraint[];
+  /** Source-managed (ingestion overwrites on every run): read-only. */
+  aliases?: string[];
   sourceUrl?: string;
   scheduleInterval?: string;
   pipelineState?: string;

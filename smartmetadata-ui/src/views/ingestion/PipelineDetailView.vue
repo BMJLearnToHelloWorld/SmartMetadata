@@ -6,6 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, type RouteLocationRaw } from 'vue-router';
+import type { Operation } from 'fast-json-patch';
 import {Alert, Button, Descriptions, Tag, Tooltip, message} from 'ant-design-vue';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
@@ -20,6 +21,7 @@ import {
   listPipelineStatuses,
   toggleIngestionPipeline,
   triggerIngestionPipeline,
+  updateIngestionPipeline,
 } from '@/api/ingestionPipelines';
 import type { OperationPermissions } from '@/api/permissions';
 import { getDerivedPermissionFlags } from '@/api/permissions';
@@ -423,6 +425,40 @@ async function load(): Promise<void> {
   }
 }
 
+/**
+ * D-3 description-cell save: PATCH /v1/services/ingestionPipelines/{id}
+ * with a JSON Patch (official `updateIngestionPipeline`, same mechanism
+ * the edit page uses via fast-json-patch `compare`). An empty
+ * description removes the field (official DescriptionWidget writes
+ * `undefined`, never an empty string); an unchanged value sends
+ * nothing. Throws on failure so the cell keeps its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!pipeline.value) {
+    return;
+  }
+  const trimmed = description.trim();
+  if (trimmed === (pipeline.value.description ?? '').trim()) {
+    return;
+  }
+  const ops: Operation[] = [];
+  if (!trimmed) {
+    if (pipeline.value.description) {
+      ops.push({ op: 'remove', path: '/description' });
+    }
+  } else if (pipeline.value.description) {
+    ops.push({ op: 'replace', path: '/description', value: trimmed });
+  } else {
+    ops.push({ op: 'add', path: '/description', value: trimmed });
+  }
+  if (!ops.length) {
+    return;
+  }
+  await updateIngestionPipeline(pipeline.value.id, ops);
+  message.success(t('crud.updated'));
+  await load();
+}
+
 /** C-01: a 200 with reason "Pipeline Client Disabled" is an error, never a success toast. */
 function reportActionResult(
   result: PipelineServiceClientResponse,
@@ -745,13 +781,11 @@ onMounted(() => {
         </Descriptions.Item>
         <Descriptions.Item :label="t('ingestion.pipelines.orchestrator')">{{ orchestratorLabel }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.description')">
-          <!-- D-3 preview-only: the ingestion Pipeline has no description
-               write path (no onDescriptionUpdate), so the cell renders no
-               edit button whatever the permission flags say. -->
           <EntityDescriptionCell
             :description="pipeline.description"
             :entity-name="pipeline.displayName || pipeline.name"
             :has-edit-access="canEditDescription"
+            :on-description-update="onDescriptionUpdate"
           />
         </Descriptions.Item>
       </Descriptions>

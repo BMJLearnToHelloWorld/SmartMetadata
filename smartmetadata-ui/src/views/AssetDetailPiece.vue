@@ -7,6 +7,8 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Descriptions, Empty, Space, Tag, Typography, type TableProps } from 'ant-design-vue';
 import { StarOutlined } from '@ant-design/icons-vue';
+import { splitFqn, unquoteFqnPart } from '@/catalog/fqn';
+import { getTableFQNFromColumnFQN } from '@/catalog/tableJoins';
 import SmTable from '@/components/shared/SmTable.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
@@ -17,7 +19,7 @@ import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vu
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
-import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType, TagRef } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption, TagSource } from '@/types/governance';
 
@@ -61,7 +63,10 @@ export type AssetDetailPieceId =
   | 'glossaryTerms'
   | 'owners'
   | 'domains'
-  | 'frequentlyJoined';
+  | 'frequentlyJoined'
+  | 'partitionedKeys'
+  | 'tableConstraints'
+  | 'tableAliases';
 
 export interface AssetDetailPieceContext {
   asset: AssetDetail;
@@ -83,6 +88,13 @@ export interface AssetDetailPieceContext {
   apiEndpointsError: string;
   apiEndpointSchemaJson: (schema: Record<string, unknown> | undefined) => string;
   onApiEndpointClick: (row: ApiEndpointRef) => void;
+  /**
+   * D-1 table-constraint foreign keys: the referred column FQN resolves
+   * to its table (official `getPartialNameFromTableFQN`, first four
+   * parts) and navigates there. Absent, referred columns render as
+   * plain text — the link affordance degrades, the data does not.
+   */
+  onTableFqnClick?: (fqn: string) => void;
   /**
    * D-F2 column-tag editing. `schemaTagOptions` is the governance catalog's
    * tag list (both sources; the cell filters to its own source).
@@ -136,6 +148,76 @@ function isGeneratedTag(tag: TagRef): boolean {
 const glossaryTags = computed(() =>
   props.context.asset.tags.filter((tag) => tag.source === 'Glossary'),
 );
+
+/**
+ * D-1 Table widgets (official Table SCHEMA tab right column, y=7/8/9):
+ * partitioned keys (columns of `tablePartition`), table constraints,
+ * and aliases (FQN list, trailing name shown). The pieces render only
+ * when the view mounts them — the view gates on data presence, the
+ * same rule official `filterWidgets` applies — so an empty piece here
+ * renders nothing, except constraints, which keep the section title
+ * with an empty state (the product default-pane convention).
+ */
+const partitionedRows = computed<PartitionColumnDetails[]>(
+  () => props.context.asset.tablePartition?.columns ?? [],
+);
+
+const partitionedColumns = computed<TableProps['columns']>(() => [
+  { title: t('asset.columns.column'), dataIndex: 'columnName', key: 'columnName' },
+  { title: t('asset.columns.type'), dataIndex: 'intervalType', key: 'intervalType' },
+]);
+
+const aliasRows = computed(() =>
+  (props.context.asset.aliases ?? []).map((alias) => ({
+    // Official TableAliases: aliases are FQNs; the service, database
+    // and schema are established by the page, so only the trailing
+    // name carries new information. `splitFqn` is quote-aware like
+    // official `Fqn.split`, so a dotted quoted name stays whole.
+    key: alias,
+    name: (() => {
+      const parts = splitFqn(alias);
+      return parts.length > 0 ? unquoteFqnPart(parts[parts.length - 1] as string) : alias;
+    })(),
+    fqn: alias,
+  })),
+);
+
+const aliasColumns = computed<TableProps['columns']>(() => [
+  { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
+]);
+
+function constraintTypeLabel(type: TableConstraintType | undefined): string {
+  // Literal t() calls (not a key map): the referenced-keys test only
+  // resolves static calls, so a map lookup would silently skip the
+  // both-catalogs check.
+  switch (type) {
+    case 'PRIMARY_KEY':
+      return t('label.primary-key');
+    case 'UNIQUE':
+      return t('label.unique');
+    case 'FOREIGN_KEY':
+      return t('label.foreign-key');
+    case 'SORT_KEY':
+      return t('label.sort-key');
+    case 'DIST_KEY':
+      return t('label.dist-key');
+    case 'CLUSTER_KEY':
+      return t('label.cluster-key');
+    default:
+      return '';
+  }
+}
+
+function constraintColumns(constraint: TableConstraint): string {
+  return (constraint.columns ?? []).join(', ');
+}
+
+function onReferredColumnClick(referredColumn: string): void {
+  const tableFqn = getTableFQNFromColumnFQN(referredColumn);
+  if (tableFqn) {
+    props.context.onTableFqnClick?.(tableFqn);
+  }
+}
 
 const showMetricExpression = computed(
   () =>
@@ -438,6 +520,76 @@ const showMetricExpression = computed(
   </template>
   <template v-else-if="piece === 'frequentlyJoined'">
     <FrequentlyJoinedTables :joins="context.asset.joins" />
+  </template>
+  <template v-else-if="piece === 'partitionedKeys'">
+    <Typography.Title :level="5">{{ t('label.table-partition-plural') }}</Typography.Title>
+    <SmTable
+      row-key="columnName"
+      test-id="asset-partitioned-keys-table"
+      :columns="partitionedColumns"
+      :data-source="partitionedRows"
+      :pagination="false"
+      size="small"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'intervalType'">
+          {{ (record as PartitionColumnDetails).intervalType || '--' }}
+        </template>
+      </template>
+    </SmTable>
+  </template>
+  <template v-else-if="piece === 'tableConstraints'">
+    <Typography.Title :level="5">{{ t('label.table-constraints') }}</Typography.Title>
+    <Empty
+      v-if="!context.asset.tableConstraints?.length"
+      data-testid="asset-table-constraints-empty"
+      :description="t('asset.constraintsEmpty')"
+    />
+    <Space v-else direction="vertical" style="width: 100%">
+      <div
+        v-for="(constraint, index) in context.asset.tableConstraints"
+        :key="`${constraint.constraintType ?? 'unknown'}-${index}`"
+        :data-testid="`${constraint.constraintType ?? 'unknown'}-container`"
+      >
+        <Typography.Text strong>{{ constraintTypeLabel(constraint.constraintType) }}</Typography.Text>
+        <Typography.Paragraph v-if="constraintColumns(constraint)" style="margin-bottom: 0">
+          {{ constraintColumns(constraint) }}
+        </Typography.Paragraph>
+        <template v-if="constraint.constraintType === 'FOREIGN_KEY' && constraint.referredColumns?.length">
+          <div
+            v-for="referred in constraint.referredColumns"
+            :key="referred"
+          >
+            <a
+              v-if="context.onTableFqnClick"
+              href="#"
+              :title="referred"
+              @click.prevent="onReferredColumnClick(referred)"
+            >
+              {{ referred }}
+            </a>
+            <Typography.Text v-else :title="referred">{{ referred }}</Typography.Text>
+          </div>
+        </template>
+      </div>
+    </Space>
+  </template>
+  <template v-else-if="piece === 'tableAliases'">
+    <Typography.Title :level="5">{{ t('label.alias-plural') }}</Typography.Title>
+    <SmTable
+      row-key="key"
+      test-id="asset-table-aliases-table"
+      :columns="aliasColumns"
+      :data-source="aliasRows"
+      :pagination="false"
+      size="small"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">
+          <span :title="(record as { fqn: string }).fqn">{{ (record as { name: string }).name }}</span>
+        </template>
+      </template>
+    </SmTable>
   </template>
 </template>
 

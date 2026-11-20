@@ -88,3 +88,35 @@ describe('AssetOverviewFields generated-tag badge', () => {
     wrapper.unmount();
   });
 });
+
+describe('AssetOverviewFields glossary-terms split (D-1)', () => {
+  // Bordered Descriptions renders each row as a <tr> whose label cell
+  // carries `.ant-descriptions-item-label` (there is no per-item wrapper).
+  function findRow(wrapper: ReturnType<typeof mountFields>, label: string) {
+    return wrapper
+      .findAll('.ant-descriptions-row')
+      .find((row) => row.find('.ant-descriptions-item-label').text().trim() === label);
+  }
+
+  it('renders Classification tags and Glossary terms in separate rows', () => {
+    const wrapper = mountFields([
+      { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Manual' },
+      { tagFQN: 'Glossary.Customer', name: 'Customer', source: 'Glossary', labelType: 'Manual' },
+    ]);
+    const tagsRow = findRow(wrapper, 'Tags');
+    const termsRow = findRow(wrapper, 'Glossary Terms');
+    expect(tagsRow?.text()).toContain('Sensitive');
+    expect(tagsRow?.text()).not.toContain('Customer');
+    expect(termsRow?.text()).toContain('Customer');
+    expect(termsRow?.text()).not.toContain('Sensitive');
+    wrapper.unmount();
+  });
+
+  it('shows an em dash in the glossary row when there are no terms', () => {
+    const wrapper = mountFields([
+      { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Manual' },
+    ]);
+    expect(findRow(wrapper, 'Glossary Terms')?.text()).toContain('—');
+    wrapper.unmount();
+  });
+});

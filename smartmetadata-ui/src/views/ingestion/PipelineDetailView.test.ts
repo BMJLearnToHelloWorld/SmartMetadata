@@ -12,9 +12,11 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import PipelineDetailView from './PipelineDetailView.vue';
 
 vi.mock('@/features/crud/confirmDelete', () => ({
@@ -33,6 +35,45 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let serviceTypeOverride: string | null = null;
 let pipelineTypeOverride: string | null = null;
+let descriptionOverride: string | null = null;
+
+// The description cell's edit modal applies its content on a 0ms timer
+// (SmRichTextEditor content effect), so tests wait a real tick before
+// setting the editor content.
+async function tick(ms = 10) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  await nextTick();
+}
+
+// The description modal is teleported to document.body and this view
+// mounts detached, so its footer buttons are queried from the body,
+// not from the wrapper. The newest modal is last in the body: if an
+// earlier test left a modal open (a failed close assertion skips its
+// unmount), the first match would belong to that stale modal, so the
+// save click always targets the last one.
+function modalSaveButtons(): HTMLElement[] {
+  return [...document.body.querySelectorAll('[data-testid="save"]')] as HTMLElement[];
+}
+
+function clickModalSave(): void {
+  modalSaveButtons().at(-1)?.click();
+}
+
+// Antd keeps a closed modal's DOM (destroyOnClose is off) with
+// `display: none`, so "closed" is the modal's display, not the
+// absence of its save button.
+function descriptionModal(): HTMLElement | null {
+  return document.body.querySelector('.ant-modal') as HTMLElement | null;
+}
+
+function lastMatchingFetch(predicate: (url: string, init?: RequestInit) => boolean) {
+  const mock = vi.mocked(fetch);
+  const match = [...mock.mock.calls].reverse().find((call) => predicate(String(call[0]), call[1]));
+  if (!match) {
+    throw new Error('no matching fetch');
+  }
+  return { url: String(match[0]), init: match[1] };
+}
 
 async function mountView() {
   const pinia = createPinia();
@@ -100,6 +141,7 @@ describe('PipelineDetailView', () => {
     localStorage.clear();
     serviceTypeOverride = null;
     pipelineTypeOverride = null;
+    descriptionOverride = null;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -132,6 +174,7 @@ describe('PipelineDetailView', () => {
             id: 'p1',
             name: 'warehouse-metadata',
             fullyQualifiedName: 'warehouse.warehouse-metadata',
+            description: descriptionOverride ?? undefined,
             pipelineType: pipelineTypeOverride ?? 'metadata',
             service: { id: 's1', type: serviceTypeOverride ?? 'databaseService', name: 'warehouse' },
             sourceConfig: { config: { type: 'DatabaseMetadata', includeViews: true } },
@@ -160,6 +203,7 @@ describe('PipelineDetailView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    document.body.innerHTML = '';
   });
 
   it('routes Edit to the standalone two-step edit page instead of a modal', async () => {
@@ -169,13 +213,95 @@ describe('PipelineDetailView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
   });
 
-  it('renders the description preview-only: no edit button even with EditAll (D-3)', async () => {
-    // The ingestion Pipeline has no description write path, so the
-    // cell is preview-only (no onDescriptionUpdate) whatever the
-    // permission flags say. The describe-level stub grants EditAll.
+  it('shows the description edit button with EditAll and PATCHes the description on save (D-3)', async () => {
+    // D-3 (A7): the ingestion Pipeline now has a description write path
+    // (PATCH /v1/services/ingestionPipelines/{id}), so the cell is
+    // editable when the derived flag allows it. The describe-level stub
+    // grants EditAll.
     const { wrapper } = await mountView();
     await waitForLoaded(wrapper);
-    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="edit-description"]').trigger('click');
+    await tick();
+    // The modal editor is the last SmRichTextEditor in the tree: when a
+    // description exists the preview renders a read-only one first.
+    const editors = wrapper.findAllComponents(SmRichTextEditor);
+    const editor = editors.at(-1);
+    expect(editor?.exists()).toBe(true);
+    (editor!.vm as unknown as { setEditorContent: (content: string) => void }).setEditorContent(
+      'Pipeline notes',
+    );
+    clickModalSave();
+    await flushPromises();
+    const patch = lastMatchingFetch(
+      (url, init) => url.includes('/api/v1/services/ingestionPipelines/p1') && init?.method === 'PATCH',
+    );
+    expect((patch.init?.headers as Record<string, string>)['Content-Type']).toBe(
+      'application/json-patch+json',
+    );
+    const body = JSON.parse(String(patch.init?.body)) as Array<{
+      op: string;
+      path: string;
+      value?: unknown;
+    }>;
+    expect(body).toEqual([{ op: 'add', path: '/description', value: '<p>Pipeline notes</p>' }]);
+    // The modal closes after a successful save (the close follows the
+    // PATCH plus a reload, so it is awaited rather than asserted at once).
+    await vi.waitFor(
+      () => {
+        expect(descriptionModal()?.style.display).toBe('none');
+      },
+      { timeout: 5000 },
+    );
+    wrapper.unmount();
+  });
+
+  it('removes the description field when the editor is saved empty (D-3)', async () => {
+    descriptionOverride = 'Old description';
+    const { wrapper } = await mountView();
+    await waitForLoaded(wrapper);
+    await wrapper.find('[data-testid="edit-description"]').trigger('click');
+    await tick();
+    const editor = wrapper.findAllComponents(SmRichTextEditor).at(-1);
+    (editor!.vm as unknown as { setEditorContent: (content: string) => void }).setEditorContent('');
+    clickModalSave();
+    await flushPromises();
+    const patch = lastMatchingFetch(
+      (url, init) => url.includes('/api/v1/services/ingestionPipelines/p1') && init?.method === 'PATCH',
+    );
+    const body = JSON.parse(String(patch.init?.body)) as Array<{ op: string; path: string }>;
+    expect(body).toEqual([{ op: 'remove', path: '/description' }]);
+    wrapper.unmount();
+  });
+
+  it('keeps the description editor open when the PATCH fails (D-3)', async () => {
+    // A failing PATCH must not close the modal (the cell only closes on
+    // success), so the user can retry instead of losing the edit.
+    const baseFetch = vi.mocked(fetch);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/api/v1/services/ingestionPipelines/p1') && init?.method === 'PATCH') {
+          return new Response(JSON.stringify({ message: 'boom' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return baseFetch(input, init);
+      }),
+    );
+    const { wrapper } = await mountView();
+    await waitForLoaded(wrapper);
+    await wrapper.find('[data-testid="edit-description"]').trigger('click');
+    await tick();
+    const editor = wrapper.findAllComponents(SmRichTextEditor).at(-1);
+    (editor!.vm as unknown as { setEditorContent: (content: string) => void }).setEditorContent(
+      'Pipeline notes',
+    );
+    clickModalSave();
+    await flushPromises();
+    expect(modalSaveButtons()).toHaveLength(1);
+    expect(descriptionModal()?.style.display).not.toBe('none');
     wrapper.unmount();
   });
 

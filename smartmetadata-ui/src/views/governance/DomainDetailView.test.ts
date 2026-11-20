@@ -577,6 +577,105 @@ describe('DomainDetailView widget grid (B-8)', () => {
   });
 });
 
+describe('DomainDetailView default overview (D-1)', () => {
+  function stubDefault() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/name/Finance')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'finance',
+            displayName: 'Finance Domain',
+            fullyQualifiedName: 'finance.fqn',
+            description: 'Finance assets',
+            domainType: 'Source-aligned',
+            owners: [{ id: 'u1', name: 'alice', displayName: 'Alice' }],
+            experts: [{ id: 'u2', name: 'bob', displayName: 'Bob' }],
+            tags: [
+              { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' },
+              { tagFQN: 'Certification.Certified', name: 'Certified', source: 'Classification' },
+              { tagFQN: 'Business.term', name: 'term', source: 'Glossary' },
+              { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' },
+            ],
+            extension: { region: 'EMEA' },
+            children: [],
+          });
+        }
+        if (url.includes('/api/v1/domains/d1/assets')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/permissions/domain/name/')) {
+          return jsonResponse({
+            resource: 'domain',
+            permissions: [
+              { operation: 'ViewBasic', access: 'allow' },
+              { operation: 'ViewCustomFields', access: 'allow' },
+              { operation: 'EditDescription', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/metadata/types/name/domain/customProperties')) {
+          return jsonResponse([
+            { name: 'region', displayName: 'Region', propertyType: { name: 'string' } },
+          ]);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('renders tier, certification, tags, glossary terms, experts, and custom properties', async () => {
+    stubDefault();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/Finance');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { fqn: 'Finance' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await tick();
+
+    // Bordered Descriptions renders each row as a <tr> whose label cell
+    // carries `.ant-descriptions-item-label` (there is no per-item wrapper).
+    const rows = wrapper.findAll('.ant-descriptions-row');
+    const findRow = (label: string) =>
+      rows.find((row) => row.find('.ant-descriptions-item-label').text().trim() === label);
+    expect(findRow('Tier')?.text()).toContain('Tier.Tier1');
+    expect(findRow('Certification')?.text()).toContain('Certification.Certified');
+    expect(findRow('Tags')?.text()).toContain('PII.Sensitive');
+    expect(findRow('Tags')?.text()).not.toContain('Business.term');
+    expect(findRow('Glossary Terms')?.text()).toContain('Business.term');
+    expect(findRow('Glossary Terms')?.text()).not.toContain('PII.Sensitive');
+    expect(findRow('Experts')?.text()).toContain('Bob');
+    // Custom properties render in the default panel too (same panel as
+    // the independent tab, without its edit button).
+    expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Region');
+    expect(wrapper.text()).toContain('EMEA');
+    wrapper.unmount();
+  });
+});
+
 describe('DomainDetailView FQN addressing (B-9)', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

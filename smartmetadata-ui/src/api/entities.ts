@@ -11,7 +11,7 @@ import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
 import { mapTableJoins } from '@/catalog/tableJoins';
 import { mapUsageSummary } from '@/catalog/usagePercentile';
-import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
 import { asNumber, mapEntityRefs } from './json';
@@ -239,6 +239,68 @@ function mapStringList(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
+const TABLE_CONSTRAINT_TYPES: readonly TableConstraintType[] = [
+  'PRIMARY_KEY',
+  'UNIQUE',
+  'FOREIGN_KEY',
+  'SORT_KEY',
+  'DIST_KEY',
+  'CLUSTER_KEY',
+];
+
+/**
+ * Table partition columns (official `tablePartition.columns`): only
+ * rows with a column name survive; the interval type is kept verbatim
+ * and rendered as-is (`--` when absent, per the pin widget).
+ */
+function mapPartitionColumns(value: unknown): PartitionColumnDetails[] {
+  const rec = asRecord(value);
+  if (!rec || !Array.isArray(rec.columns)) {
+    return [];
+  }
+  return rec.columns.flatMap((item) => {
+    const column = asRecord(item);
+    const columnName = column ? asString(column.columnName) : '';
+    if (!columnName) {
+      return [];
+    }
+    const intervalType = (column ? asString(column.intervalType) : '') || undefined;
+    return intervalType ? [{ columnName, intervalType }] : [{ columnName }];
+  });
+}
+
+/**
+ * Table constraints (official generated `TableConstraint`): unknown
+ * constraint types are dropped rather than rendered under a wrong
+ * heading; string lists keep strings only.
+ */
+function mapTableConstraints(value: unknown): TableConstraint[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    const constraintType = asString(rec.constraintType);
+    if (!TABLE_CONSTRAINT_TYPES.includes(constraintType as TableConstraintType)) {
+      return [];
+    }
+    const columns = mapStringList(rec.columns);
+    const referredColumns = mapStringList(rec.referredColumns);
+    const relationshipType = asString(rec.relationshipType) || undefined;
+    return [
+      {
+        constraintType: constraintType as TableConstraintType,
+        ...(columns.length ? { columns } : {}),
+        ...(referredColumns.length ? { referredColumns } : {}),
+        ...(relationshipType ? { relationshipType } : {}),
+      },
+    ];
+  });
+}
+
 function mapRef(value: unknown): EntityRef | undefined {
   const rec = asRecord(value);
   if (!rec) {
@@ -293,6 +355,9 @@ export async function fetchAssetDetail(
       })
     : [];
   const pipelineStatus = mapCatalogPipelineStatus(body.pipelineStatus) ?? undefined;
+  const partitionColumns = mapPartitionColumns(body.tablePartition);
+  const tableConstraints = mapTableConstraints(body.tableConstraints);
+  const aliases = mapStringList(body.aliases);
   return {
     entityType,
     id: asString(body.id) || undefined,
@@ -305,7 +370,18 @@ export async function fetchAssetDetail(
     service: mapRef(body.service),
     database: mapRef(body.database),
     databaseSchema: mapRef(body.databaseSchema),
-    partitions: typeof body.partitions === 'number' ? body.partitions : undefined,
+    // The Table schema carries no `partitions` count field, so the
+    // overview count is derived from the partition columns when the
+    // server sends none (a topic's own `partitions` number still wins).
+    partitions:
+      typeof body.partitions === 'number'
+        ? body.partitions
+        : entityType === 'table' && partitionColumns.length > 0
+          ? partitionColumns.length
+          : undefined,
+    tablePartition: partitionColumns.length > 0 ? { columns: partitionColumns } : undefined,
+    tableConstraints: tableConstraints.length > 0 ? tableConstraints : undefined,
+    aliases: aliases.length > 0 ? aliases : undefined,
     sourceUrl: asString(body.sourceUrl) || undefined,
     scheduleInterval: asString(body.scheduleInterval) || undefined,
     pipelineState: asString(body.state) || undefined,

@@ -38,3 +38,18 @@ export function splitFqn(fqn: string): string[] {
   parts.push(current);
   return parts.filter((part) => part.length > 0);
 }
+
+/**
+ * Strip one pair of surrounding double quotes from an FQN part, the
+ * inverse of official's Fqn.quoteName for a single segment: `splitFqn`
+ * keeps quoting on each part (so `"a.b"` survives as one part), and
+ * display sites need the bare name. A part without surrounding quotes
+ * passes through unchanged; a lone quote is left alone rather than
+ * tearing the name apart.
+ */
+export function unquoteFqnPart(part: string): string {
+  if (part.length >= 2 && part.startsWith('"') && part.endsWith('"')) {
+    return part.slice(1, -1);
+  }
+  return part;
+}

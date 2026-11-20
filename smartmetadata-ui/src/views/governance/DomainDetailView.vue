@@ -580,7 +580,36 @@ onMounted(() => {
         <Descriptions.Item :label="t('crud.owners')">
           {{ joinRefNames(domain.owners) || '—' }}
         </Descriptions.Item>
+        <!-- D-1 Domain right column (official DOCUMENTATION layout,
+             y=1..5): tier, certification, tags, glossary terms,
+             experts. Same computeds as the widget-cell branches above,
+             so the default panel and the grid agree. -->
+        <Descriptions.Item :label="t('label.tier')">
+          {{ domainTierTag?.tagFQN || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('label.certification')">
+          {{ domainCertificationTag?.tagFQN || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('asset.fields.tags')">
+          {{ tagFqnList(domainTags) || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">
+          {{ tagFqnList(domainGlossaryTerms) || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.experts')">
+          {{ joinRefNames(domain.experts) || '—' }}
+        </Descriptions.Item>
       </Descriptions>
+      <!-- D-1 CustomProperties (official DOCUMENTATION y=7): the same
+           read panel as the independent custom-properties tab, without
+           its edit button — inline editing stays in the tab (D-2 batch 2). -->
+      <AssetCustomPropertiesPanel
+        :defs="customProperties"
+        :values="domain?.extension || {}"
+        :error="customPropsError"
+        entity-type="domain"
+        :can-view="customPropsCanView"
+      />
     </template>
     <template #assets>
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Domain">
