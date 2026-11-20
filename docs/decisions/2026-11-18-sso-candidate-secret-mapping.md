@@ -1,7 +1,7 @@
 # The typed SSO secret maps onto the candidate's oidcConfiguration.secret, and the save op fires only when the stored document can accept it
 
-- **Status:** Accepted
-- **Revisions:** v1 2026-11-18 (initial)
+- **Status:** Superseded by ADR:2026-11-20-sso-candidate-secret-mapping-superseded
+- **Revisions:** v1 2026-11-18 (initial) · v2 2026-11-20 (superseded by ADR:2026-11-20-sso-candidate-secret-mapping-superseded)
 - **Deciders:** Settings A-group design (DESIGN.md §8.2, Q1 ruling (a) revised 2026-11-18) under Bai's standing official-alignment rules
 - **Guard:** `smartmetadata-ui/src/admin/ssoConfiguration.test.ts` (carriesOidcSecret, storedAcceptsOidcSecret, candidate secret matrix, managed pin-back); `smartmetadata-ui/src/views/admin/SsoSettingsView.test.ts` (secret op emission, six-condition negatives, save guard, clear-to-save)
 - **Related:** upstream pin `a3012259ca`; design `~/workspace/work/settings-agroup-batch/DESIGN.md` (not in-repo, sole authority for this batch); ADR:2026-11-18-sso-candidate-preserves-full-security-document; ADR:2026-11-18-sso-test-login-pass-binds-to-candidate-content
