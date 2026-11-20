@@ -150,6 +150,18 @@ const lastDragTarget = ref<{ x: number; y: number } | null>(null);
 const pendingLeave = ref<(() => void) | null>(null);
 const leaveModalOpen = ref(false);
 
+/**
+ * Pin NavigationBlocker (`hasConfirmedLeave`): once the user confirms
+ * leaving — Discard, or Save-and-exit after a successful save — the
+ * confirmed leave must not be re-intercepted. Without this, Discard
+ * from the page Cancel path starts a fresh router.push while the
+ * editor is still dirty, the route guard intercepts it again, and the
+ * modal reopens forever (C-4 acceptance: Discard visibly stuck).
+ */
+const leaveConfirmed = ref(false);
+/** Abort for the route navigation held by onBeforeRouteLeave, if any. */
+const abortHeldNavigation = ref<(() => void) | null>(null);
+
 const disableSave = computed(() => {
   if (hasObjectLayout.value) {
     // Unconverted: no edits are possible, save is unreachable.
@@ -314,30 +326,52 @@ function requestExit(): void {
 async function onLeaveSaveAndExit(): Promise<void> {
   const leave = pendingLeave.value;
   pendingLeave.value = null;
+  abortHeldNavigation.value = null;
+  // Pin NavigationBlocker handleSaveAndLeave: the modal stays open
+  // while the save runs (the Save button shows the loading state) and
+  // only closes once the save succeeds; a failed save keeps the user
+  // on the page with the modal open, never navigating away and
+  // dropping the edits (pin CustomizablePage: only a rejecting save
+  // stays on the page).
+  await handleSave().catch(() => undefined);
+  if (!disableSave.value) {
+    return;
+  }
   leaveModalOpen.value = false;
-  await handleSave();
+  leaveConfirmed.value = true;
   leave?.();
 }
 
 function onLeaveDiscard(): void {
   const leave = pendingLeave.value;
   pendingLeave.value = null;
+  abortHeldNavigation.value = null;
   leaveModalOpen.value = false;
+  // Disarm the guard before leaving (pin NavigationBlocker
+  // hasConfirmedLeave): the fresh navigation exit() starts must not
+  // be re-intercepted while the editor is still dirty.
+  leaveConfirmed.value = true;
   leave?.();
 }
 
 function onLeaveCancel(): void {
   pendingLeave.value = null;
+  // Pin NavigationBlocker handleModalClose drops the pending
+  // navigation: abort the held route navigation instead of leaving
+  // it hanging. No-op on the page-Cancel path, where nothing is held.
+  abortHeldNavigation.value?.();
+  abortHeldNavigation.value = null;
   leaveModalOpen.value = false;
 }
 
 onBeforeRouteLeave((_to, _from, next) => {
-  if (disableSave.value) {
+  if (leaveConfirmed.value || disableSave.value) {
     next();
     return;
   }
   // Hold the navigation until the user chooses in the leave modal.
   pendingLeave.value = () => next();
+  abortHeldNavigation.value = () => next(false);
   leaveModalOpen.value = true;
 });
 

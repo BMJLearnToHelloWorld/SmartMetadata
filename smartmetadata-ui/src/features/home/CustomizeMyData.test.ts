@@ -109,6 +109,68 @@ function clickBody(selector: string): void {
   bodyEl(selector).click();
 }
 
+/**
+ * Whether the leave modal is visibly open. The modal's footer buttons
+ * stay in the DOM after it closes (antd keeps a closed dialog mounted
+ * with `display: none`), so asserting on their presence conflates open
+ * with closed — the C-4 acceptance probe made exactly that mistake
+ * and reported the working Cancel as dead. The `.ant-modal` element's
+ * own style is the discriminator.
+ */
+function isLeaveModalVisible(): boolean {
+  const modal = document.body.querySelector('.ant-modal') as HTMLElement | null;
+  if (!modal) {
+    return false;
+  }
+  return modal.style.display !== 'none';
+}
+
+/**
+ * Mounts the editor as the matched route component (via <router-view>),
+ * so the route-leave guard actually runs. The standalone mountEditor
+ * mounts the component outside the router, where onBeforeRouteLeave
+ * never fires — which is why the Discard loop below passed in jsdom
+ * while failing live.
+ */
+function mountEditorAsRoute(extraProps: Record<string, unknown> = {}) {
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
+      {
+        path: '/customize-page/:fqn/:pageFqn',
+        name: 'customize-page',
+        component: CustomizeMyData,
+        props: {
+          personaName: 'Analyst',
+          personaFqn: 'Analyst',
+          pageFqn: 'LandingPage',
+          initialPageData: {
+            pageType: 'LandingPage',
+            layout: [
+              { i: 'KnowledgePanel.Domains', x: 0, y: 0, w: 1, h: 3 },
+              { i: 'KnowledgePanel.DataQuality', x: 1, y: 0, w: 1, h: 3 },
+            ],
+          },
+          backgroundColor: '',
+          onSaveLayout: (...args: unknown[]) => onSaveLayout(...args),
+          onBackgroundColorUpdate: (...args: unknown[]) => onBackgroundColorUpdate(...args),
+          ...extraProps,
+        },
+      },
+    ],
+  });
+  const Root = defineComponent({ template: '<router-view />' });
+  return router.push({ name: 'customize-page', params: { fqn: 'Analyst', pageFqn: 'LandingPage' } }).then(async () => {
+    await router.isReady();
+    const wrapper = mount(Root, {
+      global: { plugins: [router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    return wrapper;
+  });
+}
+
 function saveButton(wrapper: VueWrapper) {
   return wrapper.get('[data-testid="customize-save-layout"]');
 }
@@ -195,15 +257,98 @@ describe('CustomizeMyData', () => {
     await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
     await wrapper.get('[data-testid="customize-cancel"]').trigger('click');
     await flushPromises();
+    expect(isLeaveModalVisible()).toBe(true);
     clickBody('[data-testid="customize-leave-cancel"]');
     await flushPromises();
+    expect(isLeaveModalVisible()).toBe(false);
     expect(router.currentRoute.value.name).toBe('customize-page');
     await wrapper.get('[data-testid="customize-cancel"]').trigger('click');
     await flushPromises();
+    expect(isLeaveModalVisible()).toBe(true);
+    // The parent syncs the saved document back into initialPageData
+    // after a save; emulate that here so the editor goes clean and
+    // the leave may proceed.
+    onSaveLayout.mockImplementationOnce(async (page: unknown) => {
+      await wrapper.setProps({ initialPageData: page as PersonaPage });
+    });
     clickBody('[data-testid="customize-leave-save-exit"]');
     await flushPromises();
     expect(onSaveLayout).toHaveBeenCalledTimes(1);
+    expect(isLeaveModalVisible()).toBe(false);
     expect(router.currentRoute.value.name).toBe('home');
+  });
+
+  it('save-and-exit with a rejected save stays on the page with the modal open', async () => {
+    const wrapper = await mountEditor();
+    await flushPromises();
+    onSaveLayout.mockRejectedValueOnce(new Error('save boom'));
+    await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
+    await wrapper.get('[data-testid="customize-cancel"]').trigger('click');
+    await flushPromises();
+    expect(isLeaveModalVisible()).toBe(true);
+    clickBody('[data-testid="customize-leave-save-exit"]');
+    await flushPromises();
+    expect(onSaveLayout).toHaveBeenCalledTimes(1);
+    // Pin CustomizablePage: only a rejecting save stays on the page —
+    // the failed save must never navigate away and drop the edits.
+    expect(isLeaveModalVisible()).toBe(true);
+    expect(router.currentRoute.value.name).toBe('customize-page');
+    // The user can still cancel out of the modal afterwards.
+    clickBody('[data-testid="customize-leave-cancel"]');
+    await flushPromises();
+    expect(isLeaveModalVisible()).toBe(false);
+  });
+
+  it('C-4: discard from the page-Cancel path leaves instead of reopening the modal', async () => {
+    // Route-mounted: the editor is the matched route component, so
+    // onBeforeRouteLeave runs — the standalone mount never exercises
+    // it, which is how this loop shipped green while failing live.
+    const wrapper = await mountEditorAsRoute();
+    await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
+    await wrapper.get('[data-testid="customize-cancel"]').trigger('click');
+    await flushPromises();
+    expect(isLeaveModalVisible()).toBe(true);
+    clickBody('[data-testid="customize-leave-discard"]');
+    await flushPromises();
+    expect(onSaveLayout).not.toHaveBeenCalled();
+    expect(isLeaveModalVisible()).toBe(false);
+    expect(router.currentRoute.value.name).toBe('home');
+  });
+
+  it('C-4: discard from a held route-leave resumes the held navigation', async () => {
+    const wrapper = await mountEditorAsRoute();
+    await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
+    void router.push({ name: 'home' });
+    await flushPromises();
+    expect(isLeaveModalVisible()).toBe(true);
+    expect(router.currentRoute.value.name).toBe('customize-page');
+    clickBody('[data-testid="customize-leave-discard"]');
+    await flushPromises();
+    expect(onSaveLayout).not.toHaveBeenCalled();
+    expect(isLeaveModalVisible()).toBe(false);
+    expect(router.currentRoute.value.name).toBe('home');
+  });
+
+  it('C-4: cancel from a held route-leave aborts it and a later navigation still works', async () => {
+    const wrapper = await mountEditorAsRoute();
+    await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
+    void router.push({ name: 'home' });
+    await flushPromises();
+    expect(isLeaveModalVisible()).toBe(true);
+    clickBody('[data-testid="customize-leave-cancel"]');
+    await flushPromises();
+    expect(isLeaveModalVisible()).toBe(false);
+    expect(router.currentRoute.value.name).toBe('customize-page');
+    // The second push is held by the guard again (the editor is still
+    // dirty), so it must not be awaited: a held navigation's promise
+    // never settles until the modal answers it.
+    void router.push({ name: 'home' });
+    await flushPromises();
+    // The held navigation was aborted (next(false)), not left hanging,
+    // and the guard is still armed for new navigations: a fresh
+    // attempt trips the modal again instead of slipping through.
+    expect(isLeaveModalVisible()).toBe(true);
+    expect(router.currentRoute.value.name).toBe('customize-page');
   });
 
   it('cancel with no changes navigates home without the leave modal', async () => {

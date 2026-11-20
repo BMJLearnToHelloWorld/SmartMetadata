@@ -248,7 +248,27 @@ async function handleDescriptionSave(content: string): Promise<void> {
       v-else-if="!personaDetails"
       style="position: relative; height: 100%; width: 100%; min-height: 240px"
     >
-      <NoDataPlaceholder test-id="no-data-placeholder" />
+      <!-- C-4 U-07(b): a failed persona fetch leaves the user on a bare
+        placeholder with no in-app path back (pin's no-data branch is
+        equally bare — PersonaDetailsPage.tsx — so the link is the
+        spec's named addition, not a 1:1 restoration). The footer slot
+        carries the link; the title is passed explicitly because the
+        placeholder drops its default title whenever a footer slot is
+        present. Destination is the persona list, the same route pin's
+        breadcrumb crumb and post-delete navigation use. -->
+      <NoDataPlaceholder
+        test-id="no-data-placeholder"
+        :title="t('message.no-data-available')"
+      >
+        <template #footer>
+          <RouterLink
+            :to="{ name: 'admin-settings-persona' }"
+            data-testid="persona-detail-back-settings"
+          >
+            {{ t('persona.backToPersona') }}
+          </RouterLink>
+        </template>
+      </NoDataPlaceholder>
     </div>
     <template v-else>
       <div style="display: flex; align-items: flex-start; justify-content: space-between">
