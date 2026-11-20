@@ -404,21 +404,6 @@ const connectionArgumentsField: Field = {
 // follow the spec oneOf branches (GoogleDrive gcpConfig, ElasticSearch
 // authType / sslConfig certificates) — the same oneOf rendering the
 // official schema-driven form does.
-const GCP_VALUES_GATE: ConnectionFieldShowWhen = {
-  field: 'gcpConfigType',
-  equals: 'gcpValues',
-  defaultValue: 'gcpValues',
-};
-const GCP_PATH_GATE: ConnectionFieldShowWhen = {
-  field: 'gcpConfigType',
-  equals: 'gcpCredentialsPath',
-  defaultValue: 'gcpValues',
-};
-const GCP_EXTERNAL_GATE: ConnectionFieldShowWhen = {
-  field: 'gcpConfigType',
-  equals: 'gcpExternalAccount',
-  defaultValue: 'gcpValues',
-};
 const ES_BASIC_AUTH_GATE: ConnectionFieldShowWhen = {
   field: 'elasticSearchAuthMode',
   equals: 'basicAuth',
@@ -1123,6 +1108,10 @@ const databricksAuthFields: readonly Field[] = [
       'Generated Personal Access Token for Databricks workspace authentication. This token is created from User Settings -> Developer -> Access Tokens in your Databricks workspace.',
     group: 'authType',
     branch: 'pat',
+    // T-2 (2026-11-20): pin databricksConnection.json requires `token` in
+    // the PAT branch; the create/edit split (missingRequiredConnectionFields)
+    // keeps edit-save working with a blank field.
+    required: true,
     showWhen: { field: 'authMode', equals: 'pat', defaultValue: 'pat' },
   },
   requiredText('clientId', 'connection.clientId', {
@@ -1143,6 +1132,8 @@ const databricksAuthFields: readonly Field[] = [
       'OAuth Secret generated for the Service Principal in Databricks Account Console. Used for secure OAuth2 authentication.',
     group: 'authType',
     branch: 'oauth',
+    // T-2 (2026-11-20): pin requires `clientSecret` in the OAuth branch.
+    required: true,
     testId: 'service-client-secret',
     hintKey: 'connection.secretHint',
     showWhen: { field: 'authMode', equals: 'oauth' },
@@ -1156,6 +1147,21 @@ const databricksAuthFields: readonly Field[] = [
     branch: 'azure',
     showWhen: { field: 'authMode', equals: 'azure' },
   }),
+  {
+    key: 'azureClientSecret',
+    control: 'password',
+    labelKey: 'connection.azureClientSecret',
+    title: 'Azure Client Secret',
+    description: 'Azure Service Principal client secret created in Azure AD for authentication.',
+    group: 'authType',
+    branch: 'azure',
+    // T-2 (2026-11-20): pin requires `azureClientSecret` in the Azure
+    // branch, and orders it before `azureTenantId` (spec order).
+    required: true,
+    testId: 'service-azure-client-secret',
+    hintKey: 'connection.secretHint',
+    showWhen: { field: 'authMode', equals: 'azure' },
+  },
   requiredText('azureTenantId', 'connection.azureTenantId', {
     testId: 'service-azure-tenant-id',
     title: 'Azure Tenant ID',
@@ -1165,18 +1171,6 @@ const databricksAuthFields: readonly Field[] = [
     branch: 'azure',
     showWhen: { field: 'authMode', equals: 'azure' },
   }),
-  {
-    key: 'azureClientSecret',
-    control: 'password',
-    labelKey: 'connection.azureClientSecret',
-    title: 'Azure Client Secret',
-    description: 'Azure Service Principal client secret created in Azure AD for authentication.',
-    group: 'authType',
-    branch: 'azure',
-    testId: 'service-azure-client-secret',
-    hintKey: 'connection.secretHint',
-    showWhen: { field: 'authMode', equals: 'azure' },
-  },
 ];
 
 // A2 (2026-11-19): the five A-class types brought into T-2 (Bai ruling:
@@ -1213,6 +1207,16 @@ const alationAuthGate = (branch: string): ConnectionFieldShowWhen => ({
   field: 'alationAuthBranch',
   equals: branch,
   defaultValue: 'basicAuth',
+});
+const alationSinkAuthGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'alationSinkAuthBranch',
+  equals: branch,
+  defaultValue: 'basicAuth',
+});
+const sftpAuthGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'sftpAuthBranch',
+  equals: branch,
+  defaultValue: 'usernamePassword',
 });
 
 /**
@@ -1397,6 +1401,183 @@ const vertexAIGcpImpersonateFields: readonly Field[] = reGateBranchFields(
   [],
   'credentials',
   'service-vertexai-gcp',
+  'service-auth-gcp',
+);
+
+/** T-2 (2026-11-20): Superset nested `connection` oneOf
+ * (supersetConnection.json: SupersetApiConnection / PostgresConnection /
+ * MysqlConnection). The nested DB leaves use `supersetDb*` form keys — the
+ * top level already owns hostPort/username/password/verifySSL/sslConfig —
+ * and share the IAM/Azure/GCP form keys across the two engines (only one
+ * connection branch is active at a time). Same two-copy rules as Alation:
+ * scheme/username/hostPort/auth-selector copies carry the engine gate as
+ * `showWhen` with NO `branch` (value persists across an engine switch),
+ * except scheme + auth selector, which DO carry a branch (engine-specific
+ * values are cleared on switch). */
+const supersetConnectionGateApi: ConnectionFieldShowWhen = {
+  field: 'supersetConnectionBranch',
+  equals: 'api',
+  defaultValue: 'api',
+};
+const supersetConnectionGatePostgres: ConnectionFieldShowWhen = {
+  field: 'supersetConnectionBranch',
+  equals: 'postgres',
+  defaultValue: 'api',
+};
+const supersetConnectionGateMysql: ConnectionFieldShowWhen = {
+  field: 'supersetConnectionBranch',
+  equals: 'mysql',
+  defaultValue: 'api',
+};
+const supersetConnectionGateNotApi: ConnectionFieldShowWhen = {
+  field: 'supersetConnectionBranch',
+  notEquals: 'api',
+  defaultValue: 'api',
+};
+const supersetDbAuthGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'supersetDbAuthBranch',
+  equals: branch,
+  defaultValue: 'basic',
+});
+const supersetIamBranchFields: readonly Field[] = reGateBranchFields(
+  iamBranchFields,
+  supersetDbAuthGate('iam'),
+  [supersetConnectionGateNotApi],
+  'connection',
+  'service-superset-aws',
+  'service-auth-aws',
+);
+const supersetAzureBranchFields: readonly Field[] = reGateBranchFields(
+  azureBranchFields,
+  supersetDbAuthGate('azure'),
+  [supersetConnectionGateNotApi],
+  'connection',
+  'service-superset-azure',
+  'service-auth-azure',
+);
+const supersetGcpHeadFields: readonly Field[] = reGateBranchFields(
+  gcpAuthHeadFields,
+  supersetDbAuthGate('gcp'),
+  [supersetConnectionGateNotApi, supersetConnectionGateMysql],
+  'connection',
+  'service-superset-gcp',
+  'service-auth-gcp',
+);
+const supersetGcpVariantFields: readonly Field[] = reGateGcpVariantFields(
+  gcpVariantLeafFields,
+  [supersetDbAuthGate('gcp'), supersetConnectionGateNotApi, supersetConnectionGateMysql],
+  'connection',
+  'service-superset-gcp',
+);
+const supersetGcpImpersonateFields: readonly Field[] = reGateBranchFields(
+  gcpImpersonateLeafFields,
+  supersetDbAuthGate('gcp'),
+  [supersetConnectionGateNotApi, supersetConnectionGateMysql],
+  'connection',
+  'service-superset-gcp',
+  'service-auth-gcp',
+);
+const SUPERSET_DB_SSL_TRIPLET: readonly [key: Field['key'], labelKey: string, testId: string][] =
+  [
+    ['supersetDbSslCaCertificate', 'connection.sslCaCertificate', 'service-superset-db-ssl-ca-certificate'],
+    ['supersetDbSslCertificate', 'connection.sslCertificate', 'service-superset-db-ssl-certificate'],
+    ['supersetDbSslKey', 'connection.sslKey', 'service-superset-db-ssl-key'],
+  ];
+const supersetDbSslLeavesPostgres: readonly Field[] = sslConfigLeavesFor(
+  SUPERSET_DB_SSL_TRIPLET,
+  false,
+  'connection',
+  'SSL Config',
+).map((field) => ({
+  ...field,
+  showWhen: {
+    field: 'supersetDbSslMode',
+    notEquals: 'disable',
+    defaultValue: 'disable',
+  },
+  showWhenAll: [supersetConnectionGateNotApi, supersetConnectionGatePostgres],
+}));
+const supersetDbSslLeavesMysql: readonly Field[] = sslConfigLeavesFor(
+  SUPERSET_DB_SSL_TRIPLET,
+  false,
+  'connection',
+  'SSL Config',
+).map((field) => ({
+  ...field,
+  showWhenAll: [supersetConnectionGateNotApi, supersetConnectionGateMysql],
+}));
+
+/** T-2 (2026-11-20): Rest `openAPISchemaConnection` oneOf
+ * (restConnection.json: OpenAPISchemaURL / OpenAPISchemaFilePath /
+ * OpenAPISchemaS3). The S3 branch reuses the shared IAM leaves — the
+ * branch tag is rewritten to the selector value (`s3`) so the generic
+ * branch clearer keeps them while the S3 branch is active and discards
+ * them on a switch (reGateBranchFields alone would keep the `iam` tag,
+ * which never equals a restSchemaBranch value). */
+const restSchemaGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'restSchemaBranch',
+  equals: branch,
+  defaultValue: 'url',
+});
+const restS3AwsBranchFields: readonly Field[] = reGateBranchFields(
+  iamBranchFields,
+  restSchemaGate('s3'),
+  [],
+  'openAPISchemaConnection',
+  'service-rest-aws',
+  'service-auth-aws',
+).map((field) => ({ ...field, branch: 's3' }));
+
+/** T-2 (2026-11-20): OpenSearch `authType` oneOf (openSearchConnection.json:
+ * Basic Authentication / AWSCredentials). Same rewrite as Rest: the
+ * shared IAM leaves are re-tagged to the selector value
+ * (`awsCredentials`). */
+const openSearchAuthGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'openSearchAuthBranch',
+  equals: branch,
+  defaultValue: 'basicAuth',
+});
+const openSearchAwsBranchFields: readonly Field[] = reGateBranchFields(
+  iamBranchFields,
+  openSearchAuthGate('awsCredentials'),
+  [],
+  'authType',
+  'service-opensearch-aws',
+  'service-auth-aws',
+).map((field) => ({ ...field, branch: 'awsCredentials' }));
+
+/** T-2 (2026-11-20): GoogleDrive per-leaf GCP credentials
+ * (googleDriveConnection.json `credentials.gcpConfig` oneOf). The JSON
+ * blob fields are gone (error invention, deleted with the change); the
+ * variant leaves are the shared `authGcp*` keys re-gated onto the
+ * existing `gcpConfigType` selector, so buildGcpVariant /
+ * hydrateGcpVariantForm / the secret discipline are shared with
+ * Mysql/Alation/VertexAI instead of duplicated. The impersonate leaves
+ * are re-gated with no gate at all — the impersonate block is a sibling
+ * of gcpConfig, visible in every variant. */
+const googleDriveGcpVariantGate = (variant: string): ConnectionFieldShowWhen => ({
+  field: 'gcpConfigType',
+  equals: variant,
+  defaultValue: 'gcpValues',
+});
+const googleDriveGcpVariantFields: readonly Field[] = gcpVariantLeafFields.map((field) => {
+  const next: Field = {
+    ...field,
+    group: 'credentials',
+    showWhen: googleDriveGcpVariantGate(field.branch ?? ''),
+  };
+  delete next.showWhenAll;
+  if (next.testId) {
+    next.testId = next.testId.replace('service-auth-gcp', 'service-gcp');
+  }
+  return next;
+});
+const googleDriveGcpImpersonateFields: readonly Field[] = reGateBranchFields(
+  gcpImpersonateLeafFields,
+  undefined,
+  [],
+  'credentials',
+  'service-gcp',
   'service-auth-gcp',
 );
 
@@ -1707,12 +1888,15 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         options: [{ value: 'mssql+pyodbc' }, { value: 'mssql+pytds' }, { value: 'mssql+pymssql' }],
       },
       {
+        // T-2 (2026-11-20): pin mssqlConnection.json requires only
+        // `database`; username/hostPort are optional in the schema.
         ...usernameRequired,
+        required: false,
         description:
           'Username to connect to MSSQL. This user should have privileges to read all the metadata in MsSQL.',
       },
       { ...passwordField, description: 'Password to connect to MSSQL.' },
-      hostPort('Host and port of the MSSQL service.'),
+      { ...hostPort('Host and port of the MSSQL service.'), required: false },
       requiredText('database', 'connection.database', {
         testId: 'service-database',
         title: 'Database',
@@ -1993,11 +2177,33 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   },
   {
     types: ['Superset'],
-    // Pin supersetConnection.json: hostPort, then the `connection` oneOf
-    // (SupersetApiConnection branch: provider, username, password, verifySSL,
-    // sslConfig). All branch leaves group under `connection`.
+    // T-2 (2026-11-20): pin supersetConnection.json — hostPort, then the
+    // `connection` oneOf (SupersetApiConnection / PostgresConnection /
+    // MysqlConnection, each with its own authType oneOf). The api branch
+    // keeps the top-level keys; the DB branches use `supersetDb*` keys
+    // (Alation precedent: the top level already owns username/password/
+    // hostPort/verifySSL/sslConfig) and share the IAM/Azure/GCP form keys.
     fields: [
       hostPort('URL for the superset instance.'),
+      {
+        key: 'supersetConnectionBranch',
+        control: 'select',
+        labelKey: 'connection.supersetConnection',
+        title: 'Superset Connection',
+        description: 'Choose between Superset API and a direct database connection.',
+        group: 'connection',
+        groupLabel: 'Superset Connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'api',
+        required: true,
+        testId: 'service-superset-connection-type',
+        options: [
+          { value: 'api', title: 'SupersetApiConnection' },
+          { value: 'postgres', title: 'PostgresConnection' },
+          { value: 'mysql', title: 'MysqlConnection' },
+        ],
+      },
+      // --- SupersetApiConnection leaves ---
       {
         key: 'provider',
         control: 'select',
@@ -2010,6 +2216,7 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         groupSchema: { oneOf: [{ type: 'object' }] },
         testId: 'service-provider',
         required: true,
+        showWhen: supersetConnectionGateApi,
         options: [
           { value: 'db', labelKey: 'connection.providerDb' },
           { value: 'ldap', labelKey: 'connection.providerLdap' },
@@ -2019,12 +2226,17 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         ...usernameRequired,
         group: 'connection',
         description: 'Username for Superset.',
+        showWhen: supersetConnectionGateApi,
       },
-      note('connection.supersetApiNote'),
+      { ...note('connection.supersetApiNote'), showWhen: supersetConnectionGateApi },
       {
         ...passwordField,
         group: 'connection',
         description: 'Password for Superset.',
+        // T-2 (2026-11-20): pin requires `password` in the API branch
+        // (the DB basic branch does not require it — separate keys).
+        required: true,
+        showWhen: supersetConnectionGateApi,
       },
       // W2-5 lean-forms tier 2 (supersetApiConnection.json): verifySSL +
       // sslConfig live nested in connection. Always visible, no showWhen
@@ -2034,6 +2246,7 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         ...verifySSLField,
         group: 'connection',
         description: 'Client SSL verification. Make sure to configure the SSLConfig if enabled.',
+        showWhen: supersetConnectionGateApi,
       },
       ...sslConfigLeavesFor(
         [
@@ -2044,7 +2257,219 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         false,
         'connection',
         'Superset Connection',
-      ),
+      ).map((field) => ({ ...field, showWhen: supersetConnectionGateApi })),
+      // --- Nested PostgresConnection leaves ---
+      {
+        ...schemeField(['postgresql+psycopg2', 'pgspider+psycopg2']),
+        key: 'supersetDbScheme',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      {
+        ...usernameRequired,
+        key: 'supersetDbUsername',
+        description:
+          'Username to connect to Postgres. This user should have privileges to read all the metadata in Postgres.',
+        group: 'connection',
+        testId: 'service-superset-db-username',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      {
+        key: 'supersetDbAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Auth Configuration Type',
+        description: 'Choose Auth Config Type.',
+        group: 'connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basic',
+        authNote: true,
+        branch: 'postgres',
+        testId: 'service-superset-db-auth-type',
+        showWhen: supersetConnectionGatePostgres,
+        options: [
+          { value: 'basic', title: 'Basic Auth' },
+          { value: 'iam', title: 'IAM Auth Configuration Source' },
+          { value: 'azure', title: 'Azure Configuration Source' },
+        ],
+      },
+      {
+        ...basicAuthPasswordField,
+        key: 'supersetDbPassword',
+        group: 'connection',
+        testId: 'service-superset-db-password',
+        showWhen: supersetDbAuthGate('basic'),
+        showWhenAll: [supersetConnectionGateNotApi],
+      },
+      ...supersetIamBranchFields,
+      ...supersetAzureBranchFields,
+      {
+        ...hostPort('Host and port of the source service.'),
+        key: 'supersetDbHostPort',
+        group: 'connection',
+        testId: 'service-superset-db-host-port',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      requiredText('supersetDbDatabase', 'connection.database', {
+        testId: 'service-superset-db-database',
+        title: 'Database',
+        description:
+          'Initial database to connect to. Metadata reading is restricted to this database unless Ingest All Databases is enabled, in which case this database is used as the entry point to discover and scan all databases.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: supersetConnectionGatePostgres,
+      }),
+      {
+        ...ingestAllDatabases,
+        key: 'supersetDbIngestAllDatabases',
+        description:
+          'Ingest data from all databases in Postgres. You can use databaseFilterPattern on top of this.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      {
+        ...sslModeField,
+        key: 'supersetDbSslMode',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      ...supersetDbSslLeavesPostgres,
+      text('supersetDbClassificationName', 'connection.classificationName', {
+        testId: 'service-superset-db-classification-name',
+        title: 'Classification Name',
+        description: 'Custom OpenMetadata Classification name for Postgres policy tags.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: supersetConnectionGatePostgres,
+      }),
+      text('supersetDbQueryStatementSource', 'connection.queryStatementSource', {
+        testId: 'service-superset-db-query-statement-source',
+        title: 'Query Statement Source',
+        description:
+          'Fully qualified name of the view or table to use for query logs. If not provided, defaults to pg_stat_statements. Use this to configure a custom view (e.g., my_schema.custom_pg_stat_statements) when direct access to pg_stat_statements is restricted.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: supersetConnectionGatePostgres,
+      }),
+      {
+        ...connectionOptionsField,
+        key: 'supersetDbConnectionOptions',
+        group: 'connection',
+        branch: 'postgres',
+        testId: 'service-superset-db-connection-options',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      {
+        ...connectionArgumentsField,
+        key: 'supersetDbConnectionArguments',
+        group: 'connection',
+        branch: 'postgres',
+        testId: 'service-superset-db-connection-arguments',
+        showWhen: supersetConnectionGatePostgres,
+      },
+      // --- Nested MysqlConnection leaves ---
+      {
+        ...schemeField(['mysql+pymysql']),
+        key: 'supersetDbScheme',
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: supersetConnectionGateMysql,
+      },
+      {
+        ...usernameRequired,
+        key: 'supersetDbUsername',
+        description:
+          'Username to connect to MySQL. This user should have privileges to read all the metadata in Mysql.',
+        group: 'connection',
+        testId: 'service-superset-db-username',
+        showWhen: supersetConnectionGateMysql,
+      },
+      {
+        key: 'supersetDbAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Auth Configuration Type',
+        description: 'Choose Auth Config Type.',
+        group: 'connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basic',
+        authNote: true,
+        branch: 'mysql',
+        testId: 'service-superset-db-auth-type',
+        showWhen: supersetConnectionGateMysql,
+        options: [
+          { value: 'basic', title: 'Basic Auth' },
+          { value: 'iam', title: 'IAM Auth Configuration Source' },
+          { value: 'azure', title: 'Azure Configuration Source' },
+          { value: 'gcp', title: 'GCP CloudSQL Configuration Source' },
+        ],
+      },
+      ...supersetGcpHeadFields,
+      ...supersetGcpVariantFields,
+      ...supersetGcpImpersonateFields,
+      {
+        ...hostPort(
+          "Host and port of the MySQL service. For GCP CloudSQL, use the instance connection name in the format 'project_id:region:instance_name'.",
+        ),
+        key: 'supersetDbHostPort',
+        group: 'connection',
+        testId: 'service-superset-db-host-port',
+        showWhen: supersetConnectionGateMysql,
+      },
+      {
+        ...databaseNameDefault,
+        key: 'supersetDbDatabaseName',
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: supersetConnectionGateMysql,
+      },
+      {
+        ...databaseSchema,
+        key: 'supersetDbDatabaseSchema',
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: supersetConnectionGateMysql,
+      },
+      ...supersetDbSslLeavesMysql,
+      {
+        ...connectionOptionsField,
+        key: 'supersetDbConnectionOptions',
+        group: 'connection',
+        branch: 'mysql',
+        testId: 'service-superset-db-connection-options',
+        showWhen: supersetConnectionGateMysql,
+      },
+      {
+        ...connectionArgumentsField,
+        key: 'supersetDbConnectionArguments',
+        group: 'connection',
+        branch: 'mysql',
+        testId: 'service-superset-db-connection-arguments',
+        showWhen: supersetConnectionGateMysql,
+      },
+      {
+        key: 'supersetDbUseSlowLogs',
+        control: 'toggle',
+        labelKey: 'connection.useSlowLogs',
+        title: 'Use Slow Logs for Lineage',
+        description: 'Use slow logs to extract lineage.',
+        group: 'connection',
+        branch: 'mysql',
+        testId: 'service-superset-db-use-slow-logs',
+        showWhen: supersetConnectionGateMysql,
+      },
+      text('supersetDbQueryHistoryTable', 'connection.queryHistoryTable', {
+        testId: 'service-superset-db-query-history',
+        title: 'Query History Table',
+        description:
+          "Table name to fetch the query history. When set, this overrides the default 'mysql.general_log' (or 'mysql.slow_log' when 'useSlowLogs' is enabled). The custom table must expose columns compatible with the selected log path.",
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: supersetConnectionGateMysql,
+      }),
     ],
   },
   {
@@ -2173,6 +2598,22 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
           { value: 'server', labelKey: 'connection.prefectServer', title: 'Prefect Server' },
         ],
       },
+      {
+        key: 'apiKey',
+        control: 'password',
+        labelKey: 'connection.apiKey',
+        title: 'Prefect API Key',
+        description: 'Prefect Cloud API key for authentication.',
+        group: 'authType',
+        branch: 'cloud',
+        // T-2 (2026-11-20): pin prefectConnection.json requires `apiKey`
+        // in the Cloud branch, ordered before accountId/workspaceId in the
+        // branch's property order.
+        required: true,
+        testId: 'service-api-key',
+        hintKey: 'connection.secretHint',
+        showWhen: { field: 'prefectAuthMode', equals: 'cloud' },
+      },
       requiredText('prefectAccountId', 'connection.prefectAccountId', {
         testId: 'service-prefect-account-id',
         title: 'Account ID',
@@ -2189,18 +2630,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         branch: 'cloud',
         showWhen: { field: 'prefectAuthMode', equals: 'cloud' },
       }),
-      {
-        key: 'apiKey',
-        control: 'password',
-        labelKey: 'connection.apiKey',
-        title: 'Prefect API Key',
-        description: 'Prefect Cloud API key for authentication.',
-        group: 'authType',
-        branch: 'cloud',
-        testId: 'service-api-key',
-        hintKey: 'connection.secretHint',
-        showWhen: { field: 'prefectAuthMode', equals: 'cloud' },
-      },
       {
         key: 'prefectAuthString',
         control: 'password',
@@ -2407,15 +2836,57 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   // (connectionFieldsForType returns no fields for them).
   {
     types: ['Rest'],
-    // Pin restConnection.json: openAPISchemaConnection, token, docURL,
-    // verifySSL, sslConfig.
+    // T-2 (2026-11-20): pin restConnection.json — openAPISchemaConnection
+    // oneOf (OpenAPISchemaURL / OpenAPISchemaFilePath / OpenAPISchemaS3),
+    // token, docURL, apiEndpointFilterPattern (NOT one of the 19 filtered
+    // fields — pin renders it in the connection form), verifySSL, sslConfig.
+    // The S3 branch reuses the shared IAM leaves (authAws* keys, re-gated
+    // onto restSchemaBranch; buildIamAuthType builds them).
     fields: [
+      {
+        key: 'restSchemaBranch',
+        control: 'select',
+        labelKey: 'connection.restSchemaBranch',
+        title: 'OpenAPI Schema Connection',
+        description: 'OpenAPI Schema source config. Either a URL or a file path must be provided.',
+        group: 'openAPISchemaConnection',
+        groupLabel: 'OpenAPI Schema Connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'url',
+        required: true,
+        testId: 'service-rest-schema-type',
+        options: [
+          { value: 'url', title: 'OpenAPISchemaURL' },
+          { value: 'filePath', title: 'OpenAPISchemaFilePath' },
+          { value: 's3', title: 'OpenAPISchemaS3' },
+        ],
+      },
       requiredText('openApiSchemaUrl', 'connection.openApiSchemaUrl', {
         testId: 'service-openapi-schema-url',
         group: 'openAPISchemaConnection',
-        title: 'OpenAPI Schema Connection',
-        description: 'OpenAPI Schema source config. Either a URL or a file path must be provided.',
+        branch: 'url',
+        title: 'OpenAPI Schema URL',
+        description: 'Open API Schema URL.',
+        showWhen: restSchemaGate('url'),
       }),
+      requiredText('openApiSchemaFilePath', 'connection.openApiSchemaFilePath', {
+        testId: 'service-openapi-schema-file-path',
+        group: 'openAPISchemaConnection',
+        branch: 'filePath',
+        title: 'OpenAPI Schema File Path',
+        description: 'Path to a local OpenAPI schema file.',
+        showWhen: restSchemaGate('filePath'),
+      }),
+      requiredText('openApiSchemaS3Url', 'connection.openApiSchemaS3Url', {
+        testId: 'service-openapi-schema-s3-url',
+        group: 'openAPISchemaConnection',
+        branch: 's3',
+        title: 'OpenAPI Schema S3 URL',
+        description:
+          'S3 URL of the OpenAPI schema file (JSON or YAML). Example: https://bucket-name.s3.amazonaws.com/path/to/openapi_schema.json',
+        showWhen: restSchemaGate('s3'),
+      }),
+      ...restS3AwsBranchFields,
       {
         key: 'apiKey',
         control: 'password',
@@ -2431,6 +2902,13 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         title: 'docURL',
         description: 'Documentation URL for the schema.',
       }),
+      {
+        key: 'apiEndpointFilterPattern',
+        control: 'filterPattern',
+        title: 'Default API Endpoint Filter Pattern',
+        description: 'Regex to only fetch api endpoints with names matching the pattern.',
+        testId: 'service-rest-api-endpoint-filter-pattern',
+      },
       {
         ...verifySSLField,
         description: 'Client SSL verification. Make sure to configure the SSLConfig if enabled.',
@@ -2490,10 +2968,14 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   {
     types: ['OpenMetadata'],
     fields: [
-      // W3-3A: A group (openMetadataConnection.json), spec order. The B
-      // group (16 switches) is not modelled (R-W3-3A-2). Several properties
-      // carry no pin title; those keep the i18n label and only the pin
-      // description is attached.
+      // W3-3A: A group (openMetadataConnection.json), spec order. Several
+      // properties carry no pin title; those keep the i18n label and only
+      // the pin description is attached. The B group (13 include* switches
+      // + limitRecords + forceEntityOverwriting + elasticsSearch) is
+      // modelled since T-2 (2026-11-20); `elasticsSearch.type` is
+      // conditionally required (the parent object is optional, `type` is
+      // required when it appears), so the field stays optional and the
+      // builder only emits the object when `type` is set.
       text('clusterName', 'connection.clusterName', {
         testId: 'service-cluster-name',
         description: 'Cluster name to differentiate OpenMetadata Server instance',
@@ -2576,11 +3058,116 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         description: 'OpenMetadata server API version to use.',
       }),
       {
+        key: 'includeTopics',
+        control: 'toggle',
+        labelKey: 'connection.includeTopics',
+        description: 'Include Topics for Indexing',
+        testId: 'service-include-topics',
+      },
+      {
+        key: 'includeTables',
+        control: 'toggle',
+        labelKey: 'connection.includeTables',
+        description: 'Include Tables for Indexing',
+        testId: 'service-include-tables',
+      },
+      {
+        key: 'includeDashboards',
+        control: 'toggle',
+        labelKey: 'connection.includeDashboards',
+        description: 'Include Dashboards for Indexing',
+        testId: 'service-include-dashboards',
+      },
+      {
+        key: 'includePipelines',
+        control: 'toggle',
+        labelKey: 'connection.includePipelines',
+        description: 'Include Pipelines for Indexing',
+        testId: 'service-include-pipelines',
+      },
+      {
+        key: 'includeMlModels',
+        control: 'toggle',
+        labelKey: 'connection.includeMlModels',
+        description: 'Include MlModels for Indexing',
+        testId: 'service-include-ml-models',
+      },
+      {
+        key: 'includeUsers',
+        control: 'toggle',
+        labelKey: 'connection.includeUsers',
+        description: 'Include Users for Indexing',
+        testId: 'service-include-users',
+      },
+      {
+        key: 'includeTeams',
+        control: 'toggle',
+        labelKey: 'connection.includeTeams',
+        description: 'Include Teams for Indexing',
+        testId: 'service-include-teams',
+      },
+      {
+        key: 'includeGlossaryTerms',
+        control: 'toggle',
+        labelKey: 'connection.includeGlossaryTerms',
+        description: 'Include Glossary Terms for Indexing',
+        testId: 'service-include-glossary-terms',
+      },
+      {
+        key: 'includeTags',
+        control: 'toggle',
+        labelKey: 'connection.includeTags',
+        description: 'Include Tags for Indexing',
+        testId: 'service-include-tags',
+      },
+      {
+        key: 'includePolicy',
+        control: 'toggle',
+        labelKey: 'connection.includePolicy',
+        description: 'Include Tags for Policy',
+        testId: 'service-include-policy',
+      },
+      {
+        key: 'includeMessagingServices',
+        control: 'toggle',
+        labelKey: 'connection.includeMessagingServices',
+        description: 'Include Messaging Services for Indexing',
+        testId: 'service-include-messaging-services',
+      },
+      {
         key: 'enableVersionValidation',
         control: 'toggle',
         labelKey: 'connection.enableVersionValidation',
         description: 'Validate Openmetadata Server & Client Version.',
         testId: 'service-enable-version-validation',
+      },
+      {
+        key: 'includeDatabaseServices',
+        control: 'toggle',
+        labelKey: 'connection.includeDatabaseServices',
+        description: 'Include Database Services for Indexing',
+        testId: 'service-include-database-services',
+      },
+      {
+        key: 'includePipelineServices',
+        control: 'toggle',
+        labelKey: 'connection.includePipelineServices',
+        description: 'Include Pipeline Services for Indexing',
+        testId: 'service-include-pipeline-services',
+      },
+      {
+        key: 'limitRecords',
+        control: 'number',
+        labelKey: 'connection.limitRecords',
+        description: 'Limit the number of records for Indexing.',
+        testId: 'service-limit-records',
+      },
+      {
+        key: 'forceEntityOverwriting',
+        control: 'toggle',
+        labelKey: 'connection.forceEntityOverwriting',
+        description: 'Force the overwriting of any entity during the ingestion.',
+        testId: 'service-force-entity-overwriting',
       },
       {
         key: 'omStoreServiceConnection',
@@ -2590,6 +3177,21 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
           'If set to true, when creating a service during the ingestion we will store its Service Connection. Otherwise, the ingestion will create a bare service without connection details.',
         group: 'storeServiceConnection',
         testId: 'service-om-store-service-connection',
+      },
+      text('omElasticSearchType', 'connection.omElasticSearchType', {
+        testId: 'service-om-elasticsearch-type',
+        title: 'ElasticSearch Sink Type',
+        description: 'Type of sink component ex: metadata',
+        group: 'elasticsSearch',
+      }),
+      {
+        key: 'omElasticSearchConfig',
+        control: 'map',
+        labelKey: 'connection.omElasticSearchConfig',
+        title: 'ElasticSearch Sink Config',
+        description: 'key/value pairs to pass to workflow component.',
+        testId: 'service-om-elasticsearch-config',
+        group: 'elasticsSearch',
       },
       {
         key: 'extraHeaders',
@@ -3080,58 +3682,19 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   },
   {
     types: ['GoogleDrive'],
-    // Pin googleDriveConnection.json: credentials (gcpConfig oneOf +
-    // impersonation), delegatedEmail, driveId, includeTeamDrives,
-    // includeGoogleSheets, connectionOptions, connectionArguments.
+    // T-2 (2026-11-20): pin googleDriveConnection.json — credentials
+    // (gcpConfig oneOf + impersonation), delegatedEmail, driveId,
+    // includeTeamDrives, includeGoogleSheets, connectionOptions,
+    // connectionArguments. The credential leaves are the shared `authGcp*`
+    // keys re-gated onto `gcpConfigType` (same leaves as Mysql/VertexAI);
+    // the old JSON-blob fields (credentialsJson / gcpExternalAccountJson)
+    // were a fork invention and are deleted with the change. No leaf is
+    // required: the JSON requires only the `credentials` object itself,
+    // which the variant selector represents (see BENCHMARK.md §6②).
     fields: [
-      // W3-3A: gcpConfig oneOf branches (gcpCredentials.json). A branch input
-      // is required only when its branch is selected — hidden fields are
-      // not rendered, so their required rules do not apply.
       gcpConfigTypeField,
-      {
-        key: 'credentialsJson',
-        control: 'textarea',
-        labelKey: 'connection.credentialsJson',
-        group: 'credentials',
-        branch: 'gcpValues',
-        testId: 'service-credentials-json',
-        required: true,
-        showWhen: GCP_VALUES_GATE,
-      },
-      text('gcpCredentialsPath', 'connection.gcpCredentialsPath', {
-        testId: 'service-gcp-credentials-path',
-        required: true,
-        title: 'Path',
-        description: 'Path of the file containing the GCP credentials info',
-        group: 'credentials',
-        branch: 'gcpCredentialsPath',
-        showWhen: GCP_PATH_GATE,
-      }),
-      {
-        key: 'gcpExternalAccountJson',
-        control: 'textarea',
-        labelKey: 'connection.gcpExternalAccountJson',
-        group: 'credentials',
-        branch: 'gcpExternalAccount',
-        testId: 'service-gcp-external-account-json',
-        required: true,
-        showWhen: GCP_EXTERNAL_GATE,
-      },
-      text('impersonateServiceAccount', 'connection.impersonateServiceAccount', {
-        testId: 'service-impersonate-service-account',
-        title: 'Target Service Account Email',
-        description: 'The impersonated service account email',
-        group: 'credentials',
-      }),
-      {
-        key: 'impersonateLifetime',
-        control: 'number',
-        labelKey: 'connection.impersonateLifetime',
-        title: 'Lifetime',
-        description: 'Number of seconds the delegated credential should be valid',
-        group: 'credentials',
-        testId: 'service-impersonate-lifetime',
-      },
+      ...googleDriveGcpVariantFields,
+      ...googleDriveGcpImpersonateFields,
       text('delegatedEmail', 'connection.delegatedEmail', {
         testId: 'service-delegated-email',
         title: 'Delegated Email',
@@ -3216,7 +3779,9 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
     // Pin elasticSearchConnection.json: hostPort, authType, sslConfig,
     // connectionTimeoutSecs, connectionArguments.
     fields: [
-      hostPort('Host and port of the ElasticSearch service.'),
+      // T-2 (2026-11-20): pin elasticSearchConnection.json has an empty
+      // required array; hostPort is optional in the schema.
+      { ...hostPort('Host and port of the ElasticSearch service.'), required: false },
       elasticSearchAuthModeField,
       {
         ...usernameOptional,
@@ -3474,9 +4039,565 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       },
       {
         ...passwordField,
+        // T-2 (2026-11-20): pin rangerConnection.json requires `password`
+        // in the authType branch.
+        required: true,
         group: 'authType',
         description: 'Ranger password to authenticate to the API.',
       },
+    ],
+  },
+  // --- T-2 (2026-11-20): the ten blocked-C rows. Each group covers its
+  // kind's wizard default type, taken from its official connection schema.
+  // Pin order is followed; the 19 filter-pattern leaves and the hidden
+  // `type` / `supports*` leaves are excluded by the T-2 field-set rules.
+  {
+    types: ['CustomMlModel'],
+    // Pin customMlModelConnection.json: sourcePythonClass,
+    // connectionOptions. Only `type` is required, and it is hidden.
+    fields: [
+      text('sourcePythonClass', 'connection.sourcePythonClass', {
+        testId: 'service-source-python-class',
+        title: 'Source Python Class Name',
+        description: 'Source Python Class Name to instantiated by the ingestion workflow',
+      }),
+      connectionOptionsField,
+    ],
+  },
+  {
+    types: ['SageMaker'],
+    // Pin sageMakerConnection.json: awsConfig (the same 10 leaves as the
+    // S3 awsConfig, same `aws*` form keys; the builder shares the
+    // top-level awsConfig builder with S3). `awsConfig` itself is
+    // required; its only required leaf is awsRegion.
+    fields: [
+      {
+        key: 'awsIamEnabled',
+        control: 'toggle',
+        labelKey: 'connection.awsIamEnabled',
+        title: 'Enable IAM Auth',
+        description:
+          'Enable AWS IAM authentication. When enabled, uses the default credential provider chain (environment variables, instance profile, etc.). Defaults to false for backward compatibility.',
+        group: 'awsConfig',
+        groupLabel: 'AWS Credentials Configuration',
+        groupSchema: { type: 'object' },
+        testId: 'service-sagemaker-aws-iam-enabled',
+      },
+      text('awsAccessKeyId', 'connection.awsAccessKeyId', {
+        testId: 'service-sagemaker-aws-access-key',
+        title: 'AWS Access Key ID',
+        description: 'AWS Access key ID.',
+        group: 'awsConfig',
+      }),
+      {
+        key: 'awsSecretAccessKey',
+        control: 'password',
+        labelKey: 'connection.awsSecretAccessKey',
+        title: 'AWS Secret Access Key',
+        description: 'AWS Secret Access Key.',
+        group: 'awsConfig',
+        testId: 'service-sagemaker-aws-secret-key',
+        hintKey: 'connection.secretHint',
+      },
+      requiredText('awsRegion', 'connection.awsRegion', {
+        testId: 'service-sagemaker-aws-region',
+        title: 'AWS Region',
+        description: 'AWS Region',
+        group: 'awsConfig',
+      }),
+      {
+        key: 'awsSessionToken',
+        control: 'password',
+        labelKey: 'connection.awsSessionToken',
+        title: 'AWS Session Token',
+        description: 'AWS Session Token.',
+        group: 'awsConfig',
+        testId: 'service-sagemaker-aws-session-token',
+      },
+      text('awsEndPointURL', 'connection.awsEndPointURL', {
+        testId: 'service-sagemaker-aws-endpoint',
+        title: 'Endpoint URL',
+        description: 'EndPoint URL for the AWS',
+        group: 'awsConfig',
+      }),
+      text('awsProfileName', 'connection.awsProfileName', {
+        testId: 'service-sagemaker-aws-profile',
+        title: 'Profile Name',
+        description: 'The name of a profile to use with the boto session.',
+        group: 'awsConfig',
+      }),
+      text('assumeRoleArn', 'connection.assumeRoleArn', {
+        testId: 'service-sagemaker-aws-role-arn',
+        title: 'Role Arn for Assume Role',
+        description:
+          'The Amazon Resource Name (ARN) of the role to assume. Required Field in case of Assume Role',
+        group: 'awsConfig',
+      }),
+      text('assumeRoleSessionName', 'connection.assumeRoleSessionName', {
+        testId: 'service-sagemaker-aws-role-session',
+        title: 'Role Session Name for Assume Role',
+        description:
+          'An identifier for the assumed role session. Use the role session name to uniquely identify a session when the same role is assumed by different principals or for different reasons. Required Field in case of Assume Role',
+        group: 'awsConfig',
+      }),
+      text('assumeRoleSourceIdentity', 'connection.assumeRoleSourceIdentity', {
+        testId: 'service-sagemaker-aws-role-source',
+        title: 'Source Identity for Assume Role',
+        description:
+          'The Amazon Resource Name (ARN) of the role to assume. Optional Field in case of Assume Role',
+        group: 'awsConfig',
+      }),
+    ],
+  },
+  {
+    types: ['Sklearn'],
+    // Pin sklearnConnection.json: no form leaves at all (`type` is hidden,
+    // mlModelFilterPattern belongs to the filter step). The empty group
+    // exists so the wizard offers the type with an empty connection form
+    // instead of the blocked read-only prompt.
+    fields: [],
+  },
+  {
+    types: ['AlationSink'],
+    // Pin alationSinkConnection.json: hostPort, authType oneOf (BasicAuth /
+    // ApiAccessTokenAuth — same branches as the Alation API auth),
+    // projectName, paginationLimit, datasourceLinks, verifySSL, sslConfig,
+    // connectionOptions, connectionArguments.
+    fields: [
+      hostPort('Host and port of the Alation service.'),
+      {
+        key: 'alationSinkAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Authentication type for Alation',
+        description: 'Types of methods used to authenticate to the alation instance',
+        group: 'authType',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basicAuth',
+        authNote: true,
+        testId: 'service-alation-sink-auth-type',
+        options: [
+          { value: 'basicAuth', title: 'BasicAuth' },
+          { value: 'apiToken', title: 'ApiAccessTokenAuth' },
+        ],
+      },
+      {
+        ...usernameRequired,
+        description: 'Username to access the service.',
+        group: 'authType',
+        branch: 'basicAuth',
+        showWhen: alationSinkAuthGate('basicAuth'),
+      },
+      {
+        ...basicAuthPasswordField,
+        required: true,
+        description: 'Password to access the service.',
+        branch: 'basicAuth',
+        testId: 'service-alation-sink-password',
+        showWhen: alationSinkAuthGate('basicAuth'),
+      },
+      {
+        key: 'alationSinkAccessToken',
+        control: 'password',
+        labelKey: 'connection.alationSinkAccessToken',
+        title: 'Access Token',
+        description: 'Access Token for the API',
+        group: 'authType',
+        branch: 'apiToken',
+        required: true,
+        testId: 'service-alation-sink-access-token',
+        hintKey: 'connection.secretHint',
+        showWhen: alationSinkAuthGate('apiToken'),
+      },
+      text('projectName', 'connection.projectName', {
+        testId: 'service-alation-sink-project-name',
+        title: 'Project Name',
+        description: 'Project name to create the refreshToken. Can be anything',
+      }),
+      {
+        key: 'paginationLimit',
+        control: 'number',
+        labelKey: 'connection.paginationLimit',
+        title: 'Pagination Limit',
+        description: 'Pagination limit used for Alation APIs pagination',
+        testId: 'service-alation-sink-pagination-limit',
+      },
+      {
+        key: 'datasourceLinks',
+        control: 'map',
+        labelKey: 'connection.datasourceLinks',
+        title: 'Datasource Links',
+        description: 'Add the links between alation datasources and OpenMetadata Database services',
+        testId: 'service-alation-sink-datasource-links',
+      },
+      {
+        ...verifySSLField,
+        description: 'Client SSL verification. Make sure to configure the SSLConfig if enabled.',
+      },
+      ...sslConfigLeavesFor(
+        [
+          ['alationSinkSSLCaCertificate', 'connection.alationSinkSSLCaCertificate', 'service-alation-sink-ssl-ca-certificate'],
+          ['alationSinkSSLCertificate', 'connection.alationSinkSSLCertificate', 'service-alation-sink-ssl-certificate'],
+          ['alationSinkSSLKey', 'connection.alationSinkSSLKey', 'service-alation-sink-ssl-key'],
+        ],
+        false,
+      ),
+      connectionOptionsField,
+      connectionArgumentsField,
+    ],
+  },
+  {
+    types: ['Amundsen'],
+    // Pin amundsenConnection.json: username, password, hostPort (all
+    // required), maxConnectionLifeTime, validateSSL, encrypted. The
+    // username/password leaves carry no pin title; the i18n label + pin
+    // description are attached.
+    fields: [
+      {
+        ...usernameRequired,
+        description: 'username to connect to the Amundsen Neo4j Connection.',
+      },
+      {
+        ...passwordField,
+        required: true,
+        description: 'password to connect to the Amundsen Neo4j Connection.',
+      },
+      hostPort(
+        'Host and port of the Amundsen Neo4j Connection. This expect a URI format like: bolt://localhost:7687.',
+      ),
+      {
+        key: 'maxConnectionLifeTime',
+        control: 'number',
+        labelKey: 'connection.maxConnectionLifeTime',
+        description: 'Maximum connection lifetime for the Amundsen Neo4j Connection.',
+        testId: 'service-amundsen-max-connection-life-time',
+      },
+      {
+        key: 'validateSSL',
+        control: 'toggle',
+        labelKey: 'connection.validateSSL',
+        description: 'Enable SSL validation for the Amundsen Neo4j Connection.',
+        testId: 'service-amundsen-validate-ssl',
+      },
+      {
+        key: 'encrypted',
+        control: 'toggle',
+        labelKey: 'connection.encrypted',
+        description: 'Enable encryption for the Amundsen Neo4j Connection.',
+        testId: 'service-amundsen-encrypted',
+      },
+    ],
+  },
+  {
+    types: ['Atlas'],
+    // Pin atlasConnection.json: username, password, entity_type (all
+    // required), hostPort, databaseServiceName, messagingServiceName
+    // (string arrays), connectionOptions, connectionArguments.
+    fields: [
+      {
+        ...usernameRequired,
+        description:
+          'username to connect  to the Atlas. This user should have privileges to read all the metadata in Atlas.',
+      },
+      {
+        ...passwordField,
+        required: true,
+        description: 'password to connect  to the Atlas.',
+      },
+      // T-2: pin required is [entity_type, username, password] — hostPort
+      // is optional, so the required helper is overridden here.
+      { ...hostPort('Host and port of the Atlas service.'), required: false },
+      {
+        key: 'databaseServiceName',
+        control: 'textarea',
+        labelKey: 'connection.databaseServiceName',
+        description: 'service type of the data source.',
+        schemaType: 'array',
+        testId: 'service-atlas-database-service-name',
+      },
+      {
+        key: 'messagingServiceName',
+        control: 'textarea',
+        labelKey: 'connection.messagingServiceName',
+        description: 'service type of the messaging source',
+        schemaType: 'array',
+        testId: 'service-atlas-messaging-service-name',
+      },
+      text('entity_type', 'connection.entityType', {
+        testId: 'service-atlas-entity-type',
+        title: 'Entity Type',
+        description: 'Name of the Entity Type available in Atlas.',
+        required: true,
+      }),
+      connectionOptionsField,
+      connectionArgumentsField,
+    ],
+  },
+  {
+    types: ['CustomDrive'],
+    // Pin customDriveConnection.json: connectionOptions,
+    // connectionArguments. Nothing is required.
+    fields: [connectionOptionsField, connectionArgumentsField],
+  },
+  {
+    types: ['Sftp'],
+    // Pin sftpConnection.json: host + port are separate leaves (no
+    // hostPort), authType oneOf (Username/Password / Private Key),
+    // rootDirectories (string array, default ['/']),
+    // connectionOptions, connectionArguments, structuredDataFilesOnly,
+    // extractSampleData.
+    fields: [
+      requiredText('sftpHost', 'connection.sftpHost', {
+        testId: 'service-sftp-host',
+        title: 'Host',
+        description: 'SFTP server hostname or IP address',
+      }),
+      {
+        key: 'sftpPort',
+        control: 'number',
+        labelKey: 'connection.sftpPort',
+        title: 'Port',
+        description: 'SFTP server port number',
+        testId: 'service-sftp-port',
+      },
+      {
+        key: 'sftpAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Authentication Type',
+        description: 'Authentication method: username/password or SSH private key',
+        group: 'authType',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'usernamePassword',
+        authNote: true,
+        testId: 'service-sftp-auth-type',
+        options: [
+          { value: 'usernamePassword', title: 'Username/Password Authentication' },
+          { value: 'privateKey', title: 'Private Key Authentication' },
+        ],
+      },
+      {
+        ...usernameRequired,
+        description: 'SFTP username',
+        group: 'authType',
+        branch: 'usernamePassword',
+        showWhen: sftpAuthGate('usernamePassword'),
+      },
+      {
+        ...passwordField,
+        required: true,
+        description: 'SFTP password',
+        group: 'authType',
+        branch: 'usernamePassword',
+        showWhen: sftpAuthGate('usernamePassword'),
+      },
+      {
+        ...usernameRequired,
+        description: 'SFTP username',
+        group: 'authType',
+        branch: 'privateKey',
+        showWhen: sftpAuthGate('privateKey'),
+      },
+      {
+        key: 'sftpPrivateKey',
+        control: 'fileOrInput',
+        labelKey: 'connection.sftpPrivateKey',
+        title: 'Private Key',
+        description: 'SSH private key content in PEM format. Supports RSA, Ed25519, ECDSA, and DSS keys.',
+        group: 'authType',
+        branch: 'privateKey',
+        // T-2 (2026-11-20): pin requires `privateKey` in the key branch;
+        // the edit exemption for fileOrInput secrets (blank-means-keep)
+        // covers the edit case — see missingRequiredConnectionFields.
+        required: true,
+        testId: 'service-sftp-private-key',
+        acceptedFileTypes: ['.pem', '.key'],
+        hintKey: 'connection.secretHint',
+        showWhen: sftpAuthGate('privateKey'),
+      },
+      {
+        key: 'sftpPrivateKeyPassphrase',
+        control: 'password',
+        labelKey: 'connection.sftpPrivateKeyPassphrase',
+        title: 'Private Key Passphrase',
+        description: 'Passphrase for the private key (if encrypted)',
+        group: 'authType',
+        branch: 'privateKey',
+        testId: 'service-sftp-private-key-passphrase',
+        hintKey: 'connection.secretHint',
+        showWhen: sftpAuthGate('privateKey'),
+      },
+      {
+        key: 'rootDirectories',
+        control: 'textarea',
+        labelKey: 'connection.rootDirectories',
+        title: 'Root Directories',
+        description:
+          "List of root directories to scan for files and subdirectories. If not specified, defaults to the user's home directory.",
+        schemaType: 'array',
+        testId: 'service-sftp-root-directories',
+      },
+      connectionOptionsField,
+      connectionArgumentsField,
+      {
+        key: 'structuredDataFilesOnly',
+        control: 'toggle',
+        labelKey: 'connection.structuredDataFilesOnly',
+        title: 'Structured Data Files Only',
+        description:
+          'When enabled, only catalog structured data files (CSV, TSV) that can have schema extracted. Non-structured files like images, PDFs, videos, etc. will be skipped.',
+        testId: 'service-sftp-structured-data-files-only',
+      },
+      {
+        key: 'extractSampleData',
+        control: 'toggle',
+        labelKey: 'connection.extractSampleData',
+        title: 'Extract Sample Data',
+        description:
+          'When enabled, extract sample data from structured files (CSV, TSV). This is disabled by default to avoid performance overhead.',
+        testId: 'service-sftp-extract-sample-data',
+      },
+    ],
+  },
+  {
+    types: ['CustomSearch'],
+    // Pin customSearchConnection.json: sourcePythonClass,
+    // connectionOptions. Only `type` is required, and it is hidden.
+    fields: [
+      text('sourcePythonClass', 'connection.sourcePythonClass', {
+        testId: 'service-source-python-class',
+        title: 'Source Python Class Name',
+        description: 'Source Python Class Name to instantiated by the ingestion workflow',
+      }),
+      connectionOptionsField,
+    ],
+  },
+  {
+    types: ['OpenSearch'],
+    // Pin openSearchConnection.json: hostPort, authType oneOf (Basic
+    // Authentication / AWSCredentials), verifySSL, sslConfig
+    // (certificates oneOf — the same shape as ElasticSearch),
+    // connectionTimeoutSecs, connectionArguments. Nothing is required at
+    // the top level; the AWS branch requires awsRegion.
+    fields: [
+      // T-2: pin has no required array — hostPort is optional.
+      { ...hostPort('Host and port of the OpenSearch service.'), required: false },
+      {
+        key: 'openSearchAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Auth Configuration Type',
+        description: 'Choose Auth Config Type.',
+        group: 'authType',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basicAuth',
+        authNote: true,
+        testId: 'service-opensearch-auth-type',
+        options: [
+          { value: 'basicAuth', title: 'Basic Authentication' },
+          { value: 'awsCredentials', title: 'AWSCredentials' },
+        ],
+      },
+      {
+        ...usernameOptional,
+        description: 'Elastic Search Username for Login',
+        group: 'authType',
+        branch: 'basicAuth',
+        showWhen: openSearchAuthGate('basicAuth'),
+      },
+      {
+        ...passwordField,
+        description: 'Elastic Search Password for Login',
+        group: 'authType',
+        branch: 'basicAuth',
+        showWhen: openSearchAuthGate('basicAuth'),
+      },
+      ...openSearchAwsBranchFields,
+      {
+        ...verifySSLField,
+        description: 'Client SSL verification. Make sure to configure the SSLConfig if enabled.',
+      },
+      sslCertModeField,
+      text('sslCaCertPath', 'connection.sslCaCertPath', {
+        testId: 'service-opensearch-ssl-ca-cert-path',
+        title: 'CA Certificate Path',
+        description: 'CA Certificate Path',
+        group: 'sslConfig',
+        branch: 'paths',
+        showWhen: ES_SSL_PATHS_GATE,
+      }),
+      text('sslClientCertPath', 'connection.sslClientCertPath', {
+        testId: 'service-opensearch-ssl-client-cert-path',
+        title: 'Client Certificate Path',
+        description: 'Client Certificate Path',
+        group: 'sslConfig',
+        branch: 'paths',
+        showWhen: ES_SSL_PATHS_GATE,
+      }),
+      text('sslPrivateKeyPath', 'connection.sslPrivateKeyPath', {
+        testId: 'service-opensearch-ssl-private-key-path',
+        title: 'Private Key Path',
+        description: 'Private Key Path',
+        group: 'sslConfig',
+        branch: 'paths',
+        showWhen: ES_SSL_PATHS_GATE,
+      }),
+      {
+        key: 'sslCaCertValue',
+        control: 'fileOrInput',
+        labelKey: 'connection.sslCaCertValue',
+        title: 'CA Certificate Value',
+        description: 'CA Certificate Value',
+        group: 'sslConfig',
+        branch: 'values',
+        testId: 'service-opensearch-ssl-ca-cert-value',
+        acceptedFileTypes: ['.pem', '.crt', '.cer'],
+        hintKey: 'connection.secretHint',
+        showWhen: ES_SSL_VALUES_GATE,
+      },
+      {
+        key: 'sslClientCertValue',
+        control: 'fileOrInput',
+        labelKey: 'connection.sslClientCertValue',
+        title: 'Client Certificate Value',
+        description: 'Client Certificate Value',
+        group: 'sslConfig',
+        branch: 'values',
+        testId: 'service-opensearch-ssl-client-cert-value',
+        acceptedFileTypes: ['.pem', '.crt', '.cer'],
+        hintKey: 'connection.secretHint',
+        showWhen: ES_SSL_VALUES_GATE,
+      },
+      {
+        key: 'sslPrivateKeyValue',
+        control: 'fileOrInput',
+        labelKey: 'connection.sslPrivateKeyValue',
+        title: 'Private Key Value',
+        description: 'Private Key Value',
+        group: 'sslConfig',
+        branch: 'values',
+        testId: 'service-opensearch-ssl-private-key-value',
+        acceptedFileTypes: ['.pem', '.key'],
+        hintKey: 'connection.secretHint',
+        showWhen: ES_SSL_VALUES_GATE,
+      },
+      text('sslStagingDir', 'connection.sslStagingDir', {
+        testId: 'service-opensearch-ssl-staging-dir',
+        title: 'Staging Directory Path',
+        description: 'Staging Directory Path',
+        group: 'sslConfig',
+        branch: 'values',
+        showWhen: ES_SSL_VALUES_GATE,
+      }),
+      {
+        key: 'connectionTimeoutSecs',
+        control: 'number',
+        labelKey: 'connection.connectionTimeoutSecs',
+        title: 'Connection Timeout in Seconds',
+        description: 'Connection Timeout in Seconds',
+        testId: 'service-opensearch-connection-timeout-secs',
+      },
+      connectionArgumentsField,
     ],
   },
 ];
@@ -3677,7 +4798,15 @@ export function missingRequiredConnectionFields(
       return false;
     }
     const value = record[field.key as string] ?? field.defaultValue;
-    if (!isCreate && field.control === 'password' && !isFilledValue(value)) {
+    // T-2 (2026-11-20): the edit exemption covers secret controls, not
+    // just `password` — a required `fileOrInput` secret (Sftp privateKey)
+    // is blank-means-keep on edit, same as a password leaf. Create still
+    // requires it (isCreate=true skips the exemption).
+    if (
+      !isCreate &&
+      (field.control === 'password' || field.control === 'fileOrInput') &&
+      !isFilledValue(value)
+    ) {
       return false;
     }
     return !isFilledValue(value);
@@ -3979,22 +5108,26 @@ export function buildGcpVariant(
   // config (Alation `connection.authType`, VertexAI `credentials`) pass
   // their nested variant object directly.
   prevGcpConfig?: unknown,
+  // T-2 (2026-11-20): the selector key that chose the variant. The Mysql /
+  // Alation / VertexAI callers read `authGcpConfigBranch`; GoogleDrive
+  // reads its own `gcpConfigType` selector and passes it explicitly.
+  variant?: ServiceFormValues['authGcpConfigBranch'],
 ): Record<string, unknown> {
-  const variant = form.authGcpConfigBranch ?? 'gcpValues';
+  const selected = variant ?? form.authGcpConfigBranch ?? 'gcpValues';
   const prevVariant =
     prevGcpConfig && typeof prevGcpConfig === 'object' &&
-    (prevGcpConfig as Record<string, unknown>)['type'] === GCP_VARIANT_TYPES[variant]
+    (prevGcpConfig as Record<string, unknown>)['type'] === GCP_VARIANT_TYPES[selected]
       ? (prevGcpConfig as Record<string, unknown>)
       : undefined;
   const projectId = trimmed(form.authGcpProjectId) || undefined;
-  if (variant === 'gcpCredentialsPath') {
+  if (selected === 'gcpCredentialsPath') {
     return {
       type: GCP_VARIANT_TYPES.gcpCredentialsPath,
       ...(trimmed(form.authGcpPath) ? { path: trimmed(form.authGcpPath) } : {}),
       ...(projectId ? { projectId } : {}),
     };
   }
-  if (variant === 'gcpExternalAccount') {
+  if (selected === 'gcpExternalAccount') {
     let credentialSource: Record<string, unknown> | undefined;
     const raw = trimmed(form.authGcpCredentialSource);
     if (raw) {
@@ -4017,7 +5150,7 @@ export function buildGcpVariant(
       ...(credentialSource ? { credentialSource } : {}),
     };
   }
-  if (variant === 'gcpADC') {
+  if (selected === 'gcpADC') {
     return {
       type: GCP_VARIANT_TYPES.gcpADC,
       ...(projectId ? { projectId } : {}),
@@ -4056,11 +5189,15 @@ export function buildGcpImpersonateServiceAccount(
   form: ServiceFormValues,
 ): { impersonateServiceAccount?: string; lifetime?: number } | undefined {
   const email = trimmed(form.authGcpImpersonateEmail);
-  if (!email && typeof form.authGcpImpersonateLifetime !== 'number') {
+  // T-2 (2026-11-20): an impersonate block without an email is meaningless
+  // — a bare lifetime must not be emitted. (The create form prefills the
+  // pin-default lifetime 3600, so without this guard every GCP build
+  // would carry a lifetime-only impersonate block.)
+  if (!email) {
     return undefined;
   }
   return {
-    ...(email ? { impersonateServiceAccount: email } : {}),
+    impersonateServiceAccount: email,
     ...(typeof form.authGcpImpersonateLifetime === 'number'
       ? { lifetime: form.authGcpImpersonateLifetime }
       : {}),
@@ -4186,6 +5323,10 @@ function hydrateGcpVariantForm(
   variant: unknown,
   impersonate: { impersonateServiceAccount?: string; lifetime?: number } | undefined,
   enableIamAuth?: boolean,
+  // T-2 (2026-11-20): the selector key that holds the variant. Mysql /
+  // Alation / VertexAI use `authGcpConfigBranch`; GoogleDrive uses its
+  // own `gcpConfigType` selector.
+  branchKey: 'authGcpConfigBranch' | 'gcpConfigType' = 'authGcpConfigBranch',
 ): void {
   if (typeof enableIamAuth === 'boolean') {
     form.authGcpEnableIamAuth = enableIamAuth;
@@ -4198,7 +5339,7 @@ function hydrateGcpVariantForm(
     (Object.entries(GCP_VARIANT_TYPES).find(([, type]) => type === typeValue)?.[0] as
       | ServiceFormValues['authGcpConfigBranch']
       | undefined) ?? 'gcpValues';
-  form.authGcpConfigBranch = branch;
+  form[branchKey] = branch;
   if (variant && typeof variant === 'object') {
     const record = variant as Record<string, unknown>;
     const projectId = record['projectId'];
@@ -4299,6 +5440,77 @@ export function hydrateAuthBranchForm(
     }
     return form;
   }
+  // T-2 (2026-11-20): GoogleDrive nests the same GCP oneOf under
+  // `credentials.gcpConfig` (googleDriveConnection.json). The variant
+  // leaves refill the shared `authGcp*` keys and the selector refills
+  // `gcpConfigType` (branchKey). A legacy bare service-account JSON (no
+  // gcpConfig wrapper) refills as the variant itself, so an edit-save
+  // re-emits it per-leaf instead of dropping it.
+  if (serviceType === 'GoogleDrive') {
+    const credentials = storedConfig.credentials;
+    if (credentials && typeof credentials === 'object') {
+      const gcpConfig = credentials.gcpConfig;
+      const variant =
+        gcpConfig && typeof gcpConfig === 'object' && !Array.isArray(gcpConfig)
+          ? gcpConfig
+          : credentials;
+      hydrateGcpVariantForm(
+        form,
+        variant,
+        credentials.gcpImpersonateServiceAccount,
+        undefined,
+        'gcpConfigType',
+      );
+    }
+    return form;
+  }
+  // T-2 (2026-11-20): Superset nests the same authType oneOf under
+  // `connection.authType` (supersetConnection.json) — the Alation
+  // pattern, with the `supersetDbAuthBranch` selector.
+  if (serviceType === 'Superset') {
+    const nested = storedConfig.connection?.authType;
+    if (nested?.gcpConfig) {
+      form.supersetDbAuthBranch = 'gcp';
+      hydrateGcpVariantForm(
+        form,
+        nested.gcpConfig.gcpConfig,
+        nested.gcpConfig.gcpImpersonateServiceAccount,
+        nested.enableIamAuth,
+      );
+    } else if (nested?.awsConfig) {
+      form.supersetDbAuthBranch = 'iam';
+      hydrateAwsAuthForm(form, nested.awsConfig);
+    } else if (nested?.azureConfig) {
+      form.supersetDbAuthBranch = 'azure';
+      hydrateAzureAuthForm(form, nested.azureConfig);
+    } else {
+      form.supersetDbAuthBranch = 'basic';
+    }
+    return form;
+  }
+  // T-2 (2026-11-20): Rest nests the AWSCredentials under
+  // `openAPISchemaConnection.awsCredentials` (restConnection.json); the
+  // shared `authAws*` keys refill from it. The branch selector refills
+  // in formValuesFromService.
+  if (serviceType === 'Rest') {
+    const s3 = storedConfig.openAPISchemaConnection as
+      | { awsCredentials?: AwsCredentialsConfig }
+      | undefined;
+    if (s3?.awsCredentials) {
+      hydrateAwsAuthForm(form, s3.awsCredentials);
+    }
+    return form;
+  }
+  // T-2 (2026-11-20): OpenSearch carries a top-level authType oneOf
+  // (openSearchConnection.json); the AWS branch refills the shared
+  // `authAws*` keys. The selector refills in formValuesFromService.
+  if (serviceType === 'OpenSearch') {
+    const auth = storedConfig.authType;
+    if (auth?.awsConfig) {
+      hydrateAwsAuthForm(form, auth.awsConfig);
+    }
+    return form;
+  }
   return form;
 }
 
@@ -4358,6 +5570,30 @@ export function clearInactiveAlationDbAuthBranchFields(
 }
 
 /**
+ * T-2 (2026-11-20): Superset nested auth selector (`supersetDbAuthBranch`) —
+ * the same wipe as the Alation nested selector. The nested basic password
+ * has its own key (`supersetDbPassword` — top-level `password` is the
+ * Superset API auth, not the nested database auth).
+ */
+export function clearInactiveSupersetDbAuthBranchFields(
+  form: ServiceFormValues,
+  activeBranch: string,
+): void {
+  const record = form as unknown as Record<string, unknown>;
+  if (activeBranch !== 'basic') {
+    record['supersetDbPassword'] = undefined;
+  }
+  for (const branch of ['iam', 'azure', 'gcp'] as const) {
+    if (branch === activeBranch) {
+      continue;
+    }
+    for (const key of AUTH_BRANCH_KEY_SETS[branch] ?? []) {
+      record[key as string] = undefined;
+    }
+  }
+}
+
+/**
  * Generic branch sanitize for the other oneOf selectors (authMode,
  * elasticSearchAuthMode, prefectAuthMode, gcpConfigType, sslCertMode,
  * authGcpConfigBranch): clear fields tagged with a branch other than the
@@ -4398,6 +5634,13 @@ const STORED_FILE_FIELD_PATHS: Readonly<Record<string, readonly string[]>> = {
   supersetSSLCaCertificate: ['connection', 'sslConfig', 'caCertificate'],
   supersetSSLCertificate: ['connection', 'sslConfig', 'sslCertificate'],
   supersetSSLKey: ['connection', 'sslConfig', 'sslKey'],
+  supersetDbSslCaCertificate: ['connection', 'sslConfig', 'caCertificate'],
+  supersetDbSslCertificate: ['connection', 'sslConfig', 'sslCertificate'],
+  supersetDbSslKey: ['connection', 'sslConfig', 'sslKey'],
+  alationSinkSSLCaCertificate: ['sslConfig', 'caCertificate'],
+  alationSinkSSLCertificate: ['sslConfig', 'sslCertificate'],
+  alationSinkSSLKey: ['sslConfig', 'sslKey'],
+  sftpPrivateKey: ['authType', 'privateKey'],
   alationDbSslCaCertificate: ['connection', 'sslConfig', 'caCertificate'],
   alationDbSslCertificate: ['connection', 'sslConfig', 'sslCertificate'],
   alationDbSslKey: ['connection', 'sslConfig', 'sslKey'],
@@ -4420,7 +5663,8 @@ export function hasStoredFileFieldValue(
   formKey: string,
   // `authGcpPrivateKey` lives under a different parent per type: the Mysql
   // top-level authType (default path), the Alation nested
-  // `connection.authType`, and the VertexAI `credentials` object.
+  // `connection.authType`, the VertexAI `credentials` object, and the
+  // GoogleDrive `credentials.gcpConfig` object.
   serviceType?: string,
 ): boolean {
   const path =
@@ -4428,7 +5672,9 @@ export function hasStoredFileFieldValue(
       ? ['credentials', 'gcpConfig', 'privateKey']
       : formKey === 'authGcpPrivateKey' && serviceType === 'Alation'
         ? ['connection', 'authType', 'gcpConfig', 'gcpConfig', 'privateKey']
-        : STORED_FILE_FIELD_PATHS[formKey];
+        : formKey === 'authGcpPrivateKey' && serviceType === 'GoogleDrive'
+          ? ['credentials', 'gcpConfig', 'privateKey']
+          : STORED_FILE_FIELD_PATHS[formKey];
   if (!path || !storedConfig) {
     return false;
   }

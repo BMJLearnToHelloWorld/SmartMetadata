@@ -121,7 +121,7 @@ describe('ConnectionConfigForm', () => {
     expect(wrapper.find('[data-testid="no-config-available"]').exists()).toBe(false);
   });
 
-  it('renders the static form and test connection for a pending-static row', async () => {
+  it('renders the static form and test connection for a covered row', async () => {
     const { wrapper } = await mountForm({
       formOverrides: { hostPort: 'localhost:5432', username: 'reader', database: 'warehouse' },
     });
@@ -148,30 +148,37 @@ describe('ConnectionConfigForm', () => {
     expect(wrapper.emitted('save')).toBeUndefined();
   });
 
-  it('never emits a save for an empty body, even for a type with an empty schema required set', async () => {
-    // ElasticSearch's schema declares no required fields (precondition
-    // 03 §4.6.1), but the static table marks hostPort required, so the
-    // required rule decides today; the Q4 payload defense in submit()
-    // is the last line for the schema-driven form (U-1) and is covered
-    // at the unit level by connectionBodyIsEmpty.
+  it('submits a minimal ElasticSearch body: no required fields, default timeout', async () => {
+    // T-2 (2026-11-20): elasticSearchConnection.json declares no required
+    // fields, and the static table now matches (hostPort is NOT required —
+    // the old test asserted the pre-T-2 over-strict table). An empty form
+    // therefore builds a schema-valid minimal body: the create form
+    // prefills connectionTimeoutSecs 30, so the Q4 empty-body defense
+    // (which only blocks a bare `{type}` body) does not trigger. The Q4
+    // defense itself is covered at the unit level by connectionBodyIsEmpty.
     const { wrapper } = await mountForm({ kind: 'search', serviceType: 'ElasticSearch' });
     const exposed = wrapper.vm as unknown as { submit: () => boolean };
-    expect(exposed.submit()).toBe(false);
-    expect(wrapper.emitted('save')).toBeUndefined();
+    expect(exposed.submit()).toBe(true);
+    const saves = wrapper.emitted('save') as Array<[Record<string, unknown>]> | undefined;
+    expect(saves).toHaveLength(1);
+    expect(saves?.[0][0]).toEqual({ type: 'ElasticSearch', connectionTimeoutSecs: 30 });
   });
 
-  it('shows the read-only prompt and blocks submit for a blocked row', async () => {
+  it('renders the form for a formerly blocked row now covered by T-2', async () => {
     const { wrapper } = await mountForm({ kind: 'mlmodel', serviceType: 'CustomMlModel' });
-    expect(wrapper.find('[data-testid="no-config-available"]').text()).toBe('Reason C.');
+    expect(wrapper.find('[data-testid="no-config-available"]').exists()).toBe(false);
+    // Custom types never show the test-connection card (pin
+    // shouldTestConnection excludes CUSTOM_CONNECTION_TYPES) — that is
+    // unrelated to coverage; the form itself renders and submit is free.
     expect(wrapper.findComponent(TestConnectionCard).exists()).toBe(false);
     const exposed = wrapper.vm as unknown as {
       submit: () => boolean;
       connectionSubmitBlocked: boolean;
       guardDecision: { formArea: string } | null;
     };
-    expect(exposed.connectionSubmitBlocked).toBe(true);
-    expect(exposed.guardDecision?.formArea).toBe('read-only-prompt');
-    expect(exposed.submit()).toBe(false);
+    expect(exposed.connectionSubmitBlocked).toBe(false);
+    expect(exposed.guardDecision?.formArea).toBe('schema-form');
+    expect(exposed.submit()).toBe(true);
   });
 
   it('passes through for WEBHOOK now that it has no ledger row (A2)', async () => {

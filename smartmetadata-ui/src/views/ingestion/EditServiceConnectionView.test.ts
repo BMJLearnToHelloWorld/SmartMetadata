@@ -481,17 +481,18 @@ describe('EditServiceConnectionView', () => {
     wrapper.unmount();
   });
 
-  it('advances a prompt-area type with the stored connection kept, then leaves patchless', async () => {
-    // A2 (2026-11-19): the fixture was WEBHOOK, which no longer has a
-    // ledger row (out-of-universe, pass-through — no prompt). CustomMlModel
-    // is still a blocked prompt-area row (class C, schema present), so the
-    // read-only prompt flow is unchanged.
+  it('advances a covered CustomMlModel with the stored connection kept, then leaves patchless', async () => {
+    // T-2 (2026-11-20): CustomMlModel flipped from a blocked prompt-area
+    // row (class C) to covered — it now renders its static form
+    // (sourcePythonClass + connectionOptions) instead of the no-config
+    // prompt. The stored type-only config is exactly what the builder
+    // emits for an untouched form, so an unchanged save is an empty patch.
     const { wrapper, router } = await mountAt('/ingestion/services/mlmodel/c1/connection');
     await waitFor(
-      () => wrapper.find('[data-testid="no-config-available"]').exists(),
-      'connection prompt',
+      () => wrapper.find('[data-testid="service-source-python-class"]').exists(),
+      'CustomMlModel form',
     );
-    expect(wrapper.find('[data-testid="service-host-port"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="no-config-available"]').exists()).toBe(false);
     await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
     await flushPromises();
     await wrapper.vm.$nextTick();

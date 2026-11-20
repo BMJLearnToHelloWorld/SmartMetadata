@@ -260,8 +260,8 @@ describe('connectionFields', () => {
       'clientId',
       'clientSecret',
       'azureClientId',
-      'azureTenantId',
       'azureClientSecret',
+      'azureTenantId',
       'httpPath',
       'catalog',
       'databaseSchema',
@@ -282,8 +282,8 @@ describe('connectionFields', () => {
       'clientId',
       'clientSecret',
       'azureClientId',
-      'azureTenantId',
       'azureClientSecret',
+      'azureTenantId',
       'httpPath',
       'catalog',
       'databaseSchema',
@@ -305,10 +305,19 @@ describe('connectionFields', () => {
   it('covers every supported service type with at least one field', () => {
     const types = new Set(CONNECTION_FIELD_GROUPS.flatMap((group) => group.types));
     // 18 pre-existing types + the eight kinds' default types (A9) + the
-    // five A-class types (A2, 2026-11-19).
-    expect(types.size).toBe(31);
+    // five A-class types (A2, 2026-11-19) + the ten blocked-C rows
+    // (T-2, 2026-11-20).
+    expect(types.size).toBe(41);
     for (const type of types) {
-      expect(connectionFieldsForType(type).length).toBeGreaterThan(0);
+      if (type === 'Sklearn') {
+        // T-2: sklearnConnection.json has no form leaves (only `type` +
+        // filter patterns + capability flags) — the empty group IS the
+        // coverage; the type-only payload is valid (see the Q4 exemption
+        // in buildServiceConnection).
+        expect(connectionFieldsForType(type)).toEqual([]);
+      } else {
+        expect(connectionFieldsForType(type).length).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -318,7 +327,7 @@ describe('connectionFields', () => {
       'registryUri',
     ]);
     expect(connectionFieldsForType('OpenMetadata').map((field) => field.key)).toContain('hostPort');
-    expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toContain('credentialsJson');
+    expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toContain('authGcpPrivateKey');
     expect(connectionFieldsForType('ElasticSearch').map((field) => field.key)).toContain('hostPort');
     expect(connectionFieldsForType('OpenAI').map((field) => field.key)).toContain('apiKey');
     expect(connectionFieldsForType('Mcp').map((field) => field.key)).toContain('registryUrl');
@@ -328,9 +337,14 @@ describe('connectionFields', () => {
       'password',
     ]);
     expect(connectionFieldsForType('Rest').map((field) => field.key)).toContain('openApiSchemaUrl');
+    // T-2 (2026-11-20): Atlas / Sftp / OpenSearch / SageMaker landed
+    // with the blocked-C rows — they are no longer form-less.
+    for (const type of ['Atlas', 'Sftp', 'OpenSearch', 'SageMaker']) {
+      expect(connectionFieldsForType(type).length).toBeGreaterThan(0);
+    }
     // Non-default types in those kinds stay form-less: the wizard must
     // block creation for them rather than send an undefined connection.
-    for (const type of ['Anthropic', 'Atlas', 'Sftp', 'OpenSearch', 'WEBHOOK', 'SageMaker', 'CustomLLM']) {
+    for (const type of ['Anthropic', 'WEBHOOK', 'CustomLLM']) {
       expect(connectionFieldsForType(type)).toEqual([]);
     }
   });
@@ -469,8 +483,12 @@ describe('connectionFields', () => {
   });
 
   it('returns the tier 2 Superset/S3/Prefect field sets in spec order (W2-5 lean-forms)', () => {
+    // T-2 (2026-11-20): the nested `connection` oneOf — the API branch
+    // plus the Postgres / Mysql database branches (shared IAM / Azure /
+    // GCP leaves appear once, gated by the branch selectors).
     expect(connectionFieldsForType('Superset').map((field) => field.key)).toEqual([
       'hostPort',
+      'supersetConnectionBranch',
       'provider',
       'username',
       '',
@@ -479,6 +497,72 @@ describe('connectionFields', () => {
       'supersetSSLCaCertificate',
       'supersetSSLCertificate',
       'supersetSSLKey',
+      'supersetDbScheme',
+      'supersetDbUsername',
+      'supersetDbAuthBranch',
+      'supersetDbPassword',
+      'authAwsEnabled',
+      'authAwsAccessKeyId',
+      'authAwsSecretAccessKey',
+      'authAwsRegion',
+      'authAwsSessionToken',
+      'authAwsEndPointURL',
+      'authAwsProfileName',
+      'authAssumeRoleArn',
+      'authAssumeRoleSessionName',
+      'authAssumeRoleSourceIdentity',
+      'authAzureClientId',
+      'authAzureClientSecret',
+      'authAzureTenantId',
+      'authAzureAccountName',
+      'authAzureVaultName',
+      'authAzureScopes',
+      'supersetDbHostPort',
+      'supersetDbDatabase',
+      'supersetDbIngestAllDatabases',
+      'supersetDbSslMode',
+      'supersetDbSslCaCertificate',
+      'supersetDbSslCertificate',
+      'supersetDbSslKey',
+      'supersetDbClassificationName',
+      'supersetDbQueryStatementSource',
+      'supersetDbConnectionOptions',
+      'supersetDbConnectionArguments',
+      'supersetDbScheme',
+      'supersetDbUsername',
+      'supersetDbAuthBranch',
+      'authGcpPassword',
+      'authGcpEnableIamAuth',
+      'authGcpConfigBranch',
+      'authGcpProjectId',
+      'authGcpPrivateKeyId',
+      'authGcpPrivateKey',
+      'authGcpClientEmail',
+      'authGcpClientId',
+      'authGcpAuthUri',
+      'authGcpTokenUri',
+      'authGcpAuthProviderX509CertUrl',
+      'authGcpClientX509CertUrl',
+      'authGcpUniverseDomain',
+      'authGcpPath',
+      'authGcpProjectId',
+      'authGcpAudience',
+      'authGcpSubjectTokenType',
+      'authGcpTokenUrl',
+      'authGcpCredentialSource',
+      'authGcpProjectId',
+      'authGcpImpersonateEmail',
+      'authGcpImpersonateLifetime',
+      'supersetDbHostPort',
+      'supersetDbDatabaseName',
+      'supersetDbDatabaseSchema',
+      'supersetDbSslCaCertificate',
+      'supersetDbSslCertificate',
+      'supersetDbSslKey',
+      'supersetDbConnectionOptions',
+      'supersetDbConnectionArguments',
+      'supersetDbUseSlowLogs',
+      'supersetDbQueryHistoryTable',
     ]);
     // S-10: S3 follows the pin awsCredentials.json order — `enabled`
     // first, `awsRegion` after the secret key.
@@ -502,9 +586,9 @@ describe('connectionFields', () => {
     expect(connectionFieldsForType('Prefect').map((field) => field.key)).toEqual([
       'hostPort',
       'prefectAuthMode',
+      'apiKey',
       'prefectAccountId',
       'prefectWorkspaceId',
-      'apiKey',
       'prefectAuthString',
       'numberOfStatus',
       'verifySSL',
@@ -530,15 +614,33 @@ describe('connectionFields', () => {
   });
 
   it('lists the tier 3A fields in spec order, with the spec oneOf gates (W3-3A)', () => {
+    // T-2 (2026-11-20): the openAPISchemaConnection oneOf (URL /
+    // FilePath / S3) plus the apiEndpointFilterPattern leaf.
     expect(connectionFieldsForType('Rest').map((field) => field.key)).toEqual([
+      'restSchemaBranch',
       'openApiSchemaUrl',
+      'openApiSchemaFilePath',
+      'openApiSchemaS3Url',
+      'authAwsEnabled',
+      'authAwsAccessKeyId',
+      'authAwsSecretAccessKey',
+      'authAwsRegion',
+      'authAwsSessionToken',
+      'authAwsEndPointURL',
+      'authAwsProfileName',
+      'authAssumeRoleArn',
+      'authAssumeRoleSessionName',
+      'authAssumeRoleSourceIdentity',
       'apiKey',
       'docURL',
+      'apiEndpointFilterPattern',
       'verifySSL',
       'restSSLCaCertificate',
       'restSSLCertificate',
       'restSSLKey',
     ]);
+    // T-2 (2026-11-20): the B group (13 include* switches,
+    // limitRecords, forceEntityOverwriting, elasticsSearch) in pin order.
     expect(connectionFieldsForType('OpenMetadata').map((field) => field.key)).toEqual([
       'clusterName',
       'hostPort',
@@ -551,17 +653,50 @@ describe('connectionFields', () => {
       'secretsManagerProvider',
       'secretsManagerLoader',
       'apiVersion',
+      'includeTopics',
+      'includeTables',
+      'includeDashboards',
+      'includePipelines',
+      'includeMlModels',
+      'includeUsers',
+      'includeTeams',
+      'includeGlossaryTerms',
+      'includeTags',
+      'includePolicy',
+      'includeMessagingServices',
       'enableVersionValidation',
+      'includeDatabaseServices',
+      'includePipelineServices',
+      'limitRecords',
+      'forceEntityOverwriting',
       'omStoreServiceConnection',
+      'omElasticSearchType',
+      'omElasticSearchConfig',
       'extraHeaders',
     ]);
+    // T-2 (2026-11-20): per-leaf GCP variants on the shared authGcp*
+    // keys (the JSON-blob fields are gone).
     expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toEqual([
       'gcpConfigType',
-      'credentialsJson',
-      'gcpCredentialsPath',
-      'gcpExternalAccountJson',
-      'impersonateServiceAccount',
-      'impersonateLifetime',
+      'authGcpProjectId',
+      'authGcpPrivateKeyId',
+      'authGcpPrivateKey',
+      'authGcpClientEmail',
+      'authGcpClientId',
+      'authGcpAuthUri',
+      'authGcpTokenUri',
+      'authGcpAuthProviderX509CertUrl',
+      'authGcpClientX509CertUrl',
+      'authGcpUniverseDomain',
+      'authGcpPath',
+      'authGcpProjectId',
+      'authGcpAudience',
+      'authGcpSubjectTokenType',
+      'authGcpTokenUrl',
+      'authGcpCredentialSource',
+      'authGcpProjectId',
+      'authGcpImpersonateEmail',
+      'authGcpImpersonateLifetime',
       'delegatedEmail',
       'driveId',
       'includeTeamDrives',
@@ -626,10 +761,10 @@ describe('connectionFields', () => {
     expect(isConnectionFieldVisible(esCertValue, { sslCertMode: 'values' })).toBe(true);
     expect(isConnectionFieldVisible(esCertValue, { sslCertMode: 'paths' })).toBe(false);
     const driveFields = connectionFieldsForType('GoogleDrive');
-    const credentialsJson = driveFields.find((field) => field.key === 'credentialsJson')!;
-    expect(isConnectionFieldVisible(credentialsJson, { gcpConfigType: 'gcpValues' })).toBe(true);
-    expect(isConnectionFieldVisible(credentialsJson, { gcpConfigType: 'gcpADC' })).toBe(false);
-    const credentialsPath = driveFields.find((field) => field.key === 'gcpCredentialsPath')!;
+    const valuesProjectId = driveFields.find((field) => field.key === 'authGcpProjectId')!;
+    expect(isConnectionFieldVisible(valuesProjectId, { gcpConfigType: 'gcpValues' })).toBe(true);
+    expect(isConnectionFieldVisible(valuesProjectId, { gcpConfigType: 'gcpADC' })).toBe(false);
+    const credentialsPath = driveFields.find((field) => field.key === 'authGcpPath')!;
     expect(isConnectionFieldVisible(credentialsPath, { gcpConfigType: 'gcpCredentialsPath' })).toBe(true);
     expect(isConnectionFieldVisible(credentialsPath, { gcpConfigType: 'gcpValues' })).toBe(false);
     for (const field of connectionFieldsForType('Mcp')) {
@@ -2242,5 +2377,1026 @@ describe('A2 JSON-oracle field parity (§1.4 ⑥, covered fix)', () => {
       'mysql',
       'none',
     ]);
+  });
+});
+
+describe('T-2 JSON-oracle field parity (remaining 29 rows)', () => {
+  // Same oracle as the A2 describe above, with HIDDEN expanded to EVERY
+  // `supports*` key: pin DEF_UI_SCHEMA (ServiceUISchema.constant.ts) hides
+  // them all, and the A2 describe only listed supportsMetadataExtraction.
+  // The full leaf sets (nested oneOf expansions) are verified by the lane
+  // tool t2/scripts/compare.py (0 differences); these tests assert the
+  // vitest-level depth per A2 precedent: top-level field set/order,
+  // required, enum/branch-selector options, and branch-visible required.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const loadConnectionJson = (relativePath: string): ConnectionSchemaJson =>
+    JSON.parse(
+      readFileSync(join(here, '../../public/jsons/connectionSchemas', relativePath), 'utf8'),
+    ) as ConnectionSchemaJson;
+
+  interface ConnectionSchemaJson {
+    properties?: Record<
+      string,
+      {
+        title?: string;
+        description?: string;
+        enum?: string[];
+        oneOf?: Array<{ title?: string; required?: string[] }>;
+        properties?: Record<string, { oneOf?: Array<{ title?: string; required?: string[] }> }>;
+      }
+    >;
+    required?: string[];
+  }
+
+  const FILTER_19 = new Set(SERVICE_FILTER_PATTERN_FIELDS as readonly string[]);
+  const isHidden = (key: string): boolean =>
+    key === 'type' || key === 'policyAgentConfig' || key.startsWith('supports');
+  /** JSON top-level props that belong in the connection form, in pin order. */
+  const formProps = (json: ConnectionSchemaJson): string[] =>
+    Object.keys(json.properties ?? {}).filter((key) => !isHidden(key) && !FILTER_19.has(key));
+  const oneOfKeys = (json: ConnectionSchemaJson): string[] =>
+    Object.keys(json.properties ?? {}).filter((key) => json.properties?.[key]?.oneOf);
+  /** Top-level props minus oneOf containers, in pin order. */
+  const scalarProps = (json: ConnectionSchemaJson): string[] =>
+    formProps(json).filter((key) => !oneOfKeys(json).includes(key));
+  const productKeys = (type: string): string[] =>
+    connectionFieldsForType(type).map((field) => field.key as string);
+  /** The scalar props as they appear in the product key list, in order. */
+  const productScalars = (type: string, scalars: string[]): string[] =>
+    productKeys(type).filter((key) => scalars.includes(key));
+  const productRequired = (type: string): string[] => [
+    ...new Set(
+      connectionFieldsForType(type)
+        .filter((field) => field.required)
+        .map((field) => field.key as string),
+    ),
+  ];
+  const fieldsOf = (type: string): readonly ConnectionFieldDef[] => connectionFieldsForType(type);
+  const selector = (type: string, key: string): ConnectionFieldDef | undefined =>
+    fieldsOf(type).find((field) => field.key === key);
+  const optionValues = (field: ConnectionFieldDef | undefined): unknown[] =>
+    field?.options?.map((option) => option.value) ?? [];
+  const optionTitles = (field: ConnectionFieldDef | undefined): unknown[] =>
+    field?.options?.map((option) => option.title) ?? [];
+  const visibleRequired = (type: string, form: Partial<ServiceFormValues>): string[] => [
+    ...new Set(
+      fieldsOf(type)
+        .filter((field) => field.required && field.key && isConnectionFieldVisible(field, form))
+        .map((field) => field.key as string),
+    ),
+  ];
+  /** The ten shared AWS-credential leaves, in pin order, as product keys. */
+  const AWS_KEYS = [
+    'awsIamEnabled',
+    'awsAccessKeyId',
+    'awsSecretAccessKey',
+    'awsRegion',
+    'awsSessionToken',
+    'awsEndPointURL',
+    'awsProfileName',
+    'assumeRoleArn',
+    'assumeRoleSessionName',
+    'assumeRoleSourceIdentity',
+  ];
+  const awsSubsequence = (type: string): string[] =>
+    productKeys(type).filter((key) => AWS_KEYS.includes(key));
+  const sslTriplet = (type: string, prefix: string): string[] =>
+    productKeys(type).filter((key) =>
+      [`${prefix}CaCertificate`, `${prefix}Certificate`, `${prefix}Key`].includes(key),
+    );
+
+  it('Postgres matches postgresConnection.json: scalars, required, auth branches, enums', () => {
+    const json = loadConnectionJson('connections/database/postgresConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'authType',
+      'hostPort',
+      'database',
+      'ingestAllDatabases',
+      'sslMode',
+      'sslConfig',
+      'classificationName',
+      'queryStatementSource',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Postgres', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'username', 'database']);
+    // Union of top-level required + the IAM branch required (awsRegion).
+    expect(productRequired('Postgres')).toEqual(['username', 'authAwsRegion', 'hostPort', 'database']);
+    const branch = selector('Postgres', 'authTypeBranch');
+    expect(optionValues(branch)).toEqual(['basic', 'iam', 'azure']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    expect(visibleRequired('Postgres', {})).toContain('username');
+    expect(visibleRequired('Postgres', {})).toContain('hostPort');
+    expect(visibleRequired('Postgres', {})).toContain('database');
+    expect(visibleRequired('Postgres', { authTypeBranch: 'iam' })).toContain('authAwsRegion');
+    expect(visibleRequired('Postgres', { authTypeBranch: 'basic' })).not.toContain('authAwsRegion');
+    expect(optionValues(selector('Postgres', 'scheme'))).toEqual(
+      json.properties?.['scheme']?.enum,
+    );
+    expect(optionValues(selector('Postgres', 'sslMode'))).toEqual(
+      json.properties?.['sslMode']?.enum,
+    );
+    expect(sslTriplet('Postgres', 'ssl')).toEqual(['sslCaCertificate', 'sslCertificate', 'sslKey']);
+  });
+
+  it('Mysql matches mysqlConnection.json: scalars, required, auth branches incl. GCP', () => {
+    const json = loadConnectionJson('connections/database/mysqlConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'authType',
+      'hostPort',
+      'databaseName',
+      'databaseSchema',
+      'sslConfig',
+      'connectionOptions',
+      'connectionArguments',
+      'useSlowLogs',
+      'queryHistoryTable',
+    ]);
+    expect(productScalars('Mysql', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'username']);
+    expect(productRequired('Mysql')).toEqual(['username', 'authAwsRegion', 'hostPort']);
+    const branch = selector('Mysql', 'authTypeBranch');
+    expect(optionValues(branch)).toEqual(['basic', 'iam', 'azure', 'gcp']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    expect(optionValues(selector('Mysql', 'scheme'))).toEqual(json.properties?.['scheme']?.enum);
+    // The IAM leaves are only visible-required on the iam branch; the GCP
+    // variant selector only exists on the gcp auth branch, and no GCP leaf
+    // is required there.
+    expect(visibleRequired('Mysql', { authTypeBranch: 'iam' })).toContain('authAwsRegion');
+    expect(visibleRequired('Mysql', { authTypeBranch: 'gcp' })).not.toContain('authGcpPrivateKey');
+  });
+
+  it('Snowflake matches snowflakeConnection.json: flat required, synthesized auth selector', () => {
+    const json = loadConnectionJson('connections/database/snowflakeConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'password',
+      'account',
+      'role',
+      'database',
+      'warehouse',
+      'queryTag',
+      'accountUsageSchema',
+      'systemMetricsBatchSize',
+      'privateKey',
+      'snowflakePrivatekeyPassphrase',
+      'includeTransientTables',
+      'includeStreams',
+      'includeStages',
+      'includeSemanticViews',
+      'clientSessionKeepAlive',
+      'useAccessHistory',
+      'accessHistoryChunkSize',
+      'connectionOptions',
+      'connectionArguments',
+      'creditCost',
+      'snowflakeSourceHost',
+    ]);
+    expect(productScalars('Snowflake', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['username', 'account', 'warehouse']);
+    expect(productRequired('Snowflake')).toEqual(['username', 'account', 'warehouse']);
+    // The JSON has no authType: pin getSchemaWithSynthesizedAuthType
+    // synthesizes the Password / Key-pair selector from the flat secrets.
+    expect(optionValues(selector('Snowflake', 'authTypeBranch'))).toEqual(['password', 'keyPair']);
+    expect(visibleRequired('Snowflake', {})).toContain('username');
+    expect(visibleRequired('Snowflake', {})).toContain('account');
+    expect(visibleRequired('Snowflake', {})).toContain('warehouse');
+    // Known EXTRA, documented: the pin schema HAS policyAgentConfig but
+    // DEF_UI_SCHEMA hides it from the form; the product renders the four
+    // leaves and serializes them (connections.test.ts verifies the payload
+    // defaults per type). Required is unaffected.
+    for (const key of [
+      'policyAgentEnabled',
+      'policyAgentSupportsColumnAccess',
+      'policyAgentSupportsFullAccess',
+      'policyAgentSupportsMaskedAccess',
+    ]) {
+      expect(productKeys('Snowflake')).toContain(key);
+    }
+  });
+
+  it('Databricks matches databricksConnection.json: auth branches, branch required, order', () => {
+    const json = loadConnectionJson('connections/database/databricksConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'hostPort',
+      'authType',
+      'httpPath',
+      'catalog',
+      'databaseSchema',
+      'connectionTimeout',
+      'queryHistoryTable',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Databricks', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'httpPath', 'authType']);
+    expect(productRequired('Databricks')).toEqual([
+      'hostPort',
+      'authMode',
+      'password',
+      'clientId',
+      'clientSecret',
+      'azureClientId',
+      'azureClientSecret',
+      'azureTenantId',
+      'httpPath',
+    ]);
+    const mode = selector('Databricks', 'authMode');
+    expect(optionValues(mode)).toEqual(['pat', 'oauth', 'azure']);
+    expect(optionTitles(mode)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    // Branch required arrays come from the JSON oneOf itself.
+    const [pat, oauth, azure] = json.properties?.['authType']?.oneOf ?? [];
+    expect(pat?.required).toEqual(['token']);
+    expect(oauth?.required).toEqual(['clientId', 'clientSecret']);
+    expect(azure?.required).toEqual(['azureClientId', 'azureClientSecret', 'azureTenantId']);
+    expect(visibleRequired('Databricks', { authMode: 'pat' })).toContain('password');
+    expect(visibleRequired('Databricks', { authMode: 'oauth' })).toContain('clientId');
+    expect(visibleRequired('Databricks', { authMode: 'oauth' })).toContain('clientSecret');
+    expect(visibleRequired('Databricks', { authMode: 'azure' })).toContain('azureClientId');
+    expect(visibleRequired('Databricks', { authMode: 'azure' })).toContain('azureClientSecret');
+    expect(visibleRequired('Databricks', { authMode: 'azure' })).toContain('azureTenantId');
+    expect(visibleRequired('Databricks', { authMode: 'pat' })).not.toContain('clientId');
+  });
+
+  it('UnityCatalog matches unityCatalogConnection.json: auth branches, no httpPath required', () => {
+    const json = loadConnectionJson('connections/database/unityCatalogConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'hostPort',
+      'authType',
+      'httpPath',
+      'catalog',
+      'databaseSchema',
+      'includeMetricViews',
+      'connectionTimeout',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('UnityCatalog', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'authType']);
+    expect(productRequired('UnityCatalog')).toEqual([
+      'hostPort',
+      'authMode',
+      'password',
+      'clientId',
+      'clientSecret',
+      'azureClientId',
+      'azureClientSecret',
+      'azureTenantId',
+    ]);
+    const mode = selector('UnityCatalog', 'authMode');
+    expect(optionValues(mode)).toEqual(['pat', 'oauth', 'azure']);
+    expect(optionTitles(mode)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    expect(visibleRequired('UnityCatalog', { authMode: 'pat' })).toContain('password');
+    expect(visibleRequired('UnityCatalog', { authMode: 'azure' })).toContain('azureTenantId');
+  });
+
+  it('Doris matches dorisConnection.json: field set and required', () => {
+    const json = loadConnectionJson('connections/database/dorisConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'password',
+      'hostPort',
+      'databaseName',
+      'databaseSchema',
+      'sslConfig',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Doris', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'username']);
+    expect(productRequired('Doris')).toEqual(['username', 'hostPort']);
+    expect(sslTriplet('Doris', 'ssl')).toEqual(['sslCaCertificate', 'sslCertificate', 'sslKey']);
+  });
+
+  it('Mssql matches mssqlConnection.json: only database is required', () => {
+    const json = loadConnectionJson('connections/database/mssqlConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'password',
+      'hostPort',
+      'database',
+      'driver',
+      'encrypt',
+      'trustServerCertificate',
+      'sslConfig',
+      'ingestAllDatabases',
+      'includeSynonyms',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Mssql', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['database']);
+    expect(productRequired('Mssql')).toEqual(['database']);
+    expect(optionValues(selector('Mssql', 'scheme'))).toEqual(json.properties?.['scheme']?.enum);
+  });
+
+  it('Redshift matches redshiftConnection.json: scalars, required, IAM branch', () => {
+    const json = loadConnectionJson('connections/database/redshiftConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'authType',
+      'hostPort',
+      'clusterIdentifier',
+      'workgroupName',
+      'database',
+      'ingestAllDatabases',
+      'sslMode',
+      'sslConfig',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Redshift', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'username', 'database']);
+    expect(productRequired('Redshift')).toEqual(['username', 'authAwsRegion', 'hostPort', 'database']);
+    expect(optionValues(selector('Redshift', 'authTypeBranch'))).toEqual(['basic', 'iam']);
+    expect(optionTitles(selector('Redshift', 'authTypeBranch'))).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+  });
+
+  it('MariaDB matches mariaDBConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/database/mariaDBConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'password',
+      'hostPort',
+      'databaseName',
+      'databaseSchema',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productKeys('MariaDB')).toEqual(formProps(json));
+    expect(json.required).toEqual(['hostPort', 'username']);
+    expect(productRequired('MariaDB')).toEqual(['username', 'hostPort']);
+  });
+
+  it('Greenplum matches greenplumConnection.json: scalars, required, IAM branch', () => {
+    const json = loadConnectionJson('connections/database/greenplumConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'authType',
+      'hostPort',
+      'database',
+      'sslMode',
+      'sslConfig',
+      'ingestAllDatabases',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Greenplum', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'username', 'database']);
+    expect(productRequired('Greenplum')).toEqual(['username', 'authAwsRegion', 'hostPort', 'database']);
+    expect(optionValues(selector('Greenplum', 'authTypeBranch'))).toEqual(['basic', 'iam']);
+  });
+
+  it('Timescale matches timescaleConnection.json: scalars, required, auth branches', () => {
+    const json = loadConnectionJson('connections/database/timescaleConnection.json');
+    expect(formProps(json)).toEqual([
+      'scheme',
+      'username',
+      'authType',
+      'hostPort',
+      'database',
+      'ingestAllDatabases',
+      'sslMode',
+      'sslConfig',
+      'classificationName',
+      'queryStatementSource',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('Timescale', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'username', 'database']);
+    expect(productRequired('Timescale')).toEqual(['username', 'authAwsRegion', 'hostPort', 'database']);
+    expect(optionValues(selector('Timescale', 'authTypeBranch'))).toEqual(['basic', 'iam', 'azure']);
+  });
+
+  it('Kafka matches kafkaConnection.json: scalars, required, enums, ssl triplets', () => {
+    const json = loadConnectionJson('connections/messaging/kafkaConnection.json');
+    expect(formProps(json)).toEqual([
+      'bootstrapServers',
+      'schemaRegistryURL',
+      'saslUsername',
+      'saslPassword',
+      'securityProtocol',
+      'saslMechanism',
+      'basicAuthUserInfo',
+      'consumerConfig',
+      'schemaRegistryConfig',
+      'schemaRegistryTopicSuffixName',
+      'consumerConfigSSL',
+      'schemaRegistrySSL',
+    ]);
+    expect(productScalars('Kafka', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['bootstrapServers']);
+    expect(productRequired('Kafka')).toEqual(['bootstrapServers']);
+    expect(optionValues(selector('Kafka', 'securityProtocol'))).toEqual(
+      json.properties?.['securityProtocol']?.enum,
+    );
+    expect(optionValues(selector('Kafka', 'saslMechanism'))).toEqual(
+      json.properties?.['saslMechanism']?.enum,
+    );
+    expect(sslTriplet('Kafka', 'consumerConfigSSL')).toEqual([
+      'consumerConfigSSLCaCertificate',
+      'consumerConfigSSLCertificate',
+      'consumerConfigSSLKey',
+    ]);
+    expect(sslTriplet('Kafka', 'schemaRegistrySSL')).toEqual([
+      'schemaRegistrySSLCaCertificate',
+      'schemaRegistrySSLCertificate',
+      'schemaRegistrySSLKey',
+    ]);
+  });
+
+  it('Redpanda matches redpandaConnection.json: scalars, required, enums', () => {
+    const json = loadConnectionJson('connections/messaging/redpandaConnection.json');
+    expect(formProps(json)).toEqual([
+      'bootstrapServers',
+      'schemaRegistryURL',
+      'saslUsername',
+      'saslPassword',
+      'schemaRegistryTopicSuffixName',
+      'securityProtocol',
+      'saslMechanism',
+      'basicAuthUserInfo',
+      'consumerConfig',
+      'schemaRegistryConfig',
+    ]);
+    expect(productScalars('Redpanda', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['bootstrapServers']);
+    expect(productRequired('Redpanda')).toEqual(['bootstrapServers']);
+    expect(optionValues(selector('Redpanda', 'securityProtocol'))).toEqual(
+      json.properties?.['securityProtocol']?.enum,
+    );
+  });
+
+  it('Superset matches supersetConnection.json: connection branches and branch required', () => {
+    const json = loadConnectionJson('connections/dashboard/supersetConnection.json');
+    expect(formProps(json)).toEqual(['hostPort', 'connection']);
+    expect(json.required).toEqual(['hostPort', 'connection']);
+    expect(productRequired('Superset')).toEqual([
+      'hostPort',
+      'supersetConnectionBranch',
+      'provider',
+      'username',
+      'password',
+      'supersetDbUsername',
+      'authAwsRegion',
+      'supersetDbHostPort',
+      'supersetDbDatabase',
+    ]);
+    const branch = selector('Superset', 'supersetConnectionBranch');
+    expect(optionValues(branch)).toEqual(['api', 'postgres', 'mysql']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['connection']?.oneOf?.map((entry) => entry.title),
+    );
+    const [api, postgres, mysql] = json.properties?.['connection']?.oneOf ?? [];
+    expect(api?.required).toEqual(['provider', 'password', 'username']);
+    expect(postgres?.required).toEqual(['hostPort', 'username', 'database']);
+    expect(mysql?.required).toEqual(['hostPort', 'username']);
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'api' })).toContain('provider');
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'api' })).toContain('username');
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'api' })).toContain('password');
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'postgres' })).toContain(
+      'supersetDbHostPort',
+    );
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'postgres' })).toContain(
+      'supersetDbUsername',
+    );
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'postgres' })).toContain(
+      'supersetDbDatabase',
+    );
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'mysql' })).toContain(
+      'supersetDbHostPort',
+    );
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'mysql' })).toContain(
+      'supersetDbUsername',
+    );
+    expect(visibleRequired('Superset', { supersetConnectionBranch: 'mysql' })).not.toContain(
+      'supersetDbDatabase',
+    );
+  });
+
+  it('Metabase matches metabaseConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/dashboard/metabaseConnection.json');
+    expect(formProps(json)).toEqual(['username', 'password', 'apiKey', 'hostPort']);
+    expect(productKeys('Metabase')).toEqual(formProps(json));
+    expect(json.required).toEqual(['hostPort']);
+    expect(productRequired('Metabase')).toEqual(['hostPort']);
+  });
+
+  it('S3 matches s3Connection.json: aws leaves in pin order, region required', () => {
+    const json = loadConnectionJson('connections/storage/s3Connection.json');
+    expect(formProps(json)).toEqual([
+      'awsConfig',
+      'bucketNames',
+      'connectionOptions',
+      'connectionArguments',
+      'consoleEndpointURL',
+    ]);
+    // awsConfig is a plain object (not a oneOf): it expands into the ten
+    // aws* leaves, asserted below via awsSubsequence.
+    expect(
+      productScalars('S3', ['bucketNames', 'connectionOptions', 'connectionArguments', 'consoleEndpointURL']),
+    ).toEqual(['bucketNames', 'connectionOptions', 'connectionArguments', 'consoleEndpointURL']);
+    // Top-level required is the awsConfig object itself; the only required
+    // leaf inside it is awsRegion.
+    expect(json.required).toEqual(['awsConfig']);
+    expect(productRequired('S3')).toEqual(['awsRegion']);
+    expect(awsSubsequence('S3')).toEqual(AWS_KEYS);
+  });
+
+  it('Prefect matches prefectConnection.json: auth branches and branch required', () => {
+    const json = loadConnectionJson('connections/pipeline/prefectConnection.json');
+    expect(formProps(json)).toEqual(['hostPort', 'authType', 'numberOfStatus', 'verifySSL', 'sslConfig']);
+    expect(productScalars('Prefect', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['authType', 'hostPort']);
+    expect(productRequired('Prefect')).toEqual([
+      'hostPort',
+      'apiKey',
+      'prefectAccountId',
+      'prefectWorkspaceId',
+    ]);
+    const mode = selector('Prefect', 'prefectAuthMode');
+    expect(optionValues(mode)).toEqual(['cloud', 'server']);
+    expect(optionTitles(mode)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    const [cloud, server] = json.properties?.['authType']?.oneOf ?? [];
+    expect(cloud?.required).toEqual(['apiKey', 'accountId', 'workspaceId']);
+    expect(server?.required ?? []).toEqual([]);
+    expect(visibleRequired('Prefect', { prefectAuthMode: 'cloud' })).toContain('apiKey');
+    expect(visibleRequired('Prefect', { prefectAuthMode: 'cloud' })).toContain('prefectAccountId');
+    expect(visibleRequired('Prefect', { prefectAuthMode: 'cloud' })).toContain(
+      'prefectWorkspaceId',
+    );
+    expect(visibleRequired('Prefect', { prefectAuthMode: 'server' })).not.toContain('apiKey');
+    expect(visibleRequired('Prefect', { prefectAuthMode: 'server' })).not.toContain(
+      'prefectAccountId',
+    );
+  });
+
+  it('Dagster matches dagsterConnection.json: renamed leaves and required', () => {
+    const json = loadConnectionJson('connections/pipeline/dagsterConnection.json');
+    expect(formProps(json)).toEqual(['host', 'token', 'timeout', 'stripAssetKeyPrefixLength']);
+    expect(json.required).toEqual(['host']);
+    // host -> hostPort, token -> apiKey, timeout -> dagsterTimeout.
+    expect(
+      productScalars('Dagster', [
+        'hostPort',
+        'apiKey',
+        'dagsterTimeout',
+        'stripAssetKeyPrefixLength',
+      ]),
+    ).toEqual(['hostPort', 'apiKey', 'dagsterTimeout', 'stripAssetKeyPrefixLength']);
+    expect(productRequired('Dagster')).toEqual(['hostPort']);
+  });
+
+  it('Rest matches restConnection.json: schema branches and branch required', () => {
+    const json = loadConnectionJson('connections/api/restConnection.json');
+    expect(formProps(json)).toEqual([
+      'openAPISchemaConnection',
+      'token',
+      'docURL',
+      'apiEndpointFilterPattern',
+      'verifySSL',
+      'sslConfig',
+    ]);
+    // token -> apiKey.
+    expect(
+      productScalars('Rest', ['apiKey', 'docURL', 'apiEndpointFilterPattern', 'verifySSL']),
+    ).toEqual(['apiKey', 'docURL', 'apiEndpointFilterPattern', 'verifySSL']);
+    expect(json.required).toEqual(['openAPISchemaConnection']);
+    expect(productRequired('Rest')).toEqual([
+      'restSchemaBranch',
+      'openApiSchemaUrl',
+      'openApiSchemaFilePath',
+      'openApiSchemaS3Url',
+      'authAwsRegion',
+    ]);
+    const branch = selector('Rest', 'restSchemaBranch');
+    expect(optionValues(branch)).toEqual(['url', 'filePath', 's3']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['openAPISchemaConnection']?.oneOf?.map((entry) => entry.title),
+    );
+    const [url, filePath, s3] = json.properties?.['openAPISchemaConnection']?.oneOf ?? [];
+    expect(url?.required).toEqual(['openAPISchemaURL']);
+    expect(filePath?.required).toEqual(['openAPISchemaFilePath']);
+    expect(s3?.required).toEqual(['openAPISchemaS3URL', 'awsCredentials']);
+    expect(visibleRequired('Rest', { restSchemaBranch: 'url' })).toContain('openApiSchemaUrl');
+    expect(visibleRequired('Rest', { restSchemaBranch: 'filePath' })).toContain(
+      'openApiSchemaFilePath',
+    );
+    expect(visibleRequired('Rest', { restSchemaBranch: 's3' })).toContain('openApiSchemaS3Url');
+    expect(visibleRequired('Rest', { restSchemaBranch: 's3' })).toContain('authAwsRegion');
+    expect(visibleRequired('Rest', { restSchemaBranch: 'url' })).not.toContain('authAwsRegion');
+    // apiEndpointFilterPattern is NOT one of the 19 filter fields: pin
+    // getFilteredSchema renders it in the connection form.
+    expect(productKeys('Rest')).toContain('apiEndpointFilterPattern');
+  });
+
+  it('Mlflow matches mlflowConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/mlmodel/mlflowConnection.json');
+    expect(formProps(json)).toEqual(['trackingUri', 'registryUri']);
+    expect(productKeys('Mlflow')).toEqual(formProps(json));
+    expect(json.required).toEqual(['trackingUri', 'registryUri']);
+    expect(productRequired('Mlflow')).toEqual(['trackingUri', 'registryUri']);
+  });
+
+  it('OpenMetadata matches openMetadataConnection.json: B group, store rename, jwtToken optional', () => {
+    const json = loadConnectionJson('connections/metadata/openMetadataConnection.json');
+    expect(formProps(json)).toEqual([
+      'clusterName',
+      'hostPort',
+      'authProvider',
+      'verifySSL',
+      'sslConfig',
+      'securityConfig',
+      'secretsManagerProvider',
+      'secretsManagerLoader',
+      'apiVersion',
+      'includeTopics',
+      'includeTables',
+      'includeDashboards',
+      'includePipelines',
+      'includeMlModels',
+      'includeUsers',
+      'includeTeams',
+      'includeGlossaryTerms',
+      'includeTags',
+      'includePolicy',
+      'includeMessagingServices',
+      'enableVersionValidation',
+      'includeDatabaseServices',
+      'includePipelineServices',
+      'limitRecords',
+      'forceEntityOverwriting',
+      'storeServiceConnection',
+      'elasticsSearch',
+      'extraHeaders',
+    ]);
+    const scalars = [
+      'clusterName',
+      'hostPort',
+      'authProvider',
+      'verifySSL',
+      'secretsManagerProvider',
+      'secretsManagerLoader',
+      'apiVersion',
+      'includeTopics',
+      'includeTables',
+      'includeDashboards',
+      'includePipelines',
+      'includeMlModels',
+      'includeUsers',
+      'includeTeams',
+      'includeGlossaryTerms',
+      'includeTags',
+      'includePolicy',
+      'includeMessagingServices',
+      'enableVersionValidation',
+      'includeDatabaseServices',
+      'includePipelineServices',
+      'limitRecords',
+      'forceEntityOverwriting',
+      'extraHeaders',
+    ];
+    expect(productScalars('OpenMetadata', scalars)).toEqual(scalars);
+    expect(json.required).toEqual(['hostPort']);
+    expect(productRequired('OpenMetadata')).toEqual(['hostPort']);
+    // Renames: securityConfig -> jwtToken (the only leaf of the optional
+    // securityConfig object), storeServiceConnection -> omStoreServiceConnection,
+    // elasticsSearch -> omElasticSearchType + omElasticSearchConfig.
+    expect(productKeys('OpenMetadata')).toContain('jwtToken');
+    expect(productKeys('OpenMetadata')).toContain('omStoreServiceConnection');
+    expect(productKeys('OpenMetadata')).toContain('omElasticSearchType');
+    expect(productKeys('OpenMetadata')).toContain('omElasticSearchConfig');
+    // jwtToken is conditionally required (only inside the optional
+    // securityConfig object, which the product emits only when a token is
+    // entered) — it must NOT be marked required, or token-less services
+    // would be blocked. This corrects the A2 §4.3 "jwtToken required" label.
+    expect(selector('OpenMetadata', 'jwtToken')?.required).toBeFalsy();
+    expect(productRequired('OpenMetadata')).not.toContain('jwtToken');
+    expect(optionValues(selector('OpenMetadata', 'authProvider'))).toEqual(
+      json.properties?.['authProvider']?.enum,
+    );
+  });
+
+  it('GoogleDrive matches googleDriveConnection.json: variant selector, no required leaves', () => {
+    const json = loadConnectionJson('connections/drive/googleDriveConnection.json');
+    expect(formProps(json)).toEqual([
+      'credentials',
+      'delegatedEmail',
+      'driveId',
+      'includeTeamDrives',
+      'includeGoogleSheets',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(
+      productScalars('GoogleDrive', [
+        'delegatedEmail',
+        'driveId',
+        'includeTeamDrives',
+        'includeGoogleSheets',
+        'connectionOptions',
+        'connectionArguments',
+      ]),
+    ).toEqual([
+      'delegatedEmail',
+      'driveId',
+      'includeTeamDrives',
+      'includeGoogleSheets',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(json.required).toEqual(['credentials']);
+    // The top-level `credentials` required is represented by the variant
+    // selector, not by a required leaf: no GCP variant carries a required
+    // array, so no leaf is marked required (named deviation, BENCHMARK §6).
+    expect(productRequired('GoogleDrive')).toEqual([]);
+    const variant = selector('GoogleDrive', 'gcpConfigType');
+    expect(optionValues(variant)).toEqual([
+      'gcpValues',
+      'gcpCredentialsPath',
+      'gcpExternalAccount',
+      'gcpADC',
+    ]);
+    expect(optionTitles(variant)).toEqual(
+      json.properties?.['credentials']?.properties?.['gcpConfig']?.oneOf?.map(
+        (entry) => entry.title,
+      ),
+    );
+    for (const branch of ['gcpValues', 'gcpCredentialsPath', 'gcpExternalAccount', 'gcpADC']) {
+      expect(visibleRequired('GoogleDrive', { gcpConfigType: branch as never })).toEqual([]);
+    }
+    // No JSON-blob fields remain: the old credentialsJson /
+    // gcpExternalAccountJson inventions are gone.
+    expect(productKeys('GoogleDrive')).not.toContain('credentialsJson');
+    expect(productKeys('GoogleDrive')).not.toContain('gcpExternalAccountJson');
+  });
+
+  it('ElasticSearch matches elasticSearchConnection.json: no required, auth branches', () => {
+    const json = loadConnectionJson('connections/search/elasticSearchConnection.json');
+    expect(formProps(json)).toEqual([
+      'hostPort',
+      'authType',
+      'sslConfig',
+      'connectionTimeoutSecs',
+      'connectionArguments',
+    ]);
+    expect(
+      productScalars('ElasticSearch', ['hostPort', 'connectionTimeoutSecs', 'connectionArguments']),
+    ).toEqual(['hostPort', 'connectionTimeoutSecs', 'connectionArguments']);
+    expect(json.required ?? []).toEqual([]);
+    expect(productRequired('ElasticSearch')).toEqual([]);
+    const mode = selector('ElasticSearch', 'elasticSearchAuthMode');
+    expect(optionValues(mode)).toEqual(['basicAuth', 'apiAuth']);
+    expect(optionTitles(mode)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    const [basic, apiKey] = json.properties?.['authType']?.oneOf ?? [];
+    expect(basic?.required ?? []).toEqual([]);
+    expect(apiKey?.required ?? []).toEqual([]);
+    expect(visibleRequired('ElasticSearch', { elasticSearchAuthMode: 'basicAuth' })).toEqual([]);
+    expect(visibleRequired('ElasticSearch', { elasticSearchAuthMode: 'apiAuth' })).toEqual([]);
+    expect(optionValues(selector('ElasticSearch', 'sslCertMode'))).toEqual(['paths', 'values']);
+  });
+
+  it('Ranger matches rangerConnection.json: single-branch auth, all three required', () => {
+    const json = loadConnectionJson('connections/security/rangerConnection.json');
+    expect(formProps(json)).toEqual(['hostPort', 'authType']);
+    expect(json.required).toEqual(['hostPort', 'authType']);
+    // The single authType branch requires username + password.
+    expect(json.properties?.['authType']?.oneOf?.[0]?.required).toEqual(['username', 'password']);
+    expect(productRequired('Ranger')).toEqual(['hostPort', 'username', 'password']);
+    expect(productKeys('Ranger')).toEqual(['hostPort', 'username', 'password']);
+  });
+
+  it('CustomMlModel matches customMlModelConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/mlmodel/customMlModelConnection.json');
+    expect(formProps(json)).toEqual(['sourcePythonClass', 'connectionOptions']);
+    expect(productKeys('CustomMlModel')).toEqual(formProps(json));
+    // JSON required is ['type'] (hidden) — nothing is required in the form.
+    expect(json.required).toEqual(['type']);
+    expect(productRequired('CustomMlModel')).toEqual([]);
+  });
+
+  it('SageMaker matches sageMakerConnection.json: aws leaves in pin order, region required', () => {
+    const json = loadConnectionJson('connections/mlmodel/sageMakerConnection.json');
+    expect(formProps(json)).toEqual(['awsConfig']);
+    // awsConfig is a plain object (not a oneOf): no scalar props.
+    expect(scalarProps(json)).toEqual(['awsConfig']);
+    expect(json.required).toEqual(['awsConfig']);
+    expect(productRequired('SageMaker')).toEqual(['awsRegion']);
+    expect(awsSubsequence('SageMaker')).toEqual(AWS_KEYS);
+  });
+
+  it('Sklearn matches sklearnConnection.json: no form leaves', () => {
+    const json = loadConnectionJson('connections/mlmodel/sklearnConnection.json');
+    expect(formProps(json)).toEqual([]);
+    expect(productKeys('Sklearn')).toEqual([]);
+    expect(productRequired('Sklearn')).toEqual([]);
+  });
+
+  it('AlationSink matches alationSinkConnection.json: auth branches and branch required', () => {
+    const json = loadConnectionJson('connections/metadata/alationSinkConnection.json');
+    expect(formProps(json)).toEqual([
+      'hostPort',
+      'authType',
+      'projectName',
+      'paginationLimit',
+      'datasourceLinks',
+      'verifySSL',
+      'sslConfig',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productScalars('AlationSink', scalarProps(json))).toEqual(scalarProps(json));
+    expect(json.required).toEqual(['hostPort', 'authType']);
+    expect(productRequired('AlationSink')).toEqual([
+      'hostPort',
+      'username',
+      'password',
+      'alationSinkAccessToken',
+    ]);
+    const branch = selector('AlationSink', 'alationSinkAuthBranch');
+    expect(optionValues(branch)).toEqual(['basicAuth', 'apiToken']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    const [basic, token] = json.properties?.['authType']?.oneOf ?? [];
+    expect(basic?.required).toEqual(['username', 'password']);
+    expect(token?.required).toEqual(['accessToken']);
+    expect(visibleRequired('AlationSink', { alationSinkAuthBranch: 'basicAuth' })).toContain(
+      'username',
+    );
+    expect(visibleRequired('AlationSink', { alationSinkAuthBranch: 'basicAuth' })).toContain(
+      'password',
+    );
+    expect(visibleRequired('AlationSink', { alationSinkAuthBranch: 'apiToken' })).toContain(
+      'alationSinkAccessToken',
+    );
+    expect(visibleRequired('AlationSink', { alationSinkAuthBranch: 'apiToken' })).not.toContain(
+      'password',
+    );
+  });
+
+  it('Amundsen matches amundsenConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/metadata/amundsenConnection.json');
+    expect(formProps(json)).toEqual([
+      'username',
+      'password',
+      'hostPort',
+      'maxConnectionLifeTime',
+      'validateSSL',
+      'encrypted',
+    ]);
+    expect(productKeys('Amundsen')).toEqual(formProps(json));
+    expect(json.required).toEqual(['username', 'password', 'hostPort']);
+    expect(productRequired('Amundsen')).toEqual(['username', 'password', 'hostPort']);
+  });
+
+  it('Atlas matches atlasConnection.json: hostPort is NOT required', () => {
+    const json = loadConnectionJson('connections/metadata/atlasConnection.json');
+    expect(formProps(json)).toEqual([
+      'username',
+      'password',
+      'hostPort',
+      'databaseServiceName',
+      'messagingServiceName',
+      'entity_type',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    expect(productKeys('Atlas')).toEqual(formProps(json));
+    expect(json.required).toEqual(['entity_type', 'username', 'password']);
+    expect(productRequired('Atlas')).toEqual(['username', 'password', 'entity_type']);
+    // T-2 fix: the product used to mark hostPort required; pin does not.
+    expect(selector('Atlas', 'hostPort')?.required).toBe(false);
+  });
+
+  it('CustomDrive matches customDriveConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/drive/customDriveConnection.json');
+    expect(formProps(json)).toEqual(['connectionOptions', 'connectionArguments']);
+    expect(productKeys('CustomDrive')).toEqual(formProps(json));
+    expect(json.required ?? []).toEqual([]);
+    expect(productRequired('CustomDrive')).toEqual([]);
+  });
+
+  it('Sftp matches sftpConnection.json: auth branches and branch required', () => {
+    const json = loadConnectionJson('connections/drive/sftpConnection.json');
+    expect(formProps(json)).toEqual([
+      'host',
+      'port',
+      'authType',
+      'rootDirectories',
+      'connectionOptions',
+      'connectionArguments',
+      'structuredDataFilesOnly',
+      'extractSampleData',
+    ]);
+    // host -> sftpHost, port -> sftpPort.
+    expect(
+      productScalars('Sftp', [
+        'sftpHost',
+        'sftpPort',
+        'rootDirectories',
+        'connectionOptions',
+        'connectionArguments',
+        'structuredDataFilesOnly',
+        'extractSampleData',
+      ]),
+    ).toEqual([
+      'sftpHost',
+      'sftpPort',
+      'rootDirectories',
+      'connectionOptions',
+      'connectionArguments',
+      'structuredDataFilesOnly',
+      'extractSampleData',
+    ]);
+    expect(json.required).toEqual(['host', 'authType']);
+    expect(productRequired('Sftp')).toEqual(['sftpHost', 'username', 'password', 'sftpPrivateKey']);
+    const branch = selector('Sftp', 'sftpAuthBranch');
+    expect(optionValues(branch)).toEqual(['usernamePassword', 'privateKey']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    const [up, pk] = json.properties?.['authType']?.oneOf ?? [];
+    expect(up?.required).toEqual(['username', 'password']);
+    expect(pk?.required).toEqual(['username', 'privateKey']);
+    expect(visibleRequired('Sftp', { sftpAuthBranch: 'usernamePassword' })).toContain('username');
+    expect(visibleRequired('Sftp', { sftpAuthBranch: 'usernamePassword' })).toContain('password');
+    expect(visibleRequired('Sftp', { sftpAuthBranch: 'privateKey' })).toContain('username');
+    expect(visibleRequired('Sftp', { sftpAuthBranch: 'privateKey' })).toContain('sftpPrivateKey');
+    expect(visibleRequired('Sftp', { sftpAuthBranch: 'privateKey' })).not.toContain('password');
+  });
+
+  it('CustomSearch matches customSearchConnection.json exactly', () => {
+    const json = loadConnectionJson('connections/search/customSearchConnection.json');
+    expect(formProps(json)).toEqual(['sourcePythonClass', 'connectionOptions']);
+    expect(productKeys('CustomSearch')).toEqual(formProps(json));
+    expect(json.required).toEqual(['type']);
+    expect(productRequired('CustomSearch')).toEqual([]);
+  });
+
+  it('OpenSearch matches openSearchConnection.json: hostPort NOT required, AWS branch region', () => {
+    const json = loadConnectionJson('connections/search/openSearchConnection.json');
+    expect(formProps(json)).toEqual([
+      'hostPort',
+      'authType',
+      'verifySSL',
+      'sslConfig',
+      'connectionTimeoutSecs',
+      'connectionArguments',
+    ]);
+    expect(
+      productScalars('OpenSearch', [
+        'hostPort',
+        'verifySSL',
+        'connectionTimeoutSecs',
+        'connectionArguments',
+      ]),
+    ).toEqual(['hostPort', 'verifySSL', 'connectionTimeoutSecs', 'connectionArguments']);
+    expect(json.required ?? []).toEqual([]);
+    // Only the AWS branch requires anything (awsRegion).
+    expect(productRequired('OpenSearch')).toEqual(['authAwsRegion']);
+    const branch = selector('OpenSearch', 'openSearchAuthBranch');
+    expect(optionValues(branch)).toEqual(['basicAuth', 'awsCredentials']);
+    expect(optionTitles(branch)).toEqual(
+      json.properties?.['authType']?.oneOf?.map((entry) => entry.title),
+    );
+    const [basic, aws] = json.properties?.['authType']?.oneOf ?? [];
+    expect(basic?.required ?? []).toEqual([]);
+    expect(aws?.required).toEqual(['awsRegion']);
+    expect(visibleRequired('OpenSearch', { openSearchAuthBranch: 'basicAuth' })).toEqual([]);
+    expect(visibleRequired('OpenSearch', { openSearchAuthBranch: 'awsCredentials' })).toContain(
+      'authAwsRegion',
+    );
+    // T-2 fix: the product used to mark hostPort required; pin has no
+    // required array at all for this schema.
+    expect(selector('OpenSearch', 'hostPort')?.required).toBe(false);
   });
 });

@@ -237,6 +237,10 @@ export interface ServiceConnectionConfig {
     workspaceId?: string;
     /** Prefect Server auth (prefect/serverAuth.json). */
     authString?: string;
+    /** Sftp private-key auth (sftpConnection.json): the private key + its
+     * passphrase — both secrets, blank-means-keep on edit. */
+    privateKey?: string;
+    privateKeyPassphrase?: string;
     /** IAM branch (mysql/postgres/greenplum/timescale/redshift authType oneOf). */
     awsConfig?: AwsCredentialsConfig;
     /** Azure branch (mysql/postgres/timescale authType oneOf). */
@@ -600,8 +604,14 @@ export interface ServiceFormValues {
   registryUri?: string;
   /** Rest (api): OpenAPI schema URL (openAPISchemaURL, required). */
   openApiSchemaUrl?: string;
-  /** GoogleDrive (drive): GCP service-account credentials JSON (required). */
-  credentialsJson?: string;
+  /** Rest (api/restConnection.json): `openAPISchemaConnection` oneOf
+   * branch state + the FilePath / S3 branch leaves. */
+  restSchemaBranch?: 'url' | 'filePath' | 's3';
+  openApiSchemaFilePath?: string;
+  openApiSchemaS3Url?: string;
+  /** Rest: the apiEndpointFilterPattern leaf (NOT one of the 19 filtered
+   * fields — pin renders it in the connection form). */
+  apiEndpointFilterPattern?: FilterPatternConfig;
   delegatedEmail?: string;
   driveId?: string;
   /** OpenAI (llm): organization id + custom base URL (openAIConnection). */
@@ -637,12 +647,10 @@ export interface ServiceFormValues {
    * The spec's own flag (openMetadataConnection / storeServiceConnection). */
   omStoreServiceConnection?: boolean;
   /** GoogleDrive (googleDriveConnection.json): which gcpConfig branch the
-   * credentials take (gcpCredentials.json oneOf). */
+   * credentials take (gcpCredentials.json oneOf). The variant leaves use
+   * the shared `authGcp*` keys (see above); the old JSON-blob form keys
+   * were deleted with the T-2 per-leaf rebuild (2026-11-20). */
   gcpConfigType?: 'gcpValues' | 'gcpCredentialsPath' | 'gcpExternalAccount' | 'gcpADC';
-  gcpCredentialsPath?: string;
-  gcpExternalAccountJson?: string;
-  impersonateServiceAccount?: string;
-  impersonateLifetime?: number;
   includeTeamDrives?: boolean;
   includeGoogleSheets?: boolean;
   /** ElasticSearch (elasticSearchConnection.json): auth branch + ssl
@@ -838,6 +846,82 @@ export interface ServiceFormValues {
   tenantId?: string;
   siteUrl?: string;
   siteName?: string;
+  /** T-2 (2026-11-20): the ten blocked-C rows + the Superset / Rest /
+   * OpenMetadata missing leaves. */
+  /** Superset (dashboard/supersetConnection.json): `connection` oneOf
+   * (SupersetApiConnection / PostgresConnection / MysqlConnection). */
+  supersetConnectionBranch?: 'api' | 'postgres' | 'mysql';
+  supersetDbScheme?: string;
+  supersetDbUsername?: string;
+  supersetDbPassword?: string;
+  supersetDbHostPort?: string;
+  supersetDbDatabase?: string;
+  supersetDbDatabaseName?: string;
+  supersetDbDatabaseSchema?: string;
+  supersetDbAuthBranch?: 'basic' | 'iam' | 'azure' | 'gcp';
+  supersetDbIngestAllDatabases?: boolean;
+  supersetDbSslMode?: string;
+  supersetDbSslCaCertificate?: string;
+  supersetDbSslCertificate?: string;
+  supersetDbSslKey?: string;
+  supersetDbClassificationName?: string;
+  supersetDbQueryStatementSource?: string;
+  supersetDbUseSlowLogs?: boolean;
+  supersetDbQueryHistoryTable?: string;
+  supersetDbConnectionOptions?: string;
+  supersetDbConnectionArguments?: string;
+  /** OpenMetadata (metadata/openMetadataConnection.json): the B group —
+   * 13 include* switches + limitRecords + forceEntityOverwriting +
+   * elasticsSearch (conditionally required `type` + string-map `config`). */
+  includeTopics?: boolean;
+  includeTables?: boolean;
+  includeDashboards?: boolean;
+  includePipelines?: boolean;
+  includeMlModels?: boolean;
+  includeUsers?: boolean;
+  includeTeams?: boolean;
+  includeGlossaryTerms?: boolean;
+  includeTags?: boolean;
+  includePolicy?: boolean;
+  includeMessagingServices?: boolean;
+  includeDatabaseServices?: boolean;
+  includePipelineServices?: boolean;
+  limitRecords?: number;
+  forceEntityOverwriting?: boolean;
+  omElasticSearchType?: string;
+  omElasticSearchConfig?: string;
+  /** CustomMlModel / CustomSearch: source python class to instantiate. */
+  sourcePythonClass?: string;
+  /** AlationSink (metadata/alationSinkConnection.json): authType oneOf. */
+  alationSinkAuthBranch?: 'basicAuth' | 'apiToken';
+  alationSinkAccessToken?: string;
+  /** AlationSink: datasource links (string map, entered via the map editor). */
+  datasourceLinks?: string;
+  alationSinkSSLCaCertificate?: string;
+  alationSinkSSLCertificate?: string;
+  alationSinkSSLKey?: string;
+  /** Amundsen (metadata/amundsenConnection.json). */
+  maxConnectionLifeTime?: number;
+  validateSSL?: boolean;
+  encrypted?: boolean;
+  /** Atlas (metadata/atlasConnection.json): string arrays, entered as JSON. */
+  databaseServiceName?: string;
+  messagingServiceName?: string;
+  entity_type?: string;
+  /** Sftp (drive/sftpConnection.json): host + port are separate leaves
+   * (no hostPort); authType oneOf (username/password / private key). */
+  sftpHost?: string;
+  sftpPort?: number;
+  sftpAuthBranch?: 'usernamePassword' | 'privateKey';
+  sftpPrivateKey?: string;
+  sftpPrivateKeyPassphrase?: string;
+  /** Sftp: root directories (string array, entered as JSON). */
+  rootDirectories?: string;
+  structuredDataFilesOnly?: boolean;
+  extractSampleData?: boolean;
+  /** OpenSearch (search/openSearchConnection.json): authType oneOf
+   * (Basic Authentication / AWSCredentials). */
+  openSearchAuthBranch?: 'basicAuth' | 'awsCredentials';
 }
 
 export interface CreateDatabaseServiceRequest {
