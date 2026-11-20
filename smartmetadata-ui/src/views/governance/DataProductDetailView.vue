@@ -178,6 +178,24 @@ const canEditAssets = computed(
 );
 const canEditDescription = computed(() => productFlags.value.canEditDescription);
 const canEditCustomFields = computed(() => productFlags.value.canEditCustomFields);
+/**
+ * D-4 header gates (pin DataAssetsHeader): the edit modal writes
+ * displayName/description/domains, so it is the OR of those field flags;
+ * delete is the soft-delete action, so it additionally requires
+ * !deleted. The P1 admin line ORs in on top of both.
+ */
+const canEditProduct = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    productFlags.value.canEditDescription ||
+    productFlags.value.canEditDisplayName ||
+    productFlags.value.can('EditDomains'),
+);
+const canDeleteProduct = computed(
+  () =>
+    product.value?.deleted !== true &&
+    (permissionStore.isAdminUser || productFlags.value.canDelete),
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : ops.value ? productFlags.value.canViewCustomFields : false,
@@ -417,8 +435,8 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button danger data-testid="delete-data-product" :disabled="!product" @click="onDeleteDataProduct">{{ t('crud.delete') }}</Button>
-      <Button type="primary" data-testid="edit-data-product" :disabled="!product" @click="openEdit">
+      <Button danger data-testid="delete-data-product" :disabled="!product || !canDeleteProduct" @click="onDeleteDataProduct">{{ t('crud.delete') }}</Button>
+      <Button type="primary" data-testid="edit-data-product" :disabled="!product || !canEditProduct" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
     </template>

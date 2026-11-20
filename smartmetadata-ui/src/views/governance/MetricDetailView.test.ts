@@ -48,6 +48,13 @@ async function mountView() {
       if (url.includes('/api/v1/metrics/async/')) {
         return jsonResponse({ jobId: 'job-1' });
       }
+      if (url.includes('/v1/permissions/metric/name/')) {
+        // D-4 header gate: the delete flow under test needs Delete.
+        return jsonResponse({
+          resource: 'metric',
+          permissions: [{ operation: 'Delete', access: 'allow' }],
+        });
+      }
       return new Response('not found', { status: 404 });
     }),
   );

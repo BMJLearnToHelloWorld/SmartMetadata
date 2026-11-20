@@ -189,6 +189,90 @@ export function revokeEditPermissions(ops: OperationPermissions): OperationPermi
   return result;
 }
 
+/**
+ * The logged-in user's resource-level permissions, keyed by resource
+ * (official UIPermission: `Record<ResourceEntity, OperationPermission>`).
+ * Entity-level permissions are single-resource maps and never take this
+ * shape — see checkPermissionEntityResource.
+ */
+export type UIPermission = Record<string, OperationPermissions>;
+
+/**
+ * Official checkPermissionEntityResource (PermissionsUtils.ts:55-70, pin
+ * a3012259ca): the OR semantics. A field operation is granted when the
+ * resource holds it OR — only when checkEditAllPermission is true — when
+ * the resource holds EditAll. This is deliberately NOT the derived
+ * field-first rule: getDerivedPermissionFlags lets an explicit field deny
+ * win over EditAll, so EditTags:false + EditAll:true is denied there and
+ * granted here. The two must never be swapped: pin uses this OR form at
+ * exactly one call family (TagsPureUtils getExcludedIndexes…, consumed by
+ * TagPage) and the field-first form everywhere else.
+ */
+export function checkPermissionEntityResource(
+  operation: string,
+  resource: string,
+  permissions: UIPermission | null | undefined,
+  checkEditAllPermission = false,
+): boolean {
+  const entityResource = permissions?.[resource];
+  let hasPermission = entityResource?.[operation] === true;
+  if (checkEditAllPermission) {
+    hasPermission = hasPermission || entityResource?.EditAll === true;
+  }
+  return hasPermission;
+}
+
+/**
+ * Official getExcludedIndexesBasedOnEntityTypeEditTagPermission
+ * (TagsPureUtils.ts:223-400): for each of the 24 taggable entity types,
+ * whether the logged-in user may edit tags on that resource (EditTags OR
+ * EditAll, §checkPermissionEntityResource). The Tag page feeds the result
+ * into haveAssetEditPermission (own tag EditAll OR any type having
+ * permission) to gate adding/removing assets. No deleted gate applies:
+ * the input is resource-level, with no entity to be deleted.
+ */
+export const TAG_EDIT_ENTITY_TYPES: ReadonlyArray<{ entityType: string; resource: string }> = [
+  { entityType: 'table', resource: 'table' },
+  { entityType: 'topic', resource: 'topic' },
+  { entityType: 'dashboard', resource: 'dashboard' },
+  { entityType: 'mlmodel', resource: 'mlmodel' },
+  { entityType: 'pipeline', resource: 'pipeline' },
+  { entityType: 'container', resource: 'container' },
+  { entityType: 'searchIndex', resource: 'searchIndex' },
+  { entityType: 'apiService', resource: 'apiService' },
+  { entityType: 'apiEndpoint', resource: 'apiEndpoint' },
+  { entityType: 'apiCollection', resource: 'apiCollection' },
+  { entityType: 'dashboardDataModel', resource: 'dashboardDataModel' },
+  { entityType: 'storedProcedure', resource: 'storedProcedure' },
+  { entityType: 'database', resource: 'database' },
+  { entityType: 'databaseService', resource: 'databaseService' },
+  { entityType: 'databaseSchema', resource: 'databaseSchema' },
+  { entityType: 'messagingService', resource: 'messagingService' },
+  { entityType: 'dashboardService', resource: 'dashboardService' },
+  { entityType: 'mlmodelService', resource: 'mlmodelService' },
+  { entityType: 'pipelineService', resource: 'pipelineService' },
+  { entityType: 'storageService', resource: 'storageService' },
+  { entityType: 'searchService', resource: 'searchService' },
+  { entityType: 'glossary', resource: 'glossary' },
+  { entityType: 'glossaryTerm', resource: 'glossaryTerm' },
+  { entityType: 'domain', resource: 'domain' },
+];
+
+export function getExcludedIndexesBasedOnEntityTypeEditTagPermission(
+  permissions: UIPermission | null | undefined,
+): { entitiesHavingPermission: string[]; entitiesNotHavingPermission: string[] } {
+  const entitiesHavingPermission: string[] = [];
+  const entitiesNotHavingPermission: string[] = [];
+  for (const { entityType, resource } of TAG_EDIT_ENTITY_TYPES) {
+    if (checkPermissionEntityResource('EditTags', resource, permissions, true)) {
+      entitiesHavingPermission.push(entityType);
+    } else {
+      entitiesNotHavingPermission.push(entityType);
+    }
+  }
+  return { entitiesHavingPermission, entitiesNotHavingPermission };
+}
+
 function mapResourcePermission(raw: Record<string, unknown>): ResourcePermission | null {
   const resource = asString(raw.resource);
   if (!resource) {

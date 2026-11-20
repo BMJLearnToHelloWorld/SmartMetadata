@@ -12,6 +12,7 @@ import { deleteMetricAsync, patchMetric } from '@/api/metrics';
 import { descriptionPatch } from '@/governance/assetPatch';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { usePermissionStore } from '@/stores/permissions';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
@@ -76,6 +77,18 @@ const metricPermissions = useEntityPermissions(
   { deleted: () => metric.value?.deleted === true },
 );
 const canEditDescription = computed(() => metricPermissions.canEditDescription.value);
+const permissionStore = usePermissionStore();
+/**
+ * D-4 delete gate (pin DataAssetsHeader canDelete; the view has no edit
+ * affordance — Metric is read-only here). Delete is the soft-delete
+ * action, so it additionally requires !deleted. The P1 admin line ORs
+ * in on top.
+ */
+const canDeleteMetric = computed(
+  () =>
+    metric.value?.deleted !== true &&
+    (permissionStore.isAdminUser || metricPermissions.canDelete.value),
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   metricPermissions.isLoading.value ? null : metricPermissions.can('ViewCustomFields'),
@@ -289,7 +302,7 @@ onMounted(() => {
       <Button type="default" data-testid="metric-versions" :disabled="!metric?.id" @click="openVersions">
         {{ t('metrics.versions') }}
       </Button>
-      <Button danger data-testid="metric-delete" :disabled="!metric?.id" @click="onDeleteMetric">
+      <Button danger data-testid="metric-delete" :disabled="!metric?.id || !canDeleteMetric" @click="onDeleteMetric">
         {{ t('crud.delete') }}
       </Button>
     </template>

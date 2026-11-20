@@ -64,6 +64,17 @@ describe('TagDetailView edit gating (upstream revokeEditPermissions)', () => {
             owners: [],
           });
         }
+        if (url.includes('/v1/permissions/tag/name/')) {
+          // D-4 header gates: the edit button needs EditAll (pin TagPage
+          // editTagsPermission), the delete button needs Delete.
+          return jsonResponse({
+            resource: 'tag',
+            permissions: [
+              { operation: 'EditAll', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
         return jsonResponse({}, 404);
       }),
     );
@@ -84,6 +95,37 @@ describe('TagDetailView edit gating (upstream revokeEditPermissions)', () => {
     expect(isDisabled(wrapper, 'edit-tag')).toBe(true);
     // Delete is not an Edit* operation: upstream revoke leaves it untouched.
     expect(isDisabled(wrapper, 'delete-tag')).toBe(false);
+  });
+});
+
+describe('TagDetailView header gates without a grant (D-4 fail-closed)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('disables edit and delete when the permission fetch grants nothing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            disabled: false,
+            owners: [],
+          });
+        }
+        if (url.includes('/v1/permissions/tag/name/')) {
+          return jsonResponse({ resource: 'tag', permissions: [] });
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+    const wrapper = await mountTag('t1');
+    expect(isDisabled(wrapper, 'edit-tag')).toBe(true);
+    expect(isDisabled(wrapper, 'delete-tag')).toBe(true);
   });
 });
 

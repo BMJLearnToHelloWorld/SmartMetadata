@@ -186,6 +186,23 @@ const canEditAssets = computed(
 );
 const canEditDescription = computed(() => domainFlags.value.canEditDescription);
 const canEditCustomFields = computed(() => domainFlags.value.canEditCustomFields);
+/**
+ * D-4 header gates (pin DataAssetsHeader): the edit modal writes
+ * displayName/description/domainType, so it is the OR of those field
+ * flags; delete is the soft-delete action, so it additionally requires
+ * !deleted. The P1 admin line ORs in on top of both.
+ */
+const canEditDomain = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    domainFlags.value.canEditDescription ||
+    domainFlags.value.canEditDisplayName,
+);
+const canDeleteDomain = computed(
+  () =>
+    domain.value?.deleted !== true &&
+    (permissionStore.isAdminUser || domainFlags.value.canDelete),
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : ops.value ? domainFlags.value.canViewCustomFields : false,
@@ -498,8 +515,8 @@ onMounted(() => {
   >
     <template #actions>
       <Button data-testid="domain-versions" :disabled="!domain" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button danger data-testid="delete-domain" :disabled="!domain" @click="onDeleteDomain">{{ t('crud.delete') }}</Button>
-      <Button type="primary" data-testid="edit-domain" :disabled="!domain" @click="openEdit">
+      <Button danger data-testid="delete-domain" :disabled="!domain || !canDeleteDomain" @click="onDeleteDomain">{{ t('crud.delete') }}</Button>
+      <Button type="primary" data-testid="edit-domain" :disabled="!domain || !canEditDomain" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
     </template>

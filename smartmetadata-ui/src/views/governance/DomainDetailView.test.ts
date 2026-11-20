@@ -57,6 +57,13 @@ describe('DomainDetailView delete', () => {
             children: [],
           });
         }
+        if (url.includes('/v1/permissions/domain/name/')) {
+          // D-4 header gate: the delete flow under test needs Delete.
+          return jsonResponse({
+            resource: 'domain',
+            permissions: [{ operation: 'Delete', access: 'allow' }],
+          });
+        }
         return new Response('not found', { status: 404 });
       }),
     );

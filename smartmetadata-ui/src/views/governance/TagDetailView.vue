@@ -10,6 +10,7 @@ import { Button, Descriptions, Empty, Form, Input, Switch, message } from 'ant-d
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { usePermissionStore } from '@/stores/permissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
 import { listEntityActivity } from '@/api/activity';
@@ -40,7 +41,9 @@ const tag = ref<ClassificationTag | null>(null);
 // Upstream TagPage isEditable (disabled AND deleted): the product read path
 // never surfaces deleted tags (the server default excludes them), so disabled
 // is the observable half. Delete is not an Edit* operation and keeps its own gate.
-const isEditable = computed(() => !!tag.value && tag.value.disabled !== true);
+// (The header edit button is gated on the derived canEditAll below, which
+// already folds disabled AND deleted in; isEditable alone never granted
+// edit access to a viewer without EditAll, so it has no remaining use.)
 const activeTab = ref('overview');
 const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
@@ -62,6 +65,19 @@ const tagPermissions = useEntityPermissions(
   { deleted: () => tag.value?.deleted === true || tag.value?.disabled === true },
 );
 const canEditDescription = computed(() => tagPermissions.canEditDescription.value);
+const permissionStore = usePermissionStore();
+/**
+ * D-4 header gates (pin TagPage: editTagsPermission = isEditable &&
+ * tagCanEditAll; the composable already folds disabled AND deleted into
+ * the derivation, so canEditAll is that product. Delete is the
+ * soft-delete action: canDelete plus !deleted, admin line on top).
+ */
+const canEditTag = computed(() => tagPermissions.canEditAll.value);
+const canDeleteTag = computed(
+  () =>
+    tag.value?.deleted !== true &&
+    (permissionStore.isAdminUser || tagPermissions.canDelete.value),
+);
 watch(
   () => tagPermissions.error.value,
   (error) => {
@@ -326,9 +342,9 @@ onMounted(() => {
       >
         {{ t('tags.back') }}
       </Button>
-      <Button key="delete-tag" danger data-testid="delete-tag" :disabled="!tag" @click="onDeleteTag">{{ t('crud.delete') }}</Button>
+      <Button key="delete-tag" danger data-testid="delete-tag" :disabled="!tag || !canDeleteTag" @click="onDeleteTag">{{ t('crud.delete') }}</Button>
       <Button key="tag-versions" data-testid="tag-versions" :disabled="!tag" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button key="edit-tag" type="primary" data-testid="edit-tag" :disabled="!isEditable" @click="openEdit">
+      <Button key="edit-tag" type="primary" data-testid="edit-tag" :disabled="!tag || !canEditTag" @click="openEdit">
         {{ t('tags.edit') }}
       </Button>
     </template>

@@ -81,4 +81,39 @@ describe('pipelineActions gating (P-09/P-17)', () => {
     // what the toggle acts on), only on the operation bit.
     expect(canTogglePipelineStatus(false, { EditIngestionPipelineStatus: true })).toBe(true);
   });
+
+  it('keeps the pin raw ORs (M-1): an explicit field deny does not beat EditAll here', () => {
+    const p = pipeline();
+    // Derived field-first would deny Deploy:false + EditAll:true; pin
+    // PipelineActions ORs EditAll in, so deploy and toggle still grant.
+    expect(
+      canDeployPipeline(false, { Deploy: false, EditAll: true }, p),
+    ).toBe(true);
+    expect(
+      canTogglePipelineStatus(false, { EditIngestionPipelineStatus: false, EditAll: true }),
+    ).toBe(true);
+    expect(
+      canDeployPipeline(false, { Deploy: false, EditAll: false }, p),
+    ).toBe(false);
+  });
+
+  it('denies Edit/Deploy/Trigger/Toggle/Kill on a soft-deleted pipeline (D-5), keeps Delete', () => {
+    const p = pipeline();
+    const granted: OperationPermissions = {
+      EditAll: true,
+      Delete: true,
+      Deploy: true,
+      Trigger: true,
+      EditIngestionPipelineStatus: true,
+    };
+    expect(canEditPipeline(false, granted, true)).toBe(false);
+    expect(canDeployPipeline(false, granted, p, true)).toBe(false);
+    expect(canTriggerPipeline(false, granted, p, true)).toBe(false);
+    expect(canTogglePipelineStatus(false, granted, true)).toBe(false);
+    expect(canKillPipeline(false, granted, true)).toBe(false);
+    expect(canDeletePipeline(false, granted)).toBe(true);
+    // The deleted gate binds the admin line too (official showActions rule).
+    expect(canEditPipeline(true, granted, true)).toBe(false);
+    expect(canDeployPipeline(true, granted, p, true)).toBe(false);
+  });
 });

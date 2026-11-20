@@ -14,6 +14,7 @@ import PageHeader from '@/components/shared/PageHeader.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { usePermissionStore } from '@/stores/permissions';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
@@ -68,6 +69,24 @@ const glossaryPermissions = useEntityPermissions(
   { deleted: () => glossary.value?.deleted === true },
 );
 const canEditDescription = computed(() => glossaryPermissions.canEditDescription.value);
+const permissionStore = usePermissionStore();
+/**
+ * D-4 header gates (pin DataAssetsHeader: the edit affordance opens the
+ * displayName/description modal, so it is the OR of those field flags;
+ * delete is the soft-delete action, so it additionally requires
+ * !deleted). The P1 admin line ORs in on top of both.
+ */
+const canEditGlossary = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    glossaryPermissions.canEditDescription.value ||
+    glossaryPermissions.canEditDisplayName.value,
+);
+const canDeleteGlossary = computed(
+  () =>
+    glossary.value?.deleted !== true &&
+    (permissionStore.isAdminUser || glossaryPermissions.canDelete.value),
+);
 watch(
   () => glossaryPermissions.error.value,
   (error) => {
@@ -882,8 +901,8 @@ onMounted(() => {
                 {{ t('governance.glossaries.addTerm') }}
               </Button>
               <Button data-testid="glossary-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-              <Button data-testid="edit-glossary" @click="openEdit">{{ t('crud.edit') }}</Button>
-              <Button danger data-testid="delete-glossary" :disabled="!glossary" @click="onDeleteGlossary">{{ t('crud.delete') }}</Button>
+              <Button data-testid="edit-glossary" :disabled="!glossary || !canEditGlossary" @click="openEdit">{{ t('crud.edit') }}</Button>
+              <Button danger data-testid="delete-glossary" :disabled="!glossary || !canDeleteGlossary" @click="onDeleteGlossary">{{ t('crud.delete') }}</Button>
             </Space>
           </div>
 
