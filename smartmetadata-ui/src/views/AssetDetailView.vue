@@ -11,7 +11,6 @@ import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { listEntityActivity } from '@/api/activity';
-import { apiEndpointLocation, listApiEndpoints, type ApiEndpointRef } from '@/api/apiCollections';
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
@@ -190,8 +189,6 @@ const customPropsError = ref('');
 const pipelineStatuses = ref<CatalogPipelineStatus[]>([]);
 const pipelineStatusError = ref('');
 const pipelineStatusTried = ref(false);
-const apiEndpoints = ref<ApiEndpointRef[]>([]);
-const apiEndpointsError = ref('');
 const activeTab = ref('');
 const editOpen = ref(false);
 const editKey = ref(0);
@@ -456,12 +453,6 @@ function onTabChange(key: string): void {
     .catch(() => undefined);
 }
 
-const apiEndpointColumns = computed(() => [
-  { title: t('asset.name'), dataIndex: 'name', key: 'name' },
-  { title: t('asset.apiRequestMethod'), dataIndex: 'requestMethod', key: 'requestMethod' },
-  { title: t('asset.apiEndpointUrl'), dataIndex: 'endpointURL', key: 'endpointURL' },
-]);
-
 const apiEndpointSchemaJson = (schema: Record<string, unknown> | undefined): string => {
   if (!schema) {
     return '';
@@ -580,8 +571,6 @@ function resetSecondary(): void {
   pipelineStatuses.value = [];
   pipelineStatusError.value = '';
   pipelineStatusTried.value = false;
-  apiEndpoints.value = [];
-  apiEndpointsError.value = '';
   activeTab.value = '';
   queryCount.value = undefined;
 }
@@ -662,7 +651,7 @@ async function load(): Promise<void> {
         })
         .catch(() => undefined);
     }
-    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses(), loadApiEndpoints()]);
+    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
     assetOps.value = null;
@@ -733,22 +722,6 @@ async function loadQuality(): Promise<void> {
       topicSample.value = null;
       observabilityError.value = error instanceof Error ? error.message : t('asset.sampleUnavailable');
     }
-  }
-}
-
-async function loadApiEndpoints(): Promise<void> {
-  // Official APIEndpointsTab: endpoints are listed per collection, not
-  // embedded in the collection payload.
-  if (props.entityType !== 'apiCollection' || !asset.value) {
-    return;
-  }
-  try {
-    const page = await listApiEndpoints({ apiCollection: asset.value.fullyQualifiedName });
-    apiEndpoints.value = page.data;
-    apiEndpointsError.value = '';
-  } catch (error) {
-    apiEndpoints.value = [];
-    apiEndpointsError.value = error instanceof Error ? error.message : t('asset.apiEndpointsFailed');
   }
 }
 
@@ -1013,10 +986,6 @@ async function onSaveCustomProperties(): Promise<void> {
   }
 }
 
-function onApiEndpointClick(row: ApiEndpointRef): void {
-  void router.push(apiEndpointLocation(row));
-}
-
 // The shared pieces render only inside `v-if="asset"` slots, so the
 // asset cast below never feeds a rendered piece a null asset.
 const pieceContext = computed<AssetDetailPieceContext>(() => ({
@@ -1027,15 +996,12 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   featureColumns: featureColumns.value,
   hyperColumns: hyperColumns.value,
   refColumns: refColumns.value,
-  apiEndpointColumns: apiEndpointColumns.value,
   taskGraph: taskGraph.value,
   taskGraphEmpty: taskGraphEmpty.value,
   customProperties: customProperties.value,
   customPropsError: customPropsError.value,
-  apiEndpoints: apiEndpoints.value,
-  apiEndpointsError: apiEndpointsError.value,
   apiEndpointSchemaJson,
-  onApiEndpointClick,
+  canViewBasic: assetOps.value ? assetFlags.value.canViewBasic : null,
   descriptionAccess: canEditDescription.value,
   descriptionExpanded: descriptionExpanded.value,
   onDescriptionUpdate,

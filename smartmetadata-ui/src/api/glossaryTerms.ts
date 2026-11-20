@@ -28,8 +28,12 @@ export interface ListGlossaryTermsQuery {
   /** Direct-children-of filter (parent term FQN), the official lazy-children
    *  parameter (GlossaryTermResource list accepts directChildrenOf + after). */
   directChildrenOf?: string;
+  /** Entity-status filter (pin getFirstLevelGlossaryTermsPaginated passes
+   *  `entityStatus`, comma-joined when several statuses are selected). */
+  entityStatus?: string;
   limit?: number;
   after?: string;
+  before?: string;
 }
 
 function mapRelatedTerms(value: unknown): EntityRef[] {
@@ -166,9 +170,67 @@ export function listGlossaryTerms(query: ListGlossaryTermsQuery = {}): Promise<P
       fields: GLOSSARY_TERM_FIELDS,
       limit: query.limit ?? 25,
       after: query.after,
+      before: query.before,
       glossary: query.glossary,
       parent: query.parent,
       directChildrenOf: query.directChildrenOf,
+      entityStatus: query.entityStatus,
+    },
+  }).then((payload) => parsePaged(payload, mapTerm));
+}
+
+export interface SearchGlossaryTermsQuery {
+  q: string;
+  glossaryFqn?: string;
+  limit?: number;
+  offset?: number;
+  fields?: string;
+  entityStatus?: string;
+}
+
+/**
+ * Official searchGlossaryTermsPaginated (rest/glossaryAPI.ts:412):
+ * GET /v1/glossaryTerms/search — the search-mode listing of the terms
+ * table (offset-paged, unlike the cursor-paged first-level listing).
+ */
+export function searchGlossaryTermsPaginated(
+  query: SearchGlossaryTermsQuery,
+): Promise<Paged<GlossaryTerm>> {
+  return apiRequest<unknown>('/v1/glossaryTerms/search', {
+    query: {
+      q: query.q,
+      glossaryFqn: query.glossaryFqn,
+      limit: query.limit ?? 50,
+      offset: query.offset ?? 0,
+      fields:
+        query.fields ??
+        'children,relatedTerms,reviewers,owners,tags,usageCount,domains,extension,childrenCount',
+      entityStatus: query.entityStatus,
+    },
+  }).then((payload) => parsePaged(payload, mapTerm));
+}
+
+/**
+ * Official getFirstLevelGlossaryTermsPaginated (rest/glossaryAPI.ts:427):
+ * GET /v1/glossaryTerms?directChildrenOf={parentFqn} — the first-level
+ * listing with only the columns the table renders (childrenCount, owners,
+ * reviewers); cursor-paged (before/after).
+ */
+export function listFirstLevelGlossaryTermsPaginated(
+  parentFqn: string,
+  limit = 50,
+  after?: string,
+  entityStatus?: string,
+  before?: string,
+): Promise<Paged<GlossaryTerm>> {
+  return apiRequest<unknown>('/v1/glossaryTerms', {
+    query: {
+      directChildrenOf: parentFqn,
+      fields: 'childrenCount,owners,reviewers',
+      limit,
+      after,
+      before,
+      entityStatus,
     },
   }).then((payload) => parsePaged(payload, mapTerm));
 }

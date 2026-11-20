@@ -6,9 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Checkbox, Collapse, Empty, Form, Input, Pagination, Select, Space, Spin, Table, Tag, Tabs, Typography, message} from 'ant-design-vue';
+import {Alert, Button, Checkbox, Collapse, Empty, Form, Input, Select, Space, Spin, Table, Tag, Tabs, Typography, message} from 'ant-design-vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
-import SmTable from '@/components/shared/SmTable.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
@@ -25,7 +24,7 @@ import { listTasks } from '@/api/tasks';
 import { toEntityLink } from '@/quality/entityLink';
 import type { ActivityEvent, CollaborationTask, Conversation } from '@/types/collaboration';
 import { confirmDelete } from '@/features/crud/confirmDelete';
-import { createGlossaryTerm, listGlossaryTermChildrenLazy, listGlossaryTerms } from '@/api/glossaryTerms';
+import { createGlossaryTerm, listGlossaryTerms, updateGlossaryTerm } from '@/api/glossaryTerms';
 import { fetchGlossaryGraphData } from '@/features/ontology/glossaryGraph';
 import type { OntologyGraphData } from '@/features/ontology/ontologyGraph';
 import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
@@ -36,6 +35,8 @@ import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
+import GlossaryTermsWidget from '@/components/lists/GlossaryTermsWidget.vue';
+import type { TermTreeNode } from '@/catalog/glossaryTermTree';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
@@ -43,8 +44,6 @@ import type { Glossary, GlossaryTerm } from '@/types/governance';
 const props = defineProps<{ id?: string }>();
 const { t } = useI18n();
 const router = useRouter();
-
-const TERMS_PAGE_SIZE = 10;
 
 const listLoading = ref(false);
 const detailLoading = ref(false);
@@ -156,48 +155,6 @@ async function loadRelations(): Promise<void> {
     relationsLoading.value = false;
   }
 }
-const termSearch = ref('');
-const statusFilter = ref<string | undefined>();
-const termPage = ref(1);
-const expandAll = ref(false);
-
-// Lazy term-children state, keyed by parent term FQN (official
-// GlossaryTermTab mechanism, adapted to this tree table):
-// - loadingChildren: a fetch is in flight for this parent;
-// - enrichedChildren: a lazy page replaced the embedded refs, so re-expand
-//   never refetches;
-// - childPageAfter: the next-page cursor for this parent, if any;
-// - childErrors: the last fetch error for this parent, shown as a retry row.
-// Synthetic rows (loading / error / load-more) live inside the tree as
-// EntityRefs whose id carries the parent id and whose fullyQualifiedName
-// carries the parent FQN; they are never term links.
-const CHILD_PAGE_SIZE = 50;
-const loadingChildren = reactive(new Set<string>());
-const enrichedChildren = reactive(new Set<string>());
-const childPageAfter = reactive(new Map<string, string | undefined>());
-const childErrors = reactive(new Map<string, string>());
-
-type SyntheticChildKind = 'loading' | 'error' | 'more';
-
-function syntheticKind(record: GlossaryTerm): SyntheticChildKind | null {
-  const id = record.id || '';
-  if (id.startsWith('__gterm-loading__:')) {
-    return 'loading';
-  }
-  if (id.startsWith('__gterm-error__:')) {
-    return 'error';
-  }
-  if (id.startsWith('__gterm-more__:')) {
-    return 'more';
-  }
-  return null;
-}
-
-function syntheticParentId(record: GlossaryTerm): string {
-  const id = record.id || '';
-  return id.slice(id.indexOf(':') + 1);
-}
-
 const editOpen = ref(false);
 const editKey = ref(0);
 const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
@@ -206,6 +163,14 @@ const createTermOpen = ref(false);
 const saving = ref(false);
 const creatingGlossary = ref(false);
 const creatingTerm = ref(false);
+// D-2 batch 4: the terms tables (default pane + widget cell) are the
+// GlossaryTermsWidget, which self-fetches; the view only keeps the
+// `terms` list for the create/edit parent picker and the term-count
+// fallback. `termsRefreshKey` forces the widget to reload after a
+// term is created or edited; `editingTerm` turns the create modal
+// into edit mode (updateGlossaryTerm PUT, name read-only).
+const termsRefreshKey = ref(0);
+const editingTerm = ref<TermTreeNode | null>(null);
 
 const editForm = reactive({
   displayName: '',
@@ -227,23 +192,6 @@ const termForm = reactive({
 });
 
 const activeId = computed(() => props.id || glossary.value?.id || '');
-
-const filteredTerms = computed(() => {
-  const q = termSearch.value.trim().toLowerCase();
-  return terms.value.filter((term) => {
-    if (statusFilter.value && (term.status || '') !== statusFilter.value) {
-      return false;
-    }
-    if (!q) {
-      return true;
-    }
-    const hay = [term.name, term.displayName, term.description, term.fullyQualifiedName]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    return hay.includes(q);
-  });
-});
 
 /** Glossary tabs are data from the Stage 4 governance registry; the terms
  *  label keeps its live count, and the activity label counts the items
@@ -331,145 +279,6 @@ function tagFqnList(tags: readonly TagRef[]): string {
   return tags.map((tag) => tag.tagFQN).join(', ');
 }
 
-// The terms-table widget renders the current page flat: children are
-// stripped so no expand icon (and no synthetic lazy-load row) appears
-// inside the grid cell. The full tree stays in the default pane.
-const widgetTerms = computed(() =>
-  pagedTerms.value.map((term) => ({ ...term, children: undefined })),
-);
-
-const statusOptions = computed(() => {
-  const values = new Set<string>();
-  for (const term of terms.value) {
-    if (term.status) {
-      values.add(term.status);
-    }
-  }
-  return [...values].sort().map((value) => ({ value, label: value }));
-});
-
-const pagedTerms = computed(() => {
-  const start = (termPage.value - 1) * TERMS_PAGE_SIZE;
-  return filteredTerms.value.slice(start, start + TERMS_PAGE_SIZE);
-});
-
-const termColumns = computed(() => [
-  { title: t('governance.glossaries.termsCol'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
-  { title: t('governance.glossaries.status'), key: 'status', width: 120 },
-  { title: t('crud.owners'), key: 'owners', width: 140 },
-]);
-
-// How expansion works in this Ant version (verified against the installed
-// ant-design-vue): nest-mode icons render only for rows with a truthy
-// `children` field, and the `expandable` object is not an antd Table prop —
-// the old code's expand worked purely from embedded children data, and its
-// rowExpandable guard was dead. So: a term that reports childrenCount but
-// arrived without embedded refs gets an empty array (icon appears, expanding
-// it lazy-loads the page), childless terms keep no children key (no icon),
-// and expansion is hooked via SmTable's onExpand prop.
-function normalizeTermChildren(term: GlossaryTerm): GlossaryTerm {
-  if ((term.childrenCount ?? 0) > 0 && !term.children?.length) {
-    return { ...term, children: [] };
-  }
-  return term;
-}
-
-function onTermExpand(expanded: boolean, record: GlossaryTerm): void {
-  if (expanded && !syntheticKind(record)) {
-    void ensureChildrenLoaded(record);
-  }
-}
-
-/** Recursively replace one term (by FQN, at any tree depth) with its update. */
-function updateTermTree(
-  list: GlossaryTerm[],
-  fqn: string,
-  update: (term: GlossaryTerm) => GlossaryTerm,
-): GlossaryTerm[] {
-  return list.map((term) => {
-    if (term.fullyQualifiedName === fqn) {
-      return update(term);
-    }
-    const children = term.children;
-    if (children?.length) {
-      return { ...term, children: updateTermTree(children as GlossaryTerm[], fqn, update) };
-    }
-    return term;
-  });
-}
-
-/**
- * Lazy-load a term's direct children (official getGlossaryTermChildrenLazy:
- * directChildrenOf + after cursor, 50 per page). First expand replaces the
- * embedded EntityRefs — which carry no status or owners — with full terms;
- * later pages append. A failed page leaves previously loaded children in
- * place and appends a retry row instead of an empty tree.
- */
-async function ensureChildrenLoaded(term: GlossaryTerm, after?: string): Promise<void> {
-  const fqn = term.fullyQualifiedName || term.name;
-  const isLoadMore = after !== undefined;
-  if (!fqn || loadingChildren.has(fqn)) {
-    return;
-  }
-  // Re-expand never refetches; a zero subtree count is authoritative empty.
-  if (!isLoadMore && (enrichedChildren.has(fqn) || term.childrenCount === 0)) {
-    return;
-  }
-  loadingChildren.add(fqn);
-  if (!isLoadMore) {
-    childErrors.delete(fqn);
-    terms.value = updateTermTree(terms.value, fqn, (current) => {
-      const kept = (current.children ?? []).filter(
-        (child) => syntheticKind(child as GlossaryTerm) !== 'error',
-      );
-      const loadingRow: EntityRef = {
-        id: `__gterm-loading__:${current.id}`,
-        name: '',
-        fullyQualifiedName: fqn,
-      };
-      return { ...current, children: kept.length ? kept : [loadingRow] };
-    });
-  }
-  try {
-    const page = await listGlossaryTermChildrenLazy(fqn, CHILD_PAGE_SIZE, after);
-    enrichedChildren.add(fqn);
-    childPageAfter.set(fqn, page.after);
-    terms.value = updateTermTree(terms.value, fqn, (current) => {
-      const prev = (current.children ?? []).filter((child) => !syntheticKind(child as GlossaryTerm));
-      const fresh = page.data.map(normalizeTermChildren);
-      const next = isLoadMore ? [...prev, ...fresh] : [...fresh];
-      const moreRow: EntityRef | null = page.after
-        ? { id: `__gterm-more__:${current.id}`, name: '', fullyQualifiedName: fqn }
-        : null;
-      return { ...current, children: moreRow ? [...next, moreRow] : next };
-    });
-  } catch (error) {
-    childErrors.set(fqn, error instanceof Error ? error.message : t('crud.loadFailed'));
-    terms.value = updateTermTree(terms.value, fqn, (current) => {
-      const prev = (current.children ?? []).filter((child) => !syntheticKind(child as GlossaryTerm));
-      const errorRow: EntityRef = {
-        id: `__gterm-error__:${current.id}`,
-        name: '',
-        fullyQualifiedName: fqn,
-      };
-      return { ...current, children: [...prev, errorRow] };
-    });
-  } finally {
-    loadingChildren.delete(fqn);
-  }
-}
-
-/** Load the next children page (or retry the failed page) for a synthetic row. */
-function fetchMoreChildren(row: GlossaryTerm): void {
-  const fqn = row.fullyQualifiedName || '';
-  if (!fqn) {
-    return;
-  }
-  const stub = { id: syntheticParentId(row), name: '', fullyQualifiedName: fqn } as GlossaryTerm;
-  void ensureChildrenLoaded(stub, childPageAfter.get(fqn));
-}
-
 const termCountLabel = computed(() => {
   const n = glossary.value?.termCount ?? terms.value.length;
   return t('governance.glossaries.termsTabCount', { count: n });
@@ -535,15 +344,11 @@ async function loadDetail(id: string): Promise<void> {
   relationsGraph.value = null;
   relationsError.value = '';
   relationsLoadedFor.value = '';
-  loadingChildren.clear();
-  enrichedChildren.clear();
-  childPageAfter.clear();
-  childErrors.clear();
   try {
     glossary.value = await getGlossary(id);
     try {
       const page = await listGlossaryTerms({ glossary: id, limit: 100 });
-      terms.value = page.data.map(normalizeTermChildren);
+      terms.value = page.data;
     } catch (error) {
       terms.value = [];
       residualNotes.value.push('governance.glossaries.residualTerms');
@@ -551,7 +356,6 @@ async function loadDetail(id: string): Promise<void> {
         detailError.value = error instanceof Error ? error.message : t('crud.loadFailed');
       }
     }
-    termPage.value = 1;
     if (activeTab.value === 'activity') {
       await loadActivity();
     }
@@ -730,23 +534,37 @@ async function onCreateTerm(): Promise<void> {
   }
   creatingTerm.value = true;
   try {
-    const created = await createGlossaryTerm({
-      glossary: glossary.value.fullyQualifiedName || glossary.value.name,
-      name: termForm.name.trim(),
-      description: termForm.description.trim(),
-      displayName: termForm.displayName.trim() || undefined,
-      parent: termForm.parent,
-      mutuallyExclusive: termForm.mutuallyExclusive,
-    });
-    createTermOpen.value = false;
-    termForm.name = '';
-    termForm.displayName = '';
-    termForm.description = '';
-    termForm.parent = undefined;
-    termForm.mutuallyExclusive = false;
-    message.success(t('governance.glossaries.termCreated', { name: created.name }));
+    if (editingTerm.value) {
+      // Edit mode (D-2 batch 4): the term name is the key and is not
+      // editable; the full PUT body carries the edited fields.
+      await updateGlossaryTerm({
+        glossary: glossary.value.fullyQualifiedName || glossary.value.name,
+        name: editingTerm.value.name,
+        description: termForm.description.trim(),
+        displayName: termForm.displayName.trim() || undefined,
+        parent: termForm.parent,
+        mutuallyExclusive: termForm.mutuallyExclusive,
+      });
+      createTermOpen.value = false;
+      editingTerm.value = null;
+      resetTermForm();
+      message.success(t('terms.updated'));
+    } else {
+      const created = await createGlossaryTerm({
+        glossary: glossary.value.fullyQualifiedName || glossary.value.name,
+        name: termForm.name.trim(),
+        description: termForm.description.trim(),
+        displayName: termForm.displayName.trim() || undefined,
+        parent: termForm.parent,
+        mutuallyExclusive: termForm.mutuallyExclusive,
+      });
+      createTermOpen.value = false;
+      resetTermForm();
+      message.success(t('governance.glossaries.termCreated', { name: created.name }));
+    }
     await loadDetail(glossary.value.id);
     await loadGlossaryList();
+    termsRefreshKey.value += 1;
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('governance.glossaries.termCreateFailed'));
   } finally {
@@ -754,23 +572,35 @@ async function onCreateTerm(): Promise<void> {
   }
 }
 
-function onTermPageChange(page: number): void {
-  termPage.value = page;
+function resetTermForm(): void {
+  termForm.name = '';
+  termForm.displayName = '';
+  termForm.description = '';
+  termForm.parent = undefined;
+  termForm.mutuallyExclusive = false;
 }
 
-function openTerm(term: GlossaryTerm): void {
-  if (!term.id || syntheticKind(term)) {
-    return;
-  }
-  void router.push({ name: 'governance-term', params: { id: term.id } });
+/** Widget add-term: open the create modal, prefilled with the parent when the row action asked for a child term. */
+function openCreateTerm(parent?: TermTreeNode): void {
+  editingTerm.value = null;
+  resetTermForm();
+  termForm.parent = parent?.fullyQualifiedName;
+  createTermOpen.value = true;
+}
+
+/** Widget edit-term: reuse the create modal in edit mode (name read-only). */
+function openEditTerm(term: TermTreeNode): void {
+  editingTerm.value = term;
+  termForm.name = term.name;
+  termForm.displayName = term.displayName ?? '';
+  termForm.description = term.description ?? '';
+  termForm.parent = term.parent?.fullyQualifiedName;
+  termForm.mutuallyExclusive = term.mutuallyExclusive ?? false;
+  createTermOpen.value = true;
 }
 
 function onRailAdd(kind: string): void {
   message.info(t('governance.glossaries.railAddResidual', { kind }));
-}
-
-function onCustomize(): void {
-  message.info(t('governance.glossaries.customizeResidual'));
 }
 
 watch(
@@ -786,10 +616,6 @@ watch(
     }
   },
 );
-
-watch([termSearch, statusFilter], () => {
-  termPage.value = 1;
-});
 
 onMounted(() => {
   void ensureSelection();
@@ -878,7 +704,7 @@ onMounted(() => {
               </PageHeader>
             </div>
             <Space>
-              <Button type="primary" data-testid="create-term" @click="createTermOpen = true">
+              <Button type="primary" data-testid="create-term" @click="openCreateTerm()">
                 {{ t('governance.glossaries.addTerm') }}
               </Button>
               <Button data-testid="glossary-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
@@ -917,52 +743,13 @@ onMounted(() => {
                     />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.TERMS_TABLE && glossary" data-testid="widget-terms-table">
-                    <SmTable
-                      row-key="id"
-                      test-id="widget-terms-table-grid"
-                      size="small"
-                      :columns="termColumns"
-                      :data-source="widgetTerms"
-                      :pagination="false"
-                    >
-                      <template #bodyCell="{ column, record }">
-                        <template v-if="column.key === 'name'">
-                          <a
-                            href="#"
-                            class="glossary__term-link"
-                            :data-testid="`widget-term-row-${(record as GlossaryTerm).id}`"
-                            @click.prevent="openTerm(record as GlossaryTerm)"
-                          >
-                            {{ entityLabel(record as GlossaryTerm) }}
-                          </a>
-                        </template>
-                        <template v-else-if="column.key === 'description'">
-                          {{ (record as GlossaryTerm).description || '—' }}
-                        </template>
-                        <template v-else-if="column.key === 'status'">
-                          <Tag v-if="(record as GlossaryTerm).status" color="purple">
-                            {{ (record as GlossaryTerm).status }}
-                          </Tag>
-                          <Typography.Text v-else type="secondary">—</Typography.Text>
-                        </template>
-                        <template v-else-if="column.key === 'owners'">
-                          {{
-                            joinRefNames((record as GlossaryTerm).owners) || t('governance.glossaries.noOwners')
-                          }}
-                        </template>
-                      </template>
-                    </SmTable>
-                    <div class="glossary__pager">
-                      <Pagination
-                        data-testid="widget-terms-pagination"
-                        size="small"
-                        :current="termPage"
-                        :page-size="TERMS_PAGE_SIZE"
-                        :total="filteredTerms.length"
-                        :show-size-changer="false"
-                        @change="onTermPageChange"
-                      />
-                    </div>
+                    <GlossaryTermsWidget
+                      :glossary="glossary"
+                      :deleted="glossary.deleted === true"
+                      :refresh-key="termsRefreshKey"
+                      @add-term="openCreateTerm"
+                      @edit-term="openEditTerm"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && glossary" data-testid="widget-domain">
                     <Typography.Text strong>{{ t('governance.glossaries.railDomain') }}</Typography.Text>
@@ -1010,126 +797,13 @@ onMounted(() => {
                 />
               </section>
 
-              <div class="glossary__terms-toolbar">
-                <Input
-                  v-model:value="termSearch"
-                  allow-clear
-                  data-testid="search-terms"
-                  class="glossary__search"
-                  :placeholder="t('governance.glossaries.searchTerms')"
-                >
-                  <template #prefix><SmIcon icon-key="action-search" /></template>
-                </Input>
-                <Space wrap>
-                  <Select
-                    v-model:value="statusFilter"
-                    allow-clear
-                    data-testid="term-status-filter"
-                    style="min-width: 120px"
-                    :placeholder="t('governance.glossaries.status')"
-                    :options="statusOptions"
-                  />
-                  <Button data-testid="terms-edit" @click="openEdit">{{ t('crud.edit') }}</Button>
-                  <Button data-testid="terms-expand-all" @click="expandAll = !expandAll">
-                    {{ expandAll ? t('governance.glossaries.collapseAll') : t('governance.glossaries.expandAll') }}
-                  </Button>
-                  <Button data-testid="terms-customize" @click="onCustomize">
-                    <template #icon><SmIcon icon-key="action-table" /></template>
-                    {{ t('governance.glossaries.customize') }}
-                  </Button>
-                </Space>
-              </div>
-
-              <SmTable
-                row-key="id"
-                test-id="glossary-terms-table"
-                size="small"
-                :columns="termColumns"
-                :data-source="pagedTerms"
-                :on-expand="onTermExpand"
-                :pagination="false"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="syntheticKind(record as GlossaryTerm)">
-                    <template v-if="column.key === 'name'">
-                      <span
-                        v-if="syntheticKind(record as GlossaryTerm) === 'loading'"
-                        :data-testid="`term-children-loading-${syntheticParentId(record as GlossaryTerm)}`"
-                      >
-                        <Spin size="small" /> {{ t('governance.glossaries.loadingChildren') }}
-                      </span>
-                      <span
-                        v-else-if="syntheticKind(record as GlossaryTerm) === 'error'"
-                        :data-testid="`term-children-error-${syntheticParentId(record as GlossaryTerm)}`"
-                      >
-                        {{ childErrors.get((record as GlossaryTerm).fullyQualifiedName || '') }}
-                        <Button type="link" size="small" @click="fetchMoreChildren(record as GlossaryTerm)">
-                          {{ t('shared.retry') }}
-                        </Button>
-                      </span>
-                      <Button
-                        v-else
-                        type="link"
-                        size="small"
-                        :data-testid="`term-children-more-${syntheticParentId(record as GlossaryTerm)}`"
-                        :loading="loadingChildren.has((record as GlossaryTerm).fullyQualifiedName || '')"
-                        @click="fetchMoreChildren(record as GlossaryTerm)"
-                      >
-                        {{ t('governance.glossaries.loadMoreChildren') }}
-                      </Button>
-                    </template>
-                    <Typography.Text v-else type="secondary">—</Typography.Text>
-                  </template>
-                  <template v-else-if="column.key === 'name'">
-                    <a
-                      href="#"
-                      class="glossary__term-link"
-                      :data-testid="`term-row-${(record as GlossaryTerm).id}`"
-                      @click.prevent="openTerm(record as GlossaryTerm)"
-                    >
-                      {{ entityLabel(record as GlossaryTerm) }}
-                    </a>
-                    <Spin
-                      v-if="loadingChildren.has((record as GlossaryTerm).fullyQualifiedName || '')"
-                      size="small"
-                      class="glossary__term-loading"
-                    />
-                    <Typography.Paragraph
-                      v-if="expandAll && (record as GlossaryTerm).fullyQualifiedName"
-                      type="secondary"
-                      class="glossary__term-fqn"
-                    >
-                      {{ (record as GlossaryTerm).fullyQualifiedName }}
-                    </Typography.Paragraph>
-                  </template>
-                  <template v-else-if="column.key === 'description'">
-                    {{ (record as GlossaryTerm).description || '—' }}
-                  </template>
-                  <template v-else-if="column.key === 'status'">
-                    <Tag v-if="(record as GlossaryTerm).status" color="purple">
-                      {{ (record as GlossaryTerm).status }}
-                    </Tag>
-                    <Typography.Text v-else type="secondary">—</Typography.Text>
-                  </template>
-                  <template v-else-if="column.key === 'owners'">
-                    {{
-                      joinRefNames((record as GlossaryTerm).owners) || t('governance.glossaries.noOwners')
-                    }}
-                  </template>
-                </template>
-              </SmTable>
-
-              <div class="glossary__pager">
-                <Pagination
-                  data-testid="terms-pagination"
-                  size="small"
-                  :current="termPage"
-                  :page-size="TERMS_PAGE_SIZE"
-                  :total="filteredTerms.length"
-                  :show-size-changer="false"
-                  @change="onTermPageChange"
-                />
-              </div>
+              <GlossaryTermsWidget
+                :glossary="glossary"
+                :deleted="glossary.deleted === true"
+                :refresh-key="termsRefreshKey"
+                @add-term="openCreateTerm"
+                @edit-term="openEditTerm"
+              />
               </template>
               <template v-else-if="tab.key === 'relations'">
                 <Spin :spinning="relationsLoading" data-testid="glossary-relations-loading">
@@ -1366,14 +1040,14 @@ onMounted(() => {
 
   <FormModal
     :open="createTermOpen"
-    :title="t('governance.glossaries.createTermTitle')"
-    :ok-text="t('crud.create')"
+    :title="editingTerm ? t('terms.editTitle') : t('governance.glossaries.createTermTitle')"
+    :ok-text="editingTerm ? t('crud.save') : t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creatingTerm"
-    @ok="onCreateTerm" @cancel="createTermOpen = false">
+    @ok="onCreateTerm" @cancel="createTermOpen = false; editingTerm = null">
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" required>
-        <Input v-model:value="termForm.name" data-testid="create-term-name" />
+        <Input v-model:value="termForm.name" data-testid="create-term-name" :disabled="Boolean(editingTerm)" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>
         <Input.TextArea v-model:value="termForm.description" data-testid="create-term-description" :rows="3" />

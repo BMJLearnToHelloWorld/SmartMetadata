@@ -190,6 +190,12 @@ export interface SearchHit {
    */
   entityStatus?: string;
   parent?: EntityRef;
+  /**
+   * HTTP method of an API endpoint (`GET`/`POST`/…), read from the ES
+   * `_source`. The endpoints list renders its request-method column
+   * from here in search mode; absent for other entity types.
+   */
+  requestMethod?: string;
   /** Metric type / granularity / variant count, for the metrics list name column. */
   metricType?: string;
   granularity?: string;
