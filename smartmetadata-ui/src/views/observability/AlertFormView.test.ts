@@ -117,8 +117,7 @@ async function mountView(path: string): Promise<{ wrapper: VueWrapper; router: R
     history: createMemoryHistory(),
     routes: [
       { path: '/settings', name: 'admin-settings', component: stub },
-      { path: '/settings/notifications', name: 'settings-notifications', component: stub },
-      { path: '/settings/notifications/alerts', name: 'settings-notification-alerts', component: stub },
+      { path: '/settings/:category', name: 'settings-category', component: stub },
       {
         path: '/settings/notifications/add-notification',
         name: 'settings-add-notification',

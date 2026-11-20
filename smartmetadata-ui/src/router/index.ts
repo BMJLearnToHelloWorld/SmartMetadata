@@ -429,6 +429,13 @@ export const router = createRouter({
         // as an alias: `:id` and `:fqn` are different params to
         // vue-router (props injection + resolve requirements), so
         // keeping both would re-admit the mismatch.
+        // R-14(a): the two policy-rule action routes are canonical this
+        // stage; the segments are `:fqn` (pin SettingsRouter detail
+        // routes are `:fqn`), matching the `fqn` prop the rule views
+        // declare. `:id`/`:fqn` spell the same single-segment pattern
+        // and must never be registered twice. Old UUID deep links to
+        // these four routes break once (release-note item: B-9 (a1)
+        // full `:fqn` coverage for roles/policies).
         { path: 'settings/access/policies/:fqn/add-rule', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
         {
           path: 'settings/access/policies/:fqn/edit-rule/:ruleName',

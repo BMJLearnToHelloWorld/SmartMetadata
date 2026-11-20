@@ -12,10 +12,13 @@
   `server.no-application-schema-found` message. The admin gate lives
   on the route (meta guard 'admin-only', the bare AdminProtectedRoute
   equivalent); the view carries no inline gate (DEL-22 HOLD lifted).
-  The schedule field seeds its display from the model value, not pin's
-  `defaultSchedule` prop (ScheduleIntervalField has no such prop) — a
-  display-only divergence for DataInsightsReportApplication's weekly
-  default, recorded in the batch report.
+  The schedule field receives pin's `defaultSchedule` prop (`defaultValue`,
+  the per-app cron default — weekly Sunday for
+  DataInsightsReportApplication); the seeded model value still comes
+  from `getDefaultScheduleValue`, which ignores the app default when
+  limit period options are defined (pin `CronExpressionUtils.ts:157-177`,
+  locked by the schedule-step test), so the prop only seeds the
+  field's fallback/restore default.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
@@ -274,6 +277,7 @@ watch(
           <h5 style="margin: 0 0 16px">{{ t('label.schedule') }}</h5>
           <ScheduleIntervalField
             :model-value="scheduleValue"
+            :default-schedule="defaultValue"
             :include-period-options="initialOptions"
             test-id-prefix="app-install-schedule"
             @update:model-value="(value) => (scheduleValue = value)"

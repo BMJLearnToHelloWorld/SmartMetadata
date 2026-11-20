@@ -8,26 +8,25 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { AlertDetailTab, AlertFace } from '@/types/notifications';
-import { getEncodedFqn, getNotificationAlertDetailsPath } from '@/utils/fqnPaths';
-
-/**
- * 07 path builders (pin utils/RouterUtils.ts:609-651, constants.ts
- * ROUTES:320-334). The notification detail path reuses the shared
- * fqnPaths builder (verified correct). The observability detail path
- * is built HERE, not via the shared builder: the shared
- * getObservabilityAlertDetailsPath returned the SETTINGS path (bug
- * F-07-2, fixed by the sections integration), and this local
- * builder is deliberately retained as the shell dependency — the
- * integration decision (Task 4 items 12/27) keeps the bypass until
- * the shell breadcrumb work lands and re-verifies the delegation.
- */
+import {
+  getEncodedFqn,
+  getNotificationAlertDetailsPath,
+  getObservabilityAlertDetailsPath,
+} from '@/utils/fqnPaths';
 
 export { getNotificationAlertDetailsPath };
 
-/** getObservabilityAlertDetailsPath (RouterUtils.ts:625-637): `/observability/alert/:fqn/:tab`. */
-export function getObservabilityAlertDetailsPath(fqn: string, tab?: AlertDetailTab | string): string {
-  return `/observability/alert/${getEncodedFqn(fqn)}/${tab ?? 'configuration'}`;
-}
+/**
+ * 07 path builders (pin utils/RouterUtils.ts:609-651, constants.ts
+ * ROUTES:320-334). Both detail builders are the shared fqnPaths
+ * implementations (pin `RouterUtils.ts:625-639`); the former local
+ * `getObservabilityAlertDetailsPath` (kept while the shared builder
+ * returned the SETTINGS path, bug F-07-2) was deleted once the shared
+ * builder was fixed and the shell breadcrumb delegation landed
+ * (`settings/breadcrumbExceptions.ts` R-WIRE-7, consumed by
+ * `AlertDetailView.vue`), so this module no longer builds any alert
+ * path locally.
+ */
 
 /** getObservabilityAlertsEditPath (RouterUtils.ts:609-615). */
 export function getObservabilityAlertsEditPath(fqn: string): string {
@@ -39,7 +38,7 @@ export function getNotificationAlertsEditPath(fqn: string): string {
   return `/settings/notifications/edit-notification/${getEncodedFqn(fqn)}`;
 }
 
-/** Face detail path: notification via the shared builder, observability via the local one. */
+/** Face detail path: both faces via the shared fqnPaths builders. */
 export function getAlertDetailsPath(face: AlertFace, fqn: string, tab?: AlertDetailTab | string): string {
   return face === 'Notification'
     ? getNotificationAlertDetailsPath(fqn, tab)

@@ -10,7 +10,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALL_SERVICES_CATEGORY,
-  getCountLabelKey,
   getEntityTypeFromServiceCategory,
   getResourceEntityFromServiceCategory,
   getSearchIndexFromService,
@@ -124,18 +123,6 @@ describe('serviceCategories', () => {
     // No SECURITY_SERVICES entry: falls back to the database index.
     expect(getSearchIndexFromService('securityServices')).toBe('databaseService');
     expect(getSearchIndexFromService('unknown')).toBe('databaseService');
-  });
-
-  it('maps count labels with the metadata/security default', () => {
-    expect(getCountLabelKey('dashboardServices')).toBe('settings.services.count.dashboard');
-    expect(getCountLabelKey('messagingServices')).toBe('settings.services.count.messaging');
-    expect(getCountLabelKey('storageServices')).toBe('settings.services.count.storage');
-    expect(getCountLabelKey('searchServices')).toBe('settings.services.count.search');
-    expect(getCountLabelKey('apiServices')).toBe('settings.services.count.api');
-    expect(getCountLabelKey('driveServices')).toBe('settings.services.count.drive');
-    expect(getCountLabelKey('metadataServices')).toBe('settings.services.count.database');
-    expect(getCountLabelKey('securityServices')).toBe('settings.services.count.database');
-    expect(getCountLabelKey('unknown')).toBe('settings.services.count.database');
   });
 
   it('falls back to DATABASES headers and empty state for unknown categories', () => {

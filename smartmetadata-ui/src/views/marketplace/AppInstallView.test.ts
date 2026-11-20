@@ -142,9 +142,10 @@ async function mountInstall(
         },
         ScheduleIntervalField: {
           name: 'ScheduleIntervalFieldStub',
-          props: ['modelValue', 'includePeriodOptions'],
+          props: ['modelValue', 'defaultSchedule', 'includePeriodOptions'],
           emits: ['update:modelValue', 'validity-change'],
-          template: '<div class="schedule-field-stub" :data-value="modelValue" />',
+          template:
+            '<div class="schedule-field-stub" :data-value="modelValue" :data-default-schedule="defaultSchedule" />',
         },
       },
     },
@@ -201,6 +202,12 @@ describe('AppInstallView', () => {
     // options are defined: the week option seeds Monday, not the
     // report app's Sunday display default.
     expect(wrapper.find('.schedule-field-stub').attributes('data-value')).toBe('0 0 * * 1');
+    // R-12: pin AppInstall.component.tsx:303 passes the per-app default
+    // through as the field's defaultSchedule prop (Sunday for the
+    // report app); the seeded model value above is unaffected.
+    expect(wrapper.find('.schedule-field-stub').attributes('data-default-schedule')).toBe(
+      '0 0 * * 0',
+    );
     wrapper.unmount();
   });
 

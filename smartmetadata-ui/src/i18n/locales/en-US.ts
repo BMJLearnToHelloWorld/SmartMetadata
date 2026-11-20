@@ -3902,17 +3902,6 @@ const enUS = {
         loadFailed: 'The connection schema failed to load.',
         noConfigAvailable: 'No Connection Configs available.',
       },
-      count: {
-        api: 'Collections',
-        dashboard: 'Dashboards',
-        database: 'Databases',
-        drive: 'Directories',
-        messaging: 'Topics',
-        mlmodel: 'ML Models',
-        pipeline: 'Pipelines',
-        search: 'Search Indexes',
-        storage: 'Containers',
-      },
       domain: {
         clearFilter: 'Clear domain filter',
         filteredBy: 'Filtered by domain',

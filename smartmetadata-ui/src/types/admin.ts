@@ -225,14 +225,6 @@ export interface AdminBot {
   allowImpersonation?: boolean;
 }
 
-export interface CreateBotRequest {
-  name: string;
-  botUser: string;
-  displayName?: string;
-  description?: string;
-  botUserEmail: string;
-}
-
 export type JwtTokenExpiry = 'OneHour' | '1' | '7' | '30' | '60' | '90' | 'Unlimited';
 
 export interface JwtAuthMechanism {
