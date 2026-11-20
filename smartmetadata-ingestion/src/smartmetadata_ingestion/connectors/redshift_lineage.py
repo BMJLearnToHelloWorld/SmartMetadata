@@ -58,6 +58,15 @@ class RedshiftLineageSource(LineageSource):
 
     def prepare(self) -> None:
         redshift.run_connection_test(self._config.connection or {})
+        # File-based query log: no live instance to preflight. The
+        # default PROVISIONED template from _build_query_log_source
+        # already covers CSV reads (QueryLogSource.produce reads the
+        # file and returns before any history read), and a live
+        # preflight would demand the redshift driver for a read that
+        # never touches the database. Same guard as RedshiftUsageSource
+        # (#257); live history reads still preflight below.
+        if self._config.query_log_file_path:
+            return
         # D-L2c C preflight, before any history read: detect the
         # instance type and probe that branch's privileges (loud on
         # a miss). The result is cached for the lazily built
