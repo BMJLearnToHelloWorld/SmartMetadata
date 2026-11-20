@@ -163,6 +163,30 @@ export function parentTableLocation(
   return assetLocation('table', tableFqn);
 }
 
+/**
+ * Shared search-hit opener (pin ExploreSearchCard title link, as
+ * already implemented inline in MembersAssetList and AssetsTabs):
+ * a column hit opens its parent table, a wired type opens its asset
+ * detail, anything else is unwired and the caller keeps the hit
+ * selected (preview) instead of navigating. Returns true when a
+ * navigation was pushed.
+ */
+export function openSearchHit(
+  push: (to: { name: string; params: { entityType: string; fqn: string } }) => unknown,
+  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string },
+): boolean {
+  const parent = parentTableLocation(hit.entityType, hit.tableFqn);
+  if (parent) {
+    void push(parent);
+    return true;
+  }
+  if (!hit.fullyQualifiedName || !hit.entityType || !isDetailWired(hit.entityType)) {
+    return false;
+  }
+  void push(assetLocation(hit.entityType, hit.fullyQualifiedName));
+  return true;
+}
+
 export function resolveVersionsPath(entityType: string, id: string): string | null {
   const spec = DETAIL_ENDPOINTS[entityType];
   if (!spec || !id) {

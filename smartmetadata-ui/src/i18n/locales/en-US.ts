@@ -1473,7 +1473,6 @@ const enUS = {
       assets: 'Metric assets are not served by this console yet.',
       tagAssets: 'Tag assets are not served by this console yet.',
       dataObservability: 'Data observability is not served by this console yet.',
-      relationsGraph: 'Relations graph is not served for glossary terms yet.',
     },
     name: 'Name',
     noCustomProperties: 'No custom properties defined',
@@ -2220,6 +2219,15 @@ const enUS = {
       bulkSummary: '{passed} succeeded, {failed} failed, {pending} pending approval.',
       pendingApprovalNote: 'Assets pending approval are held as change requests and are not published yet.',
       unknownAsset: 'Unknown asset',
+    },
+    /** Tag assets tab (B-15 Lane A, pin AssetsTabs on TagPage). */
+    tagAssets: {
+      /** Noun for the link-assets empty description (pin getEntityTypeString(TAG)). */
+      tagNoun: 'tag',
+      removeConfirm: 'Remove asset {name} from this tag?',
+      removeSuccess: 'Asset removed from this tag.',
+      removeFailed: 'Failed to remove the asset from this tag.',
+      selectedCount: '{count} selected',
     },
   },
   profilerSettings: {
