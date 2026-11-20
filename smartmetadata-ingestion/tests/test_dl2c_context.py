@@ -632,7 +632,7 @@ def test_stage_resolves_structured_tables_and_rewrites_joins(tmp_path: Path) -> 
     assert all(context is parsed.binding_context for _, context in resolver.calls)
 
 
-def test_binding_counts_snapshot_shape_has_all_thirteen_keys() -> None:
+def test_binding_counts_snapshot_shape_has_all_sixteen_keys() -> None:
     counts = _usage_resolver(_FakeClient()).binding_counts
     assert counts == {
         "missing_database": 0,
@@ -648,6 +648,9 @@ def test_binding_counts_snapshot_shape_has_all_thirteen_keys() -> None:
         "builtin_function_filtered": 0,
         "cross_service_ambiguous": 0,
         "cross_service_bound": 0,
+        "discovery_attempted": 0,
+        "discovery_bound": 0,
+        "discovery_ambiguous": 0,
     }
     lineage_counts = _lineage_resolver(_FakeClient()).binding_counts
     assert lineage_counts == counts
