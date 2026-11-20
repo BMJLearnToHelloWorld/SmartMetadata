@@ -33,8 +33,10 @@ catalog table are skipped with a warning, never invented.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import logging
+import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -43,6 +45,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ..client.rest import TABLES_PATH, RestClient
+from ..data_quality.models import split_fqn
 from ..errors import RestError, WorkflowError
 from ..lineage.folding import fallback_eligible, fold_identifier
 from ..lineage.identifiers import StructuredIdentifier
@@ -62,6 +65,13 @@ COST_FILE_SUFFIX = "_query"
 MAX_CACHED_BINDINGS = 512
 MAX_CACHED_SCHEMA_LISTINGS = 128
 MAX_CACHED_USERS = 512
+MAX_CACHED_DISCOVERIES = 512
+
+# D-L2c A (D-A1, Bai 2026-11-20): the unique-candidate discovery cap —
+# the official number (``engine.py:53`` ``max_candidates_per_lookup``),
+# not its raise-on-excess semantics: over the cap the product skips
+# and counts, it never aborts the batch (V-2).
+MAX_DISCOVERY_CANDIDATES = 10
 
 # Unresolvable-name warnings are throttled: the first distinct names
 # are warned about individually, the rest only counted, so a log full
@@ -126,6 +136,9 @@ BINDING_COUNT_KEYS: tuple[str, ...] = (
     "builtin_function_filtered",
     "cross_service_ambiguous",
     "cross_service_bound",
+    "discovery_attempted",
+    "discovery_bound",
+    "discovery_ambiguous",
 )
 
 
@@ -238,6 +251,68 @@ def missing_count_key(sources: tuple[CandidateSource, CandidateSource]) -> str:
     if database_missing:
         return "missing_database"
     return "missing_schema"
+
+
+@dataclass(frozen=True)
+class _DiscoveryOutcome:
+    """One unique-candidate discovery verdict (D-L2c A).
+
+    ``kind`` is ``"bound"`` (exactly one verified candidate),
+    ``"ambiguous"`` (two or more, or the first page already held
+    ``MAX_DISCOVERY_CANDIDATES + 1`` items so uniqueness cannot be
+    proven), or ``"zero"`` (no verified candidate). ``competitors``
+    holds at most the first three verified FQNs for the ambiguity
+    warning; ``total`` is their verified count in the fetched page —
+    never a claim about pages never fetched, so an over-limit
+    verdict carries ``over_limit=True`` and its warning says so.
+    ``entity`` is the bound candidate's list item, present only when
+    it is field-complete enough to seed the ``_bindings`` cache."""
+
+    kind: str
+    fqn: str | None = None
+    competitors: tuple[str, ...] = ()
+    total: int = 0
+    over_limit: bool = False
+    entity: dict[str, Any] | None = None
+
+
+def _discovery_candidate_fqn(item: Any, leaf: str) -> str | None:
+    """The bound FQN for one enumerated table item, or ``None`` when
+    the item cannot be a candidate: not a dict, no string
+    ``fullyQualifiedName``, not a four-segment catalog FQN, or a leaf
+    that is not exactly (case-sensitively) the folded leaf. The
+    server's case-insensitive substring match is wide on purpose;
+    this is the strict client-side verification (D-L2c A V-5): the
+    comparison object is the folded canonical leaf, so a quoted
+    leaf only ever matches its own spelling. FQN splitting reuses
+    the quote-aware ``split_fqn`` — never a naive dot split, which
+    would cut a quoted dotted segment apart."""
+    if not isinstance(item, dict):
+        return None
+    fqn = item.get("fullyQualifiedName")
+    if not isinstance(fqn, str) or not fqn:
+        return None
+    try:
+        parts = split_fqn(fqn)
+    except WorkflowError:
+        return None
+    if len(parts) != 4 or parts[-1] != leaf:
+        return None
+    return fqn
+
+
+def _discovery_entity_complete(entity: Any, fqn: str) -> bool:
+    """Whether a list item may seed the ``_bindings`` cache for its
+    FQN: a dict whose ``fullyQualifiedName`` is exactly the bound
+    FQN and that carries an ``id``. Anything less is not the entity
+    ``get_table_by_name`` would return, so it is never cached as
+    one (README §4 A-3)."""
+    return (
+        isinstance(entity, dict)
+        and entity.get("fullyQualifiedName") == fqn
+        and isinstance(entity.get("id"), str)
+        and bool(entity["id"])
+    )
 
 
 def stored_query_hash(stored_text: str) -> str:
@@ -396,7 +471,19 @@ class RestTableBindingResolver:
        ambiguity skips with a warning rather than guessing. Quoted
        segments on engines with established case-sensitive quoting
        never enter this step (design §5.5b).
-    3. Unresolvable. ``None``: the stage skips the table with a
+    3. Unique-candidate discovery (D-L2c A). Only for a bare
+       one-segment name whose candidate failed because BOTH context
+       segments are missing: the own service's tables are enumerated
+       once by leaf name (``GET /v1/tables?service=...&tableRegex=``,
+       anchored and escaped) and the name binds only when exactly
+       one candidate survives the client's case-sensitive exact-leaf
+       verification. Two or more candidates — or a first page already
+       full at the cap — skip as ambiguous; zero candidates fall back
+       to the ``missing_both`` path. The uniqueness gate is a product
+       design, not an official behavior: official WILDCARD binds
+       every hit and raises over its limit (V-1/V-2/V-3). Discovery
+       runs only in the own-service probe, never across services.
+    4. Unresolvable. ``None``: the stage skips the table with a
        throttled warning. No search-API fuzzy step exists in this
        batch — ranked search results would bind queries to the wrong
        table, which is worse than skipping; extending the chain is a
@@ -424,8 +511,15 @@ class RestTableBindingResolver:
         self._engine_key = engine_key
         self._bindings = _BoundedCache(MAX_CACHED_BINDINGS)
         self._schema_listings = _BoundedCache(MAX_CACHED_SCHEMA_LISTINGS)
+        self._discoveries = _BoundedCache(MAX_CACHED_DISCOVERIES)
         self._warned: set[StructuredIdentifier] = set()
         self._throttle_warned = False
+        # Discovery bindings already audit-logged (D-L2c A §5): a
+        # separate set from ``_warned`` — a bound name is a decision
+        # record, never an unresolvable-name warning, and the two
+        # throttles must never share state.
+        self._warned_discoveries: set[str] = set()
+        self._discovery_throttle_warned = False
         self._skipped_count = 0
         self._counts: dict[str, int] = {key: 0 for key in BINDING_COUNT_KEYS}
         self._fidelity_skips: dict[str, int] = {}
@@ -444,6 +538,46 @@ class RestTableBindingResolver:
             ]
             | None
         ) = None
+        # The discovery verdict held beside ``_pending_skip`` (D-L2c
+        # A §3.6): the folded identifier, at most the first three
+        # competing FQNs, their verified count in the fetched page,
+        # and whether the first page already hit the candidate cap.
+        # A zero-candidate discovery stores an empty competitor list
+        # with total 0 — the marker that a discovery attempt ran, so
+        # the loud warning can count ``discovery_attempted`` for it.
+        # Same lifecycle as ``_pending_skip``: cleared on every
+        # resolve entry, consumed by the matching loud warning, and
+        # dropped with it by ``discard_pending_skip``.
+        self._pending_discovery: (
+            tuple[StructuredIdentifier, tuple[str, ...], int, bool] | None
+        ) = None
+
+    @property
+    def effective_default_schema(self) -> str | None:
+        """The default schema candidate construction may actually use.
+
+        D-L2c E (full delete): always ``None``. The connection's
+        ``databaseSchema`` is a scan range, not a binding default —
+        using it as one mis-binds a bare name into the scan-range
+        schema when the session actually used another schema. The
+        raw value is still accepted and stored by the constructor
+        (workflows and ``resolve_connection_defaults`` are
+        untouched), but no candidate is ever built from it: a bare
+        name with no row schema is a miss (``missing_schema`` /
+        ``missing_both``), never a default-bound hit. The database
+        default is unaffected — only the schema half is deleted."""
+        return None
+
+    def discard_pending_skip(self) -> None:
+        """Drop the pending quiet-probe skip classification without
+        counting or warning: the caller already counted the outcome
+        under its own key (D-L2c D: cross-service ambiguity), and
+        spending the pending entry would count one skip twice. The
+        pending discovery verdict goes with it — a discovery
+        ambiguity rescued cross-service counts nothing (D-L2c A
+        §3.6: one attempt counts once, under its final outcome)."""
+        self._pending_skip = None
+        self._pending_discovery = None
 
     @property
     def effective_default_schema(self) -> str | None:
@@ -510,6 +644,7 @@ class RestTableBindingResolver:
         # before any exact comparison happens (design §5.5b).
         folded = fold_identifier(name, self._engine_key)
         self._pending_skip = None
+        self._pending_discovery = None
         if len(folded) > 3:
             self._pending_skip = (folded, context, "unsupported_qualifier", None)
             self.warn_unresolved(folded, context=context, quiet=quiet)
@@ -522,6 +657,54 @@ class RestTableBindingResolver:
             default_schema=self.effective_default_schema,
         )
         if candidate.fqn is None:
+            if (
+                len(folded) == 1
+                and missing_count_key(candidate.sources) == "missing_both"
+            ):
+                outcome = self._discover_unique_table(folded)
+                if outcome.kind == "bound":
+                    # A discovery bind is final: the own-service
+                    # probe returns it and no further chain runs, so
+                    # both counts settle here, at once.
+                    assert outcome.fqn is not None
+                    self._counts["discovery_attempted"] += 1
+                    self._counts["discovery_bound"] += 1
+                    self._note_discovery_bound(folded, outcome.fqn)
+                    if outcome.entity is not None:
+                        self._bindings.set(outcome.fqn, outcome.entity)
+                    return outcome.fqn
+                if outcome.kind == "ambiguous":
+                    self._pending_skip = (
+                        folded,
+                        context,
+                        "discovery_ambiguous",
+                        candidate.sources,
+                    )
+                    self._pending_discovery = (
+                        folded,
+                        outcome.competitors,
+                        outcome.total,
+                        outcome.over_limit,
+                    )
+                    self.warn_unresolved(
+                        folded, context=context, candidate_sources=None, quiet=quiet
+                    )
+                    return None
+                # Zero candidates: the pending key stays
+                # ``missing_both`` (the pre-discovery behavior), and
+                # the empty discovery marker lets the loud warning
+                # count this attempt's ``discovery_attempted``.
+                self._pending_discovery = (folded, (), 0, False)
+                self._pending_skip = (
+                    folded,
+                    context,
+                    "missing_both",
+                    candidate.sources,
+                )
+                self.warn_unresolved(
+                    folded, context=context, candidate_sources=None, quiet=quiet
+                )
+                return None
             self._pending_skip = (
                 folded,
                 context,
@@ -642,6 +825,127 @@ class RestTableBindingResolver:
         self._schema_listings.set(schema_fqn, result)
         return result
 
+    def _discover_unique_table(
+        self, folded: StructuredIdentifier
+    ) -> _DiscoveryOutcome:
+        """The unique-candidate discovery verdict for a folded
+        one-segment name (D-L2c A). Enumerates the own service's
+        tables by leaf name and verifies each hit client-side; the
+        verdict carries no counts — the caller settles those, so a
+        quiet probe that is later rescued cross-service counts
+        nothing. Positive and negative results cache alike; an
+        over-limit page caches with its flag, never as a complete
+        candidate set. A non-404 REST error counts ``read_failure``
+        and propagates like ``_lookup``; a 404 counts as zero
+        candidates (defensive — the list endpoint does not 404)."""
+        leaf = folded.texts[0]
+        cache_key = f"{self._service_name}\x1f{leaf}"
+        cached = self._discoveries.get(cache_key)
+        if cached is not _MISSING:
+            candidates, over_limit = cached
+            return self._discovery_outcome(candidates, over_limit)
+        try:
+            items = list(
+                itertools.islice(
+                    self._client.iter_collection(
+                        TABLES_PATH,
+                        limit=MAX_DISCOVERY_CANDIDATES + 1,
+                        extra_params={
+                            "service": self._service_name,
+                            "tableRegex": f"^{re.escape(leaf)}$",
+                        },
+                    ),
+                    MAX_DISCOVERY_CANDIDATES + 1,
+                )
+            )
+        except RestError as exc:
+            if exc.status_code == 404:
+                items = []
+            else:
+                self._counts["read_failure"] += 1
+                raise
+        # A full first page proves more than the cap can hold, so
+        # uniqueness cannot be established without fetching further
+        # pages — which the cap forbids. The verdict is ambiguous
+        # regardless of how many of this page verified.
+        over_limit = len(items) == MAX_DISCOVERY_CANDIDATES + 1
+        verified: dict[str, dict[str, Any]] = {}
+        for item in items:
+            fqn = _discovery_candidate_fqn(item, leaf)
+            if fqn is not None and fqn not in verified:
+                verified[fqn] = item
+        candidates = tuple(sorted(verified))
+        self._discoveries.set(cache_key, (candidates, over_limit))
+        return self._discovery_outcome(candidates, over_limit, verified)
+
+    @staticmethod
+    def _discovery_outcome(
+        candidates: tuple[str, ...],
+        over_limit: bool,
+        entities: dict[str, dict[str, Any]] | None = None,
+    ) -> _DiscoveryOutcome:
+        """One discovery verdict from verified distinct FQNs. The
+        entity rides along only for a live-enumeration bind, and
+        only when the list item is field-complete: it must carry the
+        bound FQN and an ``id`` — anything less is not the entity a
+        later exact lookup would return, so it never seeds
+        ``_bindings`` (the bind itself still stands)."""
+        if over_limit or len(candidates) >= 2:
+            return _DiscoveryOutcome(
+                kind="ambiguous",
+                competitors=candidates[:3],
+                total=len(candidates),
+                over_limit=over_limit,
+            )
+        if len(candidates) == 1:
+            fqn = candidates[0]
+            entity = (entities or {}).get(fqn)
+            if not _discovery_entity_complete(entity, fqn):
+                entity = None
+            return _DiscoveryOutcome(kind="bound", fqn=fqn, entity=entity)
+        return _DiscoveryOutcome(kind="zero")
+
+    def _note_discovery_bound(
+        self, folded: StructuredIdentifier, fqn: str
+    ) -> None:
+        """Audit-log one discovery binding (§8.6 sampling frame).
+        This is a decision record, not an unresolvable-name warning,
+        so it is NOT quiet-gated: a quiet probe that binds still
+        leaves its audit trail. Throttled independently of
+        ``_warned`` — the first hundred distinct discoveries are
+        logged individually, the rest only counted."""
+        cache_key = f"{self._service_name}\x1f{folded.texts[0]}"
+        if cache_key in self._warned_discoveries:
+            return
+        if len(self._warned_discoveries) < MAX_WARNED_UNRESOLVED_NAMES:
+            self._warned_discoveries.add(cache_key)
+            logger.warning(
+                "Bound bare table name %r to catalog table %s via discovery",
+                folded.display(),
+                fqn,
+            )
+        elif not self._discovery_throttle_warned:
+            self._discovery_throttle_warned = True
+            logger.warning(
+                "Further discovery bindings will be counted, not logged "
+                "(%d bound so far)",
+                self._counts["discovery_bound"],
+            )
+
+    def _take_pending_discovery(
+        self, folded: StructuredIdentifier
+    ) -> tuple[tuple[str, ...], int, bool] | None:
+        """Consume the pending discovery verdict for a loud warning:
+        the competitors, their verified count, and the over-limit
+        flag — or ``None`` when no discovery ran for this name. The
+        entry is always cleared; a stale verdict never survives onto
+        a later, unrelated name."""
+        pending = self._pending_discovery
+        self._pending_discovery = None
+        if pending is not None and pending[0] == folded:
+            return pending[1], pending[2], pending[3]
+        return None
+
     def warn_unresolved(
         self,
         name: StructuredIdentifier,
@@ -669,19 +973,50 @@ class RestTableBindingResolver:
             return
         folded = fold_identifier(name, self._engine_key)
         skip_key, sources = self._consume_pending(folded, context, candidate_sources)
+        discovery = self._take_pending_discovery(folded)
         self._counts[skip_key] += 1
         self._skipped_count += 1
+        if discovery is not None:
+            # A discovery attempt settles here: the loud warning is
+            # the attempt's only count. A zero-candidate discovery
+            # counts its attempt beside ``missing_both``; an
+            # ambiguous one beside ``discovery_ambiguous`` (counted
+            # above via the pending key). The identity
+            # ``attempted == bound + ambiguous + zero`` holds because
+            # a rescued quiet probe never reaches this method.
+            self._counts["discovery_attempted"] += 1
         if folded in self._warned:
             return
         if len(self._warned) < MAX_WARNED_UNRESOLVED_NAMES:
             self._warned.add(folded)
-            logger.warning(
-                "No catalog table matches parsed name %r under service %s; "
-                "skipping its usage%s",
-                folded.display(),
-                self._service_name,
-                _sources_suffix(sources, context),
-            )
+            if skip_key == "discovery_ambiguous" and discovery is not None:
+                competitors, total, over_limit = discovery
+                if over_limit:
+                    detail = (
+                        f"{total} candidate(s) verified among the first "
+                        f"{MAX_DISCOVERY_CANDIDATES + 1} matches "
+                        "(candidate limit exceeded, more may exist)"
+                    )
+                    if competitors:
+                        detail += f": {', '.join(competitors)}"
+                else:
+                    detail = f"{total} candidates ({', '.join(competitors)})"
+                logger.warning(
+                    "Ambiguous bare table name %r under service %s: %s; "
+                    "skipping its usage%s",
+                    folded.display(),
+                    self._service_name,
+                    detail,
+                    _sources_suffix(sources, context),
+                )
+            else:
+                logger.warning(
+                    "No catalog table matches parsed name %r under service %s; "
+                    "skipping its usage%s",
+                    folded.display(),
+                    self._service_name,
+                    _sources_suffix(sources, context),
+                )
         elif not self._throttle_warned:
             self._throttle_warned = True
             logger.warning(
@@ -709,6 +1044,10 @@ class RestTableBindingResolver:
             and pending[1] == context
         ):
             return pending[2], pending[3]
+        # A pending skip that does not match this name and context is
+        # stale — and so is the discovery verdict recorded beside it:
+        # it must never be spent on a later, unrelated name.
+        self._pending_discovery = None
         candidate = build_candidate(
             self._service_name,
             folded,

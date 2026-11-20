@@ -1,10 +1,10 @@
 # Usage/lineage binding runs on structured identifiers with a shared naming rule, and fails closed instead of guessing
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-11-17 (initial)
-- **Deciders:** Bai (D-L2c design v3 conditionally accepted + eleven-question rulings, 2026-11-16; the column-rule purpose reading in this record was confirmed by Bai on 2026-11-17 after a source-level benchmark against the official pin, see Decision)
+- **Revisions:** v1 2026-11-17 (initial); v2 2026-11-20 (second phase (b): A unique-candidate discovery, B `schema`-key deletion, C Redshift alignment, D cross-service ambiguity, E scan-range fallback full delete, H builtin-function filter)
+- **Deciders:** Bai (D-L2c design v3 conditionally accepted + eleven-question rulings, 2026-11-16; the column-rule purpose reading in this record was confirmed by Bai on 2026-11-17 after a source-level benchmark against the official pin, see Decision; eight second-phase rulings, 2026-11-20 06:49–06:53 — D-A1 CAP=10, D-A2 table-chain own-service only, D-B1/D-B2 moot under the fresh-environment premise, D-B3 hard delete + existence warning, D-D1 ambiguity skip, D-E1 full delete, D-H1 fix; C D-C1/D-C2 resolved 2026-11-19 22:25)
 - **Guard:** `smartmetadata-ingestion/tests/test_dl2c_*.py` (the §6 matrix: binding, context, naming, MySQL, Postgres, CSV, Redshift lock, branches, CALL, UDF/column entry, identifiers, parser extraction, fixups, and the matrix-completion file)
-- **Related:** upstream pin `a3012259ca`; ADR:2026-11-16-live-issues-batch-parity (which recorded D-L2c as an unresolved defect); D-L2c design draft v3 (out-of-repo working papers, `DESIGN-DRAFT-D-L2C.md`)
+- **Related:** upstream pin `a3012259ca`; ADR:2026-11-16-live-issues-batch-parity (which recorded D-L2c as an unresolved defect); D-L2c design draft v3 (out-of-repo working papers, `DESIGN-DRAFT-D-L2C.md`); second-phase designs `~/workspace/work/dl2c-design-20261120/` (README + DRAFT-A/C/B/D/E/H + DRAFT-ACCEPTANCE, 3,692 lines, baseline `b174e78c`)
 
 ## Context
 
@@ -52,241 +52,98 @@ paths, and the defects were not confined to context-less fallback.
 
 ## Decision
 
-**Structured identifiers, extracted before the lossy conversion.**
-Binding works on `StructuredIdentifier` — an ordered segment sequence
-where every segment keeps its written text and quoted flag — and never
-splits a string on `.`. Each parser branch (SqlGlot, SqlFluff, SqlParse)
-extracts names from its own parse of the same text under the same
-dialect, carrying role, alias, statement scope, and a fidelity mark;
-a branch that cannot prove fidelity does not bind its names, and no
-branch falls back to the string path. The quoted flag is the only thing
-separating a real `"<default>"` segment from the unquoted placeholder.
-`table_aliases` is keyed by structured identifiers. Association between
-an extracted name and a runner endpoint requires a unique structural
-identity (segments, quoted flags, alias, role, scope); appearance order
-is never consulted as identity proof, and unconfirmed endpoints are
-conservatively skipped. Over-long names with no mapping are skipped
-with a warning, never truncated.
+**Structured identifiers, extracted before the lossy conversion.** Binding works on `StructuredIdentifier` — an ordered segment sequence where every segment keeps its written text and quoted flag — and never splits a string on `.`. Each parser branch (SqlGlot, SqlFluff, SqlParse) extracts names from its own parse of the same text under the same dialect, carrying role, alias, statement scope, and a fidelity mark; a branch that cannot prove fidelity does not bind its names, and no branch falls back to the string path. The quoted flag is the only thing separating a real `"<default>"` segment from the unquoted placeholder. `table_aliases` is keyed by structured identifiers. Association between an extracted name and a runner endpoint requires a unique structural identity (segments, quoted flags, alias, role, scope); appearance order is never consulted as identity proof, and unconfirmed endpoints are conservatively skipped. Over-long names with no mapping are skipped with a warning, never truncated.
 
-**Case folding before exact candidates, as specification data.** The
-per-engine folding table (`FOLDING_TABLE`) carries separate unquoted and
-quoted rules: Postgres-family folds unquoted to lowercase, Snowflake to
-uppercase, quoted segments are preserved where case-sensitivity is
-established; Redshift's quoted handling is UNKNOWN (it depends on the
-`enable_case_sensitive_identifier` configuration the binding layer
-cannot see), and engines whose semantics depend on unseen configuration
-(MySQL, MSSQL, Databricks/UnityCatalog) fold nothing. Folding applies
-only to parsed SQL identifiers, before exact candidates are built; row
-context and connection defaults already carry catalog spellings and are
-never folded. A quoted segment with an established case-sensitive rule
-never enters the case-insensitive fallback; the fallback itself compares
-whole FQNs within the candidate's own schema and binds only on a unique
-match.
+**Case folding before exact candidates, as specification data.** The per-engine folding table (`FOLDING_TABLE`) carries separate unquoted and quoted rules: Postgres-family folds unquoted to lowercase, Snowflake to uppercase, quoted segments are preserved where case-sensitivity is established; Redshift's quoted handling is UNKNOWN (it depends on the `enable_case_sensitive_identifier` configuration the binding layer cannot see), and engines whose semantics depend on unseen configuration (MySQL, MSSQL, Databricks/UnityCatalog) fold nothing. Folding applies only to parsed SQL identifiers, before exact candidates are built; row context and connection defaults already carry catalog spellings and are never folded. A quoted segment with an established case-sensitive rule never enters the case-insensitive fallback; the fallback itself compares whole FQNs within the candidate's own schema and binds only on a unique match.
 
-**One candidate construction, one context type, counted skips.** All
-three chains share `build_candidate`: SQL qualifier segments are never
-overwritten by row context or defaults; three-part names carry their
-own segments, two-part names take only the database from context, and
-one-part names take both. Row context travels as the frozen
-`BindingContext` (values plus per-field input sources: native row,
-swapped native row, CSV row, missing, or the entity's own catalog
-position for view lineage), constructed once per flow at its channel boundary
-and passed as `context=` through every binding call. Skips are counted
-separately (missing database / missing schema / both missing, 404,
-ambiguity, unsupported qualifier, fidelity-unproven skip per winning
-branch, read failure, and per-segment default-bound counts), and
-unresolved warnings carry both provenance levels (input field sources
-and final candidate sources). Missing context still warns and skips:
-unique-candidate discovery was not approved and is not built.
+**One candidate construction, one context type, counted skips.** All three chains share `build_candidate`: SQL qualifier segments are never overwritten by row context or defaults; three-part names carry their own segments, two-part names take only the database from context, and one-part names take both. Row context travels as the frozen `BindingContext` (values plus per-field input sources: native row, swapped native row, CSV row, missing, or the entity's own catalog position for view lineage), constructed once per flow at its channel boundary and passed as `context=` through every binding call. Skips are counted separately (missing database / missing schema / both missing, 404, ambiguity, unsupported qualifier, fidelity-unproven skip per winning branch, read failure, and per-segment default-bound counts), and unresolved warnings carry both provenance levels (input field sources and final candidate sources). Missing context still warns and skips, except that unique-candidate discovery (second phase, D-L2c A) now resolves a bare name when exactly one catalog table matches its leaf (see "Second phase" below).
 
-**Shared naming, separated requiredness.** The single selection rule
-`resolve_connection_defaults` (per-engine priority chains as data,
-independent of any query-log spec) is shared by metadata naming and
-binding defaults: the MySQL family reads
-`databaseName → database → "default"`, the `database` family reads
-`database`, Databricks/UnityCatalog read `catalog`, and the schema chain
-is `databaseSchema → schema` (the `schema` compatibility key is kept).
-Only the selection is shared, never the requiredness: the shared
-function returns `None` for a missing segment and never raises, because
-binding defaults are optional — a fully qualified SQL name or a
-two-column CSV row binds with an empty connection — while each metadata
-method keeps its own required check (Postgres still raises when
-`database` is absent, inside its own method). Both binding call sites
-invoke the same function.
+**Shared naming, separated requiredness.** The single selection rule `resolve_connection_defaults` (per-engine priority chains as data, independent of any query-log spec) is shared by metadata naming and binding defaults: the MySQL family reads `databaseName → database → "default"`, the `database` family reads `database`, Databricks/UnityCatalog read `catalog`, and the schema chain is `databaseSchema` only (the `schema` compatibility key was deleted in the second phase, D-L2c B; see below). Only the selection is shared, never the requiredness: the shared function returns `None` for a missing segment and never raises, because binding defaults are optional — a fully qualified SQL name or a two-column CSV row binds with an empty connection — while each metadata method keeps its own required check (Postgres still raises when `database` is absent, inside its own method). Both binding call sites invoke the same function.
 
-**MySQL: approach 1 (change the native SQL alias).** The template now
-reads `CURRENT_SCHEMA AS schema_name, NULL AS database_name`, and the
-database segment comes from the shared naming rule. This was chosen
-over a row-handling swap because the template is the native rows' only
-producer (the alias change is the swap's only site, and the SQL text
-itself documents the correct contract), CSV rows never pass through the
-template so file input is naturally unaffected, NULL `CURRENT_SCHEMA`
-rows fall through to the defaults with no extra branch, and a
-row-handling swap would have left the misleading alias in the SQL while
-having no implementation point inside the owning module. The two
-approaches must never be combined: swapping twice would restore the
-defect. The swapped rows are marked `row_native_swapped` at the input
-source level.
+**MySQL: approach 1 (change the native SQL alias).** The template now reads `CURRENT_SCHEMA AS schema_name, NULL AS database_name`, and the database segment comes from the shared naming rule. This was chosen over a row-handling swap because the template is the native rows' only producer (the alias change is the swap's only site, and the SQL text itself documents the correct contract), CSV rows never pass through the template so file input is naturally unaffected, NULL `CURRENT_SCHEMA` rows fall through to the defaults with no extra branch, and a row-handling swap would have left the misleading alias in the SQL while having no implementation point inside the owning module. The two approaches must never be combined: swapping twice would restore the defect. The swapped rows are marked `row_native_swapped` at the input source level.
 
-**Postgres/Timescale: `dbid` join plus a multi-engine filter seam.** The
-template joins `s.dbid` to `pg_catalog.pg_database` for the database
-name (the official shape), and `schema_name` stays NULL as in the
-official shape. In multi-engine mode (`ingestAllDatabases`) each
-engine's statement additionally restricts the shared view to its own
-database (`s.dbid = (SELECT oid FROM pg_database WHERE datname =
-current_database())`), applied through the query-log base's
-connection-dependent filter hook (`QueryLogSpec.conditional_filters`),
-so the single-engine statement keeps its unfiltered official shape and
-a history row is read by exactly one engine. A custom statement source
-must expose a `dbid` column; without it the query fails loudly with a
-SQL error and never silently falls back to the current database.
+**Postgres/Timescale: `dbid` join plus a multi-engine filter seam.** The template joins `s.dbid` to `pg_catalog.pg_database` for the database name (the official shape), and `schema_name` stays NULL as in the official shape. In multi-engine mode (`ingestAllDatabases`) each engine's statement additionally restricts the shared view to its own database (`s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database())`), applied through the query-log base's connection-dependent filter hook (`QueryLogSpec.conditional_filters`), so the single-engine statement keeps its unfiltered official shape and a history row is read by exactly one engine. A custom statement source must expose a `dbid` column; without it, the query fails loudly with a SQL error and never silently falls back to the current database.
 
-**Column attribution: alias consistency, not occurrence count
-(purpose reading, confirmed 2026-11-17).** The design's column rule
-required an identifier to appear exactly once, which by definition can
-never hold for a temporary table (written once, read once) and dropped
-baseline temporary-table lineage wholesale. The implemented rule
-confirms column attribution when all occurrences of the identifier
-carry the same alias text (no alias counts as one value) and the
-existing alias-pinning check against the endpoint still holds: the
-confirmed object is the attribution target, not the occurrence count,
-and alias-consistent occurrences present a single target with no
-guessing. The design's explicit failure mode is preserved — a
-multi-alias self-join still skips — and single-occurrence behavior is
-unchanged. This is a purpose reading of the design rule by the
-implementing coordinator (the design never discussed temporary tables
-and never approved dropping a baseline capability). Bai confirmed
-this purpose reading on 2026-11-17 after a source-level benchmark:
-the official engine's Table identity ignores alias and occurrence
-count, and its intermediate-table mechanism requires the same table
-to occur in both a write and a read statement, so a single-occurrence
-rule would destroy baseline temporary-table lineage the design never
-approved dropping. The rule stays stricter than official on
-multi-alias self-joins (skip, not collapse), per the design's
-fail-closed stance.
+**Column attribution: alias consistency, not occurrence count (purpose reading, confirmed 2026-11-17).** The design's column rule required an identifier to appear exactly once, which by definition can never hold for a temporary table (written once, read once) and dropped baseline temporary-table lineage wholesale. The implemented rule confirms column attribution when all occurrences of the identifier carry the same alias text (no alias counts as one value) and the existing alias-pinning check against the endpoint still holds: the confirmed object is the attribution target, not the occurrence count, and alias-consistent occurrences present a single target with no guessing. The design's explicit failure mode is preserved — a multi-alias self-join still skips — and single-occurrence behavior is unchanged. This is a purpose reading of the design rule by the implementing coordinator (the design never discussed temporary tables and never approved dropping a baseline capability). Bai confirmed this purpose reading on 2026-11-17 after a source-level benchmark: the official engine's Table identity ignores alias and occurrence count, and its intermediate-table mechanism requires the same table to occur in both a write and a read statement, so a single-occurrence rule would destroy baseline temporary-table lineage the design never approved dropping. The rule stays stricter than official on multi-alias self-joins (skip, not collapse), per the design's fail-closed stance.
 
-**Explicitly not done.** Unique-candidate discovery; deleting the
-`schema` compatibility key; copying the Redshift join; widening
-cross-service resolution (explicit list, exact-only, first-hit, and
-source-context reuse are retained as recorded limits); new query-log
-specs; any Java or connection-schema change. The scan-range fallback
-(`databaseSchema` as the default schema) is retained as conditional
-old-behavior compatibility only: it is correct only when the session's
-schema happens to equal the scan range, and the per-segment
-default-bound counts make the exposure measurable.
+**Explicitly not done (v1; superseded in part by the second phase below).** Unique-candidate discovery; deleting the `schema` compatibility key; copying the Redshift join; widening cross-service resolution (explicit list, exact-only, first-hit, and source-context reuse are retained as recorded limits); new query-log specs; any Java or connection-schema change. The scan-range fallback (`databaseSchema` as the default schema) is retained as conditional old-behavior compatibility only: it is correct only when the session's schema happens to equal the scan range, and the per-segment default-bound counts make the exposure measurable.
+
+## Second phase (D-L2c (b), 2026-11-20)
+
+Bai ruled the complete scope (b) on 2026-11-19 10:01; the eight open items were ruled on 2026-11-20 06:49–06:53 (all closed, no further rulings). Implementation landed on four branches off main `b174e78c` (B `m2-dl2c-b`, H `m2-dl2c-h`, D+C+E `m2-dl2c-dce`, A `m2-dl2c-a`), each independently reviewed (Blocking 0) and gated (targeted pytest + full `test_dl2c_*` sweep + `ruff check`).
+
+### Rulings
+
+| # | Ruling | Basis category |
+|---|---|---|
+| D-A1 | `CAP = 10` (official `engine.py:53` `max_candidates_per_lookup` number; over-limit skips, does not throw — deviation V-2) | 1:1 verified (number); deviation (semantics) |
+| D-A2 | Table chain, own-service only; procedure/UDF are a separate design, not this batch | 1:1 verified (scope) |
+| D-B1/D-B2 | Moot — fresh-environment premise (live may be wiped and redeployed, no historical data), so there is no stored config to census; no live-config read access is needed; B's deletion has no census gate | Process gate (moot) |
+| D-B3 | Hard delete + existence warning (R-B), no compatibility window | Cleaning a fork invention |
+| D-D1 | Ambiguity skips (collect-then-judge), the fail-closed stance | 1:1 verified (stance) |
+| D-E1 | **Full delete** (aligns with official's `schema_fallback` default-off). Overturns the design draft's recommendation ("tighten to single-schema services") | 1:1 verified |
+| D-H1 | Fix (builtin-function name-table filter) | 1:1 verified |
+| C | No new items. D-C1/D-C2 resolved 2026-11-19 22:25 (LEFT JOIN kept, `'unknown'`→NULL kept, both named reasoned deviations; `q.database` fallback rejected, `(NULL, NULL)`). D-C3/D-C4/D-C5 decided inside the design draft | 1:1 verified / named deviation |
+
+### What landed
+
+- **A — unique-candidate discovery (D-A1, D-A2).** A bare name with both segments missing is resolved by REST `tableRegex` enumeration in the own service only (`GET /v1/tables?service=&tableRegex=^<re.escape(leaf)>$&limit=11`); exactly one candidate binds, zero candidates stay `missing_both`, two or more are an ambiguity skip (nothing binds), more than 10 is an over-limit skip. New count keys `discovery_attempted` / `discovery_bound` / `discovery_ambiguous` (identity `attempted == bound + ambiguous + discovery_zero`, where `discovery_zero` is derived, not stored). The snapshot test is now `sixteen_keys`. §1.8 full matrix (T-1–T-23) passes; §8.6 audit scheme is ready (`discovery_bound` warning per bind, three keys in both chains' summaries). Rollback rehearsal performed at gate (scratch copy with `stage.py` restored to the pre-discovery version; T-1/T-6 confirm a bare name returns to `missing_both` warning-skip with zero discovery requests) — rollback is deleting the discovery branch in code; there is no kill switch, by design (none was invented).
+- **B — `schema` key deletion (D-B3).** Deletion point `naming.py:59` `_SCHEMA_CHAIN` (only `(_FIELD, "schema")` removed; the chain is now `((_FIELD, "databaseSchema"),)`). Existence warning (R-B) in `usage/workflow.py` `prepare` and `lineage/source.py` `_build_processing`, before `resolve_connection_defaults`: `connection key "schema" is no longer read; move its value to "databaseSchema"` (log only, no counting, no blocking, at most one per run by construction). Only `test_dl2c_naming.py` expectations changed (5) plus a binding-layer lock test. **Note:** `get("schema")` now occurs 4 times in the tree, not 2 as DRAFT-B §7.1 states: `trino_common.py:79` (Trino DBAPI parameter) and `kafka.py:201` (Schema Registry message body) are binding reads that stay; `workflow.py` and `source.py` are detection-only (truthy check, never used as a default). The acceptance wording is corrected to "binding reads remain only in trino_common and kafka".
+- **C — Redshift alignment.** Provisioned template rewritten (three-layer DISTINCT, `scans` via `(s.tbl)::oid = sti.table_id`, `LEFT JOIN scans`, `LIMIT` inside the `recent` CTE, `q.query AS query_id` — not official's `s.query`, which is NULL without a scan) and a serverless template added (`LEFT JOIN query_detail`, segment-count CASE). `query_id` pass-through chain added (SQL → `TableQueryRecord.query_id` → `ParsedData.query_id`); three-layer dedup (production `(query_id, db, schema)` merge + stage-layer `query_id` dedup, mandatory, + lineage-layer edge dedup). Instance probe (`SELECT 1 FROM pg_catalog.stl_query LIMIT 1`, only `pgcode == '42P01'` enters serverless) wired into both usage and lineage `prepare()` (lineage preflight is test-locked). Permission checks P-C1–P-C6 verified per DRAFT-C §6; P-C5 is **unverified** (see Residuals). No new count keys.
+- **D — cross-service ambiguity (D-D1).** `resolve_table` changed from first-hit to collect-then-judge: 0 hits take the original miss path, 1 hit binds (`cross_service_bound`), ≥2 hits skip (`cross_service_ambiguous`, throttled warning, `discard_pending_skip()`, never `warn_unresolved` — no double counting). New count keys `cross_service_ambiguous` / `cross_service_bound` (snapshot `thirteen_keys`). Source-service context reuse is retained (D rule 2); per-target context recomputation is a recorded follow-up, not this batch. Cross-service tests were re-verified after E landed.
+- **E — scan-range fallback, full delete (D-E1).** `effective_default_schema` always returns `None` (`usage/stage.py:449`); all candidate construction (usage `resolve` / `_candidate_fqns` / `_consume_pending`, lineage `resolve_procedure` and the cross-service loop) reads it, so the connection fallback is gone from both chains. `default_database` is untouched (two-segment names still bind through it). `default_bound_schema` is kept but is always 0 (observable evidence the fallback is deleted). No `fallback_suppressed` key was added (full delete has no suppression event; bare misses count as `missing_schema` / `missing_both`). **Not deleted:** `view_parent_schema_tables`'s `default_schema` parameter (`resolution.py:202`) — its value at all 11 production call sites is `view.schema_name` (the view's own schema), not the connection's `databaseSchema`; deleting it would silently drop all bare-name view parents. The task brief's premise that :202 was a fallback deletion point was a misreading, corrected during implementation and confirmed by independent review.
+- **H — builtin-function filter (D-H1).** `BUILTIN_FUNCTION_NAMES` (596 names, `lineage/udf_names.py`), generated as `B = E_fluff ∩ E_parse ∩ M_glot` over sqlglot 29.0.1 `exp.Func` subclasses (601 names), probed under mysql and postgres and intersected (591), union the design's fixed appendix-corpus probe (61 names, 5 not in the enumeration: `BIT_AND`, `BIT_OR`, `LTRIM`, `RTRIM`, `STRING_AGG` — sqlglot models them under differently-named classes). Filtered in `udf_names_from_extraction` (single-segment, leaf unquoted, leaf upper-cased in the table; qualified and quoted names are never filtered), via optional callback into `resolver.note_builtin_filtered`; new count key `builtin_function_filtered`. `COUNT(*)` no longer reaches `resolve_udf`, so `unresolved_udf_count` no longer contains built-in noise — compare that number across the deploy with this item deducted. (The Consequences bullet below is the H branch's revision, retained verbatim.)
+
+### Named, reasoned deviations (never mixed into 1:1)
+
+| # | Deviation | Reason |
+|---|---|---|
+| A V-1 | Multiple hits skip, do not multi-bind | Official multi-binds; product fail-closed: MySQL bare-table rows are routinely same-named tables in several databases, so multi-binding is systematic mis-binding; the uniqueness gate is the design's reason to exist |
+| A V-2 | Over-limit skips, does not throw | Official throws `ValueError` over 10; a throw mid-batch would abort the whole usage/lineage run; skip + count preserves the run |
+| A V-3 | Lookup by REST `tableRegex` enumeration, not official ES search | The product ingestion has no search client; the ES index lags and its ranked results cannot be reproduced as uniqueness proof |
+| A V-4 | Trigger narrowed to four conditions; official wildcards on a missing segment | Official triggers on a context-less row + a same-named table in several databases, which is exactly the MySQL bare-row norm; narrowing is the direct counter to mis-binding risk |
+| A V-5 | Client-side recheck is case-sensitive exact equality; official WILDCARD is case-insensitive full match | The discovered comparison object is the folded canonical leaf; case-sensitivity is what guards quoted-PRESERVE segments' original spelling |
+| A V-6 | Discovery only on the table chain, not procedure/UDF | Same-named procedures across databases have a different mis-binding surface, and the UDF residual H gate was being repaired |
+| B | Existence warning (official has no such warning) | Deletion is the only irreversible item; bare dict/YAML users are not covered by any census, so the warning is their only migration signal; log only, no semantics |
+| C D-C1-1 | Serverless `INNER JOIN query_detail` → `LEFT JOIN` | The pin comment's reason is lineage-centric; the query log feeds both usage and lineage, so `INNER JOIN` silently drops data; kept rows can still bind 2/3-segment names |
+| C D-C1-2 | `'unknown'` → `NULL` (segment-count `CASE`) | A literal `'unknown'` can mis-bind a real same-named database/schema; NULL goes to miss + count. Newly verified: official `'unknown'` is unreachable in the original statement (`SPLIT_PART` out-of-range returns `''`), so the missing segment is really `''` |
+| C D-C2 | No-scan rows take `(NULL, NULL)`; `q.database` fallback rejected | Both pin branches take the database only from scan evidence; a fallback risks mis-binding; cost is bounded (the record is kept, 3-segment names still bind) |
+| C D-C3 | Instance probe only accepts `pgcode == '42P01'`; official catches bare `ProgrammingError` | The product uses a native psycopg2 path; a bare catch would disguise a failure as a branch switch; SQLSTATE is the stable signal |
+| C D-C4 | Record-layer dedup (production merge + stage `query_id` dedup + lineage edge dedup) | Official has none — one record per row is harmless there; in the product it is harmful (stage accumulates per record, lineage emits an edge per record) |
+| C D-C5 | Serverless 2-segment → `(seg1, NULL)`, 1-segment → `(NULL, NULL)` | A 2-segment value's second segment is the table name itself (or a schema, unverified); reading it as a schema would invent a phantom schema; promoting 1 segment to a database would mis-bind. Subject to the P-C5 flip condition (live sampling) |
+| D rule 1 | Ambiguity skips (collect-then-judge) | No official counterpart: official has no cross-service ambiguity judgment; the product's first-phase stance skips everything not uniquely determined, and D extends it to the cross-service path |
+| D rule 2 | Source-service context reuse kept (this batch) | Target-service connection defaults are not obtainable inside lineage source (would need a new REST read + connection parsing + naming delegation — a new configuration/permission surface); `cross_service_bound` counting compensates observability |
+| H | Builtin-function name-table filter (selection layer) | Official has no such filter (the SqlGlot exclusion is structural); the filter removes an active mis-action (wrongly expanding a UDF body). The predicate's two exclusions (qualified/quoted never filtered) are the predicate's own scope, not a deviation |
+
+E's full delete is **not** a deviation: it aligns with official's `schema_fallback` default-off stance.
+
+### Design-draft corrections found during implementation
+
+- **`resolution.py:202` is not a fallback deletion point.** See "What landed" (E) above. The task brief's premise was a misreading; the lane caught it, the coordinator verified it against all 11 call sites, and independent review confirmed it.
+- **DRAFT-A T-17 is unreachable as written.** The literal line ("after discovery ambiguity, a cross-service exact hit, `discovery_ambiguous=1` already counted") cannot occur: discovery triggers only for double-missing names, and the cross-service loop reuses the same row context and defaults, so such a name constructs no candidate in any service — not even one exact probe is issued. It also conflicts with §3.6.4, the T-19 identity, and the existing `test_cross_service_success_counts_no_skip` precedent. T-17 was rewritten to lock the reachable behavior (quiet probe sees discovery ambiguity → cross-service loop exhausts → the loud warning consumes `discovery_ambiguous == 1`, `discovery_attempted == 1`). If the literal line is ever insisted on, §3.2's trigger conditions or the cross-service candidate construction must first be revised.
+- **DRAFT-A T-2/T-3 key names are swapped.** The table labels "row has schema → `missing_schema=1`" and "row has database → `missing_database=1`", opposite to `build_candidate` (row provides database → only schema missing; row provides schema → only database missing; locked by `test_missing_context_keys_are_mutually_exclusive`). Tests follow the code semantics; the trigger conclusion (single-missing never triggers discovery) is unaffected.
+- **Design-draft count typos.** The appendix corpus is 68 rows, not "70 names"; the §2.3 core list is 54 names, not "53". The generation script's docstring ("69 name rows") is likewise 68; fixed at wrap-up.
+- **DRAFT-H §4.2 imprecision.** It describes `note_fidelity_skip` as counting `_counts[...]`; the method actually counts `_fidelity_skips`. The branch's implementation (holding the lock, incrementing `_counts["builtin_function_filtered"]`) is the design's intent, correctly implemented.
+- **DRAFT-B §7.1 wording.** See B above (4 `get("schema")` occurrences, 2 detection-only).
+
+### New count keys (all in `BINDING_COUNT_KEYS`)
+
+`discovery_attempted` / `discovery_bound` / `discovery_ambiguous` (A), `cross_service_ambiguous` / `cross_service_bound` (D), `builtin_function_filtered` (H). `fallback_suppressed` was **not** added (E full delete has no suppression event). The snapshot test is now `sixteen_keys` (11 base + H 1 + D 2 + A 3; C and E add none). `default_bound_schema` is retained but always 0 after E.
 
 ## Consequences
 
 Residuals and limits carried out of this batch:
 
-- **Redshift alignment is a separate follow-up, not done here.** The
-  Redshift SQL is untouched and its current behavior (NULL schema) is
-  locked by tests. The official shape (`LEFT JOIN scans` +
-  `SELECT DISTINCT`) turns one query into many rows when several tables
-  are scanned, so row cardinality and context ownership need their own
-  design, and `svv_table_info` permissions plus the serverless /
-  non-serverless branches need separate verification.
-- **SqlFluff CREATE VIEW targets are not emitted on Exasol/TSQL.**
-  Those dialects place the view name in `view_reference` /
-  `object_reference` segments the walker does not visit, so the target
-  name never reaches binding (fail-closed: the unconfirmed endpoint is
-  skipped, with no dedicated count for this omission). TSQL usually
-  resolves through the SqlGlot winner, narrowing the impact. Fixing it
-  needs new segment handling, not a role tweak.
-- **The SqlParse branch silently drops names after a truncated name in
-  the same list.** For `SELECT * FROM t.1, u`, the truncated `t` is
-  reported as an unsupported occurrence, but `u` — a legal name hidden
-  in the same non-table-position identifier list — is dropped with no
-  occurrence and no dedicated count. Triggering it needs a malformed
-  table-position input, and the direction is fail-closed (no
-  mis-binding); fixing it needs rework of how the walker consumes the
-  list following a table position, beyond this batch's scope.
-- **CTE references are marked INTERMEDIATE as a defensive tightening.**
-  Names the extraction marks INTERMEDIATE (CTE references) are never
-  binding candidates. This changes no baseline behavior: the baseline
-  runner views likewise contain no CTE name, and a CTE name has no
-  endpoint and is never reachable through endpoint association.
-- **Built-in functions differ by branch — resolved (D-L2c H, 2026-11-20).**
-  The SqlFluff/SqlParse extractors emit built-in function names (e.g.
-  `COUNT`) as function occurrences while the SqlGlot branch's model
-  excludes them. The column-path heuristic does not filter them — it
-  matches only the `NAME(` shape, so `COUNT(*)` was a UDF candidate
-  under SqlFluff — and the real gate was the `resolve_udf` catalog
-  lookup, which skips on a 404. That gate is no longer the only one:
-  `udf_names_from_extraction` now filters a bare, unquoted call whose
-  leaf is in `BUILTIN_FUNCTION_NAMES` (596 names, `lineage/udf_names.py`),
-  before any catalog lookup, so a same-named catalog UDF is never
-  expanded by a built-in call on any branch. The filter predicate is:
-  single-segment, leaf unquoted, leaf upper-cased in the table.
-  Qualified names (`sch.COUNT`) and quoted names (`"COUNT"`) are never
-  filtered — a qualifier or quotes are the caller naming a catalog
-  object on purpose. Generation method (DRAFT-H §2.3):
-  `B = E_fluff ∩ E_parse ∩ M_glot` over the sqlglot 29.0.1 `exp.Func`
-  subclasses' `sql_names()` (601 names), probed under mysql and postgres
-  and intersected across dialects (591), union the design's fixed
-  appendix-corpus probe (61 names, 5 not in the enumeration:
-  `BIT_AND`, `BIT_OR`, `LTRIM`, `RTRIM`, `STRING_AGG` — sqlglot models
-  them under differently-named classes); `M_glot` is a node-class check
-  (a modeled, non-`Anonymous` `Func` node), never a name comparison.
-  The table is signed-in explicit data, locked by a test that recomputes
-  the triple live over the fixed corpus. New count key
-  `builtin_function_filtered` (`BINDING_COUNT_KEYS`), via an optional
-  `on_builtin_filtered` callback into `resolver.note_builtin_filtered`;
-  no per-call logging (`COUNT(*)` is too common). **Baseline change:**
-  `COUNT(*)` no longer reaches `resolve_udf`, so `unresolved_udf_count`
-  no longer contains built-in noise — compare that number across the
-  deploy with this item deducted. **Not 1:1:** official has no such
-  filter (the SqlGlot exclusion is structural); the yardstick is the
-  product's own SqlGlot branch behavior, basis: implementation method /
-  branch-consistency convergence. The filter itself is a named,
-  reasoned deviation: it removes an active mis-action (wrongly
-  expanding a UDF body), not a miss. **Residual:** the table was
-  generated with sqlparse 0.6.0; the pin is 0.6.1, unpublished at
-  generation time — regenerate with the pin version once published and
-  re-run the lock-table test. Known boundary (method's, not an
-  omission): sqlglot-unmodeled builtins (`JSON_AGG`, `NOW` — `Anonymous`
-  in 29.0.1) and dialect-only names (`DATE_FORMAT`, `CONVERT`) are not
-  in the table; a same-named catalog UDF for those is still expanded
-  identically on all three branches.
-- **The `ENTITY` input source exists for view lineage only.**
-  `FieldSource` gained an `ENTITY` value because the view channel's
-  context comes from the processed entity's own catalog position —
-  neither a log row nor a CSV row, and labelling it as either would
-  mislabel it. It is a closed minimal extension: its only use is
-  `view_lineage.py:205-206`, where both fields are always `ENTITY`.
-- **`view_parent_schema_tables` is verdict-gated, and its schema is
-  corrected.** View parents now derive only from association-confirmed
-  endpoints: an unconfirmed endpoint contributes no parent, where the
-  baseline (`clean_table_name(...).split(".")`) never dropped a
-  source. Four-part names and quoted dotted schemas now yield the
-  correct schema segment, where the baseline yielded a wrong one.
-  Both changes are retained — the gating is fail-closed, and the
-  schema change corrects a baseline error — and they affect the view
-  metadata ingestion of 11 metadata connectors.
-- **`read_failure` counts single-entity lookups only.** A
-  schema-listing failure is not counted: it propagates along the old
-  behavior, which likewise counted nothing and propagated. Only a
-  non-404 error from a single-entity lookup counts, and still raises.
-- **Usage loses the fidelity count for a failed extraction with no
-  involved tables.** When `parse_sql_statement` returns `None` before
-  a `ParsedData` exists, the extraction-level counts have nothing to
-  attach to, so such a query loses its fidelity count on the usage
-  chain while the lineage chain counts it before its own early
-  return. The trigger is narrow — a winner must exist, `involved`
-  must be empty, and extraction must fail — and fixing it needs a
-  design decision first: the `None` semantics of
-  `parse_sql_statement` must not change, since an empty-table
-  `ParsedData` would wrongly add a cost record.
-- **Unknown engines keep a narrowed guarantee.** Where folding is
-  UNKNOWN, exact matching uses the written spelling and the fallback
-  stays available; the case-related mis-binding risk is not claimed
-  solved for those engines. When an engine's semantics are established,
-  only the folding table and its tests change.
-- **Custom Postgres statement sources must expose `dbid`.** The
-  requirement is a documentation-level contract (recorded in the spec
-  module); the name-shape pattern does not check columns.
-- Live acceptance still needs Bai's transient login and a rebuilt
-  service (the catalog is empty): a multi-schema MySQL service for the
-  bare / two-part / three-part walk-through, a multi-database Postgres
-  service for per-`dbid` binding without duplicate counting, and the
-  stored-config read for the `supports*` flags.
+- **Redshift alignment — done in the second phase (D-L2c C).** The provisioned and serverless templates, the `query_id` pass-through chain, and three-layer dedup are implemented and test-locked (see "Second phase" above). **Residual:** P-C5 — the serverless 2-segment mapping (`(seg1, NULL)`) is unverified; live sampling must confirm whether a 2-segment `SYS_QUERY_DETAIL.table_name` is really `schema.table`, and if so the mapping flips (stop and report; do not flip silently). P-C3 context-coverage measurement and P-C4 cast live verification also wait for §8.
+- **SqlFluff CREATE VIEW targets are not emitted on Exasol/TSQL.** Those dialects place the view name in `view_reference` / `object_reference` segments the walker does not visit, so the target name never reaches binding (fail-closed: the unconfirmed endpoint is skipped, with no dedicated count for this omission). TSQL usually resolves through the SqlGlot winner, narrowing the impact. Fixing it needs new segment handling, not a role tweak.
+- **The SqlParse branch silently drops names after a truncated name in the same list.** For `SELECT * FROM t.1, u`, the truncated `t` is reported as an unsupported occurrence, but `u` — a legal name hidden in the same non-table-position identifier list — is dropped with no occurrence and no dedicated count. Triggering it needs a malformed table-position input, and the direction is fail-closed (no mis-binding); fixing it needs rework of how the walker consumes the list following a table position, beyond this batch's scope.
+- **CTE references are marked INTERMEDIATE as a defensive tightening.** Names the extraction marks INTERMEDIATE (CTE references) are never binding candidates. This changes no baseline behavior: the baseline runner views likewise contain no CTE name, and a CTE name has no endpoint and is never reachable through endpoint association.
+- **Built-in functions differ by branch — resolved (D-L2c H, 2026-11-20).** The SqlFluff/SqlParse extractors emit built-in function names (e.g. `COUNT`) as function occurrences while the SqlGlot branch's model excludes them. The column-path heuristic does not filter them — it matches only the `NAME(` shape, so `COUNT(*)` was a UDF candidate under SqlFluff — and the real gate was the `resolve_udf` catalog lookup, which skips on a 404. That gate is no longer the only one: `udf_names_from_extraction` now filters a bare, unquoted call whose leaf is in `BUILTIN_FUNCTION_NAMES` (596 names, `lineage/udf_names.py`), before any catalog lookup, so a same-named catalog UDF is never expanded by a built-in call on any branch. The filter predicate is: single-segment, leaf unquoted, leaf upper-cased in the table. Qualified names (`sch.COUNT`) and quoted names (`"COUNT"`) are never filtered — a qualifier or quotes are the caller naming a catalog object on purpose. Generation method (DRAFT-H §2.3): `B = E_fluff ∩ E_parse ∩ M_glot` over the sqlglot 29.0.1 `exp.Func` subclasses' `sql_names()` (601 names), probed under mysql and postgres and intersected across dialects (591), union the design's fixed appendix-corpus probe (61 names, 5 not in the enumeration: `BIT_AND`, `BIT_OR`, `LTRIM`, `RTRIM`, `STRING_AGG` — sqlglot models them under differently-named classes); `M_glot` is a node-class check (a modeled, non-`Anonymous` `Func` node), never a name comparison. The table is signed-in explicit data, locked by a test that recomputes the triple live over the fixed corpus (the test's comparison semantics: recomputed value == signed-in table ∩ corpus; the corpus covers 68 names). New count key `builtin_function_filtered` (`BINDING_COUNT_KEYS`), via an optional `on_builtin_filtered` callback into `resolver.note_builtin_filtered`; no per-call logging (`COUNT(*)` is too common). **Baseline change:** `COUNT(*)` no longer reaches `resolve_udf`, so `unresolved_udf_count` no longer contains built-in noise — compare that number across the deploy with this item deducted. **Not 1:1:** official has no such filter (the SqlGlot exclusion is structural); the yardstick is the product's own SqlGlot branch behavior, basis: implementation method / branch-consistency convergence. The filter itself is a named, reasoned deviation: it removes an active mis-action (wrongly expanding a UDF body), not a miss. **Library pins:** `sqlglot==29.0.1`, `collate-sqlfluff==3.5.3`, `sqlparse==0.6.1`. **Residual:** the table was generated with sqlparse 0.6.0; the pin is 0.6.1, unpublished at generation time — regenerate with the pin version once published and re-run the lock-table test (that re-run is also the only coverage for drift in the 535 U-only names, which the lock test cannot see). Known boundary (method's, not an omission): sqlglot-unmodeled builtins (`JSON_AGG`, `NOW` — `Anonymous` in 29.0.1) and dialect-only names (`DATE_FORMAT`, `CONVERT`) are not in the table; a same-named catalog UDF for those is still expanded identically on all three branches. Counting note: the filter sits before the `called` check, so a built-in occurrence that never becomes a UDF candidate can still count as `builtin_function_filtered`; the count is therefore an upper bound on intercepted candidates.
+- **The `ENTITY` input source exists for view lineage only.** `FieldSource` gained an `ENTITY` value because the view channel's context comes from the processed entity's own catalog position — neither a log row nor a CSV row, and labelling it as either would mislabel it. It is a closed minimal extension: its only use is `view_lineage.py:205-206`, where both fields are always `ENTITY`.
+- **`view_parent_schema_tables` is verdict-gated, and its schema is corrected.** View parents now derive only from association-confirmed endpoints: an unconfirmed endpoint contributes no parent, where the baseline (`clean_table_name(...).split(".")`) never dropped a source. Four-part names and quoted dotted schemas now yield the correct schema segment, where the baseline yielded a wrong one. Both changes are retained — the gating is fail-closed, and the schema change corrects a baseline error — and they affect the view metadata ingestion of 11 metadata connectors. Its `default_schema` parameter is the **view's own schema** (`view.schema_name` at all 11 call sites), not a connection fallback; the second phase's E full delete deliberately left it untouched.
+- **`read_failure` counts single-entity lookups only.** A schema-listing failure is not counted: it propagates along the old behavior, which likewise counted nothing and propagated. Only a non-404 error from a single-entity lookup counts, and still raises.
+- **Usage loses the fidelity count for a failed extraction with no involved tables.** When `parse_sql_statement` returns `None` before a `ParsedData` exists, the extraction-level counts have nothing to attach to, so such a query loses its fidelity count on the usage chain while the lineage chain counts it before its own early return. The trigger is narrow — a winner must exist, `involved` must be empty, and extraction must fail — and fixing it needs a design decision first: the `None` semantics of `parse_sql_statement` must not change, since an empty-table `ParsedData` would wrongly add a cost record.
+- **Unknown engines keep a narrowed guarantee.** Where folding is UNKNOWN, exact matching uses the written spelling and the fallback stays available; the case-related mis-binding risk is not claimed solved for those engines. When an engine's semantics are established, only the folding table and its tests change.
+- **Custom Postgres statement sources must expose `dbid`.** The requirement is a documentation-level contract (recorded in the spec module); the name-shape pattern does not check columns.
+- **Second-phase residuals carried forward.** (a) `re.escape` backslash semantics differ between MySQL `REGEXP_LIKE` and Postgres `~*`; T-23 locks only `$` — extreme leaf names containing `\` are locked to MySQL behavior, the Postgres difference is a recorded residual. (b) On a discovery cache hit, `_discovery_outcome` carries no entities, so a second binding does not re-seed `_bindings` — harmless (the binding holds; a later exact lookup uses `get_table_by_name`). (c) `_produce_batch` now buffers a whole batch before dedup and yield (behavior unchanged, batch-bounded; a shape change not mentioned in the C commit message). (d) Two `_default_schema` fields are stored but never read after E (`stage.py:423`, `resolution.py:226`) — intentionally minimal change surface; the raw value is still accepted and stored, but no candidate is ever built from it. (e) The dedup sets are unbounded (`UsageStage._seen_query_cost_ids` / `_seen_table_usage`, lineage `seen_edges` / `seen_query_ids`) — DRAFT-C §3.3.3 explicitly decided no cap (run-scoped correctness state that dies with the instance, not a long-lived cache), which stands against the house "all caches MUST be bounded" rule by named design decision. (f) The `schema` compatibility key is deleted, but bare dict/YAML users who still pass it get only the log warning (R-B); there is no other migration path for them.
+- Live acceptance still needs Bai's transient login and a rebuilt service (the catalog is empty): a multi-schema MySQL service for the bare / two-part / three-part walk-through, a multi-database Postgres service for per-`dbid` binding without duplicate counting, and the stored-config read for the `supports*` flags. §8 live acceptance (including the A §1.7 audit, Q11 counts, P-C3/P-C4/P-C5, and the Redshift annex) runs after the full scope deploys.
