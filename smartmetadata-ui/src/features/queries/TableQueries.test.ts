@@ -257,6 +257,23 @@ describe('TableQueries', () => {
     wrapper.unmount();
   });
 
+  it('shows the create placeholder, not the denied placeholder, when the Create read fails', async () => {
+    // Pin CreatePlaceholder: only permission === false renders the denied
+    // placeholder. A failed permission read leaves the permission
+    // unknown (canCreate null) and renders the create placeholder with
+    // the Add action; the toolbar Add stays disabled until the read
+    // succeeds.
+    mocks.searchQueries.mockResolvedValue({ total: 0, queries: [] });
+    mocks.getResourcePermission.mockRejectedValue(new Error('permission read failed'));
+    const { wrapper } = await mountTab();
+    const placeholder = wrapper.find('[data-testid="create-error-placeholder-queries"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    expect(placeholder.text()).toContain('Adding a new queries is easy, just give it a spin!');
+    expect(wrapper.find('[data-testid="add-query-btn"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it('adds the tag clause on filter change and drops filters when paging (pin behavior)', async () => {
     mocks.searchQueries.mockResolvedValue({ total: 30, queries: [QUERY_1, QUERY_2] });
     const { wrapper } = await mountTab();

@@ -35,5 +35,34 @@ describe('entityLink', () => {
       fqn: 'svc.db.schema.orders',
       column: 'id',
     });
+    // An empty columns value names no column; the FQN still parses.
+    expect(parseEntityLink('<#E::table::svc.db.schema.orders::columns::>')).toEqual({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+    });
+  });
+
+  it('ignores an unlisted field tail instead of absorbing it into the FQN (R-L3)', () => {
+    // Pin split() returns the split of what did parse: a feed `about`
+    // may name a field the grammar does not list (e.g. entityStatus),
+    // and the FQN must come back clean.
+    expect(parseEntityLink('<#E::table::svc.db.schema.orders::entityStatus::active>')).toEqual({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+    });
+    expect(parseEntityLink('<#E::table::svc.db.schema.orders::columns::id::extra>')).toEqual({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+      column: 'id',
+    });
+  });
+
+  it('returns null for malformed links', () => {
+    expect(parseEntityLink('')).toBeNull();
+    expect(parseEntityLink('<#E::table>')).toBeNull();
+    expect(parseEntityLink('<#E::::>')).toBeNull();
+    expect(parseEntityLink('<#E::table::>')).toBeNull();
+    expect(parseEntityLink('<#E::table::svc.db.schema.orders')).toBeNull();
+    expect(parseEntityLink('<E::table::svc.db.schema.orders>')).toBeNull();
   });
 });

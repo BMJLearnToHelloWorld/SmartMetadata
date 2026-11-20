@@ -11,7 +11,7 @@ import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
 import { mapTableJoins } from '@/catalog/tableJoins';
 import { mapUsageSummary } from '@/catalog/usagePercentile';
-import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagLabelType, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
 import { asNumber, mapEntityRefs } from './json';
@@ -63,6 +63,22 @@ function mapOwners(value: unknown): EntityRef[] {
   });
 }
 
+/**
+ * The five label types the server recognizes on a tag label. Shared home
+ * for both tag mappers (this file's mapTags and queries.ts mapQueryTags):
+ * the two sites previously spelled the same set twice — once as a literal
+ * chain here, once as a local const there — and drifted apart. Import
+ * direction is safe: nothing in this file's import graph touches
+ * api/queries, and queries.ts is the only other consumer.
+ */
+export const TAG_LABEL_TYPES: TagLabelType[] = [
+  'Automated',
+  'Derived',
+  'Generated',
+  'Manual',
+  'Propagated',
+];
+
 export function mapTags(value: unknown): TagRef[] {
   if (!Array.isArray(value)) {
     return [];
@@ -83,14 +99,9 @@ export function mapTags(value: unknown): TagRef[] {
             tagFQN: tagFQN || name,
             name: name || tagFQN,
             source: source === 'Glossary' || source === 'Classification' ? source : undefined,
-            labelType:
-              labelType === 'Automated' ||
-              labelType === 'Derived' ||
-              labelType === 'Generated' ||
-              labelType === 'Manual' ||
-              labelType === 'Propagated'
-                ? labelType
-                : undefined,
+            labelType: TAG_LABEL_TYPES.includes(labelType as TagLabelType)
+              ? (labelType as TagLabelType)
+              : undefined,
             // D-F2: the column write round-trip preserves a Suggested
             // label's state through the mapping, so a later edit does
             // not silently flip it to Confirmed (same validation shape

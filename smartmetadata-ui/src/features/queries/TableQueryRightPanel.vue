@@ -105,8 +105,10 @@
         </template>
         <template v-else>
           <!-- Pin TagsContainerV2 with tagType=Classification: only
-               Classification labels render here; glossary labels are a
-               separate surface and never appear in this panel. -->
+               Classification labels render here — pin getFilterTags
+               excludes `Tier.*` / `Certification.*` from the bucket;
+               glossary labels are a separate surface and never appear
+               in this panel. -->
           <ul v-if="classificationTags.length > 0" class="table-query-right-panel__list">
             <li v-for="tag in classificationTags" :key="tag.tagFQN">{{ tag.tagFQN }}</li>
           </ul>
@@ -156,6 +158,7 @@ import type { DataQuery } from '@/api/queries';
 import type { DerivedPermissionFlags } from '@/api/permissions';
 import { loadGovernanceCatalog, ownerKey, parseOwnerKey, classificationTagOptions, type GovernanceCatalog } from '@/governance/catalogOptions';
 import { descriptionPatch, ownersPatch, tagsPatch, toTagLabel, type TagLabelInput, type TagLabelValue } from '@/governance/assetPatch';
+import { isCertificationTag, isTierTag } from '@/ingestion/tierTags';
 import type { TagRef } from '@/types/api';
 import { Button, Input, message, Select, Spin } from 'ant-design-vue';
 import { computed, ref } from 'vue';
@@ -186,24 +189,41 @@ const ownerOptions = computed(() =>
   (catalog.value?.owners ?? []).map((owner) => ({ value: owner.key, label: owner.label })),
 );
 // Pin tagType=Classification: the editor offers Classification tags
-// only; glossary terms are never offered here.
+// only — pin getFilterTags (TableTags.utils.tsx) excludes `Tier.*` and
+// `Certification.*` labels from the Classification bucket, since those
+// are edited on their own surfaces; glossary terms are never offered here.
 const tagOptions = computed(() =>
-  classificationTagOptions(catalog.value).map((tag) => ({ value: tag.tagFQN, label: tag.tagFQN })),
-);
-
-/** Classification labels: the only tags this panel displays or edits. */
-const classificationTags = computed(() =>
-  (props.query?.tags ?? []).filter((tag) => tag.source === 'Classification'),
+  classificationTagOptions(catalog.value)
+    .filter((tag) => !isTierTag(tag.tagFQN) && !isCertificationTag(tag.tagFQN))
+    .map((tag) => ({ value: tag.tagFQN, label: tag.tagFQN })),
 );
 
 /**
- * Every other label (glossary terms, plus sourceless labels the mapper
- * could not attribute): never displayed or edited here, but carried
- * through every tags save untouched, as pin's
- * handleClassificationTagsChange appends the Glossary bucket.
+ * Classification labels: the only tags this panel displays or edits.
+ * Pin getFilterTags excludes `Tier.*` / `Certification.*` from the
+ * Classification bucket; those labels keep their own surfaces and
+ * must not be editable here.
+ */
+const classificationTags = computed(() =>
+  (props.query?.tags ?? []).filter(
+    (tag) =>
+      tag.source === 'Classification' &&
+      !isTierTag(tag.tagFQN) &&
+      !isCertificationTag(tag.tagFQN),
+  ),
+);
+
+/**
+ * Every other label (glossary terms, Tier/Certification labels, plus
+ * sourceless labels the mapper could not attribute): never displayed
+ * or edited here, but carried through every tags save untouched, as
+ * pin's handleClassificationTagsChange appends the Glossary bucket.
  */
 const preservedTags = computed(() =>
-  (props.query?.tags ?? []).filter((tag) => tag.source !== 'Classification'),
+  (props.query?.tags ?? []).filter(
+    (tag) =>
+      tag.source !== 'Classification' || isTierTag(tag.tagFQN) || isCertificationTag(tag.tagFQN),
+  ),
 );
 
 async function ensureCatalog(): Promise<void> {

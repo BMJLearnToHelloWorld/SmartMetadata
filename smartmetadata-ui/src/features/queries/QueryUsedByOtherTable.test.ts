@@ -17,24 +17,31 @@ import { createTestI18n } from '@/test/i18n';
 import type { EntityRef } from '@/types/api';
 import QueryUsedByOtherTable from './QueryUsedByOtherTable.vue';
 
-vi.mock('@/api/search', () => ({
-  searchAssets: vi.fn(async () => ({
-    total: 1,
-    hits: [
-      {
-        id: 't5',
-        name: 'staging',
-        fullyQualifiedName: 'svc.db.schema.staging',
-        entityType: 'table',
-        owners: [],
-        tags: [],
-        domains: [],
-        dataProducts: [],
-      },
-    ],
-    facets: [],
-  })),
-}));
+vi.mock('@/api/search', async () => {
+  // Keep the real escapeESReservedCharacters: the component must wire the
+  // real escaper into the picker query (N-01). Only the network call is
+  // stubbed.
+  const actual = await vi.importActual<typeof import('@/api/search')>('@/api/search');
+  return {
+    ...actual,
+    searchAssets: vi.fn(async () => ({
+      total: 1,
+      hits: [
+        {
+          id: 't5',
+          name: 'staging',
+          fullyQualifiedName: 'svc.db.schema.staging',
+          entityType: 'table',
+          owners: [],
+          tags: [],
+          domains: [],
+          dataProducts: [],
+        },
+      ],
+      facets: [],
+    })),
+  };
+});
 
 const TABLES: EntityRef[] = [
   { id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders' },
@@ -117,6 +124,22 @@ describe('QueryUsedByOtherTable', () => {
     expect(wrapper.emitted('update:selectedTables')).toEqual([
       [[{ id: 't5', type: 'table', name: 'staging', fullyQualifiedName: 'svc.db.schema.staging' }]],
     ]);
+    wrapper.unmount();
+  });
+
+  it('escapes ES reserved characters in typed picker text (N-01)', async () => {
+    const wrapper = await mountFooter(TABLES, true, [TABLES[0]!]);
+    expect(searchAssets).toHaveBeenCalledWith('*', 0, QUERY_FILTER_PAGE_SIZE, { index: 'table' });
+    // `a+b (c)` carries reserved `+`, `(`, `)`; the pin hook sends them
+    // backslash-escaped inside the `*...*` wrap.
+    await wrapper.findComponent(Select).vm.$emit('search', 'a+b (c)');
+    await flushPromises();
+    expect(searchAssets).toHaveBeenCalledWith(
+      '*a\\+b \\(c\\)*',
+      0,
+      QUERY_FILTER_PAGE_SIZE,
+      { index: 'table' },
+    );
     wrapper.unmount();
   });
 });

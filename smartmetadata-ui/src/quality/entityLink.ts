@@ -25,14 +25,29 @@ export function toEntityLink(entityType: string, fqn: string, column?: string): 
   return `<#E::${type}::${name}>`;
 }
 
+/**
+ * Parse a MessageParser entity link back into its parts. Segment-based,
+ * mirroring pin `utils/EntityLink.ts split()`: the link is `type`, `fqn`,
+ * then an optional `columns` field segment. A feed's `about` may carry a
+ * field the grammar does not list (for example `entityStatus`); pin
+ * returns the split of what did parse, so an unlisted `::field::value`
+ * tail is ignored — never absorbed into the FQN, as the old regex did
+ * (`fqn::entityStatus::active` came back as the FQN, R-L3).
+ */
 export function parseEntityLink(link: string): { entityType: string; fqn: string; column?: string } | null {
-  const match = /^<#E::([^:]+)::([^>]+?)(?:::columns::([^>]+))?>$/.exec(link.trim());
-  if (!match) {
+  const trimmed = link.trim();
+  if (!trimmed.startsWith('<#E::') || !trimmed.endsWith('>')) {
     return null;
   }
-  return {
-    entityType: match[1],
-    fqn: match[2],
-    column: match[3] || undefined,
-  };
+  // '<#E::' is five characters; the body runs to the closing '>'.
+  const parts = trimmed.slice(5, -1).split('::');
+  const [entityType, fqn] = parts;
+  if (!entityType || !fqn) {
+    return null;
+  }
+  const result: { entityType: string; fqn: string; column?: string } = { entityType, fqn };
+  if (parts[2] === 'columns' && parts[3]) {
+    result.column = parts[3];
+  }
+  return result;
 }

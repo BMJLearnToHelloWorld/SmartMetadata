@@ -11,6 +11,7 @@ import { asNumber, asRecord, asString, mapEntityRef, mapEntityRefs } from '@/api
 import { resolvePatchPath, resolveVotePath } from '@/catalog/entityRoutes';
 import type { EntityRef, EntityVotes, TagLabelState, TagLabelType, TagRef } from '@/types/api';
 import { apiRequest } from './client';
+import { TAG_LABEL_TYPES } from './entities';
 
 /** Official vote type (openmetadata-spec type/votes.json#/definitions/voteType). */
 export type VoteType = 'votedUp' | 'votedDown' | 'unVoted';
@@ -63,8 +64,6 @@ export interface QuerySearchPage {
   total: number;
   queries: DataQuery[];
 }
-
-const TAG_LABEL_TYPES: TagLabelType[] = ['Automated', 'Derived', 'Generated', 'Manual', 'Propagated'];
 
 function mapQueryTags(value: unknown): TagRef[] {
   if (!Array.isArray(value)) {

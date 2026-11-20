@@ -28,7 +28,9 @@ vi.mock('@/governance/catalogOptions', async (importOriginal) => {
       ],
       tags: [
         { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' },
+        { tagFQN: 'PII.Confidential', name: 'Confidential', source: 'Classification' },
         { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' },
+        { tagFQN: 'Certification.Gold', name: 'Gold', source: 'Classification' },
         { tagFQN: 'Glossary.Customer', name: 'Customer', source: 'Glossary' },
       ],
       domains: [],
@@ -163,8 +165,10 @@ describe('TableQueryRightPanel', () => {
     await flushPromises();
     await nextTick();
     const options = [...document.body.querySelectorAll('.ant-select-item-option')];
-    const tierOption = options.find((option) => option.textContent?.includes('Tier.Tier1'));
-    (tierOption as HTMLElement).click();
+    const confidentialOption = options.find((option) =>
+      option.textContent?.includes('PII.Confidential'),
+    );
+    (confidentialOption as HTMLElement).click();
     await flushPromises();
     await wrapper.find('[data-testid="save-tags-btn"]').trigger('click');
     await flushPromises();
@@ -173,16 +177,28 @@ describe('TableQueryRightPanel', () => {
     expect(ops[0]?.path).toBe('/tags');
     expect(ops[0]?.value).toEqual([
       { tagFQN: 'PII.Sensitive', source: 'Classification', labelType: 'Generated', state: 'Confirmed' },
-      { tagFQN: 'Tier.Tier1', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      { tagFQN: 'PII.Confidential', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
       { tagFQN: 'Glossary.Customer', source: 'Glossary', labelType: 'Manual', state: 'Suggested' },
     ]);
     wrapper.unmount();
   });
 
-  it('never displays or offers glossary labels, which belong to a separate surface', async () => {
-    const { wrapper } = mountPanel(QUERY, { EditTags: true });
+  it('never displays or offers glossary labels, tier labels, or certification labels', async () => {
+    // Pin getFilterTags excludes Tier.* / Certification.* from the
+    // Classification bucket: those labels keep their own surfaces.
+    const withTierAndCert: DataQuery = {
+      ...QUERY,
+      tags: [
+        ...(QUERY.tags ?? []),
+        { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+        { tagFQN: 'Certification.Gold', name: 'Gold', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      ],
+    };
+    const { wrapper } = mountPanel(withTierAndCert, { EditTags: true });
     expect(wrapper.text()).toContain('PII.Sensitive');
     expect(wrapper.text()).not.toContain('Glossary.Customer');
+    expect(wrapper.text()).not.toContain('Tier.Tier1');
+    expect(wrapper.text()).not.toContain('Certification.Gold');
     await wrapper.find('[data-testid="edit-tags"]').trigger('click');
     await flushPromises();
     const select = wrapper.find('[data-testid="edit-tags-select"]');
@@ -193,8 +209,52 @@ describe('TableQueryRightPanel', () => {
       (option) => option.textContent ?? '',
     );
     expect(options.join(' ')).toContain('PII.Sensitive');
-    expect(options.join(' ')).toContain('Tier.Tier1');
+    expect(options.join(' ')).toContain('PII.Confidential');
     expect(options.join(' ')).not.toContain('Glossary.Customer');
+    expect(options.join(' ')).not.toContain('Tier.Tier1');
+    expect(options.join(' ')).not.toContain('Certification.Gold');
+    wrapper.unmount();
+  });
+
+  it('carries tier and certification labels through a tags save untouched', async () => {
+    const withTierAndCert: DataQuery = {
+      ...QUERY,
+      tags: [
+        ...(QUERY.tags ?? []),
+        { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+        { tagFQN: 'Certification.Gold', name: 'Gold', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      ],
+    };
+    const { wrapper, onQueryUpdate } = mountPanel(withTierAndCert, { EditTags: true });
+    await wrapper.find('[data-testid="edit-tags"]').trigger('click');
+    await flushPromises();
+    const select = wrapper.find('[data-testid="edit-tags-select"]');
+    await select.find('.ant-select-selector').trigger('mousedown');
+    await flushPromises();
+    await nextTick();
+    const options = [...document.body.querySelectorAll('.ant-select-item-option')];
+    // Deselect the only editable classification tag; the save must drop
+    // it while carrying the tier, certification, and glossary labels
+    // through verbatim — never silently dropping labels this panel
+    // does not edit.
+    const sensitiveOption = options.find((option) =>
+      option.textContent?.includes('PII.Sensitive'),
+    );
+    (sensitiveOption as HTMLElement).click();
+    await flushPromises();
+    await wrapper.find('[data-testid="save-tags-btn"]').trigger('click');
+    await flushPromises();
+    expect(onQueryUpdate).toHaveBeenCalledTimes(1);
+    const [, ops] = vi.mocked(onQueryUpdate).mock.calls[0] as [string, JsonPatchOp[]];
+    expect(ops[0]?.path).toBe('/tags');
+    // Preserved labels keep their stored order: the fixture lists
+    // Glossary.Customer before the tier/certification labels, so the
+    // save carries them through in that order, untouched.
+    expect(ops[0]?.value).toEqual([
+      { tagFQN: 'Glossary.Customer', source: 'Glossary', labelType: 'Manual', state: 'Suggested' },
+      { tagFQN: 'Tier.Tier1', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      { tagFQN: 'Certification.Gold', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+    ]);
     wrapper.unmount();
   });
 
@@ -213,15 +273,17 @@ describe('TableQueryRightPanel', () => {
     await flushPromises();
     await nextTick();
     const options = [...document.body.querySelectorAll('.ant-select-item-option')];
-    const tierOption = options.find((option) => option.textContent?.includes('Tier.Tier1'));
-    (tierOption as HTMLElement).click();
+    const confidentialOption = options.find((option) =>
+      option.textContent?.includes('PII.Confidential'),
+    );
+    (confidentialOption as HTMLElement).click();
     await flushPromises();
     await wrapper.find('[data-testid="save-tags-btn"]').trigger('click');
     await flushPromises();
     const [, ops] = vi.mocked(onQueryUpdate).mock.calls[0] as [string, JsonPatchOp[]];
     expect(ops[0]?.value).toEqual([
       { tagFQN: 'PII.Sensitive', source: 'Classification', labelType: 'Generated', state: 'Suggested' },
-      { tagFQN: 'Tier.Tier1', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      { tagFQN: 'PII.Confidential', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
     ]);
     wrapper.unmount();
   });
