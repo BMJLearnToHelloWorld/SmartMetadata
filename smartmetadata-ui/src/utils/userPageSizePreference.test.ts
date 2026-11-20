@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest';
 import {
   USER_PREFERENCES_KEY,
   clearUserPreference,
+  readConnectionsViewMode,
   readGlobalPageSize,
+  writeConnectionsViewMode,
   writeGlobalPageSize,
 } from './userPageSizePreference';
 
@@ -152,5 +154,41 @@ describe('clearUserPreference', () => {
       preferences: { bob: { globalPageSize: 25 } },
     });
     expect(readGlobalPageSize(storage, 'alice')).toBe(15);
+  });
+});
+
+describe('connectionsViewMode preference (B-7(c), pin useConnectionsViewMode)', () => {
+  it('returns undefined when nothing is stored, without a write-back', () => {
+    const storage = memoryStorage();
+    expect(readConnectionsViewMode(storage, 'alice')).toBeUndefined();
+    expect(readConnectionsViewMode(storage, '')).toBeUndefined();
+    expect(readConnectionsViewMode(storage, undefined)).toBeUndefined();
+    expect(storage.getItem(USER_PREFERENCES_KEY)).toBeNull();
+  });
+
+  it('round-trips per user and ignores out-of-set values', () => {
+    const storage = memoryStorage({
+      [USER_PREFERENCES_KEY]: JSON.stringify({
+        version: 1,
+        preferences: { alice: { connectionsViewMode: 'table' } },
+      }),
+    });
+    expect(readConnectionsViewMode(storage, 'alice')).toBeUndefined();
+    writeConnectionsViewMode(storage, 'alice', 'list');
+    expect(readConnectionsViewMode(storage, 'alice')).toBe('list');
+    expect(readConnectionsViewMode(storage, 'bob')).toBeUndefined();
+    writeConnectionsViewMode(storage, 'bob', 'grid');
+    expect(readConnectionsViewMode(storage, 'bob')).toBe('grid');
+    expect(readConnectionsViewMode(storage, 'alice')).toBe('list');
+  });
+
+  it('keeps the page-size entry intact', () => {
+    const storage = memoryStorage();
+    writeGlobalPageSize(storage, 'alice', 50);
+    writeConnectionsViewMode(storage, 'alice', 'list');
+    expect(JSON.parse(storage.getItem(USER_PREFERENCES_KEY)!)).toEqual({
+      version: 1,
+      preferences: { alice: { globalPageSize: 50, connectionsViewMode: 'list' } },
+    });
   });
 });

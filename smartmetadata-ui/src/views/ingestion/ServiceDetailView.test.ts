@@ -243,7 +243,7 @@ async function mountView(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/ingestion/services', name: 'ingestion-services', component: { template: '<div>list</div>' } },
+      { path: '/connections', name: 'connections', component: { template: '<div>list</div>' } },
       { path: '/settings/:category', name: 'settings-category', component: { template: '<div>category</div>' } },
       {
         path: '/ingestion/services/:kind/:id',
@@ -1090,7 +1090,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
     expect(deletes).toHaveLength(1);
     expect(deletes[0].url).toContain('hardDelete=true');
     expect(deletes[0].url).toContain('recursive=true');
-    expect(router.currentRoute.value.name).toBe('ingestion-services');
+    expect(router.currentRoute.value.name).toBe('connections');
   });
 
   it('shows the hard-only variant for an already soft-deleted service', async () => {
@@ -1214,7 +1214,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
       expect(document.body.textContent).toContain(
         'The deletion may not have finished yet; refresh to confirm.',
       );
-      expect(router.currentRoute.value.name).toBe('ingestion-services');
+      expect(router.currentRoute.value.name).toBe('connections');
     } finally {
       vi.useRealTimers();
     }

@@ -55,7 +55,7 @@ async function mountWidget() {
     history: createMemoryHistory(),
     routes: [
       { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
-      { path: '/ingestion/services', name: 'ingestion-services', component: { template: '<div>services</div>' } },
+      { path: '/connections', name: 'connections', component: { template: '<div>connections</div>' } },
       { path: '/settings/:category', name: 'settings-category', component: { template: '<div>category</div>' } },
       {
         path: '/ingestion/services/:kind/:id',
@@ -281,7 +281,7 @@ describe('PlatformHealthWidget', () => {
     expect(router.currentRoute.value.query).toEqual({});
   });
 
-  it('keeps the health-bucket entry on the staged aggregate list with ?health= (§6.7 row 5)', async () => {
+  it('keeps the health-bucket entry on the Connections page with ?health= (B-7(c), §6.7 row 5)', async () => {
     getServicesOverview.mockResolvedValueOnce(
       overviewResponse(
         ['a', 'b', 'c', 'd'].map((id) => serviceSummary(id, 'failed')),
@@ -292,7 +292,7 @@ describe('PlatformHealthWidget', () => {
     const { wrapper, router } = await mountWidget();
     await wrapper.get('[data-testid="view-all-failing-services"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-services');
+    expect(router.currentRoute.value.name).toBe('connections');
     expect(router.currentRoute.value.query).toEqual({ health: 'failing' });
   });
 });

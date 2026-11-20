@@ -10,7 +10,7 @@
 import { permissionFlags } from '@/api/permissions';
 import { serviceCategoryByKind } from '@/ingestion/serviceCategories';
 import { usePermissionStore } from '@/stores/permissions';
-import { computed, ref, watchEffect, type Ref } from 'vue';
+import { computed, ref, unref, watchEffect, type MaybeRef, type Ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 /**
@@ -64,7 +64,7 @@ const ALL_CATEGORIES = Object.keys(RESOURCE_BY_CATEGORY) as Array<
   Exclude<AddServiceCategory, 'all'>
 >;
 
-export function useAddServiceAction(category: AddServiceCategory): {
+export function useAddServiceAction(category: MaybeRef<AddServiceCategory>): {
   addService: () => void;
   canAddService: Ref<boolean>;
 } {
@@ -73,8 +73,11 @@ export function useAddServiceAction(category: AddServiceCategory): {
   const canAddService = ref(false);
 
   async function refresh(): Promise<void> {
+    const current = unref(category);
     const resources =
-      category === 'all' ? ALL_CATEGORIES.map((key) => RESOURCE_BY_CATEGORY[key]) : [RESOURCE_BY_CATEGORY[category]];
+      current === 'all'
+        ? ALL_CATEGORIES.map((key) => RESOURCE_BY_CATEGORY[key])
+        : [RESOURCE_BY_CATEGORY[current]];
     const flags = await Promise.all(
       resources.map(async (resource) => permissionFlags(await permissions.getResourcePermission(resource))),
     );
@@ -82,14 +85,18 @@ export function useAddServiceAction(category: AddServiceCategory): {
   }
 
   watchEffect(() => {
+    // A ref category re-runs the permission check when the tab changes
+    // (the Connections page scopes its Add button to the tab in view);
+    // a plain category behaves exactly as before.
     void refresh();
   });
 
   function addService(): void {
     // D-17: the official `/:serviceCategory/add-service` form — the
     // ServiceCategory enum value, or the 'all' sentinel.
+    const current = unref(category);
     const serviceCategory =
-      category === 'all' ? 'all' : (serviceCategoryByKind(category)?.enumValue ?? 'all');
+      current === 'all' ? 'all' : (serviceCategoryByKind(current)?.enumValue ?? 'all');
     void router.push({ name: 'ingestion-service-add', params: { serviceCategory } });
   }
 

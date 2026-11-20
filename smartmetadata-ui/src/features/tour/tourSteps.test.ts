@@ -36,7 +36,7 @@ describe('tourSteps', () => {
     expect(TOUR_STEPS.map((step) => step.routeName)).toEqual([
       'home',
       'search',
-      'ingestion-services',
+      'connections',
       'governance-glossaries',
       'ontology-explorer',
       'quality-test-cases',

@@ -38,6 +38,8 @@ export const DEFAULT_GLOBAL_PAGE_SIZE = PAGE_SIZE_BASE;
 
 export interface UserPreferenceEntry {
   globalPageSize?: number;
+  /** Connections list/grid preference (pin `connectionsViewMode`). */
+  connectionsViewMode?: 'grid' | 'list';
   [key: string]: unknown;
 }
 
@@ -116,6 +118,46 @@ export function writeGlobalPageSize(
   doc.preferences[userName] = {
     ...existing,
     globalPageSize: pageSize,
+  };
+  storage.setItem(USER_PREFERENCES_KEY, JSON.stringify(doc));
+}
+
+/**
+ * Read the current user's persisted Connections view mode. Pin
+ * `useConnectionsViewMode` reads the server-synced `connectionsViewMode`
+ * user preference; the product has no backend-synced preference for it
+ * (BACKEND_SYNCED_KEYS holds only `appMode`, and the backend rejects
+ * unregistered preference types), so this is a LOCAL preference in the
+ * same per-user document as the page size — no server field is invented
+ * and no API call is made. Missing entry, missing key, an out-of-set
+ * value, corrupt JSON, wrong version, or an empty user name all return
+ * undefined (the caller falls back to the pin default `'grid'`).
+ */
+export function readConnectionsViewMode(
+  storage: Storage,
+  userName: string | undefined,
+): 'grid' | 'list' | undefined {
+  if (!userName) {
+    return undefined;
+  }
+  const mode = readDocument(storage).preferences[userName]?.connectionsViewMode;
+  return mode === 'grid' || mode === 'list' ? mode : undefined;
+}
+
+/** Persist a Connections view mode for the current user (same local-only rules as above). */
+export function writeConnectionsViewMode(
+  storage: Storage,
+  userName: string | undefined,
+  viewMode: 'grid' | 'list',
+): void {
+  if (!userName) {
+    return;
+  }
+  const doc = readDocument(storage);
+  const existing = isRecord(doc.preferences[userName]) ? doc.preferences[userName] : {};
+  doc.preferences[userName] = {
+    ...existing,
+    connectionsViewMode: viewMode,
   };
   storage.setItem(USER_PREFERENCES_KEY, JSON.stringify(doc));
 }

@@ -86,8 +86,8 @@ const status = computed(() =>
 
 function openServices(): void {
   // DESIGN §6.7 rows 4-5: the no-kind entry points at the Services
-  // overview. The health-bucket entry (goToHealth) deliberately keeps
-  // the staged aggregate list and its ?health= filter.
+  // overview. The health-bucket entry (goToHealth) goes to the
+  // Connections page, which owns the `?health=` filter (B-7(c)).
   void router.push({ name: 'settings-category', params: { category: 'services' } });
 }
 
@@ -157,7 +157,9 @@ function pickBucket(next: ServiceHealthFilter): void {
 }
 
 function goToHealth(filter: ServiceHealthFilter): void {
-  void router.push({ name: 'ingestion-services', query: { health: filter } });
+  // B-7(c): the health filter lives on the Connections page; the
+  // legacy single values (failing/healthy/notRun) are expanded there.
+  void router.push({ name: 'connections', query: { health: filter } });
 }
 
 function openService(service: Pick<FailingService, 'id' | 'serviceKind'>): void {

@@ -32,6 +32,7 @@ describe('router domain scheme and guards (Stage 1)', () => {
       '/quality/test-cases': 'quality',
       '/observability/incidents': 'observability',
       '/ingestion/services': 'ingestion',
+      '/connections': 'ingestion',
       '/activity': 'collaboration',
       '/tasks': 'collaboration',
     };

@@ -200,7 +200,8 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/admin/users/u1').name).toBe('admin-user');
     expect(router.resolve('/admin/users/u1').params).toMatchObject({ id: 'u1' });
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
-    expect(router.resolve('/ingestion/services').name).toBe('ingestion-services');
+    expect(router.resolve('/connections').name).toBe('connections');
+    expect(router.resolve('/ingestion/services').name).toBe('not-found');
     expect(router.resolve('/ingestion/services/database/s1').name).toBe('ingestion-service');
     // D-17: the official `/:serviceCategory/add-service` form; the
     // retained `/ingestion/services/add` path is deleted with it.
@@ -439,7 +440,6 @@ describe('guard declaration table (§10.2)', () => {
 
   it('leaves the staged unit, the service family, inbox and column-bulk-ops undeclared', () => {
     for (const name of [
-      'ingestion-services',
       'ingestion-service',
       'ingestion-service-add',
       'ingestion-service-connection',

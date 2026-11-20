@@ -89,6 +89,10 @@ import type { Component } from 'vue';
 const ICONS: Record<string, Component> = {
   home: HomeOutlined,
   search: CompassOutlined,
+  // B-7(c): pin uses a plug-shaped ConnectorsIcon
+  // (connections-default.svg); ApiOutlined is the closest glyph in the
+  // existing icon set — no new icon asset.
+  connections: ApiOutlined,
   'lineage-home': ClusterOutlined,
   observability: SearchOutlined,
   'quality-test-cases': TableOutlined,

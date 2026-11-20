@@ -42,6 +42,7 @@ const LogoutView = () => import('@/views/auth/LogoutView.vue');
 const RoleDetailView = () => import('@/views/admin/RoleDetailView.vue');
 const RolesListView = () => import('@/views/admin/RolesListView.vue');
 const SearchView = () => import('@/views/SearchView.vue');
+const ConnectionsView = () => import('@/views/connections/ConnectionsView.vue');
 const AppDetailView = () => import('@/views/admin/AppDetailView.vue');
 const AppsListView = () => import('@/views/admin/AppsListView.vue');
 const CustomPropertyTypeDetailView = () => import('@/views/admin/CustomPropertyTypeDetailView.vue');
@@ -110,7 +111,6 @@ const ServiceVersionView = () => import('@/views/ingestion/ServiceVersionView.vu
 const AddServiceIngestionView = () => import('@/views/ingestion/AddServiceIngestionView.vue');
 const QueryFullScreenView = () => import('@/views/QueryFullScreenView.vue');
 const AddQueryView = () => import('@/views/AddQueryView.vue');
-const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
 const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vue');
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
 const AnnouncementFormView = () => import('@/views/collaboration/AnnouncementFormView.vue');
@@ -245,6 +245,10 @@ export const router = createRouter({
         // G-01 (visual comparison): official EXPLORE '/explore'
         // (constants.ts:155); the product search lives at /search.
         { path: 'search', name: 'search', component: SearchView, alias: 'explore' },
+        // B-7(c): the aggregate Connections surface (pin
+        // ConnectionsPage, RoutePosition.APP) — the retired
+        // `ingestion/services` aggregate list lives here now.
+        { path: 'connections', name: 'connections', component: ConnectionsView },
         {
           path: 'assets/:entityType/:fqn',
           name: 'asset',
@@ -1006,10 +1010,10 @@ export const router = createRouter({
             params: { id: to.params.id },
           }),
         },
-        // B3 staged unit: the aggregate services list keeps its path,
-        // name and current behaviour (all/kind Tabs/?health= buckets)
-        // until the D-1/D-16 deletion ruling executes (DESIGN §4.5).
-        { path: 'ingestion/services', name: 'ingestion-services', component: ServicesListView },
+        // B-7(c): `ingestion/services` is retired with ServicesListView
+        // (health chips + kind Tabs + `?health=` buckets); the aggregate
+        // surface lives at top-level `/connections` now. No redirect:
+        // the old route has no official counterpart.
         // D-17: the official add-service form (pin ROUTES.ADD_SERVICE,
         // `/:serviceCategory/add-service`; AuthenticatedAppRouter.tsx:
         // 421-427). The category is a ServiceCategory enum value
