@@ -206,17 +206,48 @@ Residuals and limits carried out of this batch:
   binding candidates. This changes no baseline behavior: the baseline
   runner views likewise contain no CTE name, and a CTE name has no
   endpoint and is never reachable through endpoint association.
-- **Built-in functions differ by branch.** The SqlFluff/SqlParse
-  extractors emit built-in function names (e.g. `COUNT`) as function
-  occurrences while the SqlGlot branch's model excludes them. The
-  column-path heuristic does not filter them — it matches only the
-  `NAME(` shape, so `COUNT(*)` is a UDF candidate under SqlFluff —
-  and the real gate is the `resolve_udf` catalog lookup, which skips
-  on a 404: heuristic (shape) → extraction occurrence (branch
-  difference) → catalog lookup 404 skip. The difference is locked by
-  tests. **Residual:** when the catalog holds a UDF whose leaf name
-  matches a built-in and the winner is not SqlGlot, a built-in call
-  may wrongly expand that UDF body.
+- **Built-in functions differ by branch — resolved (D-L2c H, 2026-11-20).**
+  The SqlFluff/SqlParse extractors emit built-in function names (e.g.
+  `COUNT`) as function occurrences while the SqlGlot branch's model
+  excludes them. The column-path heuristic does not filter them — it
+  matches only the `NAME(` shape, so `COUNT(*)` was a UDF candidate
+  under SqlFluff — and the real gate was the `resolve_udf` catalog
+  lookup, which skips on a 404. That gate is no longer the only one:
+  `udf_names_from_extraction` now filters a bare, unquoted call whose
+  leaf is in `BUILTIN_FUNCTION_NAMES` (596 names, `lineage/udf_names.py`),
+  before any catalog lookup, so a same-named catalog UDF is never
+  expanded by a built-in call on any branch. The filter predicate is:
+  single-segment, leaf unquoted, leaf upper-cased in the table.
+  Qualified names (`sch.COUNT`) and quoted names (`"COUNT"`) are never
+  filtered — a qualifier or quotes are the caller naming a catalog
+  object on purpose. Generation method (DRAFT-H §2.3):
+  `B = E_fluff ∩ E_parse ∩ M_glot` over the sqlglot 29.0.1 `exp.Func`
+  subclasses' `sql_names()` (601 names), probed under mysql and postgres
+  and intersected across dialects (591), union the design's fixed
+  appendix-corpus probe (61 names, 5 not in the enumeration:
+  `BIT_AND`, `BIT_OR`, `LTRIM`, `RTRIM`, `STRING_AGG` — sqlglot models
+  them under differently-named classes); `M_glot` is a node-class check
+  (a modeled, non-`Anonymous` `Func` node), never a name comparison.
+  The table is signed-in explicit data, locked by a test that recomputes
+  the triple live over the fixed corpus. New count key
+  `builtin_function_filtered` (`BINDING_COUNT_KEYS`), via an optional
+  `on_builtin_filtered` callback into `resolver.note_builtin_filtered`;
+  no per-call logging (`COUNT(*)` is too common). **Baseline change:**
+  `COUNT(*)` no longer reaches `resolve_udf`, so `unresolved_udf_count`
+  no longer contains built-in noise — compare that number across the
+  deploy with this item deducted. **Not 1:1:** official has no such
+  filter (the SqlGlot exclusion is structural); the yardstick is the
+  product's own SqlGlot branch behavior, basis: implementation method /
+  branch-consistency convergence. The filter itself is a named,
+  reasoned deviation: it removes an active mis-action (wrongly
+  expanding a UDF body), not a miss. **Residual:** the table was
+  generated with sqlparse 0.6.0; the pin is 0.6.1, unpublished at
+  generation time — regenerate with the pin version once published and
+  re-run the lock-table test. Known boundary (method's, not an
+  omission): sqlglot-unmodeled builtins (`JSON_AGG`, `NOW` — `Anonymous`
+  in 29.0.1) and dialect-only names (`DATE_FORMAT`, `CONVERT`) are not
+  in the table; a same-named catalog UDF for those is still expanded
+  identically on all three branches.
 - **The `ENTITY` input source exists for view lineage only.**
   `FieldSource` gained an `ENTITY` value because the view channel's
   context comes from the processed entity's own catalog position —

@@ -282,6 +282,19 @@ class LineageBindingResolver:
         with self._lock:
             self._fidelity_skips[branch] = self._fidelity_skips.get(branch, 0) + count
 
+    def note_builtin_filtered(
+        self, identifier: StructuredIdentifier, count: int = 1
+    ) -> None:
+        """Count a built-in function call filtered out of UDF
+        candidates (D-L2c H). The selection layer dropped the name
+        before any catalog lookup, so no UDF miss is recorded for it;
+        the identifier is carried for the callback protocol only —
+        the count needs no attribution. This changes the
+        ``unresolved_udf_count`` baseline: ``COUNT(*)`` no longer
+        counts as a UDF miss."""
+        with self._lock:
+            self._counts["builtin_function_filtered"] += count
+
     @property
     def unresolved_table_count(self) -> int:
         """Parsed table names that bound to no catalog table after
