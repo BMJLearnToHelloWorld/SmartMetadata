@@ -397,3 +397,62 @@ describe('TestCasesListView tableDiff fields (P2-6)', () => {
     expect(postedBody).toBeNull();
   });
 });
+
+describe('TestCasesListView dashboard drill-down', () => {
+  const requestedUrls: string[] = [];
+
+  beforeEach(() => {
+    localStorage.clear();
+    requestedUrls.length = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url.includes('/api/v1/dataQuality/testCases/search/list')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
+          return jsonResponse({ data: [] });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('applies the drilled status and dimension to the search request', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/quality/test-cases', name: 'quality-test-cases', component: TestCasesListView },
+        { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
+      ],
+    });
+    await router.push('/quality/test-cases');
+    await router.isReady();
+    const wrapper = mount(TestCasesListView, {
+      props: { preferSearch: true, status: 'Failed', dataQualityDimension: 'Completeness' },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const searchUrl = requestedUrls.find((url) => url.includes('/testCases/search/list'));
+    expect(searchUrl).toBeDefined();
+    expect(searchUrl).toContain('testCaseStatus=Failed');
+    expect(searchUrl).toContain('dataQualityDimension=Completeness');
+    // The status filter visibly carries the drilled status.
+    expect(wrapper.find('[data-testid="test-cases-status-filter"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Failed');
+    wrapper.unmount();
+  });
+});

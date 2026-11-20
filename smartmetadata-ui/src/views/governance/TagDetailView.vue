@@ -18,6 +18,7 @@ import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTagVersionPath } from '@/catalog/versionPaths';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
+import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
@@ -28,6 +29,7 @@ import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import { toEntityLink } from '@/quality/entityLink';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import type { DqDashboardChartFilters, DqHiddenFilter } from '@/quality/dashboard';
 import type { ActivityEvent, Conversation } from '@/types/collaboration';
 import type { ClassificationTag } from '@/types/governance';
 
@@ -102,6 +104,41 @@ const tabs = computed<EntityDetailTab[]>(() => [
     testId: 'tag-tab-data-observability',
   },
 ]);
+
+// B-15: pin TagPage getDqFilterKey (TIER_CATEGORY='Tier',
+// CERTIFICATION_CATEGORY='Certification'): Tier and Certification are
+// first-class entity fields (entity.tier, entity.certification), not
+// entries in entity.tags[]. When this page embeds the DQ dashboard,
+// the tag's FQN routes through the matching filter key — otherwise the
+// dashboard queries tags.tagFQN, which never matches assets carrying
+// these system tags. Hidden filters follow the pin rule
+// (dqFilterKey === 'tags' ? ['tags'] : ['tags', dqFilterKey]).
+const dqFilterKey = computed<'tier' | 'certification' | 'tags'>(() => {
+  const classificationName = tag.value?.classification?.name;
+  if (classificationName === 'Tier') {
+    return 'tier';
+  }
+  if (classificationName === 'Certification') {
+    return 'certification';
+  }
+  return 'tags';
+});
+const tagDqHiddenFilters = computed<DqHiddenFilter[]>(() =>
+  dqFilterKey.value === 'tags' ? ['tags'] : ['tags', dqFilterKey.value],
+);
+const tagDqInitialFilters = computed<DqDashboardChartFilters | undefined>(() => {
+  const fqn = tag.value?.fullyQualifiedName;
+  if (!fqn) {
+    return undefined;
+  }
+  if (dqFilterKey.value === 'tier') {
+    return { tier: [fqn] };
+  }
+  if (dqFilterKey.value === 'certification') {
+    return { certification: [fqn] };
+  }
+  return { tags: [fqn] };
+});
 
 // Widget layer (B-8): the widget grid mounts ONLY on this page type's
 // widget-layout tab (Tag: overview), and only when the customized
@@ -423,34 +460,13 @@ onMounted(() => {
       />
     </template>
     <template #data_observability>
-      <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="Tag">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="tag.description"
-              :entity-name="tag.displayName || tag.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(tag.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && tag" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(tag.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && tag" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('tags.reviewers')">{{ joinRefNames(tag.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
-      <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.dataObservability')" />
+      <DataQualityDashboard
+        v-if="tag"
+        is-governance-view
+        class-name="data-quality-governance-tab-wrapper"
+        :hidden-filters="tagDqHiddenFilters"
+        :initial-filters="tagDqInitialFilters"
+      />
     </template>
   </EntityDetailShell>
   <FormModal

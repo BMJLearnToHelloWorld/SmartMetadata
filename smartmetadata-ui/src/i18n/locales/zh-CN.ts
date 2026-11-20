@@ -1456,7 +1456,6 @@ const zhCN = {
       searchIndexSettings: '此控制台尚未接入搜索索引设置。',
       assets: '此控制台尚未接入指标资产列表。',
       tagAssets: '此控制台尚未接入标签资产列表。',
-      dataObservability: '此控制台尚未接入数据观测。',
       relationsGraph: '此控制台尚未接入术语关系图谱。',
     },
     name: '名称',
@@ -2311,6 +2310,17 @@ const zhCN = {
       residualSearchList:
         '此服务器上 GET /v1/dataQuality/testCases/search/list 仍是 residual。责任人、层级、标签、术语、数据产品和日期筛选仅在该索引存在时生效。',
       residualFilterApply: '这些筛选需要测试用例搜索索引。列出的行保持不过滤，而不是伪造全目录切片。',
+    },
+    dashboard: {
+      statusLead: '所选范围内每天各状态的数量。',
+      incidentsTitle: '事件指标',
+      incidentsLead: '每天新增与已解决事件，以及平均响应与解决时间。',
+      openIncidents: '未解决事件',
+      resolvedIncidents: '已解决事件',
+      responseTime: '响应时间',
+      resolutionTime: '解决时间',
+      chartEmpty: '此范围内没有数值。',
+      selectAll: '全选',
     },
     testCases: {
       title: '测试用例',

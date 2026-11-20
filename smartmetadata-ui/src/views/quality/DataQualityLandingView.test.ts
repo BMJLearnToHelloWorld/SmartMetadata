@@ -104,6 +104,13 @@ function stubFetch(mode: 'ok' | 'quality-404' = 'ok'): void {
               },
             },
             {
+              key: 'unhealthyCovered',
+              report: {
+                metadata: { keys: ['cardinality#entityWithTests'], dimensions: [], metrics: ['originEntityFQN'] },
+                data: [{ originEntityFQN: '1' }],
+              },
+            },
+            {
               key: 'totalTables',
               report: {
                 metadata: { keys: ['cardinality#count'], dimensions: [], metrics: ['fullyQualifiedName'] },
@@ -310,5 +317,15 @@ describe('DataQualityLandingView', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="dq-landing-filter-residual"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="dq-landing-filter-residual"]').text()).toMatch(/search index|unfiltered/i);
+  });
+
+  it('forwards a dashboard drill-down query to the test-case list', async () => {
+    const { wrapper } = await mountLanding(
+      '/quality/test-cases?tab=test-cases&testCaseStatus=Failed&dataQualityDimension=Completeness',
+    );
+    const list = wrapper.findComponent(TestCasesListView);
+    expect(list.exists()).toBe(true);
+    expect(list.props('status')).toBe('Failed');
+    expect(list.props('dataQualityDimension')).toBe('Completeness');
   });
 });
