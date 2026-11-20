@@ -12,6 +12,7 @@ import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { SESSION_EXPIRED_EVENT } from '@/auth/sessionEvents';
 import CsvJobsTray from '@/components/shared/CsvJobsTray.vue';
 import LimitBanner from '@/components/shared/LimitBanner.vue';
+import SilentErrorBoundary from '@/components/shared/SilentErrorBoundary.vue';
 import SmErrorBoundary from '@/components/shared/SmErrorBoundary.vue';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import { useShellPreferencesStore } from '@/stores/shellPreferences';
@@ -114,14 +115,20 @@ onUnmounted(() => {
 
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale" :form="{ validateMessages: formValidateMessages }">
-    <!-- Stage D (G-11): the global limit banner, driven by LimitWrapper
-         mounts (the home page's hidden data-assets driver). -->
-    <LimitBanner />
-    <!-- SYS-7/PEND-1 shared boundary: wraps the routed subtree only;
-         LimitBanner/CsvJobsTray stay outside by design (07 §3.4). -->
+    <!-- SYS-7/PEND-1 shared boundary: wraps the whole app inside
+         ConfigProvider — LimitBanner, the routed subtree, and
+         CsvJobsTray — matching official AppRoot, whose ErrorBoundary
+         wraps the entire <App/> subtree (B-14 §5). The local
+         SilentErrorBoundary around CsvJobsTray stays inside as the
+         first line of defence. -->
     <SmErrorBoundary>
+      <!-- Stage D (G-11): the global limit banner, driven by LimitWrapper
+           mounts (the home page's hidden data-assets driver). -->
+      <LimitBanner />
       <router-view />
+      <SilentErrorBoundary>
+        <CsvJobsTray />
+      </SilentErrorBoundary>
     </SmErrorBoundary>
-    <CsvJobsTray />
   </ConfigProvider>
 </template>

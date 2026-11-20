@@ -11,9 +11,11 @@
 /**
  * Second net (N-4 companion to SmErrorBoundary): `app.config.errorHandler`
  * for errors the boundary never sees — render/lifecycle failures in
- * App.vue itself and in the components deliberately kept outside the
- * boundary (LimitBanner, CsvJobsTray), plus errors in code paths with no
- * ancestor boundary. The boundary's onErrorCaptured returns false, so an
+ * App.vue itself (above the boundary) plus errors in code paths with no
+ * ancestor boundary. LimitBanner and CsvJobsTray render errors no longer
+ * reach this handler: both sit inside the top-level boundary since the
+ * B-14 §5 widening (tray errors are caught first by its local silent
+ * boundary). The boundary's onErrorCaptured returns false, so an
  * error it handled never reaches this handler and is never recorded
  * twice; that no-double-record behavior is verified by experiment in
  * appErrorHandler.test.ts, not claimed from source.
