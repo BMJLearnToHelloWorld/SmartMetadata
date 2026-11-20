@@ -42,6 +42,12 @@ const props = withDefaults(
     dataProductFqn?: string;
     startTs?: number;
     endTs?: number;
+    /** Dashboard drill-down (pin getTestCaseListPath testCaseStatus): seeds the status filter. */
+    status?: string;
+    /** Dashboard drill-down (pin getTestCaseListPath dataQualityDimension): search-path filter. */
+    dataQualityDimension?: string;
+    /** Dashboard drill-down (pin getTestCaseListPath tableFqn): search-path entity scope. */
+    entityFqn?: string;
   }>(),
   {
     embedded: false,
@@ -59,7 +65,7 @@ const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref(0);
 const usingSearch = ref(false);
-const statusFilter = ref<string | undefined>();
+const statusFilter = ref<string | undefined>(props.status);
 const searchValue = ref('');
 const definitions = ref<TestDefinition[]>([]);
 const createOpen = ref(false);
@@ -186,6 +192,8 @@ async function load(): Promise<void> {
           tier: props.tier,
           tags: props.tags,
           dataProductFqn: props.dataProductFqn,
+          dataQualityDimension: props.dataQualityDimension,
+          entityFQN: props.entityFqn,
           startTimestamp: props.startTs,
           endTimestamp: props.endTs,
           sortField: 'testCaseResult.timestamp',
@@ -207,6 +215,9 @@ async function load(): Promise<void> {
       after: cursor.value.after,
       includeAllTests: true,
       testCaseStatus: statusFilter.value,
+      // No dimension parameter on the plain list endpoint: a dimension
+      // drill-down only narrows the search path above.
+      entityFQN: props.entityFqn,
     });
     cases.value = page.data;
     total.value = page.total;
@@ -291,6 +302,18 @@ watch(
       props.endTs,
     ].join('|'),
   () => {
+    resetPager();
+    void load();
+  },
+);
+
+// Dashboard drill-down props (status / dimension / entity) arrive after
+// mount when the landing view forwards a new route query: seed the
+// status filter from the prop and reload on any of them changing.
+watch(
+  () => [props.status, props.dataQualityDimension, props.entityFqn].join('|'),
+  () => {
+    statusFilter.value = props.status;
     resetPager();
     void load();
   },

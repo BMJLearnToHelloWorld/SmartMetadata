@@ -40,6 +40,8 @@ export interface SearchTestCasesQuery {
   owner?: string;
   followedBy?: string;
   testCaseType?: string;
+  /** Pin ListTestCaseParamsBySearch: the dashboard drill-down filters by dimension. */
+  dataQualityDimension?: string;
   /** Fields override; defaults to TEST_CASE_FIELDS (incl. incidentStatus). */
   fields?: string;
   tags?: string;
@@ -260,6 +262,7 @@ export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise
       limit: query.limit ?? 25,
       offset: query.offset ?? 0,
       testCaseStatus: query.testCaseStatus,
+      dataQualityDimension: query.dataQualityDimension,
       owner: query.owner,
       followedBy: query.followedBy,
       testCaseType: query.testCaseType,

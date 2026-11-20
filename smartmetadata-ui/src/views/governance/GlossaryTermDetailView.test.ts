@@ -161,11 +161,13 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="edit-term"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="delete-term"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
-    // Relations graph, custom properties and data observability have no
-    // product backing: three honest residual states, distinctly stated.
+    // Relations graph and custom properties have no product backing:
+    // two honest residual states, distinctly stated. Data
+    // observability mounts the shared DQ dashboard (B-15).
     const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
-    expect(residuals).toHaveLength(3);
-    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(3);
+    expect(residuals).toHaveLength(2);
+    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(2);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
@@ -360,10 +362,12 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     // Mount tab: the grid replaces the overview pane.
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Money in');
     expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
-    // Every other tab keeps its existing panel.
+    // Every other tab keeps its existing panel; data-observability
+    // mounts the DQ dashboard instead of its former residual.
     expect(wrapper.find('[data-testid="term-children-table"]').text()).toContain('ARR');
     expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(3);
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });

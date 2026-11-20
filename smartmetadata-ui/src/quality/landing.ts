@@ -374,56 +374,113 @@ export interface DqTimeRange {
   endTs: number;
 }
 
-function dqMustForOwner(owner: string): DqEsClause {
+/**
+ * Low-level ES clause builders, shared by the landing view's
+ * single-valued query builders below and the shared DQ dashboard
+ * (`quality/dashboard.ts`), which needs the same shapes with
+ * multi-valued filters and, for the testCaseResult /
+ * testCaseResolutionStatus indexes, the official `testCase.`-prefixed
+ * field paths (pin rest/dataQualityDashboardAPI.ts:
+ * fetchTestCaseStatusMetricsByDays / fetchCountOfIncidentStatusTypeByDays
+ * / fetchIncidentTimeMetrics pass `isTestCaseResult=true` / prefix
+ * `'testCase.'`). Single values produce byte-identical output to the
+ * pre-shared builders, so the landing view's queries do not change.
+ */
+export function dqMustForOwner(owner: string, nestedPrefix = ''): DqEsClause {
+  const path = nestedPrefix ? `${nestedPrefix}.owners` : 'owners';
+  const field = nestedPrefix ? `${nestedPrefix}.owners.name` : 'owners.name';
   return {
     nested: {
-      path: 'owners',
-      query: { term: { 'owners.name': owner } },
+      path,
+      query: { term: { [field]: owner } },
     },
   };
 }
 
-function dqMustForTags(tag: string): DqEsClause {
+export function dqMustForTags(tags: string | string[], nestedPrefix = ''): DqEsClause {
+  const values = Array.isArray(tags) ? tags : [tags];
+  const path = nestedPrefix ? `${nestedPrefix}.tags` : 'tags';
+  const field = nestedPrefix ? `${nestedPrefix}.tags.tagFQN` : 'tags.tagFQN';
   return {
     nested: {
-      path: 'tags',
+      path,
       query: {
         bool: {
-          should: [{ match: { 'tags.tagFQN': tag } }],
+          should: values.map((tag) => ({ match: { [field]: tag } })),
         },
       },
     },
   };
 }
 
-function dqShouldTerm(field: string, value: string, minimumShouldMatch = true): DqEsClause {
+export function dqShouldTerm(
+  field: string,
+  values: string | string[],
+  minimumShouldMatch = true,
+): DqEsClause {
+  const list = Array.isArray(values) ? values : [values];
   return {
     bool: {
-      should: [{ term: { [field]: value } }],
+      should: list.map((value) => ({ term: { [field]: value } })),
       ...(minimumShouldMatch ? { minimum_should_match: 1 } : {}),
     },
   };
 }
 
-export function dqDashboardMustFilters(
-  filters: DqGovernanceFilters,
+/** Multi-valued filter set for the shared dashboard query builders. */
+export interface DqMultiFilters {
+  owner?: string;
+  tags?: string[];
+  tier?: string[];
+  certification?: string[];
+  dataProducts?: string[];
+}
+
+function nonEmpty(values?: string[]): string[] | undefined {
+  const list = (values ?? []).map((value) => value.trim()).filter(Boolean);
+  return list.length ? list : undefined;
+}
+
+/**
+ * testCase-index must clauses, shared by dqDashboardMustFilters (the
+ * landing view, single-valued) and the shared dashboard (multi-valued).
+ * Clause order matches the landing builder's historical order; the
+ * unhealthy clause sits first, mirroring pin
+ * buildOwnershipAndTaggingFilters, which pushes it before the owner
+ * clause. The unhealthy filter sends capitalized Failed/Aborted, the
+ * official casing (pin EntityHealthStatusPieChartWidget via
+ * fetchEntityCoveredWithDQ(unhealthy=true)).
+ */
+export function dqChartMustForValues(
+  values: DqMultiFilters,
   range?: DqTimeRange,
+  options?: { unhealthy?: boolean; entityFQN?: string },
 ): DqEsClause[] {
   const must: DqEsClause[] = [];
-  if (filters.owner?.trim()) {
-    must.push(dqMustForOwner(filters.owner));
+  if (options?.unhealthy) {
+    must.push({ terms: { 'testCaseResult.testCaseStatus': ['Failed', 'Aborted'] } });
   }
-  if (filters.certification?.trim()) {
-    must.push(dqShouldTerm('certification.tagLabel.tagFQN', filters.certification, false));
+  if (values.owner?.trim()) {
+    must.push(dqMustForOwner(values.owner));
   }
-  if (filters.tag?.trim()) {
-    must.push(dqMustForTags(filters.tag));
+  const certification = nonEmpty(values.certification);
+  if (certification) {
+    must.push(dqShouldTerm('certification.tagLabel.tagFQN', certification, false));
   }
-  if (filters.tier?.trim()) {
-    must.push(dqShouldTerm('tier.tagFQN', filters.tier));
+  const tags = nonEmpty(values.tags);
+  if (tags) {
+    must.push(dqMustForTags(tags));
   }
-  if (filters.dataProduct?.trim()) {
-    must.push(dqShouldTerm('dataProducts.fullyQualifiedName', filters.dataProduct));
+  const tier = nonEmpty(values.tier);
+  if (tier) {
+    must.push(dqShouldTerm('tier.tagFQN', tier));
+  }
+  const dataProducts = nonEmpty(values.dataProducts);
+  if (dataProducts) {
+    must.push(dqShouldTerm('dataProducts.fullyQualifiedName', dataProducts));
+  }
+  if (options?.entityFQN?.trim()) {
+    must.push({ term: { originEntityFQN: options.entityFQN } });
   }
   // Official time-range clause (buildStatusTypeAndTimeFilters): only the
   // testCase-index dashboard builder carries it — the table builder has
@@ -437,29 +494,71 @@ export function dqDashboardMustFilters(
   return must;
 }
 
-export function dqTableMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
+/**
+ * Table-index must clauses, shared by dqTableMustFilters (the landing
+ * view) and the shared dashboard. Clause shapes mirror
+ * dqTableMustFilters exactly (flat term clauses, no nested testCase
+ * forms, no time clause).
+ */
+export function dqTableMustForValues(
+  values: DqMultiFilters,
+  options?: { entityFQN?: string },
+): DqEsClause[] {
   const must: DqEsClause[] = [];
-  if (filters.owner?.trim()) {
-    must.push(dqMustForOwner(filters.owner));
+  if (values.owner?.trim()) {
+    must.push(dqMustForOwner(values.owner));
   }
-  if (filters.tag?.trim()) {
+  const tags = nonEmpty(values.tags);
+  if (tags) {
     must.push({
-      bool: { should: [{ term: { 'tags.tagFQN': filters.tag } }] },
+      bool: { should: tags.map((tag) => ({ term: { 'tags.tagFQN': tag } })) },
     });
   }
-  if (filters.tier?.trim()) {
+  const tier = nonEmpty(values.tier);
+  if (tier) {
     must.push({
-      bool: { should: [{ term: { 'tier.tagFQN': filters.tier } }] },
+      bool: { should: tier.map((value) => ({ term: { 'tier.tagFQN': value } })) },
     });
   }
-  if (filters.certification?.trim()) {
-    must.push(dqShouldTerm('certification.tagLabel.tagFQN', filters.certification, false));
+  const certification = nonEmpty(values.certification);
+  if (certification) {
+    must.push(dqShouldTerm('certification.tagLabel.tagFQN', certification, false));
   }
-  if (filters.dataProduct?.trim()) {
-    must.push(dqShouldTerm('dataProducts.fullyQualifiedName', filters.dataProduct));
+  const dataProducts = nonEmpty(values.dataProducts);
+  if (dataProducts) {
+    must.push(dqShouldTerm('dataProducts.fullyQualifiedName', dataProducts));
+  }
+  if (options?.entityFQN?.trim()) {
+    must.push({ term: { 'fullyQualifiedName.keyword': options.entityFQN } });
   }
   must.push({ term: { deleted: false } });
   return must;
+}
+
+export function dqDashboardMustFilters(
+  filters: DqGovernanceFilters,
+  range?: DqTimeRange,
+): DqEsClause[] {
+  return dqChartMustForValues(
+    {
+      owner: filters.owner,
+      certification: filters.certification ? [filters.certification] : undefined,
+      tags: filters.tag ? [filters.tag] : undefined,
+      tier: filters.tier ? [filters.tier] : undefined,
+      dataProducts: filters.dataProduct ? [filters.dataProduct] : undefined,
+    },
+    range,
+  );
+}
+
+export function dqTableMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
+  return dqTableMustForValues({
+    owner: filters.owner,
+    tags: filters.tag ? [filters.tag] : undefined,
+    tier: filters.tier ? [filters.tier] : undefined,
+    certification: filters.certification ? [filters.certification] : undefined,
+    dataProducts: filters.dataProduct ? [filters.dataProduct] : undefined,
+  });
 }
 
 export function buildDqDashboardQuery(
