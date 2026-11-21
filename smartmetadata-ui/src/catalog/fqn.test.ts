@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { splitFqn } from './fqn';
+import { splitFqn, unquoteFqnPart } from './fqn';
 
 describe('splitFqn', () => {
   it('splits on unquoted dots', () => {
@@ -23,5 +23,18 @@ describe('splitFqn', () => {
   it('drops empty segments', () => {
     expect(splitFqn('')).toEqual([]);
     expect(splitFqn('svc..orders')).toEqual(['svc', 'orders']);
+  });
+});
+
+describe('unquoteFqnPart', () => {
+  it('strips one pair of surrounding quotes', () => {
+    expect(unquoteFqnPart('"my.db"')).toBe('my.db');
+    expect(unquoteFqnPart('orders')).toBe('orders');
+  });
+
+  it('leaves a lone quote alone', () => {
+    expect(unquoteFqnPart('"orders')).toBe('"orders');
+    expect(unquoteFqnPart('"')).toBe('"');
+    expect(unquoteFqnPart('')).toBe('');
   });
 });

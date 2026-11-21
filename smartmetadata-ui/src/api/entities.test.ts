@@ -72,6 +72,86 @@ describe('asset entity writes', () => {
     expect(lastFetch().url).toContain('tableType');
   });
 
+  it('maps table partition columns, constraints, and aliases, deriving the partition count', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            columns: [{ name: 'id', dataType: 'BIGINT' }],
+            tablePartition: {
+              columns: [
+                { columnName: 'ds', intervalType: 'TIME-UNIT' },
+                { columnName: 'region' },
+                { intervalType: 'TIME-UNIT' },
+              ],
+            },
+            tableConstraints: [
+              { constraintType: 'PRIMARY_KEY', columns: ['id'] },
+              {
+                constraintType: 'FOREIGN_KEY',
+                columns: ['customer_id'],
+                referredColumns: ['svc.db.schema.customers.id'],
+                relationshipType: 'MANY_TO_ONE',
+              },
+              { constraintType: 'MADE_UP', columns: ['id'] },
+            ],
+            aliases: ['svc.db.schema.orders_alias', 42, ''],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders');
+    const fields = decodeURIComponent(lastFetch().url.split('fields=')[1] ?? '');
+    expect(fields.split(',')).toEqual(
+      expect.arrayContaining(['tablePartition', 'tableConstraints', 'aliases']),
+    );
+    expect(asset.tablePartition).toEqual({
+      columns: [
+        { columnName: 'ds', intervalType: 'TIME-UNIT' },
+        { columnName: 'region' },
+      ],
+    });
+    // The partition count is derived from the columns: the Table schema
+    // carries no `partitions` count field.
+    expect(asset.partitions).toBe(2);
+    expect(asset.tableConstraints).toEqual([
+      { constraintType: 'PRIMARY_KEY', columns: ['id'] },
+      {
+        constraintType: 'FOREIGN_KEY',
+        columns: ['customer_id'],
+        referredColumns: ['svc.db.schema.customers.id'],
+        relationshipType: 'MANY_TO_ONE',
+      },
+    ]);
+    expect(asset.aliases).toEqual(['svc.db.schema.orders_alias']);
+  });
+
+  it('keeps a server-sent partitions count ahead of the derived one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 't-1',
+            name: 'events',
+            fullyQualifiedName: 'svc.kafka.events',
+            partitions: 6,
+            messageSchema: { schemaFields: [] },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const asset = await fetchAssetDetail('topic', 'svc.kafka.events');
+    expect(asset.partitions).toBe(6);
+    expect(asset.tablePartition).toBeUndefined();
+  });
+
   it('nests STRUCT columns with path keys and drops empty nested children', async () => {
     vi.stubGlobal(
       'fetch',

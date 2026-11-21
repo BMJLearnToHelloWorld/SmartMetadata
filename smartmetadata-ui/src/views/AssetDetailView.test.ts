@@ -113,6 +113,22 @@ describe('AssetDetailView governance', () => {
             columns: [{ name: 'id', dataType: 'BIGINT' }],
             extension: { retentionDays: 7 },
             tableType: 'Regular',
+            // D-1: the table widgets read these three fields.
+            tablePartition: {
+              columns: [
+                { columnName: 'ds', intervalType: 'TIME-UNIT' },
+                { columnName: 'region' },
+              ],
+            },
+            tableConstraints: [
+              { constraintType: 'PRIMARY_KEY', columns: ['id'] },
+              {
+                constraintType: 'FOREIGN_KEY',
+                columns: ['customer_id'],
+                referredColumns: ['svc.db.schema.customers.id'],
+              },
+            ],
+            aliases: ['svc.db.schema.orders_alias'],
             serviceType: 'BigQuery',
             service: { name: 'bq', displayName: 'BigQuery Prod' },
             database: { name: 'analytics' },
@@ -271,6 +287,25 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('BigQuery Prod');
     expect(wrapper.text()).toContain('analytics');
     expect(wrapper.text()).toContain('marts');
+  }, 20000);
+
+  it('renders partitioned keys, constraints, and aliases in the schema pane (D-1)', async () => {
+    const { wrapper, router } = await mountView();
+    expect(wrapper.find('[data-testid="asset-partitioned-keys-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('ds');
+    expect(wrapper.text()).toContain('TIME-UNIT');
+    // A partition column without an interval type renders the pin `--`.
+    expect(wrapper.text()).toContain('region');
+    expect(wrapper.find('[data-testid="PRIMARY_KEY-container"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Primary Key');
+    expect(wrapper.find('[data-testid="FOREIGN_KEY-container"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Foreign Key');
+    expect(wrapper.text()).toContain('customer_id');
+    expect(wrapper.find('[data-testid="asset-table-aliases-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('orders_alias');
+    await wrapper.find('[data-testid="FOREIGN_KEY-container"] a').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.params.fqn).toBe('svc.db.schema.customers');
   }, 20000);
 
   it('embeds the shared lineage graph on the lineage tab', async () => {
@@ -1408,6 +1443,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
   }, 20000);
 
   it('renders unknown and unmapped widget ids as empty cells that keep their grid space', async () => {
+    // D-1 (A7): TABLE_CONSTRAINTS is now a mapped widget, so it no
+    // longer proves the unmapped branch. ASSET_HEALTH takes its place:
+    // it has no data source and is deliberately unbuilt by this lane
+    // (D-2 batch 5 owns its server read path).
     stubWithDoc(
       docWithPage('Table', [
         {
@@ -1415,7 +1454,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
           name: 'schema',
           layout: [
             { i: 'KnowledgePanel.NotARealWidget', x: 0, y: 0, w: 4, h: 1 },
-            { i: DetailWidgetKeys.TABLE_CONSTRAINTS, x: 4, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.ASSET_HEALTH, x: 4, y: 0, w: 4, h: 1 },
           ],
         },
       ]),
@@ -1428,7 +1467,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
     const unknown = cellFor(wrapper, 'KnowledgePanel.NotARealWidget');
     expect(unknown.exists()).toBe(true);
     expect(unknown.text()).toBe('');
-    const unmapped = cellFor(wrapper, DetailWidgetKeys.TABLE_CONSTRAINTS);
+    const unmapped = cellFor(wrapper, DetailWidgetKeys.ASSET_HEALTH);
     expect(unmapped.exists()).toBe(true);
     expect(unmapped.text()).toBe('');
     expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);

@@ -41,7 +41,7 @@ import AssetDetailPiece, {
 import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit, preservedTabKeys } from '@/catalog/entityDetailTabs';
-import { isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
+import { assetLocation, isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
 import {
   findCustomizedTabEntry,
   getDetailsTabWithNewLabel,
@@ -428,9 +428,8 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
 // `detailWidgetDispatch.ts` for the file:line table). Keys with no
 // product pane are absent on purpose, so their cells stay empty
 // (residual R-4: data products, related metrics / metric hierarchy):
-// table constraints / partitioned keys / table aliases / asset
-// health (no product panes), data products (no field on the detail
-// payload), experts / tier / certification (no detail surfaces;
+// asset health (no product pane), data products (no field on the
+// detail payload), experts / tier / certification (no detail surfaces;
 // tier already renders in the shell header), knowledge articles,
 // related metrics / metric hierarchy (no metric surfaces). The
 // widget's `config` (e.g. the custom-properties propertyLayout) is
@@ -458,6 +457,9 @@ const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.GLOSSARY_TERMS]: 'glossaryTerms',
   [DetailWidgetKeys.OWNERS]: 'owners',
   [DetailWidgetKeys.DOMAIN]: 'domains',
+  [DetailWidgetKeys.PARTITIONED_KEYS]: 'partitionedKeys',
+  [DetailWidgetKeys.TABLE_CONSTRAINTS]: 'tableConstraints',
+  [DetailWidgetKeys.TABLE_ALIASES]: 'tableAliases',
 };
 
 function pieceForContentKey(contentKey: string | null): AssetDetailPieceId | null {
@@ -1179,6 +1181,10 @@ function onApiEndpointClick(row: ApiEndpointRef): void {
   void router.push(apiEndpointLocation(row));
 }
 
+function onTableFqnClick(fqn: string): void {
+  void router.push(assetLocation('table', fqn));
+}
+
 // The shared pieces render only inside `v-if="asset"` slots, so the
 // asset cast below never feeds a rendered piece a null asset.
 const pieceContext = computed<AssetDetailPieceContext>(() => ({
@@ -1198,6 +1204,7 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   apiEndpointsError: apiEndpointsError.value,
   apiEndpointSchemaJson,
   onApiEndpointClick,
+  onTableFqnClick,
   descriptionAccess: canEditDescription.value,
   descriptionExpanded: descriptionExpanded.value,
   onDescriptionUpdate,
@@ -1435,6 +1442,22 @@ onMounted(() => {
               :on-description-update="onDescriptionUpdate"
             />
             <AssetDetailPiece piece="schemaTable" :context="pieceContext" with-joins />
+            <!-- D-1 Table right column (official SCHEMA tab y=7/8/9):
+                 partitioned keys, constraints, aliases. Only tables
+                 carry the data; the pieces render nothing without it. -->
+            <template v-if="entityType === 'table'">
+              <AssetDetailPiece
+                v-if="asset.tablePartition?.columns.length"
+                piece="partitionedKeys"
+                :context="pieceContext"
+              />
+              <AssetDetailPiece piece="tableConstraints" :context="pieceContext" />
+              <AssetDetailPiece
+                v-if="asset.aliases?.length"
+                piece="tableAliases"
+                :context="pieceContext"
+              />
+            </template>
           </template>
       </template>
       <template v-if="asset" #features>

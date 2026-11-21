@@ -41,6 +41,20 @@ const refColumns = computed(() => [
   { title: t('asset.columns.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
 ]);
 
+/**
+ * D-1 GlossaryTerms split (official TagsWidget / GlossaryWidget share
+ * TagsContainerV2 and split `tags` via useTierSplit): the tags row
+ * carries Classification labels only, glossary-sourced labels get
+ * their own row. Same predicate as AssetDetailPiece's glossaryTerms
+ * piece, so the default panel and the widget cell agree.
+ */
+const classificationTags = computed(() =>
+  props.asset.tags.filter((tag) => tag.source !== 'Glossary'),
+);
+const glossaryTags = computed(() =>
+  props.asset.tags.filter((tag) => tag.source === 'Glossary'),
+);
+
 const showRelated = computed(
   () => props.entityType === 'chart' || props.entityType === 'database' || props.entityType === 'databaseSchema',
 );
@@ -138,14 +152,27 @@ const showRelated = computed(
       <Descriptions.Item :label="t('asset.fields.tags')">
         <Space wrap>
           <Tag
-            v-for="tag in asset.tags"
+            v-for="tag in classificationTags"
             :key="tag.tagFQN"
             :class="isGeneratedTag(tag) ? 'asset-overview__generated-tag' : undefined"
           >
             <StarOutlined v-if="isGeneratedTag(tag)" class="asset-overview__generated-tag-icon" />
             {{ tag.name }}
           </Tag>
-          <Typography.Text v-if="!asset.tags.length" type="secondary">—</Typography.Text>
+          <Typography.Text v-if="!classificationTags.length" type="secondary">—</Typography.Text>
+        </Space>
+      </Descriptions.Item>
+      <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">
+        <Space wrap>
+          <Tag
+            v-for="tag in glossaryTags"
+            :key="tag.tagFQN"
+            :class="isGeneratedTag(tag) ? 'asset-overview__generated-tag' : undefined"
+          >
+            <StarOutlined v-if="isGeneratedTag(tag)" class="asset-overview__generated-tag-icon" />
+            {{ tag.name }}
+          </Tag>
+          <Typography.Text v-if="!glossaryTags.length" type="secondary">—</Typography.Text>
         </Space>
       </Descriptions.Item>
       <Descriptions.Item :label="t('asset.fields.domains')">
