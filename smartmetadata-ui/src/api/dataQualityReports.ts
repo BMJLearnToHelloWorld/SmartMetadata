@@ -94,9 +94,15 @@ function mapReport(raw: unknown): DataQualityReport | undefined {
     }
     const mapped: DataQualityReportRow = {};
     for (const [key, value] of Object.entries(row)) {
+      // Date-histogram buckets carry their timestamp as a JSON number;
+      // dropping non-strings here would lose every time-series point
+      // (the dashboard reads row.timestamp), so finite numbers are
+      // kept as their decimal text. Other JSON shapes stay absent.
       const text = asString(value);
       if (text !== '') {
         mapped[key] = text;
+      } else if (typeof value === 'number' && Number.isFinite(value)) {
+        mapped[key] = String(value);
       }
     }
     data.push(mapped);
