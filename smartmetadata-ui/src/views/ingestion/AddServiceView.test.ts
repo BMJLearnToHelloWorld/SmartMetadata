@@ -638,18 +638,33 @@ describe('AddServiceView', () => {
     ).toBe(true);
   });
 
-  it('shows the read-only prompt and blocks Next for a blocked connector type', async () => {
+  it('renders the form and allows Next for a formerly blocked row now covered by T-2', async () => {
     const { wrapper } = await mountWizard('/mlmodelServices/add-service', {}, {
       serviceType: 'CustomMlModel',
     });
     await waitFor(
-      () => wrapper.find('[data-testid="no-config-available"]').exists(),
-      'blocked read-only prompt',
+      () => wrapper.find('[data-testid="service-source-python-class"]').exists(),
+      'CustomMlModel config form',
     );
+    // T-2 (2026-11-20): CustomMlModel moved from blocked to covered
+    // (connectionCoverage.ts row 'mlmodel'/'CustomMlModel' is now
+    // 'covered'; the form-level twin is ConnectionConfigForm.test.ts
+    // 'renders the form for a formerly blocked row now covered by T-2').
+    // No row is blocked since T-2, so the read-only prompt is
+    // unreachable via coverage; the wizard shows the type-only form
+    // and Next is free once a name is entered.
+    expect(wrapper.find('[data-testid="no-config-available"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="service-host-port"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="service-name-input"]').setValue('custom-ml');
+    await waitFor(
+      () =>
+        wrapper.find('[data-testid="wizard-next"]').exists() &&
+        !(wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled,
+      'wizard Next enabled',
+    );
     expect(
       (wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('confirms Back: step 2 resets the wizard, step 3 returns to step 2', async () => {
