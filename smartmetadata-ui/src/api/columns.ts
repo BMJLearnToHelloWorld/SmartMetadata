@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asNumber, asRecord, asString } from '@/api/json';
+import { asRecord, asString } from '@/api/json';
 import { mapCsvImportResult, type CsvImportResult } from '@/api/csvImport';
 import { encodeFqnForApi } from '@/catalog/entityRoutes';
 import type { TagRef } from '@/types/api';
@@ -333,29 +333,52 @@ export async function importColumnsCsv(
 }
 
 /**
- * D-F2 single-column PUT (official `rest/tableAPI.ts:352-361`
+ * D-2 batch 3 single-column PUT (official `rest/tableAPI.ts:352-361`
  * `updateTableColumn` and `rest/dataModelsAPI.ts:165-175`
  * `updateDataModelColumn`): `PUT /v1/columns/name/{fqn}?entityType=...`
- * with body `{ tags }`. The official UI calls this only for Table
+ * with a partial-column body. The official UI calls this only for Table
  * (`entityType=table`) and DataModel (`entityType=dashboardDataModel`);
  * Topic / Container / SearchIndex go through the whole-entity PATCH
- * instead (see `columnTagsPatch`). The response is the updated column:
- * its tags are the write-back source, and when the response carries no
- * tags at all the sent labels stand in — the server contract returns
- * the updated column, so a tag-less body means a malformed response,
- * not a silent wipe. The stand-in display name is the tag FQN's last
- * segment (the same display name the server returns for a classified
- * tag, e.g. `PII.Email` -> `Email`), never the bare FQN.
+ * instead (see `columnTagsPatch`). The response is the updated column.
+ */
+export type ColumnEntityType = 'table' | 'dashboardDataModel';
+
+export interface ColumnPartialUpdate {
+  description?: string;
+  displayName?: string;
+  constraint?: string;
+  removeConstraint?: boolean;
+  extension?: Record<string, unknown>;
+  tags?: TagLabelValue[];
+}
+
+export async function updateColumnDetails(
+  columnFqn: string,
+  entityType: ColumnEntityType,
+  partial: ColumnPartialUpdate,
+): Promise<Record<string, unknown>> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/columns/name/${encodeFqnForApi(columnFqn)}?entityType=${entityType}`,
+    { method: 'PUT', json: partial },
+  );
+  return payload;
+}
+
+/**
+ * D-F2 single-column PUT (tags-only callers): the response's tags are
+ * the write-back source, and when the response carries no tags at all
+ * the sent labels stand in — the server contract returns the updated
+ * column, so a tag-less body means a malformed response, not a silent
+ * wipe. The stand-in display name is the tag FQN's last segment (the
+ * same display name the server returns for a classified tag, e.g.
+ * `PII.Email` -> `Email`), never the bare FQN.
  */
 async function updateSingleColumn(
   columnFqn: string,
-  entityType: 'table' | 'dashboardDataModel',
+  entityType: ColumnEntityType,
   tags: TagLabelValue[],
 ): Promise<TagRef[]> {
-  const payload = await apiRequest<Record<string, unknown>>(
-    `/v1/columns/name/${encodeFqnForApi(columnFqn)}?entityType=${entityType}`,
-    { method: 'PUT', json: { tags } },
-  );
+  const payload = await updateColumnDetails(columnFqn, entityType, { tags });
   const returned = mapTags(payload.tags);
   if (payload.tags === undefined) {
     return tags.map((tag) => ({
@@ -380,65 +403,143 @@ export async function updateDataModelColumn(
   return updateSingleColumn(columnFqn, 'dashboardDataModel', tags);
 }
 
-export interface TableColumnSearchParams {
-  /** Text search query (official `q`). The product has no column search box, so the filter lane leaves this unset; the field stays so a later search surface reuses this client instead of forking it. */
-  q?: string;
-  /** Comma-separated classification tag FQNs (official `tags`). */
-  tags?: string;
-  /** Comma-separated glossary term FQNs (official `glossaryTerms`). */
-  glossaryTerms?: string;
+export type ColumnSortBy = 'name' | 'ordinalPosition';
+export type ColumnSortOrder = 'asc' | 'desc';
+
+export interface ColumnListParams {
   limit?: number;
   offset?: number;
+  /** Official fields: Table `tags,customMetrics,extension`, DataModel `tags`. */
+  fields?: string;
+  sortBy?: ColumnSortBy;
+  sortOrder?: ColumnSortOrder;
 }
 
-export interface TableColumnPage {
-  /** Raw column payloads, in the order the server returned them; the caller maps them (see `mapColumns`). */
-  columns: unknown[];
-  total?: number;
+export interface ColumnListPage {
+  data: unknown[];
+  paging: { total?: number };
+}
+
+function columnListQuery(params: ColumnListParams): Record<string, string | number | undefined> {
+  return {
+    fields: params.fields,
+    sortBy: params.sortBy,
+    sortOrder: params.sortOrder,
+    include: 'all',
+    limit: params.limit,
+    offset: params.offset,
+  };
 }
 
 /**
- * D-F2-2 server-side column filter (official `rest/tableAPI.ts:338-348`
- * `searchTableColumnsByFQN`): `GET /v1/tables/name/{fqn}/columns/search`
- * with `tags` / `glossaryTerms` as comma-separated FQNs. The server
- * prunes the column tree to matches itself (`TableRepository`
- * `pruneColumnsToMatches`, mirroring the UI's `getFilteredTagsData`:
- * a node is kept when it matches or has a kept descendant), OR within
- * each group and AND across the two groups — so the caller passes the
- * two groups separately and never filters locally. `fields` carries
- * `tags` because the server only populates column tags when requested.
- * `sortBy: ordinalPosition` keeps source order (the product has no
- * tenant DefaultColumnOrder setting; the unfiltered detail rows are in
- * source order, and a name-sorted filtered page would reorder the table).
- * `include: all` matches the official client (the search endpoint
- * defaults to non-deleted). No `getTableColumnsByFQN` client: without a
- * filter the product keeps rendering the detail payload's rows (T-1
- * C-1), and the plain paginated endpoint is only needed when filtering
- * — which is exactly this search endpoint.
+ * D-2 batch 3 Table self-fetch (official `rest/tableAPI.ts:304-314`
+ * `getTableColumnsByFQN`): `GET /v1/tables/name/{fqn}/columns`.
+ */
+export async function getTableColumnsByFQN(
+  fqn: string,
+  params: ColumnListParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/tables/name/${encodeFqnForApi(fqn)}/columns`,
+    { query: columnListQuery({ fields: 'tags,customMetrics,extension', ...params }) },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
+}
+
+export interface SearchTableColumnsParams extends ColumnListParams {
+  q?: string;
+  /** Comma-separated classification tag FQNs. */
+  tags?: string;
+  /** Comma-separated glossary term FQNs. */
+  glossaryTerms?: string;
+}
+
+/**
+ * D-2 batch 3 Table column search (official `rest/tableAPI.ts:338-348`
+ * `searchTableColumnsByFQN`, D-F2-2 design): `GET
+ * /v1/tables/name/{fqn}/columns/search` with `tags` / `glossaryTerms`
+ * as comma-separated FQNs. The server prunes the column tree to
+ * matches itself (`TableRepository` `pruneColumnsToMatches`, mirroring
+ * the UI's `getFilteredTagsData`: a node is kept when it matches or
+ * has a kept descendant), OR within each group and AND across the two
+ * groups — so the caller passes the two groups separately and never
+ * filters locally. `fields` carries `tags` because the server only
+ * populates column tags when requested. `include: all` matches the
+ * official client (the search endpoint defaults to non-deleted).
+ * Replaces A6's `searchTableColumnsByFQN` (same endpoint, same params;
+ * the return shape is the shared `ColumnListPage` `{data, paging}` so
+ * the list and search clients stay uniform — A6's `{columns, total}`
+ * wrapper is dropped; its callers now read `page.data` /
+ * `page.paging.total`).
  */
 export async function searchTableColumnsByFQN(
-  tableFqn: string,
-  params: TableColumnSearchParams = {},
-): Promise<TableColumnPage> {
+  fqn: string,
+  params: SearchTableColumnsParams = {},
+): Promise<ColumnListPage> {
   const payload = await apiRequest<Record<string, unknown>>(
-    `/v1/tables/name/${encodeFqnForApi(tableFqn)}/columns/search`,
+    `/v1/tables/name/${encodeFqnForApi(fqn)}/columns/search`,
     {
       query: {
-        fields: 'tags,customMetrics,extension',
-        sortBy: 'ordinalPosition',
-        sortOrder: 'asc',
-        include: 'all',
-        limit: params.limit,
-        offset: params.offset,
+        ...columnListQuery({
+          fields: 'tags,customMetrics,extension',
+          // A6 (D-F2-2) preserved default: source order when the caller
+          // passes no sort (the product has no tenant DefaultColumnOrder
+          // setting; a name-sorted filtered page would reorder the table).
+          sortBy: 'ordinalPosition',
+          sortOrder: 'asc',
+          ...params,
+        }),
         q: params.q,
         tags: params.tags,
         glossaryTerms: params.glossaryTerms,
       },
     },
   );
-  const paging = asRecord(payload.paging);
   return {
-    columns: Array.isArray(payload.data) ? payload.data : [],
-    total: asNumber(paging?.total),
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
+}
+
+/**
+ * D-2 batch 3 DataModel self-fetch (official
+ * `rest/dataModelsAPI.ts:127-144` `getDataModelColumnsByFQN`): `GET
+ * /v1/dashboard/datamodels/name/{fqn}/columns`.
+ */
+export async function getDataModelColumnsByFQN(
+  fqn: string,
+  params: ColumnListParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/dashboard/datamodels/name/${encodeFqnForApi(fqn)}/columns`,
+    { query: columnListQuery({ fields: 'tags', ...params }) },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
+}
+
+/**
+ * D-2 batch 3 DataModel column search (official
+ * `rest/dataModelsAPI.ts:146-163` `searchDataModelColumnsByFQN`): `GET
+ * /v1/dashboard/datamodels/name/{fqn}/columns/search`. Unlike Table,
+ * this endpoint takes no tags/glossaryTerms parameters — tag filtering
+ * on this face stays client-side (A6 §2).
+ */
+export async function searchDataModelColumnsByFQN(
+  fqn: string,
+  params: SearchTableColumnsParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/dashboard/datamodels/name/${encodeFqnForApi(fqn)}/columns/search`,
+    { query: { ...columnListQuery({ fields: 'tags', ...params }), q: params.q } },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
   };
 }
