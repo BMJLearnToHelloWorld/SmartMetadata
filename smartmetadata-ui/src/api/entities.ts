@@ -79,6 +79,19 @@ export const TAG_LABEL_TYPES: TagLabelType[] = [
   'Propagated',
 ];
 
+/**
+ * Maps the entity's `certification` object (`assetCertification`
+ * `{tagLabel}`) through the same label mapper as `tags`. A missing or
+ * FQN-less label maps to undefined (same shape as the service mapper
+ * in `api/servicePageData.ts`).
+ */
+export function mapCertification(
+  value: Record<string, unknown> | null,
+): AssetDetail['certification'] {
+  const tagLabel = value ? mapTags([value.tagLabel])[0] : undefined;
+  return tagLabel ? { tagLabel } : undefined;
+}
+
 export function mapTags(value: unknown): TagRef[] {
   if (!Array.isArray(value)) {
     return [];
@@ -425,6 +438,11 @@ export async function fetchAssetDetail(
     votes: mapVotes(body.votes),
     tags: mapTags(body.tags),
     domains: mapOwners(body.domains),
+    // D-2 batch 2: spec fields the product never requested before
+    // (see BENCHMARK §9/§11). Certification maps through the same tag
+    // mapper as `tags`; a missing or FQN-less label maps to undefined.
+    dataProducts: mapEntityRefs(body.dataProducts),
+    certification: mapCertification(asRecord(body.certification)),
     schemaRows: schema.rows,
     schemaLabel: schema.label,
     // P2 B5: API endpoint detail fields (entity/data/apiEndpoint.json).

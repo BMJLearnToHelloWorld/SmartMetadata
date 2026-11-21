@@ -9,8 +9,22 @@ import { useRouter } from 'vue-router';
 import { Button, Descriptions, Empty, message } from 'ant-design-vue';
 import { fetchAssetDetail } from '@/api/entities';
 import { deleteMetricAsync, patchMetric } from '@/api/metrics';
-import { descriptionPatch } from '@/governance/assetPatch';
+import {
+  certificationPatch,
+  descriptionPatch,
+  domainsPatch,
+  extensionPatch,
+  ownersPatch,
+  tagsPatch,
+  type TagLabelInput,
+} from '@/governance/assetPatch';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetCertificationCell from '@/components/shared/widgets/WidgetCertificationCell.vue';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
+import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { listEntityActivity } from '@/api/activity';
@@ -29,11 +43,10 @@ import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPan
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
-import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
-import type { AssetDetail, TagRef } from '@/types/api';
+import type { AssetDetail } from '@/types/api';
 
 /**
  * Stage 4 metric detail page, following the official MetricDetailsPage
@@ -94,6 +107,28 @@ const canDeleteMetric = computed(
 const customPropsCanView = computed<boolean | null>(() =>
   metricPermissions.isLoading.value ? null : metricPermissions.can('ViewCustomFields'),
 );
+
+/**
+ * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
+ * `isAdminUser` with the derived flag — never only one. The composable
+ * exposes only the named flags it owns; the rest go through its generic
+ * `can(op)` escape hatch, which applies the same prioritization and
+ * deleted gating.
+ */
+const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+const canEditTags = computed(() => permissionStore.isAdminUser || metricPermissions.can('EditTags'));
+const canEditGlossaryTerms = computed(
+  () => permissionStore.isAdminUser || metricPermissions.can('EditGlossaryTerms'),
+);
+const canEditOwners = computed(() => permissionStore.isAdminUser || metricPermissions.can('EditOwners'));
+const canEditDomains = computed(() => permissionStore.isAdminUser || metricPermissions.can('EditDomains'));
+const canEditTier = computed(() => permissionStore.isAdminUser || metricPermissions.can('EditTier'));
+const canEditCertification = computed(
+  () => permissionStore.isAdminUser || metricPermissions.can('EditCertification'),
+);
+const canEditCustomProperties = computed(
+  () => permissionStore.isAdminUser || metricPermissions.can('EditCustomFields'),
+);
 watch(
   () => metricPermissions.error.value,
   (error) => {
@@ -114,6 +149,61 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   }
   await patchMetric(metric.value.id, descriptionPatch(metric.value.description, description));
   message.success(t('crud.updated'));
+  await load();
+}
+
+/**
+ * D-2 batch 2 widget-cell saves: each is one field's JSON Patch via
+ * patchMetric. Each throws on failure so the cell keeps its editor open.
+ */
+async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  await patchMetric(metric.value.id, tagsPatch(metric.value.tags, tags));
+  message.success(t('crud.updated'));
+  await load();
+}
+
+async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  await patchMetric(metric.value.id, ownersPatch(metric.value.owners, owners));
+  message.success(t('crud.updated'));
+  await load();
+}
+
+async function onDomainsChange(domainIds: string[]): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  await patchMetric(metric.value.id, domainsPatch(metric.value.domains, domainIds));
+  message.success(t('crud.updated'));
+  await load();
+}
+
+async function onCertificationChange(tagFqn?: string): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  await patchMetric(metric.value.id, certificationPatch(metric.value.certification, tagFqn));
+  message.success(t('crud.updated'));
+  await load();
+}
+
+async function onCustomPropertySave(name: string, value: unknown): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  const next = { ...(metric.value.extension ?? {}) };
+  if (value === undefined) {
+    delete next[name];
+  } else {
+    next[name] = value;
+  }
+  await patchMetric(metric.value.id, extensionPatch(metric.value.extension, next));
+  message.success(t('asset.propsUpdated'));
   await load();
 }
 
@@ -153,13 +243,15 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // matches tab entries by id only (`customizeWidgetLayout.ts`).
 // Dispatch-resolvable keys with no branch in this view's widget chains,
 // absent on purpose, so their cells stay empty (same disclosure format
-// as AssetDetailView; residual R-4): DATA_PRODUCTS / EXPERTS / REVIEWER /
-// RELATED_METRICS / METRIC_HIERARCHY — this view reads the metric
-// through `fetchAssetDetail`, whose AssetDetail shape carries none of
-// these fields, so there is no supporting data in the loaded object
-// (the Metric spec carries them; the `api/metrics.ts` Metric shape is
-// a different, list-oriented read path); KNOWLEDGE_ARTICLE — no
-// knowledge-article data source exists in the product. LEFT_PANEL is
+// as AssetDetailView; residual R-4): DATA_PRODUCTS — the field is now
+// requested and mapped on AssetDetail, but the Metric layout carries no
+// DataProducts widget (only Asset wires it, BENCHMARK §15); EXPERTS /
+// REVIEWER / RELATED_METRICS / METRIC_HIERARCHY — this view reads the
+// metric through `fetchAssetDetail`, whose AssetDetail shape carries
+// none of these fields, so there is no supporting data in the loaded
+// object (the Metric spec carries them; the `api/metrics.ts` Metric
+// shape is a different, list-oriented read path); KNOWLEDGE_ARTICLE —
+// no knowledge-article data source exists in the product. LEFT_PANEL is
 // structural, not a missing branch: GenericTab renders the panel's
 // children and never offers the panel itself to the slot.
 function customizedEntryFor(tabKey: string) {
@@ -173,21 +265,6 @@ function customizedEntryFor(tabKey: string) {
 function widgetLayoutFor(tabKey: string) {
   const entry = customizedEntryFor(tabKey);
   return entry ? resolveWidgetLayout('Metric', entry.id, customizedPage.value) : [];
-}
-
-// Tag labels split the official way: glossary-sourced labels are the
-// glossary-terms widget, the rest are the tags widget.
-const metricTags = computed(() =>
-  (metric.value?.tags ?? []).filter((tag) => tag.source !== 'Glossary'),
-);
-const metricGlossaryTerms = computed(() =>
-  (metric.value?.tags ?? []).filter((tag) => tag.source === 'Glossary'),
-);
-const metricTierTag = computed(() => getTierTag(metric.value?.tags ?? []));
-const metricCertificationTag = computed(() => getCertificationTag(metric.value?.tags ?? []));
-
-function tagFqnList(tags: readonly TagRef[]): string {
-  return tags.map((tag) => tag.tagFQN).join(', ');
 }
 
 const metricExpression = computed(
@@ -278,6 +355,11 @@ watch(
 
 onMounted(() => {
   void load();
+  void loadGovernanceCatalog()
+    .then((loaded) => {
+      catalog.value = loaded;
+    })
+    .catch(() => undefined);
 });
 </script>
 
@@ -329,34 +411,54 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(metric.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="metric.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && metric" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.title')">{{ joinRefNames(metric.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="metric.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && metric" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(metricTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && metric" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(metricGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && metric" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ metricTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && metric" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ metricCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="metric.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -365,7 +467,9 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -422,34 +526,54 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(metric.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="metric.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && metric" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.title')">{{ joinRefNames(metric.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="metric.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && metric" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(metricTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && metric" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(metricGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && metric" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ metricTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && metric" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ metricCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="metric.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -458,7 +582,9 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -492,34 +618,54 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(metric.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="metric.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && metric" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.title')">{{ joinRefNames(metric.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="metric.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && metric" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(metricTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && metric" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(metricGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && metric" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ metricTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && metric" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ metricCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="metric.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -528,7 +674,9 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -557,34 +705,54 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(metric.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="metric.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && metric" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.title')">{{ joinRefNames(metric.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="metric.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && metric" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(metricTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && metric" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(metricGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && metric" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ metricTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && metric" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ metricCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="metric.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -593,7 +761,9 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -629,34 +799,54 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(metric.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="metric.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && metric" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.title')">{{ joinRefNames(metric.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="metric.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && metric" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(metricTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && metric" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(metricGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && metric" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ metricTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="metric.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && metric" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ metricCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="metric.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -665,7 +855,9 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -677,6 +869,8 @@ onMounted(() => {
         :error="customPropsError"
         entity-type="metric"
       :can-view="customPropsCanView"
+      :can-edit="canEditCustomProperties"
+      :on-property-save="onCustomPropertySave"
       />
     </template>
   </EntityDetailShell>

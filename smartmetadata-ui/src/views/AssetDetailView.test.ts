@@ -1344,7 +1344,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
     const tags = cellFor(wrapper, DetailWidgetKeys.TAGS).find('[data-testid="asset-widget-tags"]');
     expect(tags.exists()).toBe(true);
     expect(tags.text()).toContain('Sensitive');
-    expect(tags.text()).toContain('Business');
+    expect(tags.text()).not.toContain('Business');
     const glossary = cellFor(wrapper, DetailWidgetKeys.GLOSSARY_TERMS).find(
       '[data-testid="asset-widget-glossary-terms"]',
     );

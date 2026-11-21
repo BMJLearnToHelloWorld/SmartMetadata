@@ -7,15 +7,15 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDataProductRequest, DataProduct } from '@/types/governance';
 import { apiRequest } from './client';
 import { addBulkAssets, removeBulkAssets, type BulkAssetResult } from './bulkAssets';
-import { mapTags } from './entities';
+import { mapCertification, mapTags } from './entities';
 
-export const DATA_PRODUCT_FIELDS = 'domains,owners,reviewers,experts,tags,extension';
+export const DATA_PRODUCT_FIELDS = 'domains,owners,reviewers,experts,tags,extension,certification';
 
 export type { BulkAssetResult };
 
@@ -74,6 +74,9 @@ function mapDataProduct(raw: Record<string, unknown>): DataProduct | null {
     reviewers: mapEntityRefs(raw.reviewers),
     experts: mapEntityRefs(raw.experts),
     tags: mapTags(raw.tags),
+    // D-2 batch 2: pin reads the certification field, not the
+    // `Certification.*` tag in `tags`.
+    certification: mapCertification(asRecord(raw.certification)),
     extension:
       raw.extension && typeof raw.extension === 'object'
         ? (raw.extension as Record<string, unknown>)

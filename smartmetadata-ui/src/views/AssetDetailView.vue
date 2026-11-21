@@ -77,12 +77,12 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnTagsPatch, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
+import { descriptionPatch, dataProductsPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnTagsPatch, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import type { AssetDetail, CatalogPipelineStatus, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus, EntityRef, SchemaRow, TagRef } from '@/types/api';
 import type { TagSource } from '@/types/governance';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
@@ -155,6 +155,18 @@ const canEditGovernance = computed(
     assetFlags.value.canEditTags ||
     assetFlags.value.canEditDomains,
 );
+
+/**
+ * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
+ * `isAdminUser` with the derived flag — never only one.
+ */
+const isAdminUser = computed(() => permissionStore.isAdminUser);
+const canEditTags = computed(() => isAdminUser.value || assetFlags.value.canEditTags);
+const canEditGlossaryTerms = computed(() => isAdminUser.value || assetFlags.value.canEditGlossaryTerms);
+const canEditOwners = computed(() => isAdminUser.value || assetFlags.value.canEditOwners);
+const canEditDomains = computed(() => isAdminUser.value || assetFlags.value.canEditDomains);
+const canEditAll = computed(() => isAdminUser.value || assetFlags.value.canEditAll);
+const canEditCustomProperties = computed(() => isAdminUser.value || assetFlags.value.canEditCustomFields);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : assetOps.value ? assetFlags.value.canViewCustomFields : false,
@@ -200,6 +212,68 @@ async function onDescriptionUpdate(description: string): Promise<void> {
     return;
   }
   await patchAsset(props.entityType, asset.value.id, descriptionPatch(asset.value.description, description));
+  message.success(t('asset.updated'));
+  await load();
+}
+
+/**
+ * D-2 batch 2 widget-cell saves: each is one field's JSON Patch (the
+ * same shape as onSaveGovernance's per-field ops) plus reload. Each
+ * throws on failure so the cell keeps its editor open.
+ */
+async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  await patchAsset(props.entityType, asset.value.id, tagsPatch(asset.value.tags, tags));
+  message.success(t('asset.updated'));
+  await load();
+}
+
+async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  await patchAsset(props.entityType, asset.value.id, ownersPatch(asset.value.owners, owners));
+  message.success(t('asset.updated'));
+  await load();
+}
+
+async function onDomainsChange(domainIds: string[]): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  await patchAsset(props.entityType, asset.value.id, domainsPatch(asset.value.domains, domainIds));
+  message.success(t('asset.updated'));
+  await load();
+}
+
+async function onDataProductsChange(products: EntityRef[]): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  // The cell emits EntityRefs; a stored ref without a type is a data
+  // product in this cell's context, and a ref without an id cannot be
+  // written at all.
+  const refs = products.flatMap((product) =>
+    product.id ? [{ id: product.id, type: product.type ?? 'dataProduct' }] : [],
+  );
+  await patchAsset(props.entityType, asset.value.id, dataProductsPatch(asset.value.dataProducts, refs));
+  message.success(t('asset.updated'));
+  await load();
+}
+
+async function onCustomPropertySave(name: string, value: unknown): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  const next = { ...(asset.value.extension ?? {}) };
+  if (value === undefined) {
+    delete next[name];
+  } else {
+    next[name] = value;
+  }
+  await patchAsset(props.entityType, asset.value.id, extensionPatch(asset.value.extension, next));
   message.success(t('asset.updated'));
   await load();
 }
@@ -428,12 +502,11 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
 // `detailWidgetDispatch.ts` for the file:line table). Keys with no
 // product pane are absent on purpose, so their cells stay empty
 // (residual R-4: data products, related metrics / metric hierarchy):
-// asset health (no product pane), data products (no field on the
-// detail payload), experts / tier / certification (no detail surfaces;
-// tier already renders in the shell header), knowledge articles,
-// related metrics / metric hierarchy (no metric surfaces). The
-// widget's `config` (e.g. the custom-properties propertyLayout) is
-// not consumed: the product panels take no layout input.
+// asset health (no product pane), experts / tier / certification (no detail
+// surfaces; tier already renders in the shell header), related metrics /
+// metric hierarchy (no metric surfaces). The widget's `config` (e.g. the
+// custom-properties propertyLayout) is not consumed: the product panels
+// take no layout input.
 const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.TABLE_SCHEMA]: 'schemaTable',
   [DetailWidgetKeys.TOPIC_SCHEMA]: 'schemaTable',
@@ -460,6 +533,8 @@ const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.PARTITIONED_KEYS]: 'partitionedKeys',
   [DetailWidgetKeys.TABLE_CONSTRAINTS]: 'tableConstraints',
   [DetailWidgetKeys.TABLE_ALIASES]: 'tableAliases',
+  [DetailWidgetKeys.DATA_PRODUCTS]: 'dataProducts',
+  [DetailWidgetKeys.KNOWLEDGE_ARTICLE]: 'knowledgePages',
 };
 
 function pieceForContentKey(contentKey: string | null): AssetDetailPieceId | null {
@@ -1209,6 +1284,20 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   descriptionExpanded: descriptionExpanded.value,
   onDescriptionUpdate,
   customPropsCanView: customPropsCanView.value,
+  catalogOwners: catalog.value.owners,
+  catalogTags: catalog.value.tags,
+  catalogDomains: catalog.value.domains,
+  tagsAccess: canEditTags.value,
+  glossaryTermsAccess: canEditGlossaryTerms.value,
+  ownersAccess: canEditOwners.value,
+  domainsAccess: canEditDomains.value,
+  dataProductsAccess: canEditAll.value,
+  customPropsCanEdit: canEditCustomProperties.value,
+  onTagsChange,
+  onOwnersChange,
+  onDomainsChange,
+  onDataProductsChange,
+  onCustomPropertySave,
   schemaTagOptions: catalog.value.tags,
   schemaTagAccess: schemaTagAccess.value,
   onSchemaTagChange,

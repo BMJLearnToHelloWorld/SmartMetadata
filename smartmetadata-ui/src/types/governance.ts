@@ -163,6 +163,13 @@ export interface Domain {
   owners: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
+  /**
+   * Certification (spec `domain.json#/certification`,
+   * assetCertification `{tagLabel}`); requested via DOMAIN_FIELDS and
+   * mapped by `mapDomain`. Pin reads the field, not the
+   * `Certification.*` tag in `tags` (D-2 batch 2).
+   */
+  certification?: { tagLabel?: TagRef };
   /** Custom-property values, keyed by property name. */
   extension?: Record<string, unknown>;
   /** Absent when the domain has no sub-domains: the list renders flat, and a
@@ -211,6 +218,12 @@ export interface DataProduct {
   reviewers: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
+  /**
+   * Certification (spec `dataProduct.json#/certification`,
+   * assetCertification `{tagLabel}`); requested via
+   * DATA_PRODUCT_FIELDS and mapped by `mapDataProduct` (D-2 batch 2).
+   */
+  certification?: { tagLabel?: TagRef };
   /** Custom-property values, keyed by property name. */
   extension?: Record<string, unknown>;
 }
