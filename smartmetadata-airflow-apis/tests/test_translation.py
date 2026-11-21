@@ -251,10 +251,169 @@ def test_test_suite_case_names_normalize_dict_entries(
     assert config.source.test_case_names == ["orders_email_not_null", "other_case"]
 
 
-def test_test_suite_without_entity_fqn_fails_loudly() -> None:
-    pipeline = _test_suite_pipeline()
+class _LogicalSuiteRest:
+    """Stub RestClient for a logical suite: suite lookup, case list,
+    table -> service name."""
+
+    def __init__(
+        self,
+        cases: list[dict[str, Any]],
+        table_services: dict[str, str],
+    ) -> None:
+        self._cases = cases
+        self._table_services = table_services
+        self.table_lookups: list[str] = []
+
+    def get_test_suite_by_name(self, name: str):
+        assert name == "suite-1"
+        return {"id": "suite-1-id", "name": name}
+
+    def list_test_cases(self, *, test_suite_id=None, limit=100, extra_params=None):
+        assert test_suite_id == "suite-1-id"
+        yield from self._cases
+
+    def get_table_by_name(self, fqn: str, *, fields=None):
+        self.table_lookups.append(fqn)
+        return {"service": {"id": "svc-1", "name": self._table_services[fqn]}}
+
+
+def _logical_suite_pipeline(**config_overrides) -> dict[str, Any]:
+    config: dict[str, Any] = {"testCases": ["orders_email_not_null"]}
+    config.update(config_overrides)
+    pipeline = _pipeline(service_type="testSuite")
+    pipeline["service"] = {"type": "testSuite", "name": "suite-1"}
+    pipeline["sourceConfig"] = {"config": config}
+    return pipeline
+
+
+def _logical_case(name: str, table_fqn: str, column: str | None = None) -> dict[str, Any]:
+    entity_link = f"<#E::table::{table_fqn}>"
+    if column is not None:
+        entity_link = f"<#E::table::{table_fqn}::columns::{column}>"
+    return {
+        "name": name,
+        "fullyQualifiedName": f"{table_fqn}.{name}",
+        "entityLink": entity_link,
+    }
+
+
+def test_test_suite_logical_suite_derives_connection_from_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    seen: dict[str, Any] = {}
+
+    def fake_fetch(pipeline: dict[str, Any], client=None):
+        seen["service"] = pipeline["service"]
+        return ({"type": "Mysql", "hostPort": "localhost:3306"}, "Mysql")
+
+    monkeypatch.setattr(translation, "fetch_service_connection", fake_fetch)
+    rest = _LogicalSuiteRest(
+        cases=[
+            _logical_case("orders_email_not_null", "warehouse.analytics.public.orders"),
+            _logical_case(
+                "orders_email_not_null",
+                "warehouse.analytics.public.orders",
+                column="email",
+            ),
+        ],
+        table_services={"warehouse.analytics.public.orders": "warehouse"},
+    )
+    config = translate_pipeline(
+        _logical_suite_pipeline(), workflow_type="TestSuite", server_client=rest
+    )
+    # The derived pipeline carries the cases' table service, not the
+    # testSuite one; no entity FQN is emitted for a logical suite.
+    assert seen["service"] == {"name": "warehouse", "type": "databaseService"}
+    assert config.workflow.type == "TestSuite"
+    assert config.source.type == "mysql"
+    assert config.source.entity_fully_qualified_name is None
+    assert config.source.test_case_names == ["orders_email_not_null"]
+    assert rest.table_lookups == ["warehouse.analytics.public.orders"]
+
+
+def test_test_suite_logical_suite_derivation_uses_selected_cases_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    seen: dict[str, Any] = {}
+
+    def fake_fetch(pipeline: dict[str, Any], client=None):
+        seen["service"] = pipeline["service"]
+        return ({"type": "Mysql", "hostPort": "localhost:3306"}, "Mysql")
+
+    monkeypatch.setattr(translation, "fetch_service_connection", fake_fetch)
+    rest = _LogicalSuiteRest(
+        cases=[
+            _logical_case("orders_email_not_null", "warehouse.analytics.public.orders"),
+            _logical_case("other_case", "other.analytics.public.customers"),
+        ],
+        table_services={
+            "warehouse.analytics.public.orders": "warehouse",
+            "other.analytics.public.customers": "other-db",
+        },
+    )
+    config = translate_pipeline(
+        _logical_suite_pipeline(), workflow_type="TestSuite", server_client=rest
+    )
+    assert seen["service"] == {"name": "warehouse", "type": "databaseService"}
+    assert rest.table_lookups == ["warehouse.analytics.public.orders"]
+    assert config.source.test_case_names == ["orders_email_not_null"]
+
+
+def test_test_suite_logical_suite_spanning_services_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    monkeypatch.setattr(
+        translation,
+        "fetch_service_connection",
+        lambda pipeline, client=None: ({"type": "Mysql"}, "Mysql"),
+    )
+    rest = _LogicalSuiteRest(
+        cases=[
+            _logical_case("orders_email_not_null", "warehouse.analytics.public.orders"),
+            _logical_case("customers_not_null", "other.analytics.public.customers"),
+        ],
+        table_services={
+            "warehouse.analytics.public.orders": "warehouse",
+            "other.analytics.public.customers": "other-db",
+        },
+    )
+    with pytest.raises(TranslationError, match="several services"):
+        translate_pipeline(
+            _logical_suite_pipeline(
+                testCases=["orders_email_not_null", "customers_not_null"]
+            ),
+            workflow_type="TestSuite",
+            server_client=rest,
+        )
+
+
+def test_test_suite_logical_suite_without_cases_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    monkeypatch.setattr(
+        translation,
+        "fetch_service_connection",
+        lambda pipeline, client=None: ({"type": "Mysql"}, "Mysql"),
+    )
+    rest = _LogicalSuiteRest(cases=[], table_services={})
+    pipeline = _logical_suite_pipeline()
     pipeline["sourceConfig"] = {"config": {}}
-    with pytest.raises(TranslationError, match="entityFullyQualifiedName"):
+    with pytest.raises(TranslationError, match="no test cases"):
+        translate_pipeline(pipeline, workflow_type="TestSuite", server_client=rest)
+
+
+def test_test_suite_logical_suite_without_service_name_fails_loudly() -> None:
+    pipeline = _logical_suite_pipeline()
+    pipeline["service"] = {"type": "testSuite"}
+    with pytest.raises(TranslationError, match="service.name"):
         translate_pipeline(pipeline, workflow_type="TestSuite", server_client=_TableRest())
 
 
