@@ -28,8 +28,11 @@ export interface ListGlossaryTermsQuery {
   /** Direct-children-of filter (parent term FQN), the official lazy-children
    *  parameter (GlossaryTermResource list accepts directChildrenOf + after). */
   directChildrenOf?: string;
+  /** Comma-joined entityStatus filter (official GlossaryTermTab status filter). */
+  entityStatus?: string;
   limit?: number;
   after?: string;
+  before?: string;
 }
 
 function mapRelatedTerms(value: unknown): EntityRef[] {
@@ -169,6 +172,8 @@ export function listGlossaryTerms(query: ListGlossaryTermsQuery = {}): Promise<P
       glossary: query.glossary,
       parent: query.parent,
       directChildrenOf: query.directChildrenOf,
+      entityStatus: query.entityStatus,
+      before: query.before,
     },
   }).then((payload) => parsePaged(payload, mapTerm));
 }
@@ -211,6 +216,130 @@ export function listGlossaryTermChildrenLazy(
   after?: string,
 ): Promise<Paged<GlossaryTerm>> {
   return listGlossaryTerms({ directChildrenOf: parentFqn, limit, after });
+}
+
+/**
+ * Official getGlossaryTermByFQN (rest/glossaryAPI.ts:166): GET
+ * /v1/glossaryTerms/name/{fqn}. The asset picker resolves its active
+ * entity by FQN, so the term id for the add/remove calls comes from
+ * here, never from a guessed id.
+ */
+export async function getGlossaryTermByFqn(fqn: string): Promise<GlossaryTerm> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/glossaryTerms/name/${encodeURIComponent(fqn)}`,
+    { query: { fields: GLOSSARY_TERM_FIELDS } },
+  );
+  const mapped = mapTerm(raw);
+  if (!mapped) {
+    throw new Error('Glossary term response was missing id and name');
+  }
+  return mapped;
+}
+
+/**
+ * Bulk glossary-term-assets result (openmetadata-spec
+ * type/bulkOperationResult.json): the add/remove endpoints answer 200
+ * (202 when everything is held for approval) with this body — NOT the
+ * updated GlossaryTerm, despite pin's remove TS type saying so
+ * (rest/glossaryAPI.ts:311). A 2xx therefore means "applied (or held)",
+ * and callers must not map the body as a GlossaryTerm. The per-row
+ * detail lives in successRequest / failedRequest; the UI treats 2xx as
+ * success, as pin does.
+ */
+export interface BulkResponseItem {
+  message?: string;
+  status?: number;
+  hasSideEffects?: boolean;
+}
+
+export interface BulkOperationResult {
+  dryRun?: boolean;
+  status?: string;
+  abortReason?: string;
+  numberOfRowsProcessed?: number;
+  numberOfRowsPassed?: number;
+  numberOfRowsFailed?: number;
+  numberOfRowsPendingApproval?: number;
+  successRequest?: BulkResponseItem[];
+  failedRequest?: BulkResponseItem[];
+}
+
+function mapBulkOperationResult(raw: unknown): BulkOperationResult {
+  const rec = asRecord(raw) ?? {};
+  const mapItems = (value: unknown): BulkResponseItem[] | undefined => {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    return value.flatMap((item) => {
+      const itemRec = asRecord(item);
+      if (!itemRec) {
+        return [];
+      }
+      return [
+        {
+          message: asString(itemRec.message) || undefined,
+          status: asNumber(itemRec.status) ?? undefined,
+          hasSideEffects: asBoolean(itemRec.hasSideEffects),
+        },
+      ];
+    });
+  };
+  return {
+    dryRun: asBoolean(rec.dryRun),
+    status: asString(rec.status) || undefined,
+    abortReason: asString(rec.abortReason) || undefined,
+    numberOfRowsProcessed: asNumber(rec.numberOfRowsProcessed) ?? undefined,
+    numberOfRowsPassed: asNumber(rec.numberOfRowsPassed) ?? undefined,
+    numberOfRowsFailed: asNumber(rec.numberOfRowsFailed) ?? undefined,
+    numberOfRowsPendingApproval: asNumber(rec.numberOfRowsPendingApproval) ?? undefined,
+    successRequest: mapItems(rec.successRequest),
+    failedRequest: mapItems(rec.failedRequest),
+  };
+}
+
+/**
+ * Official addAssetsToGlossaryTerm (rest/glossaryAPI.ts:293): PUT
+ * /glossaryTerms/{termId}/assets/add with AddGlossaryToAssetsRequest
+ * {assets: EntityReference[], dryRun}. The server answers 200 (202 when
+ * held for approval) with a BulkOperationResult
+ * (GlossaryTermResource.bulkAddGlossaryToAssets via
+ * ApprovalGate.bulkResponse); the edit is synchronous, but callers
+ * still wait ES_UPDATE_DELAY before refreshing so the search index
+ * catches up.
+ */
+export async function addAssetsToGlossaryTerm(
+  termId: string,
+  assets: EntityRef[],
+  dryRun = false,
+): Promise<BulkOperationResult> {
+  const raw = await apiRequest<unknown>(
+    `/v1/glossaryTerms/${encodeURIComponent(termId)}/assets/add`,
+    {
+      method: 'PUT',
+      json: { assets, dryRun },
+    },
+  );
+  return mapBulkOperationResult(raw);
+}
+
+/**
+ * Official removeAssetsFromGlossaryTerm (rest/glossaryAPI.ts:311): PUT
+ * /glossaryTerms/{termId}/assets/remove with {assets, dryRun: false}.
+ * Same BulkOperationResult as add (200 = applied); the updated
+ * GlossaryTerm is NOT returned, despite pin's TS type saying so.
+ */
+export async function removeAssetsFromGlossaryTerm(
+  termId: string,
+  assets: EntityRef[],
+): Promise<BulkOperationResult> {
+  const raw = await apiRequest<unknown>(
+    `/v1/glossaryTerms/${encodeURIComponent(termId)}/assets/remove`,
+    {
+      method: 'PUT',
+      json: { assets, dryRun: false },
+    },
+  );
+  return mapBulkOperationResult(raw);
 }
 
 export async function getGlossaryTerm(id: string): Promise<GlossaryTerm> {

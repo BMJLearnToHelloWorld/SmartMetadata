@@ -12,8 +12,12 @@ import NextPrevious from '@/components/shared/NextPrevious.vue';
 import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { searchAssets } from '@/api/search';
+import { removeAssetsFromGlossaryTerm } from '@/api/glossaryTerms';
 import { removeAssetsFromTags } from '@/api/tags';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
+import {
+  getGlossaryTermAssetsQueryFilter,
+} from '@/catalog/glossaryTermAssets';
 import {
   buildTagAssetsQuickFilterQuery,
   combineQueryFilters,
@@ -31,8 +35,18 @@ import type { EntityRef, SearchHit } from '@/types/api';
 
 /**
  * Pin AssetsTabs (components/Glossary/GlossaryTerms/tabs/
- * AssetsTabs.component.tsx), TAG subset — the TagPage ASSETS tab
- * (pages/TagPage/TagPage.tsx:632-674).
+ * AssetsTabs.component.tsx), TAG + GLOSSARY subsets — the TagPage ASSETS tab
+ * (pages/TagPage/TagPage.tsx:632-674) and the GlossaryTerm ASSETS tab
+ * (utils/Glossary/GlossaryTermUtils.tsx:165-224, buildAssetsTab; the pin
+ * component defaults type to GLOSSARY, AssetsTabs.component.tsx:410).
+ *
+ * The `type` prop selects the pin branch: 'tag' keeps the TagPage wiring
+ * (getTagAssetsQueryFilter / removeAssetsFromTags), 'glossaryTerm' takes
+ * the GlossaryTerm wiring (getGlossaryTermAssetsQueryFilter /
+ * removeAssetsFromGlossaryTerm). Quick filters, ES search, paging,
+ * preview selection and empty states are shared: pin's GLOSSARY quick
+ * filters are the same seven fields as TAG's
+ * (AdvancedSearch.constants.ts:358-376 vs :392-424).
  *
  * - ES search (`*${value}*`, index ALL) with the tag query filter
  *   (getTagAssetsQueryFilter) merged with the quick-filter query,
@@ -67,20 +81,36 @@ import type { EntityRef, SearchHit } from '@/types/api';
  *   of pin's ExploreSearchCard list; the card's click-to-preview,
  *   checkbox, and remove menu survive as row click, pick column,
  *   and remove action.
- * - The tag id arrives as a prop: the parent view already loaded
- *   the tag, so pin's by-FQN fetch inside the tab would be a
+ * - The entity id arrives as a prop: the parent view already loaded
+ *   the entity, so pin's by-FQN fetch inside the tab would be a
  *   duplicate GET.
+ * - The remove call takes the id, not pin's whole entity object
+ *   (removeAssetsFromGlossaryTerm(activeEntity, …)): the REST call only
+ *   uses the id, so the wire is identical; same shape as the Tag branch.
  * - ResizablePanels is not built here: the parent lays this tab out
  *   beside the preview panel in a fixed split (see TagDetailView).
  */
 const props = defineProps<{
   entityFqn: string;
-  /** Tag id, already loaded by the parent view. */
-  tagId?: string;
+  /** Entity id (tag or glossary term), already loaded by the parent view. */
+  entityId?: string;
+  /**
+   * Pin AssetsOfEntity branch: 'tag' is TagPage (type TAG),
+   * 'glossaryTerm' is GlossaryTermUtils buildAssetsTab (pin defaults to
+   * GLOSSARY when the caller omits type). Defaults to 'tag': the Tag tab
+   * landed first.
+   */
+  type?: 'tag' | 'glossaryTerm';
   permissions: { Create: boolean; EditAll: boolean };
   /** Tab count from the parent's ES count fetch; the list's own total otherwise. */
   assetCount?: number;
   isSummaryPanelOpen: boolean;
+  /**
+   * Pin addDisabledMessage (GlossaryTermUtils:127-141): when set, the
+   * empty-state Add action hides and the description shows this text
+   * instead of the link-assets copy. Only the term tab passes it.
+   */
+  addDisabledMessage?: string;
 }>();
 
 const emit = defineEmits<{
@@ -110,7 +140,19 @@ let fetchSeq = 0;
 const tabTotal = computed(() => props.assetCount ?? total.value);
 const showFilterBar = computed(() => tabTotal.value > 0);
 /** Pin showCheckboxes: an active entity and the Create grant. */
-const showCheckboxes = computed(() => Boolean(props.tagId) && props.permissions.Create);
+const showCheckboxes = computed(() => Boolean(props.entityId) && props.permissions.Create);
+/**
+ * i18n scope for the remove/empty copy: the Tag and GlossaryTerm tabs
+ * share the component but not the noun (pin getEntityTypeString(type)).
+ */
+const i18nScope = computed(() =>
+  props.type === 'glossaryTerm' ? 'governance.glossaryTermAssets' : 'governance.tagAssets',
+);
+const entityNoun = computed(() =>
+  props.type === 'glossaryTerm'
+    ? t('governance.glossaryTermAssets.termNoun')
+    : t('governance.tagAssets.tagNoun'),
+);
 const canRemove = computed(() => props.permissions.EditAll);
 
 const columns = computed(() => [
@@ -142,8 +184,15 @@ async function fetchAssets(): Promise<void> {
   const id = ++fetchSeq;
   loading.value = true;
   try {
+    // Pin queryParamBuilders (AssetsTabs.component.tsx:250-251): the
+    // GLOSSARY branch filters on tags.tagFQN, the TAG branch on the
+    // classification-aware aggregation field.
+    const entityFilter =
+      props.type === 'glossaryTerm'
+        ? getGlossaryTermAssetsQueryFilter(props.entityFqn)
+        : getTagAssetsQueryFilter(props.entityFqn);
     const queryFilter = combineQueryFilters(
-      getTagAssetsQueryFilter(props.entityFqn),
+      entityFilter,
       buildTagAssetsQuickFilterQuery(quickFilterSelections.value),
     );
     const result = await searchAssets(
@@ -205,16 +254,16 @@ function toEntityRefs(targets: SearchHit[]): EntityRef[] {
 }
 
 async function removeHits(targets: SearchHit[]): Promise<void> {
-  if (!props.tagId || targets.length === 0 || removing.value) {
+  if (!props.entityId || targets.length === 0 || removing.value) {
     return;
   }
   const name =
     targets.length === 1
       ? entityLabel(targets[0])
-      : t('governance.tagAssets.selectedCount', { count: targets.length });
+      : t(`${i18nScope.value}.selectedCount`, { count: targets.length });
   const confirmed = await confirmDelete({
     title: t('label.remove-entity', { entity: name }),
-    content: t('governance.tagAssets.removeConfirm', { name }),
+    content: t(`${i18nScope.value}.removeConfirm`, { name }),
     okText: t('crud.remove'),
     cancelText: t('crud.cancel'),
   });
@@ -223,11 +272,17 @@ async function removeHits(targets: SearchHit[]): Promise<void> {
   }
   removing.value = true;
   try {
-    await removeAssetsFromTags(props.tagId, toEntityRefs(targets));
+    // Pin removeAssetsHandlers (AssetsTabs.component.tsx:174-178): the
+    // GLOSSARY branch removes from the term, the TAG branch from the tag.
+    if (props.type === 'glossaryTerm') {
+      await removeAssetsFromGlossaryTerm(props.entityId, toEntityRefs(targets));
+    } else {
+      await removeAssetsFromTags(props.entityId, toEntityRefs(targets));
+    }
     // Pin ES_UPDATE_DELAY (constants.ts:129, 500ms): ES is eventually
     // consistent, so the list is refreshed after the index catches up.
     await new Promise((resolve) => setTimeout(resolve, 500));
-    message.success(t('governance.tagAssets.removeSuccess'));
+    message.success(t(`${i18nScope.value}.removeSuccess`));
     selectedKeys.value = new Set();
     emit('remove-asset');
   } catch (error) {
@@ -237,7 +292,7 @@ async function removeHits(targets: SearchHit[]): Promise<void> {
     // refresh to show the partial state. The product removes with a
     // single PUT: a failure means nothing was applied, so the list
     // already shows the current state and no refresh is emitted.
-    message.error(error instanceof Error ? error.message : t('governance.tagAssets.removeFailed'));
+    message.error(error instanceof Error ? error.message : t(`${i18nScope.value}.removeFailed`));
   } finally {
     removing.value = false;
   }
@@ -318,9 +373,9 @@ onUnmounted(() => {
       <CreatePlaceholder
         v-else
         :title="t('label.no-assets-linked-yet')"
-        :description="t('message.link-assets-description', { entity: t('governance.tagAssets.tagNoun') })"
+        :description="addDisabledMessage ?? t('message.link-assets-description', { entity: entityNoun })"
         :actions="
-          permissions.Create
+          permissions.Create && !addDisabledMessage
             ? [
                 {
                   key: 'add-asset',
@@ -345,7 +400,7 @@ onUnmounted(() => {
           {{ t('label.select-field', { field: t('label.all-lowercase') }) }}
         </Checkbox>
         <span v-if="selectedKeys.size > 0" class="tag-assets-tab__selected">
-          {{ t('governance.tagAssets.selectedCount', { count: selectedKeys.size }) }}
+          {{ t(`${i18nScope}.selectedCount`, { count: selectedKeys.size }) }}
         </span>
         <Button
           v-if="selectedKeys.size > 0 && canRemove"

@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createGlossaryTerm, getGlossaryTerm, getGlossaryTermsByIds, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms } from './glossaryTerms';
+import { addAssetsToGlossaryTerm, createGlossaryTerm, getGlossaryTerm, getGlossaryTermByFqn, getGlossaryTermsByIds, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms, removeAssetsFromGlossaryTerm } from './glossaryTerms';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -234,6 +234,75 @@ describe('glossaryTerms API', () => {
       { id: 'a', name: 'A', type: 'glossaryTerm', relationType: 'broader' },
     ]);
     await expect(getGlossaryTermsByIds([])).resolves.toEqual([]);
+  });
+
+  it('resolves a term by FQN for the asset picker', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ id: 't1', name: 'Customer', fullyQualifiedName: 'Business.Customer' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const term = await getGlossaryTermByFqn('Business.Customer');
+    expect(term.id).toBe('t1');
+    expect(lastFetch().url).toContain('/api/v1/glossaryTerms/name/Business.Customer');
+  });
+
+  it('adds assets via PUT /v1/glossaryTerms/{id}/assets/add and returns the BulkOperationResult as-is', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          assets: [{ id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' }],
+          dryRun: false,
+        });
+        return new Response(
+          JSON.stringify({
+            numberOfRowsProcessed: 1,
+            numberOfRowsPassed: 1,
+            numberOfRowsFailed: 0,
+            successRequest: [{ message: 'ok', status: 200 }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const result = await addAssetsToGlossaryTerm('t1', [
+      { id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' },
+    ]);
+    expect(result).toMatchObject({
+      numberOfRowsProcessed: 1,
+      numberOfRowsPassed: 1,
+      numberOfRowsFailed: 0,
+      successRequest: [{ message: 'ok', status: 200, hasSideEffects: undefined }],
+    });
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(lastFetch().url).toContain('/api/v1/glossaryTerms/t1/assets/add');
+  });
+
+  it('removes assets via PUT /v1/glossaryTerms/{id}/assets/remove with dryRun false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          assets: [{ id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' }],
+          dryRun: false,
+        });
+        return new Response(
+          JSON.stringify({ numberOfRowsProcessed: 1, numberOfRowsPassed: 1, numberOfRowsFailed: 0 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const result = await removeAssetsFromGlossaryTerm('t1', [
+      { id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' },
+    ]);
+    expect(result.numberOfRowsPassed).toBe(1);
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(lastFetch().url).toContain('/api/v1/glossaryTerms/t1/assets/remove');
   });
 
   it('maps the requested reviewers/domains and the synonyms/references already in the response', async () => {

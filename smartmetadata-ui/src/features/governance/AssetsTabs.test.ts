@@ -18,6 +18,7 @@ import AssetsTabs from './AssetsTabs.vue';
 
 const searchAssets = vi.fn();
 const removeAssetsFromTags = vi.fn();
+const removeAssetsFromGlossaryTerm = vi.fn();
 const confirmDelete = vi.fn();
 
 vi.mock('@/api/search', () => ({
@@ -26,6 +27,10 @@ vi.mock('@/api/search', () => ({
 
 vi.mock('@/api/tags', () => ({
   removeAssetsFromTags: (...args: unknown[]) => removeAssetsFromTags(...args),
+}));
+
+vi.mock('@/api/glossaryTerms', () => ({
+  removeAssetsFromGlossaryTerm: (...args: unknown[]) => removeAssetsFromGlossaryTerm(...args),
 }));
 
 vi.mock('@/features/crud/confirmDelete', () => ({
@@ -81,7 +86,7 @@ async function mountTabs(props: Record<string, unknown> = {}) {
   const wrapper = mount(AssetsTabs, {
     props: {
       entityFqn: 'PII.Sensitive',
-      tagId: 'tg1',
+      entityId: 'tg1',
       permissions: { Create: true, EditAll: true },
       assetCount: 2,
       isSummaryPanelOpen: false,
@@ -104,9 +109,11 @@ describe('AssetsTabs (pin TagPage ASSETS tab)', () => {
   beforeEach(() => {
     searchAssets.mockReset();
     removeAssetsFromTags.mockReset();
+    removeAssetsFromGlossaryTerm.mockReset();
     confirmDelete.mockReset();
     confirmDelete.mockResolvedValue(true);
     removeAssetsFromTags.mockResolvedValue({ jobId: 'job-1' });
+    removeAssetsFromGlossaryTerm.mockResolvedValue({ numberOfRowsPassed: 1 });
     searchAssets.mockResolvedValue(searchPage([ORDERS, DASHBOARD], 2));
     localStorage.clear();
   });
@@ -316,6 +323,75 @@ describe('AssetsTabs (pin TagPage ASSETS tab)', () => {
     (wrapper.vm as unknown as { refreshAssets: () => void }).refreshAssets();
     await flushPromises();
     expect(searchAssets).toHaveBeenCalledWith('**', 0, 15, expect.objectContaining({ index: 'all' }));
+    wrapper.unmount();
+  });
+});
+
+describe('AssetsTabs (pin GlossaryTermsV1 ASSETS tab, B-15 G-1)', () => {
+  beforeEach(() => {
+    searchAssets.mockReset();
+    removeAssetsFromGlossaryTerm.mockReset();
+    confirmDelete.mockReset();
+    confirmDelete.mockResolvedValue(true);
+    removeAssetsFromGlossaryTerm.mockResolvedValue({ numberOfRowsPassed: 1 });
+    searchAssets.mockResolvedValue(searchPage([ORDERS, DASHBOARD], 2));
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
+  function mountTermTabs(props: Record<string, unknown> = {}) {
+    return mountTabs({
+      type: 'glossaryTerm',
+      entityId: 'term1',
+      entityFqn: 'gloss.term',
+      ...props,
+    });
+  }
+
+  it('searches ES with the term query filter on tags.tagFQN', async () => {
+    const wrapper = await mountTermTabs();
+    expect(searchAssets).toHaveBeenCalledWith(
+      '**',
+      0,
+      15,
+      expect.objectContaining({ index: 'all' }),
+    );
+    const filterArg = JSON.parse(String(searchAssets.mock.calls[0][3].query_filter));
+    expect(filterArg).toEqual({
+      query: { bool: { must: [{ term: { 'tags.tagFQN': 'gloss.term' } }] } },
+    });
+    expect(wrapper.text()).toContain('Orders');
+    wrapper.unmount();
+  });
+
+  it('removes one asset through the glossary endpoint', async () => {
+    vi.useFakeTimers();
+    const wrapper = await mountTermTabs();
+    await wrapper.find('[data-testid="remove-asset-svc.db.schema.orders"]').trigger('click');
+    await flushPromises();
+    expect(confirmDelete).toHaveBeenCalled();
+    expect(removeAssetsFromGlossaryTerm).toHaveBeenCalledWith('term1', [
+      expect.objectContaining({ id: 't1', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' }),
+    ]);
+    expect(removeAssetsFromTags).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    expect(wrapper.emitted('remove-asset')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('hides the Add action and shows the message when add is disabled', async () => {
+    searchAssets.mockResolvedValue(searchPage([], 0));
+    const wrapper = await mountTermTabs({
+      assetCount: 0,
+      addDisabledMessage: 'This term is Draft. Assets can be added once it is approved.',
+    });
+    expect(wrapper.find('[data-testid="data-assets-add-button"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('This term is Draft. Assets can be added once it is approved.');
     wrapper.unmount();
   });
 });

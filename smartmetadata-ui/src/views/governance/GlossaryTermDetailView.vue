@@ -6,14 +6,13 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Form, Input, Select, Space, Tag, Typography, message } from 'ant-design-vue';
-import SmTable from '@/components/shared/SmTable.vue';
+import { Button, Descriptions, Form, Input, Select, Space, Tag, message } from 'ant-design-vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { usePermissionStore } from '@/stores/permissions';
 import FormModal from '@/components/shared/FormModal.vue';
-import { isDetailWired } from '@/catalog/entityRoutes';
+import { openSearchHit } from '@/catalog/entityRoutes';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
@@ -21,12 +20,18 @@ import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
-import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, patchGlossaryTerm, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTerms, patchGlossaryTerm, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { searchAssets } from '@/api/search';
+import { getGlossaryTermAssetsQueryFilter, getQueryFilterToExcludeTerm } from '@/catalog/glossaryTermAssets';
 import { listCustomProperties } from '@/api/customProperties';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getGlossaryTermVersionPath } from '@/catalog/versionPaths';
+import AssetsTabs from '@/features/governance/AssetsTabs.vue';
+import AssetSelectionModal from '@/features/governance/AssetSelectionModal.vue';
+import GlossaryTermTab from '@/features/governance/GlossaryTermTab.vue';
+import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
@@ -40,7 +45,7 @@ import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { DqDashboardChartFilters } from '@/quality/dashboard';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
-import type { EntityRef, TagRef } from '@/types/api';
+import type { SearchHit, TagRef } from '@/types/api';
 import type { GlossaryTerm } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
@@ -50,7 +55,6 @@ const loading = ref(false);
 const errorMessage = ref('');
 const term = ref<GlossaryTerm | null>(null);
 const siblings = ref<GlossaryTerm[]>([]);
-const assets = ref<EntityRef[]>([]);
 const activeTab = ref('overview');
 const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
@@ -113,6 +117,100 @@ const customPropsCanView = computed<boolean | null>(() =>
 const canEditCustomProperties = computed(
   () => termPermissions.canEditAll.value || termPermissions.can('EditCustomFields'),
 );
+
+// B-15 G-1: the pin ASSETS tab (GlossaryTermUtils buildAssetsTab,
+// GlossaryTermsV1). The count is the ES hit total for the term query
+// filter (page size 0), and the add/remove flows mirror the Tag lane's
+// AssetsTabs wiring (see its BENCHMARK D-G1-1..D-G1-9).
+const assetModalVisible = ref(false);
+const previewAsset = ref<SearchHit | undefined>();
+const assetCount = ref<number | undefined>(undefined);
+const assetsTabRef = ref<{ refreshAssets: () => void } | null>(null);
+
+/**
+ * Pin GlossaryTermsV1 assetPermissions (GlossaryTermsV1.component.tsx:
+ * 105-112): the term's own Create/EditAll, direct-read, when the term
+ * is Approved — otherwise MOCK_GLOSSARY_NO_PERMISSIONS (all false).
+ * The flags come from the same getDerivedPermissionFlags aperture as
+ * the Tag lane (D-G1-1).
+ */
+const assetPermissions = computed(() => ({
+  Create: term.value?.status === 'Approved' && termPermissions.canCreate.value,
+  EditAll: term.value?.status === 'Approved' && termPermissions.canEditAll.value,
+}));
+/**
+ * Pin GlossaryTermUtils getAddDisabledMessage (GlossaryTermUtils.tsx:
+ * 127-141): Draft/InReview terms cannot take assets yet, terminal
+ * statuses cannot take them at all; Approved has no message. The
+ * status word is the raw status string (D-G1-9).
+ */
+const assetsAddDisabledMessage = computed(() => {
+  const status = term.value?.status ?? 'Approved';
+  if (status === 'Draft' || status === 'InReview') {
+    return t('message.assets-add-disabled-term-status', { status });
+  }
+  if (status !== 'Approved') {
+    return t('message.assets-add-restricted-term-status', { status });
+  }
+  return undefined;
+});
+/** Pin getQueryFilterToExcludeTerm (GlossaryPureUtils.ts:85-113). */
+const assetModalQueryFilter = computed(() =>
+  term.value?.fullyQualifiedName
+    ? JSON.stringify(getQueryFilterToExcludeTerm(term.value.fullyQualifiedName))
+    : undefined,
+);
+
+/**
+ * Pin GlossaryTermsV1 fetchClassificationTagAssets equivalent: the tab
+ * count is the ES hit total for the term query filter (page size 0).
+ * A zero total clears the preview panel; a failed fetch toasts and
+ * leaves the count unknown (pill hidden), it must not masquerade as
+ * "no assets" (D-G1-3).
+ */
+async function fetchAssetCount(): Promise<void> {
+  const fqn = term.value?.fullyQualifiedName || term.value?.name;
+  if (!fqn) {
+    assetCount.value = 0;
+    return;
+  }
+  try {
+    const result = await searchAssets('', 0, 0, {
+      index: 'all',
+      query_filter: JSON.stringify(getGlossaryTermAssetsQueryFilter(fqn)),
+    });
+    assetCount.value = result.total ?? 0;
+    if (assetCount.value === 0) {
+      previewAsset.value = undefined;
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  }
+}
+
+function handleAssetClick(hit: SearchHit | undefined): void {
+  previewAsset.value = hit;
+}
+
+function handleAddAsset(): void {
+  assetModalVisible.value = true;
+}
+
+/** Pin GlossaryTermsV1 handleAssetSave (GlossaryTermsV1.component.tsx:171-175). */
+function handleAssetSave(): void {
+  assetModalVisible.value = false;
+  void fetchAssetCount();
+  assetsTabRef.value?.refreshAssets();
+  if (activeTab.value !== 'assets') {
+    activeTab.value = 'assets';
+  }
+}
+
+function handlePreviewOpen(hit: SearchHit): void {
+  if (!openSearchHit((to) => router.push(to), hit)) {
+    previewAsset.value = hit;
+  }
+}
 watch(
   () => termPermissions.error.value,
   (error) => {
@@ -126,12 +224,6 @@ const editForm = reactive({
   description: '',
   relatedTermFqns: [] as string[],
 });
-
-const assetColumns = computed(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.type'), dataIndex: 'type', key: 'type', width: 140 },
-  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-]);
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   {
@@ -155,8 +247,13 @@ const tabs = computed<EntityDetailTab[]>(() =>
   getDetailsTabWithNewLabel(
     [
       { key: 'overview', label: t('asset.tabs.overview'), testId: 'term-tab-overview' },
-      { key: 'glossary_terms', label: t('asset.tabs.glossaryTerms'), testId: 'term-tab-glossary-terms' },
-      { key: 'assets', label: t('asset.tabs.assets'), testId: 'term-tab-assets' },
+      {
+        key: 'glossary_terms',
+        label: t('asset.tabs.glossaryTerms'),
+        testId: 'term-tab-glossary-terms',
+        count: term.value?.childrenCount,
+      },
+      { key: 'assets', label: t('asset.tabs.assets'), testId: 'term-tab-assets', count: assetCount.value },
       { key: 'activity_feed', label: t('asset.tabs.activityFeed'), testId: 'term-tab-activity-feed' },
       { key: 'relations_graph', label: t('asset.tabs.relationsGraph'), testId: 'term-tab-relations-graph' },
       { key: 'custom_properties', label: t('asset.tabs.customProperties'), testId: 'term-tab-custom-properties' },
@@ -241,18 +338,16 @@ function tagFqnList(tags: readonly TagRef[]): string {
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  previewAsset.value = undefined;
+  assetCount.value = undefined;
   try {
     term.value = await getGlossaryTerm(props.id);
+    void fetchAssetCount();
     const glossaryId = term.value.glossary?.id;
     if (glossaryId) {
       siblings.value = (await listGlossaryTerms({ glossary: glossaryId, limit: 100 })).data;
     } else {
       siblings.value = [];
-    }
-    try {
-      assets.value = (await listGlossaryTermAssets(props.id, 50)).data;
-    } catch {
-      assets.value = [];
     }
     const fqn = term.value.fullyQualifiedName || term.value.name;
     try {
@@ -277,7 +372,6 @@ async function load(): Promise<void> {
     }
   } catch (error) {
     term.value = null;
-    assets.value = [];
     activity.value = [];
     conversations.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('terms.loadFailed');
@@ -411,22 +505,6 @@ async function onDeleteTerm(): Promise<void> {
   }
 }
 
-function openAsset(asset: EntityRef): void {
-  const entityType = asset.type || '';
-  const fqn = asset.fullyQualifiedName || asset.name;
-  if (!isDetailWired(entityType) || !fqn) {
-    return;
-  }
-  void router.push({ name: 'asset', params: { entityType, fqn } });
-}
-
-function openTerm(child: EntityRef): void {
-  if (!child.id) {
-    return;
-  }
-  void router.push({ name: 'governance-term', params: { id: child.id } });
-}
-
 watch(
   () => props.id,
   () => {
@@ -472,6 +550,15 @@ onMounted(() => {
       </Button>
       <Button key="term-versions" data-testid="term-versions" :disabled="!term" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
       <Button key="delete-term" danger data-testid="delete-term" :disabled="!term || !canDeleteTerm" @click="onDeleteTerm">{{ t('crud.delete') }}</Button>
+      <Button
+        key="term-add-assets"
+        v-if="term && assetPermissions.Create && !assetsAddDisabledMessage"
+        type="primary"
+        data-testid="term-add-assets"
+        @click="handleAddAsset"
+      >
+        {{ t('label.add-entity', { entity: t('label.asset-plural') }) }}
+      </Button>
       <Button key="edit-term" type="primary" data-testid="edit-term" :disabled="!term || !canEditTerm" @click="openEdit">
         {{ t('terms.edit') }}
       </Button>
@@ -572,57 +659,40 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #glossary_terms>
-      <SmTable
-        row-key="id"
-        test-id="term-children-table"
-        :columns="assetColumns"
-        :data-source="term?.children ?? []"
-        :pagination="false"
-        size="small"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              v-if="(record as EntityRef).id"
-              href="#"
-              @click.prevent="openTerm(record as EntityRef)"
-            >
-              {{ (record as EntityRef).displayName || (record as EntityRef).name }}
-            </a>
-            <span v-else>{{ (record as EntityRef).displayName || (record as EntityRef).name }}</span>
-          </template>
-        </template>
-      </SmTable>
+      <!-- B-15 G-2: the pin terms tab (GlossaryTermUtils buildTermsTab):
+           first-level children paged from the server, with nested
+           lazy expansion and load-more (GlossaryTermTab). -->
+      <GlossaryTermTab v-if="term" :term="term" />
     </template>
     <template #assets>
-      <template>
-        <Typography.Title :level="5">{{ t('terms.relatedEntities') }}</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          {{ t('terms.relatedLead') }}
-        </Typography.Paragraph>
-        <SmTable
-          row-key="id"
-          test-id="term-assets-table"
-          :columns="assetColumns"
-          :data-source="assets"
-          :pagination="false"
-          size="small"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <a
-                v-if="isDetailWired((record as EntityRef).type || '') && (record as EntityRef).fullyQualifiedName"
-                href="#"
-                @click.prevent="openAsset(record as EntityRef)"
-              >
-                {{ (record as EntityRef).displayName || (record as EntityRef).name }}
-              </a>
-              <span v-else>{{ (record as EntityRef).displayName || (record as EntityRef).name }}</span>
-            </template>
-          </template>
-        </SmTable>
-        <Typography.Text v-if="!assets.length" type="secondary">{{ t('terms.noAssets') }}</Typography.Text>
-      </template>
+      <!-- B-15 G-1: the pin ASSETS tab (AssetsTabs + EntitySummaryPanel
+           in ResizablePanels). The preview panel is the product's
+           ExplorePreview in a fixed split beside the list (D-G1-4). -->
+      <div v-if="term" class="term-assets-tab-wrap" data-testid="term-assets-tab">
+        <div class="term-assets-tab-list">
+          <AssetsTabs
+            ref="assetsTabRef"
+            type="glossaryTerm"
+            :entity-id="term.id"
+            :entity-fqn="term.fullyQualifiedName || term.name"
+            :permissions="assetPermissions"
+            :asset-count="assetCount"
+            :add-disabled-message="assetsAddDisabledMessage"
+            :is-summary-panel-open="Boolean(previewAsset)"
+            @add-asset="handleAddAsset"
+            @asset-click="handleAssetClick"
+            @remove-asset="handleAssetSave"
+          />
+        </div>
+        <aside v-if="previewAsset" class="term-assets-tab-preview" data-testid="term-asset-preview">
+          <div class="term-assets-tab-preview-head">
+            <Button type="text" data-testid="term-asset-preview-close" @click="previewAsset = undefined">
+              {{ t('crud.close') }}
+            </Button>
+          </div>
+          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" />
+        </aside>
+      </div>
     </template>
     <template #activity_feed>
       <AssetActivityPanel
@@ -752,6 +822,17 @@ onMounted(() => {
       />
     </template>
   </EntityDetailShell>
+  <!-- Pin GlossaryTermsV1 renderModals: the asset picker lives at page level. -->
+  <AssetSelectionModal
+    v-if="term && assetModalVisible"
+    type="glossaryTerm"
+    :entity-id="term.id"
+    :entity-fqn="term.fullyQualifiedName || term.name"
+    :open="assetModalVisible"
+    :query-filter="assetModalQueryFilter"
+    @cancel="assetModalVisible = false"
+    @save="handleAssetSave"
+  />
   <CustomPropertiesEditModal
     :open="propsOpen"
     :defs="customProperties"
