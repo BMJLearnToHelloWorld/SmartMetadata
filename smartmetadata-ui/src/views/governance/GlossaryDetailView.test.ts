@@ -114,7 +114,7 @@ describe('GlossaryDetailView', () => {
           });
         }
         if (url.includes('/api/v1/glossaryTerms')) {
-          if (url.includes('directChildrenOf=')) {
+          if (url.includes('directChildrenOf=Business.Customer')) {
             if (url.includes('after=c2')) {
               return jsonResponse({
                 data: [
@@ -168,7 +168,10 @@ describe('GlossaryDetailView', () => {
                 fullyQualifiedName: 'Business.Customer',
                 entityStatus: 'Approved',
                 owners: [],
-                childrenCount: 2,
+                // Self-consistent with the children endpoint below, which
+                // pages 3 children (Retail, Wholesale, Online); pin's
+                // remaining count is childrenCount minus loaded.
+                childrenCount: 3,
               },
             ],
             paging: { total: 1 },
@@ -302,18 +305,25 @@ describe('GlossaryDetailView', () => {
 
   it('navigates to term detail from the terms table', async () => {
     const { wrapper, router } = await mountView();
-    const link = wrapper.find('[data-testid="term-row-t1"]');
-    expect(link.exists()).toBe(true);
-    await link.trigger('click');
+    // The terms table is the GlossaryTermsWidget now: the term name is
+    // a link that routes to the term detail page.
+    const link = wrapper
+      .findAll('[data-testid="glossary-terms-table"] a')
+      .find((node) => node.text().includes('Customer'));
+    expect(link?.exists()).toBe(true);
+    await link!.trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('governance-term');
     expect(router.currentRoute.value.params.id).toBe('t1');
   });
 
   function childrenFetchCount(): number {
+    // Only the lazy child load for the parent term counts here — the
+    // widget also fetches the first level (directChildrenOf=Business)
+    // on mount.
     return vi
       .mocked(fetch)
-      .mock.calls.filter((call) => String(call[0]).includes('directChildrenOf='))
+      .mock.calls.filter((call) => String(call[0]).includes(`directChildrenOf=${encodeURIComponent('Business.Customer')}`))
       .length;
   }
 
@@ -345,21 +355,25 @@ describe('GlossaryDetailView', () => {
   it('appends the next children page via load-more and drops the button at the end', async () => {
     const { wrapper } = await mountView();
     await expandFirstTerm(wrapper);
-    const more = wrapper.find('[data-testid="term-children-more-t1"]');
+    const more = wrapper.find('[data-testid="load-more-children"]');
     expect(more.exists()).toBe(true);
     await more.trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('Online');
-    expect(wrapper.find('[data-testid="term-children-more-t1"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="load-more-children"]').exists()).toBe(false);
   });
 
-  it('shows a retry row when children fail to load and recovers on retry', async () => {
+  it('shows an error and recovers on re-expand when children fail to load', async () => {
+    // The widget has no retry row (pin parity: a failed lazy load
+    // surfaces as an error toast and leaves the row expandable, so a
+    // collapse + re-expand retries the load instead of caching the
+    // failure).
     let childrenCalls = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('directChildrenOf=')) {
+        if (url.includes('directChildrenOf=Business.Customer')) {
           childrenCalls += 1;
           if (childrenCalls === 1) {
             return new Response('boom', { status: 500 });
@@ -422,14 +436,12 @@ describe('GlossaryDetailView', () => {
     );
     const { wrapper } = await mountView();
     await expandFirstTerm(wrapper);
-    const errorRow = wrapper.find('[data-testid="term-children-error-t1"]');
-    expect(errorRow.exists()).toBe(true);
-    const retry = errorRow.find('button');
-    expect(retry.exists()).toBe(true);
-    await retry.trigger('click');
-    await flushPromises();
+    expect(wrapper.text()).not.toContain('Retail');
+    // Collapse and re-expand: the failed load is retried, not cached.
+    await expandFirstTerm(wrapper);
+    await expandFirstTerm(wrapper);
     expect(wrapper.text()).toContain('Retail');
-    expect(wrapper.find('[data-testid="term-children-error-t1"]').exists()).toBe(false);
+    expect(childrenCalls).toBe(2);
   });
 });
 
@@ -737,12 +749,14 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountGlossary();
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Core terms');
-    expect(wrapper.find('[data-testid="widget-terms-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="widget-term-row-t1"]').text()).toContain('Revenue');
-    expect(wrapper.find('[data-testid="widget-term-row-t2"]').text()).toContain('Cost');
+    // The widget cell renders the GlossaryTermsWidget now (its table
+    // carries the glossary-terms-table testid); the old view-owned
+    // widget-cell table and its widget-term-row-* testids are gone.
+    expect(wrapper.find('[data-testid="glossary-terms-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Revenue');
+    expect(wrapper.text()).toContain('Cost');
     expect(wrapper.find('[data-testid="widget-reviewer"]').text()).toContain('Carol');
     expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="glossary-terms-table"]').exists()).toBe(false);
     // The rail aside is page chrome, not tab content: it stays visible.
     expect(wrapper.find('[data-testid="rail-domain"]').exists()).toBe(true);
     wrapper.unmount();

@@ -10,6 +10,10 @@ import { Alert, Button, Descriptions, Empty, Input, Pagination, Select, Space, S
 import { EditOutlined, SearchOutlined } from '@ant-design/icons-vue';
 import { splitFqn, unquoteFqnPart } from '@/catalog/fqn';
 import { getTableFQNFromColumnFQN } from '@/catalog/tableJoins';
+import ApiEndpointsWidget from '@/components/lists/ApiEndpointsWidget.vue';
+import ContainerChildrenWidget from '@/components/lists/ContainerChildrenWidget.vue';
+import DashboardChartsWidget from '@/components/lists/DashboardChartsWidget.vue';
+import SchemaTablesWidget from '@/components/lists/SchemaTablesWidget.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import ColumnCustomPropertyCell from '@/components/shared/ColumnCustomPropertyCell.vue';
 import ColumnDescriptionModal from '@/components/shared/ColumnDescriptionModal.vue';
@@ -31,7 +35,6 @@ import type { SchemaTagFilterOptions } from '@/utils/schemaTagFilter';
 import type { TagLabelInput } from '@/governance/assetPatch';
 import type { DatabaseSchemaRow } from '@/api/databaseSchemas';
 import { assetLocation } from '@/catalog/entityRoutes';
-import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, EntityRef, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
@@ -99,15 +102,15 @@ export interface AssetDetailPieceContext {
   featureColumns: TableProps['columns'];
   hyperColumns: TableProps['columns'];
   refColumns: TableProps['columns'];
-  apiEndpointColumns: TableProps['columns'];
   taskGraph: PipelineTaskGraphModel;
   taskGraphEmpty: boolean;
   customProperties: CustomPropertyDef[];
   customPropsError: string;
-  apiEndpoints: ApiEndpointRef[];
-  apiEndpointsError: string;
   apiEndpointSchemaJson: (schema: Record<string, unknown> | undefined) => string;
-  onApiEndpointClick: (row: ApiEndpointRef) => void;
+  /** The asset's own canViewBasic; null while the view's permission fetch
+      is unresolved — the Tables widget fetches nothing until it is true
+      (fail-closed view gate, pin SchemaTablesTab). */
+  canViewBasic: boolean | null;
   /**
    * D-1 table-constraint foreign keys: the referred column FQN resolves
    * to its table (official `getPartialNameFromTableFQN`, first four
@@ -617,7 +620,20 @@ function openDatabaseSchema(row: DatabaseSchemaRow): void {
     </template>
   </template>
   <template v-else-if="piece === 'related'">
-    <AssetRelatedPanel :asset="context.asset" />
+    <!-- D-2 batch 4: the TABLES / CONTAINER_CHILDREN / DATABASE_SCHEMA
+         keys share this piece; the widget is chosen by entity type. The
+         database branch keeps the read-only related panel (batch 3). -->
+    <SchemaTablesWidget
+      v-if="context.entityType === 'databaseSchema'"
+      :schema-fqn="context.asset.fullyQualifiedName"
+      :deleted="context.asset.deleted === true"
+      :can-view="context.canViewBasic"
+    />
+    <ContainerChildrenWidget
+      v-else-if="context.entityType === 'container'"
+      :container-fqn="context.asset.fullyQualifiedName"
+    />
+    <AssetRelatedPanel v-else :asset="context.asset" />
   </template>
   <template v-else-if="piece === 'features'">
     <Typography.Paragraph type="secondary">{{ t('asset.featuresLead') }}</Typography.Paragraph>
@@ -721,13 +737,14 @@ function openDatabaseSchema(row: DatabaseSchemaRow): void {
     />
     <template v-else>
       <Typography.Title :level="5">{{ t('asset.chartsTitle') }}</Typography.Title>
-      <SmTable
-        row-key="name"
-        test-id="asset-charts-table"
-        :columns="context.refColumns"
-        :data-source="context.asset.charts ?? []"
-        :pagination="false"
-        size="small"
+      <!-- D-2 batch 4: the charts table is the editable DashboardChartsWidget
+           (per-chart fetch + per-chart permissions); the data-models table
+           stays the read-only SmTable below. -->
+      <DashboardChartsWidget
+        :chart-refs="context.asset.charts ?? []"
+        :dashboard-fqn="context.asset.fullyQualifiedName"
+        :deleted="context.asset.deleted === true"
+        :tag-options="context.schemaTagOptions"
       />
       <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.dataModelsTitle') }}</Typography.Title>
       <SmTable
@@ -741,21 +758,11 @@ function openDatabaseSchema(row: DatabaseSchemaRow): void {
     </template>
   </template>
   <template v-else-if="piece === 'apiEndpoints'">
-    <Alert v-if="context.apiEndpointsError" type="error" :message="context.apiEndpointsError" show-icon />
-    <Empty
-      v-else-if="!context.apiEndpoints.length"
-      data-testid="asset-api-endpoints-empty"
-      :description="t('asset.apiEndpointsEmpty')"
-    />
-    <SmTable
-      v-else
-      row-key="name"
-      test-id="asset-api-endpoints-table"
-      :columns="context.apiEndpointColumns"
-      :data-source="context.apiEndpoints"
-      :pagination="false"
-      size="small"
-      :custom-row="(row: ApiEndpointRef) => ({ onClick: () => context.onApiEndpointClick(row) })"
+    <!-- D-2 batch 4: the endpoints table self-fetches (REST list / search)
+         with show-deleted and paging; no view-level fetch remains. -->
+    <ApiEndpointsWidget
+      :api-collection-fqn="context.asset.fullyQualifiedName"
+      :service-fqn="context.asset.service?.fullyQualifiedName ?? ''"
     />
   </template>
   <template v-else-if="piece === 'apiSchema'">
