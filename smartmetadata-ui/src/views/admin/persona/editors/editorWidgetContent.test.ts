@@ -27,7 +27,7 @@ describe('pieceForEditorContentKey (R-EDIT-1)', () => {
 });
 
 describe('buildEditorPieceContext', () => {
-  it('builds a dummy asset context with empty lists and no-op callbacks', () => {
+  it('builds a dummy asset context with empty lists and no-op callbacks', async () => {
     const context = buildEditorPieceContext(
       {
         id: 'x',
@@ -48,5 +48,22 @@ describe('buildEditorPieceContext', () => {
     expect(context.apiEndpointSchemaJson(undefined)).toBe('');
     expect(context.schemaExpandable.rowExpandable({} as never)).toBe(false);
     expect(() => context.onApiEndpointClick({} as never)).not.toThrow();
+    // D-2 batch 3: the preview context fails closed — nothing is
+    // editable and every schema callback is a resolving no-op.
+    expect(context.schemaAccess).toEqual({
+      canEditDescription: false,
+      canEditTags: false,
+      canEditGlossaryTerms: false,
+      canEditDisplayName: false,
+      canEditCustomFields: false,
+      canEditAll: false,
+      canViewUsage: false,
+      readOnly: true,
+      resolved: false,
+    });
+    expect(context.schemaRows).toEqual([]);
+    expect(context.databaseSchemas).toEqual([]);
+    await expect(context.onSchemaDescriptionSave({} as never, 'x')).resolves.toBeUndefined();
+    await expect(context.onDatabaseSchemaDisplayNameSave({} as never, 'x')).resolves.toBeUndefined();
   });
 });
