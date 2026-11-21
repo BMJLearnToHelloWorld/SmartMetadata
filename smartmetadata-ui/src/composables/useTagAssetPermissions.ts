@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { computed, onMounted, ref, toValue, type ComputedRef, type MaybeRefOrGetter, type Ref } from 'vue';
-import { getDerivedPermissionFlags } from '@/api/permissions';
+import { checkPermissionEntityResource, type UIPermission } from '@/api/permissions';
 import { TAG_ASSET_EDIT_PERMISSION_ENTITY_TYPES } from '@/catalog/tagAssets';
 import { usePermissionStore } from '@/stores/permissions';
 
@@ -32,16 +32,15 @@ import { usePermissionStore } from '@/stores/permissions';
  * lists are empty, so haveAssetEditPermission falls back to the
  * tag-level grant alone.
  *
- * Named residual (product-level, needs Bai's acceptance or a separate
- * item to unify the derivation — this lane does not change it): pin
- * ORs EditAll into the per-type EditTags grant
+ * D-1 (a): the per-type EditTags grant uses pin's OR helper
  * (checkPermissionEntityResource with checkEditAllPermission=true,
  * PermissionsUtils.ts:55-70), so EditTags=deny + EditAll=allow on one
- * resource still counts as having permission. The product derivation
- * (api/permissions.ts prioritizedEditPermission) is field-priority:
- * an explicit EditTags key wins and EditAll never falls through, so
- * this composable denies that type. The fork case is pinned by a
- * test in useTagAssetPermissions.test.ts.
+ * resource still counts as having permission. The field-priority
+ * derived flags (api/permissions.ts prioritizedEditPermission) would
+ * deny that type — this composable no longer uses them for the
+ * per-type grant (getDerivedPermissionFlags stays field-priority for
+ * every other surface). The OR case is pinned by a test in
+ * useTagAssetPermissions.test.ts.
  */
 export function useTagAssetPermissions(editTagsPermission: MaybeRefOrGetter<boolean>): {
   haveAssetEditPermission: ComputedRef<boolean>;
@@ -70,13 +69,26 @@ export function useTagAssetPermissions(editTagsPermission: MaybeRefOrGetter<bool
       // resources (getResourcePermission only reads/writes its own
       // key) — so they run in parallel instead of serially. A single
       // rejection still fails the whole load closed, as before.
-      const results = await Promise.all(
+      const reads = await Promise.all(
         TAG_ASSET_EDIT_PERMISSION_ENTITY_TYPES.map(async (resource) => ({
           resource,
-          granted: getDerivedPermissionFlags(await store.getResourcePermission(resource))
-            .canEditTags,
+          ops: await store.getResourcePermission(resource),
         })),
       );
+      // D-1 (a): the per-type EditTags grant uses pin's OR helper
+      // (checkPermissionEntityResource with checkEditAllPermission=true,
+      // PermissionsUtils.ts:55-70) — EditTags OR EditAll — not the
+      // field-priority derived flags, which let an explicit EditTags
+      // deny win over EditAll. The reads above re-assemble the
+      // bulk-loaded UIPermission the helper reads from.
+      const permissions: UIPermission = {};
+      for (const { resource, ops } of reads) {
+        permissions[resource] = ops;
+      }
+      const results = TAG_ASSET_EDIT_PERMISSION_ENTITY_TYPES.map((resource) => ({
+        resource,
+        granted: checkPermissionEntityResource('EditTags', resource, permissions, true),
+      }));
       entitiesHavingPermission.value = results
         .filter((result) => result.granted)
         .map((result) => result.resource);

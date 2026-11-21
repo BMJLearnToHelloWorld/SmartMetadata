@@ -70,7 +70,7 @@ describe('useTagAssetPermissions (pin TagPage haveAssetEditPermission)', () => {
     await flushPromises();
     expect(wrapper.vm.haveAssetEditPermission).toBe(true);
     expect(wrapper.vm.entitiesHavingPermission).toContain('table');
-    // EditAll falls back to the EditTags check, per the product derivation.
+    // EditAll grants the type via the OR helper (D-1 (a)).
     expect(wrapper.vm.entitiesHavingPermission).toContain('dashboard');
     expect(wrapper.vm.entitiesNotHavingPermission).toContain('topic');
     expect(wrapper.vm.entitiesNotHavingPermission).toContain('domain');
@@ -85,15 +85,13 @@ describe('useTagAssetPermissions (pin TagPage haveAssetEditPermission)', () => {
     wrapper.unmount();
   });
 
-  it('denies a type whose EditTags is explicitly denied even when EditAll allows it', async () => {
-    // Pin would grant this type: checkPermissionEntityResource(EditTags,
-    // resource, permissions, true) ORs EditAll in (PermissionsUtils.ts:55-70).
-    // The product derivation is field-priority (api/permissions.ts
-    // prioritizedEditPermission): an explicit EditTags key wins, so the
-    // EditAll allow never falls through. This test pins the product's
-    // fail-closed behaviour. The derivation gap itself is a product-level
-    // named residual: it needs Bai to accept it or a separate item to
-    // unify the derivation product-wide; this lane must not change it.
+  it('grants a type whose EditTags is explicitly denied when EditAll allows it', async () => {
+    // D-1 (a): the per-type grant uses pin's OR helper
+    // (checkPermissionEntityResource with checkEditAllPermission=true,
+    // PermissionsUtils.ts:55-70), so EditTags=deny + EditAll=allow still
+    // counts as having permission. The field-priority derived flags
+    // (api/permissions.ts prioritizedEditPermission) would deny this
+    // type — the composable no longer uses them for the per-type grant.
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -124,10 +122,10 @@ describe('useTagAssetPermissions (pin TagPage haveAssetEditPermission)', () => {
     const wrapper = probe(false);
     await flushPromises();
     await flushPromises();
-    expect(wrapper.vm.haveAssetEditPermission).toBe(false);
-    expect(wrapper.vm.entitiesHavingPermission).toEqual([]);
-    expect(wrapper.vm.entitiesNotHavingPermission).toContain('table');
+    expect(wrapper.vm.haveAssetEditPermission).toBe(true);
+    expect(wrapper.vm.entitiesHavingPermission).toContain('table');
     expect(wrapper.vm.entitiesNotHavingPermission).toContain('topic');
+    expect(wrapper.vm.entitiesNotHavingPermission).toContain('dashboard');
     wrapper.unmount();
   });
 
