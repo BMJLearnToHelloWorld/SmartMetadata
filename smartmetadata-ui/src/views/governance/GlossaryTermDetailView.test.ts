@@ -275,9 +275,9 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(wrapper.findAll('[data-testid="widget-owner"]')).toHaveLength(2);
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Money in');
     const tags = wrapper.find('[data-testid="widget-tags"]');
-    expect(tags.text()).toContain('PII.Sensitive');
-    expect(tags.text()).not.toContain('Business.term');
-    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier.Tier1');
+    expect(tags.text()).toContain('Sensitive');
+    expect(tags.text()).not.toContain('term');
+    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier1');
     wrapper.unmount();
   });
 

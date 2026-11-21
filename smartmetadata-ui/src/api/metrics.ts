@@ -9,7 +9,7 @@
 import { apiRequest } from './client';
 import { notifyCsvJobsRefresh } from './csvJobs';
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from './json';
-import { mapTags } from './entities';
+import { mapCertification, mapTags } from './entities';
 import type { Paged } from '@/types/admin';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
@@ -124,6 +124,12 @@ export interface Metric {
   relatedMetrics: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
+  /**
+   * Certification (spec `metric.json#/certification`,
+   * assetCertification `{tagLabel}`); requested via METRIC_LIST_FIELDS
+   * and mapped by `mapMetric` (D-2 batch 2).
+   */
+  certification?: { tagLabel?: TagRef };
   extension?: Record<string, unknown>;
 }
 
@@ -235,7 +241,7 @@ export interface ListMetricsQuery {
 }
 
 const METRIC_LIST_FIELDS =
-  'owners,reviewers,domains,dataProducts,relatedMetrics,experts,tags,parent,metricGroup,extension,metricExpression,childrenCount';
+  'owners,reviewers,domains,dataProducts,relatedMetrics,experts,tags,parent,metricGroup,extension,metricExpression,childrenCount,certification';
 
 /** Tree child fields (official useMetricHierarchy METRIC_TREE_FIELDS). */
 export const METRIC_TREE_FIELDS = 'owners,tags,domains,parent,childrenCount,metricGroup';
@@ -277,6 +283,7 @@ export function mapMetric(raw: unknown): Metric | null {
     relatedMetrics: mapEntityRefs(rec.relatedMetrics),
     experts: mapEntityRefs(rec.experts),
     tags: mapTags(rec.tags),
+    certification: mapCertification(asRecord(rec.certification)),
     extension: asRecord(rec.extension) ?? undefined,
   };
 }

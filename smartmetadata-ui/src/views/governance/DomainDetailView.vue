@@ -11,6 +11,11 @@ import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetCertificationCell from '@/components/shared/widgets/WidgetCertificationCell.vue';
+import WidgetExpertsCell from '@/components/shared/widgets/WidgetExpertsCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
+import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
@@ -47,9 +52,17 @@ import BulkAssetResultPanel from '@/features/crud/BulkAssetResultPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
-import { extensionPatch } from '@/governance/assetPatch';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
+import {
+  certificationPatch,
+  entityRefsPatch,
+  extensionPatch,
+  ownersPatch,
+  tagsPatch,
+  type TagLabelInput,
+} from '@/governance/assetPatch';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
@@ -211,6 +224,25 @@ const canDeleteDomain = computed(
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : ops.value ? domainFlags.value.canViewCustomFields : false,
+);
+
+/**
+ * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
+ * `isAdminUser` with the derived flag — never only one. `can('…')`
+ * covers operations with no named `canEdit*` flag (EditCertification).
+ */
+const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+const canEditTags = computed(() => permissionStore.isAdminUser || domainFlags.value.canEditTags);
+const canEditGlossaryTerms = computed(
+  () => permissionStore.isAdminUser || domainFlags.value.canEditGlossaryTerms,
+);
+const canEditOwners = computed(() => permissionStore.isAdminUser || domainFlags.value.canEditOwners);
+const canEditTier = computed(() => permissionStore.isAdminUser || domainFlags.value.canEditTier);
+const canEditCertification = computed(
+  () => permissionStore.isAdminUser || domainFlags.value.can('EditCertification'),
+);
+const canEditCustomProperties = computed(
+  () => permissionStore.isAdminUser || domainFlags.value.canEditCustomFields,
 );
 
 const assetColumns = computed<EntityListColumn[]>(() => [
@@ -477,6 +509,64 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 2 widget-cell saves: each is one field's JSON Patch
+ * (governance saves go through PATCH, not the full PUT — the
+ * CreateDomainRequest body does not carry these fields, so a PUT
+ * would drop them). Each throws on failure so the cell keeps its
+ * editor open.
+ */
+async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  await patchDomain(domain.value.id, tagsPatch(domain.value.tags, tags));
+  message.success(t('governance.domains.updated'));
+  await load();
+}
+
+async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  await patchDomain(domain.value.id, ownersPatch(domain.value.owners, owners));
+  message.success(t('governance.domains.updated'));
+  await load();
+}
+
+async function onExpertsChange(experts: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  await patchDomain(domain.value.id, entityRefsPatch('/experts', domain.value.experts, experts));
+  message.success(t('governance.domains.updated'));
+  await load();
+}
+
+async function onCertificationChange(tagFqn?: string): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  await patchDomain(domain.value.id, certificationPatch(domain.value.certification, tagFqn));
+  message.success(t('governance.domains.updated'));
+  await load();
+}
+
+async function onCustomPropertySave(name: string, value: unknown): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  const next = { ...(domain.value.extension ?? {}) };
+  if (value === undefined) {
+    delete next[name];
+  } else {
+    next[name] = value;
+  }
+  await patchDomain(domain.value.id, extensionPatch(domain.value.extension, next));
+  message.success(t('asset.propsUpdated'));
+  await load();
+}
+
 async function onOpenVersions(): Promise<void> {
   // B-9 #2: the version route still addresses the domain by id, so the
   // version entry needs the loaded entity's id; with no domain loaded
@@ -526,6 +616,11 @@ watch(
 
 onMounted(() => {
   void load();
+  void loadGovernanceCatalog()
+    .then((loaded) => {
+      catalog.value = loaded;
+    })
+    .catch(() => undefined);
 });
 </script>
 
@@ -563,14 +658,20 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="domain.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="domain.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
             <Descriptions bordered :column="1" size="small">
@@ -578,24 +679,38 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="domain.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -604,7 +719,9 @@ onMounted(() => {
               :values="domain?.extension || {}"
               :error="customPropsError"
               entity-type="domain"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -672,14 +789,20 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="domain.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="domain.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
             <Descriptions bordered :column="1" size="small">
@@ -687,24 +810,38 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="domain.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -713,7 +850,9 @@ onMounted(() => {
               :values="domain?.extension || {}"
               :error="customPropsError"
               entity-type="domain"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -804,14 +943,20 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="domain.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="domain.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
             <Descriptions bordered :column="1" size="small">
@@ -819,24 +964,38 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="domain.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -845,7 +1004,9 @@ onMounted(() => {
               :values="domain?.extension || {}"
               :error="customPropsError"
               entity-type="domain"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -906,14 +1067,20 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="domain.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="domain.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
             <Descriptions bordered :column="1" size="small">
@@ -921,24 +1088,38 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="domain.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -947,7 +1128,9 @@ onMounted(() => {
               :values="domain?.extension || {}"
               :error="customPropsError"
               entity-type="domain"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -975,14 +1158,20 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="domain.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="domain.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
             <Descriptions bordered :column="1" size="small">
@@ -990,24 +1179,38 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="domain.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="domain.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -1016,7 +1219,9 @@ onMounted(() => {
               :values="domain?.extension || {}"
               :error="customPropsError"
               entity-type="domain"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
           </div>
         </template>
@@ -1037,6 +1242,8 @@ onMounted(() => {
         :error="customPropsError"
         entity-type="domain"
       :can-view="customPropsCanView"
+      :can-edit="canEditCustomProperties"
+      :on-property-save="onCustomPropertySave"
       />
       </template>
     </template>

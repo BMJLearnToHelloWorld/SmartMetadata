@@ -87,6 +87,21 @@ export async function updateGlossary(body: CreateGlossaryRequest): Promise<Gloss
   return mapped;
 }
 
+/**
+ * D-2 batch 2: official patchGlossary (rest/glossaryAPI.ts): JSON Patch.
+ * The cell-level writes (owners/reviewers/tags/domains) go through this
+ * endpoint, not the full-PUT `updateGlossary` — the CreateGlossaryRequest
+ * body carries none of those fields, so a PUT would drop them. Same
+ * contract as `patchDomain` (application/json-patch+json).
+ */
+export function patchGlossary(id: string, patch: unknown[]): Promise<unknown> {
+  return apiRequest(`/v1/glossaries/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+}
+
 export interface DeleteEntityOptions {
   hardDelete?: boolean;
   recursive?: boolean;

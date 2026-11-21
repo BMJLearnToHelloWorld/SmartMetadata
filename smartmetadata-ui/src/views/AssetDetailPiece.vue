@@ -5,25 +5,31 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Descriptions, Empty, Space, Tag, Typography, type TableProps } from 'ant-design-vue';
-import { StarOutlined } from '@ant-design/icons-vue';
+import { Alert, Descriptions, Empty, Space, Typography, type TableProps } from 'ant-design-vue';
 import { splitFqn, unquoteFqnPart } from '@/catalog/fqn';
 import { getTableFQNFromColumnFQN } from '@/catalog/tableJoins';
 import SmTable from '@/components/shared/SmTable.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetCustomPropertiesCell from '@/components/shared/widgets/WidgetCustomPropertiesCell.vue';
+import WidgetDataProductsCell from '@/components/shared/widgets/WidgetDataProductsCell.vue';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetKnowledgePagesCell from '@/components/shared/widgets/WidgetKnowledgePagesCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
-import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
 import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
 import ColumnFilter from '@/components/ingestion/ColumnFilter.vue';
 import type { SchemaTagFilterOptions } from '@/utils/schemaTagFilter';
+import type { TagLabelInput } from '@/governance/assetPatch';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
-import type { AssetDetail, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType, TagRef } from '@/types/api';
+import type { AssetDetail, EntityRef, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
-import type { AssetTagOption, TagSource } from '@/types/governance';
+import type { AssetTagOption, Domain, TagSource } from '@/types/governance';
+import type { OwnerOption } from '@/governance/catalogOptions';
 import { isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
@@ -39,14 +45,13 @@ import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes'
  * panel, frequently-joined tables) stay one-liners; the inline blocks
  * (schema table, features, tasks, code, charts, API blocks, metric
  * expression) moved here verbatim from AssetDetailView, testids
- * included. The five governance fragments (description, tags,
- * glossary terms, owners, domains) render the same datum the
- * overview pane shows in its Descriptions rows — the product has no
- * standalone widgets for them, and the overview component is not
- * filterable, so each fragment is the one row's value with the same
- * i18n label. The glossary-terms fragment filters the tag list by
- * `source === 'Glossary'`; the tags fragment renders the full list
- * exactly as the overview row does.
+ * included. The governance fragments (description, tags, glossary
+ * terms, owners, domains, data products, knowledge pages) are the
+ * D-2 batch 2 shared widget cells — the same datum the overview pane
+ * shows in its Descriptions rows, now editable in place. The
+ * glossary-terms cell filters the tag list by `source === 'Glossary'`
+ * (the tags cell shows the Classification source only; tier and
+ * certification labels are split off to their own cells).
  *
  * A `null` piece renders nothing: the widget cell stays empty but
  * keeps its grid space, matching official behavior when dispatch
@@ -71,7 +76,9 @@ export type AssetDetailPieceId =
   | 'frequentlyJoined'
   | 'partitionedKeys'
   | 'tableConstraints'
-  | 'tableAliases';
+  | 'tableAliases'
+  | 'dataProducts'
+  | 'knowledgePages';
 
 export interface AssetDetailPieceContext {
   asset: AssetDetail;
@@ -139,6 +146,27 @@ export interface AssetDetailPieceContext {
   descriptionExpanded: boolean;
   onDescriptionUpdate: (description: string) => Promise<unknown> | unknown;
   customPropsCanView: boolean | null;
+  /**
+   * D-2 batch 2 widget cells: the governance catalog's picker options
+   * plus the per-cell derived edit access (the caller ORs
+   * `isAdminUser` into each flag) and the cell save handlers (each
+   * PATCHes the asset and reloads; each throws on failure so the cell
+   * keeps its editor open).
+   */
+  catalogOwners: OwnerOption[];
+  catalogTags: AssetTagOption[];
+  catalogDomains: Domain[];
+  tagsAccess: boolean;
+  glossaryTermsAccess: boolean;
+  ownersAccess: boolean;
+  domainsAccess: boolean;
+  dataProductsAccess: boolean;
+  customPropsCanEdit: boolean;
+  onTagsChange: (tags: TagLabelInput[]) => Promise<unknown> | unknown;
+  onOwnersChange: (owners: Array<{ id: string; type: 'user' | 'team' }>) => Promise<unknown> | unknown;
+  onDomainsChange: (domainIds: string[]) => Promise<unknown> | unknown;
+  onDataProductsChange: (products: EntityRef[]) => Promise<unknown> | unknown;
+  onCustomPropertySave: (name: string, value: unknown) => Promise<unknown> | unknown;
 }
 
 const props = withDefaults(
@@ -160,19 +188,6 @@ const props = withDefaults(
 );
 
 const { t } = useI18n();
-
-/**
- * Pin TagsViewer gate, fork form — the same predicate
- * AssetOverviewFields applies to its tag chips: only Generated
- * labels get the distinct chip.
- */
-function isGeneratedTag(tag: TagRef): boolean {
-  return tag.labelType === 'Generated';
-}
-
-const glossaryTags = computed(() =>
-  props.context.asset.tags.filter((tag) => tag.source === 'Glossary'),
-);
 
 /** D-F2-2: the rows the table shows — the view's override (server-filtered page or locally pruned tree) when set, else the detail rows. */
 const displayedSchemaRows = computed(
@@ -492,13 +507,15 @@ const showMetricExpression = computed(
     </template>
   </template>
   <template v-else-if="piece === 'customProperties'">
-    <AssetCustomPropertiesPanel
+    <WidgetCustomPropertiesCell
       :defs="context.customProperties"
       :values="context.asset.extension ?? {}"
       :error="context.customPropsError"
       :entity-type="context.entityType"
       :can-view="context.customPropsCanView"
       :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
+      :can-edit="context.customPropsCanEdit"
+      :on-property-save="context.onCustomPropertySave"
     />
   </template>
   <template v-else-if="piece === 'description'">
@@ -517,55 +534,63 @@ const showMetricExpression = computed(
   <template v-else-if="piece === 'tags'">
     <div data-testid="asset-widget-tags">
       <Typography.Text type="secondary">{{ t('asset.fields.tags') }}</Typography.Text>
-      <Space wrap>
-        <Tag
-          v-for="tag in context.asset.tags"
-          :key="tag.tagFQN"
-          :class="isGeneratedTag(tag) ? 'asset-overview__generated-tag' : undefined"
-        >
-          <StarOutlined v-if="isGeneratedTag(tag)" class="asset-overview__generated-tag-icon" />
-          {{ tag.name }}
-        </Tag>
-        <Typography.Text v-if="!context.asset.tags.length" type="secondary">—</Typography.Text>
-      </Space>
+      <WidgetTagsCell
+        tag-type="Classification"
+        :tags="context.asset.tags"
+        :options="context.catalogTags"
+        :has-edit-access="context.tagsAccess"
+        :on-tags-change="context.onTagsChange"
+      />
     </div>
   </template>
   <template v-else-if="piece === 'glossaryTerms'">
     <div data-testid="asset-widget-glossary-terms">
       <Typography.Text type="secondary">{{ t('asset.tabs.glossaryTerms') }}</Typography.Text>
-      <Space wrap>
-        <Tag
-          v-for="tag in glossaryTags"
-          :key="tag.tagFQN"
-          :class="isGeneratedTag(tag) ? 'asset-overview__generated-tag' : undefined"
-        >
-          <StarOutlined v-if="isGeneratedTag(tag)" class="asset-overview__generated-tag-icon" />
-          {{ tag.name }}
-        </Tag>
-        <Typography.Text v-if="!glossaryTags.length" type="secondary">—</Typography.Text>
-      </Space>
+      <WidgetTagsCell
+        tag-type="Glossary"
+        :tags="context.asset.tags"
+        :options="context.catalogTags"
+        :has-edit-access="context.glossaryTermsAccess"
+        :on-tags-change="context.onTagsChange"
+      />
     </div>
   </template>
   <template v-else-if="piece === 'owners'">
     <div data-testid="asset-widget-owners">
       <Typography.Text type="secondary">{{ t('asset.fields.owners') }}</Typography.Text>
-      <Space wrap>
-        <span v-for="owner in context.asset.owners" :key="owner.id || owner.name">
-          {{ owner.displayName || owner.name }}
-        </span>
-        <Typography.Text v-if="!context.asset.owners.length" type="secondary">—</Typography.Text>
-      </Space>
+      <WidgetOwnersCell
+        :owners="context.asset.owners"
+        :options="context.catalogOwners"
+        :has-edit-access="context.ownersAccess"
+        :on-change="context.onOwnersChange"
+      />
     </div>
   </template>
   <template v-else-if="piece === 'domains'">
     <div data-testid="asset-widget-domains">
       <Typography.Text type="secondary">{{ t('asset.fields.domains') }}</Typography.Text>
-      <Space wrap>
-        <span v-for="domain in context.asset.domains" :key="domain.id || domain.name">
-          {{ domain.displayName || domain.name }}
-        </span>
-        <Typography.Text v-if="!context.asset.domains.length" type="secondary">—</Typography.Text>
-      </Space>
+      <WidgetDomainCell
+        :domains="context.asset.domains"
+        :options="context.catalogDomains"
+        :has-edit-access="context.domainsAccess"
+        :on-change="context.onDomainsChange"
+      />
+    </div>
+  </template>
+  <template v-else-if="piece === 'dataProducts'">
+    <div data-testid="asset-widget-data-products">
+      <Typography.Text type="secondary">{{ t('label.data-product-plural') }}</Typography.Text>
+      <WidgetDataProductsCell
+        :data-products="context.asset.dataProducts ?? []"
+        :domains="context.asset.domains"
+        :has-edit-access="context.dataProductsAccess"
+        :on-save="context.onDataProductsChange"
+      />
+    </div>
+  </template>
+  <template v-else-if="piece === 'knowledgePages' && context.asset.id">
+    <div data-testid="asset-widget-knowledge-pages">
+      <WidgetKnowledgePagesCell :entity-id="context.asset.id" :entity-type="context.entityType" />
     </div>
   </template>
   <template v-else-if="piece === 'frequentlyJoined'">
@@ -654,18 +679,5 @@ const showMetricExpression = computed(
   white-space: pre-wrap;
   background: var(--sm-bg-elevated);
   border-radius: 6px;
-}
-
-/* Generated-tag badge (D-F4), same rules as AssetOverviewFields: visual
-   distinction only — the product primary tint on the same antd Tag. */
-.asset-overview__generated-tag.ant-tag {
-  color: var(--sm-color-primary);
-  background: var(--sm-color-primary-bg);
-  border-color: var(--sm-color-primary-50);
-}
-
-.asset-overview__generated-tag-icon {
-  font-size: 12px;
-  margin-inline-end: 4px;
 }
 </style>

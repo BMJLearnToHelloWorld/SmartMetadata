@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { columnTagsPatch, descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
+import { certificationPatch, columnTagsPatch, dataProductsPatch, descriptionPatch, domainsPatch, entityRefsPatch, extensionPatch, ownersPatch, tagRefToInput, tagsPatch, toTagLabel, withCertificationTag, withTierTag, type TagLabelInput } from './assetPatch';
 
 describe('asset governance patches', () => {
   it('builds a TagLabel with the schema-required keys', () => {
@@ -182,5 +182,87 @@ describe('asset governance patches', () => {
 
   it('rejects an empty index path instead of patching the whole array', () => {
     expect(() => columnTagsPatch('topic', [], [], [])).toThrow('non-empty index path');
+  });
+});
+
+describe('D-2 batch 2 cell patch helpers', () => {
+  it('preserves labelType and state when converting a stored tag ref', () => {
+    expect(
+      tagRefToInput({
+        tagFQN: 'PII.Email',
+        name: 'Email',
+        source: 'Classification',
+        labelType: 'Generated',
+        state: 'Suggested',
+      }),
+    ).toEqual({
+      tagFQN: 'PII.Email',
+      name: 'Email',
+      source: 'Classification',
+      labelType: 'Generated',
+      state: 'Suggested',
+    });
+  });
+
+  it('writes entity refs as {id, type} pairs on the given path', () => {
+    expect(entityRefsPatch('/experts', undefined, [{ id: 'u1', type: 'user' }])).toEqual([
+      { op: 'add', path: '/experts', value: [{ id: 'u1', type: 'user' }] },
+    ]);
+    expect(dataProductsPatch([], [{ id: 'dp1', type: 'dataProduct' }])).toEqual([
+      { op: 'replace', path: '/dataProducts', value: [{ id: 'dp1', type: 'dataProduct' }] },
+    ]);
+  });
+
+  it('sets the certification field and removes it on clear, never replace-with-null', () => {
+    expect(certificationPatch(undefined, 'Certification.Gold')).toEqual([
+      {
+        op: 'add',
+        path: '/certification',
+        value: {
+          tagLabel: {
+            tagFQN: 'Certification.Gold',
+            source: 'Classification',
+            labelType: 'Manual',
+            state: 'Confirmed',
+          },
+        },
+      },
+    ]);
+    expect(certificationPatch({ tagLabel: { tagFQN: 'Certification.Gold' } }, undefined)).toEqual([
+      { op: 'remove', path: '/certification' },
+    ]);
+    expect(certificationPatch(undefined, undefined)).toEqual([]);
+  });
+
+  it('replaces the tier tag and keeps the other labels untouched', () => {
+    const current: TagLabelInput[] = [
+      { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' },
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' },
+    ];
+    expect(
+      withTierTag(current, { tagFQN: 'Tier.Tier2', name: 'Tier2', source: 'Classification' }),
+    ).toEqual([
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' },
+      { tagFQN: 'Tier.Tier2', name: 'Tier2', source: 'Classification' },
+    ]);
+    expect(withTierTag(current, undefined)).toEqual([
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' },
+    ]);
+  });
+
+  it('replaces the certification tag and keeps the other labels untouched', () => {
+    const current: TagLabelInput[] = [
+      { tagFQN: 'Certification.Gold', name: 'Gold', source: 'Classification' },
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification' },
+    ];
+    expect(
+      withCertificationTag(current, { tagFQN: 'Certification.Silver', name: 'Silver', source: 'Classification' }),
+    ).toEqual([
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification' },
+      { tagFQN: 'Certification.Silver', name: 'Silver', source: 'Classification' },
+    ]);
+    expect(withCertificationTag(current, undefined)).toEqual([
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification' },
+    ]);
   });
 });

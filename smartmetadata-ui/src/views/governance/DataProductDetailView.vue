@@ -10,6 +10,14 @@ import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetCertificationCell from '@/components/shared/widgets/WidgetCertificationCell.vue';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetExpertsCell from '@/components/shared/widgets/WidgetExpertsCell.vue';
+import WidgetKnowledgePagesCell from '@/components/shared/widgets/WidgetKnowledgePagesCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetReviewerCell from '@/components/shared/widgets/WidgetReviewerCell.vue';
+import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
+import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
@@ -43,11 +51,19 @@ import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal
 import { listDomains } from '@/api/domains';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
-import { extensionPatch } from '@/governance/assetPatch';
-import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
+import {
+  certificationPatch,
+  domainsPatch,
+  entityRefsPatch,
+  extensionPatch,
+  ownersPatch,
+  tagsPatch,
+  type TagLabelInput,
+} from '@/governance/assetPatch';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import type { EntityRef, TagRef } from '@/types/api';
+import type { EntityRef } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { DataProduct, Domain } from '@/types/governance';
 
@@ -128,10 +144,9 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // absent on purpose, so their cells stay empty (same disclosure format
 // as AssetDetailView): DATA_PRODUCTS — the DataProduct spec
 // (`entity/domains/dataProduct.json`) carries no such field (the entity
-// IS a data product); KNOWLEDGE_ARTICLE — no
-// knowledge-article data source exists in the product. LEFT_PANEL is
-// structural, not a missing branch: GenericTab renders the panel's
-// children and never offers the panel itself to the slot.
+// IS a data product). LEFT_PANEL is structural, not a missing branch:
+// GenericTab renders the panel's children and never offers the panel
+// itself to the slot.
 function customizedEntryFor(tabKey: string) {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
   if (!entry?.id || !isWidgetLayoutTab('DataProduct', entry.id)) {
@@ -143,21 +158,6 @@ function customizedEntryFor(tabKey: string) {
 function widgetLayoutFor(tabKey: string) {
   const entry = customizedEntryFor(tabKey);
   return entry ? resolveWidgetLayout('DataProduct', entry.id, customizedPage.value) : [];
-}
-
-// Tag labels split the official way: glossary-sourced labels are the
-// glossary-terms widget, the rest are the tags widget.
-const productTags = computed(() =>
-  (product.value?.tags ?? []).filter((tag) => tag.source !== 'Glossary'),
-);
-const productGlossaryTerms = computed(() =>
-  (product.value?.tags ?? []).filter((tag) => tag.source === 'Glossary'),
-);
-const productTierTag = computed(() => getTierTag(product.value?.tags ?? []));
-const productCertificationTag = computed(() => getCertificationTag(product.value?.tags ?? []));
-
-function tagFqnList(tags: readonly TagRef[]): string {
-  return tags.map((tag) => tag.tagFQN).join(', ');
 }
 
 /**
@@ -200,6 +200,30 @@ const canDeleteProduct = computed(
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : ops.value ? productFlags.value.canViewCustomFields : false,
+);
+
+/**
+ * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
+ * `isAdminUser` with the derived flag — never only one. `can('…')`
+ * covers operations with no named `canEdit*` flag (EditReviewers,
+ * EditCertification).
+ */
+const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+const canEditTags = computed(() => permissionStore.isAdminUser || productFlags.value.canEditTags);
+const canEditGlossaryTerms = computed(
+  () => permissionStore.isAdminUser || productFlags.value.canEditGlossaryTerms,
+);
+const canEditOwners = computed(() => permissionStore.isAdminUser || productFlags.value.canEditOwners);
+const canEditDomains = computed(() => permissionStore.isAdminUser || productFlags.value.canEditDomains);
+const canEditTier = computed(() => permissionStore.isAdminUser || productFlags.value.canEditTier);
+const canEditReviewers = computed(
+  () => permissionStore.isAdminUser || productFlags.value.can('EditReviewers'),
+);
+const canEditCertification = computed(
+  () => permissionStore.isAdminUser || productFlags.value.can('EditCertification'),
+);
+const canEditCustomProperties = computed(
+  () => permissionStore.isAdminUser || productFlags.value.canEditCustomFields,
 );
 
 const assetColumns = computed<EntityListColumn[]>(() => [
@@ -396,6 +420,82 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 2 widget-cell saves: each is one field's JSON Patch
+ * (governance saves go through PATCH, not the full PUT — the
+ * CreateDataProductRequest body does not carry these fields, so a PUT
+ * would drop them). Each throws on failure so the cell keeps its
+ * editor open.
+ */
+async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await patchDataProduct(product.value.id, tagsPatch(product.value.tags, tags));
+  message.success(t('governance.dataProducts.updated'));
+  await load();
+}
+
+async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await patchDataProduct(product.value.id, ownersPatch(product.value.owners, owners));
+  message.success(t('governance.dataProducts.updated'));
+  await load();
+}
+
+async function onExpertsChange(experts: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await patchDataProduct(product.value.id, entityRefsPatch('/experts', product.value.experts, experts));
+  message.success(t('governance.dataProducts.updated'));
+  await load();
+}
+
+async function onReviewersChange(reviewers: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await patchDataProduct(product.value.id, entityRefsPatch('/reviewers', product.value.reviewers, reviewers));
+  message.success(t('governance.dataProducts.updated'));
+  await load();
+}
+
+async function onDomainsChange(domainIds: string[]): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await patchDataProduct(product.value.id, domainsPatch(product.value.domains, domainIds));
+  message.success(t('governance.dataProducts.updated'));
+  await load();
+}
+
+async function onCertificationChange(tagFqn?: string): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await patchDataProduct(product.value.id, certificationPatch(product.value.certification, tagFqn));
+  message.success(t('governance.dataProducts.updated'));
+  await load();
+}
+
+async function onCustomPropertySave(name: string, value: unknown): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  const next = { ...(product.value.extension ?? {}) };
+  if (value === undefined) {
+    delete next[name];
+  } else {
+    next[name] = value;
+  }
+  await patchDataProduct(product.value.id, extensionPatch(product.value.extension, next));
+  message.success(t('asset.propsUpdated'));
+  await load();
+}
+
 function openAsset(asset: EntityRef): void {
   const entityType = asset.type || '';
   const fqn = asset.fullyQualifiedName || asset.name;
@@ -414,6 +514,11 @@ watch(
 
 onMounted(() => {
   void load();
+  void loadGovernanceCatalog()
+    .then((loaded) => {
+      catalog.value = loaded;
+    })
+    .catch(() => undefined);
   void listDomains({ limit: 100 })
     .then((page) => {
       domains.value = page.data;
@@ -454,44 +559,71 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.domains')">{{ joinRefNames(product.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="product.domains"
+              :options="domains"
+              :asset-count="assets.length"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && product" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(product.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="product.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && product" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(product.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="product.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && product" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.reviewers')">{{ joinRefNames(product.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="product.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && product" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(productTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && product" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(productGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && product" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ productTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && product" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="product.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -500,8 +632,13 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product" data-testid="widget-knowledge-pages">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
         </template>
       </GenericTab>
@@ -537,44 +674,71 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.domains')">{{ joinRefNames(product.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="product.domains"
+              :options="domains"
+              :asset-count="assets.length"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && product" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(product.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="product.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && product" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(product.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="product.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && product" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.reviewers')">{{ joinRefNames(product.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="product.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && product" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(productTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && product" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(productGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && product" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ productTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && product" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="product.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -583,8 +747,13 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product" data-testid="widget-knowledge-pages">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
         </template>
       </GenericTab>
@@ -642,44 +811,71 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.domains')">{{ joinRefNames(product.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="product.domains"
+              :options="domains"
+              :asset-count="assets.length"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && product" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(product.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="product.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && product" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(product.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="product.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && product" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.reviewers')">{{ joinRefNames(product.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="product.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && product" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(productTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && product" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(productGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && product" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ productTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && product" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="product.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -688,8 +884,13 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product" data-testid="widget-knowledge-pages">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
         </template>
       </GenericTab>
@@ -715,44 +916,71 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.domains')">{{ joinRefNames(product.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="product.domains"
+              :options="domains"
+              :asset-count="assets.length"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && product" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(product.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="product.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && product" data-testid="widget-experts">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(product.experts) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetExpertsCell
+              :experts="product.experts"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onExpertsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && product" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.dataProducts.reviewers')">{{ joinRefNames(product.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="product.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && product" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(productTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Classification"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTags"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && product" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(productGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTagsCell
+              tag-type="Glossary"
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditGlossaryTerms"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TIER && product" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ productTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetTierCell
+              :tags="product.tags ?? []"
+              :options="catalog.tags"
+              :has-edit-access="canEditTier"
+              :on-tags-change="onTagsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && product" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetCertificationCell
+              :certification-tag-fqn="product.certification?.tagLabel?.tagFQN"
+              :options="catalog.tags"
+              :has-edit-access="canEditCertification"
+              :on-change="onCertificationChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -761,8 +989,13 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
-            :can-view="customPropsCanView"
+              :can-view="customPropsCanView"
+              :can-edit="canEditCustomProperties"
+              :on-property-save="onCustomPropertySave"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product" data-testid="widget-knowledge-pages">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
         </template>
       </GenericTab>
@@ -782,6 +1015,8 @@ onMounted(() => {
         :error="customPropsError"
         entity-type="dataProduct"
       :can-view="customPropsCanView"
+      :can-edit="canEditCustomProperties"
+      :on-property-save="onCustomPropertySave"
       />
       </template>
     </template>
