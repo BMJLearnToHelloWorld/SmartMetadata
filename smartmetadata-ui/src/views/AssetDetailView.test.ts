@@ -493,9 +493,18 @@ describe('AssetDetailView non-table shells', () => {
             name: 'sales',
             fullyQualifiedName: 'bi.sales',
             project: 'Finance',
-            charts: [{ name: 'revenue', type: 'chart' }],
+            charts: [{ id: 'chart-1', name: 'revenue', type: 'chart' }],
             dataModels: [{ name: 'sales_model', type: 'dashboardDataModel' }],
             service: { name: 'superset' },
+          });
+        }
+        if (url.includes('/api/v1/charts/chart-1')) {
+          return jsonResponse({
+            id: 'chart-1',
+            name: 'revenue',
+            fullyQualifiedName: 'bi.sales.revenue',
+            chartType: 'Bar',
+            tags: [],
           });
         }
         if (url.includes('/api/v1/lineage/')) {
@@ -521,7 +530,7 @@ describe('AssetDetailView non-table shells', () => {
     expect(wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Charts');
     expect(wrapper.text()).not.toContain('Schema');
-    expect(wrapper.find('[data-testid="asset-charts-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dashboard-chart-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('revenue');
     expect(wrapper.text()).toContain('sales_model');
     expect(wrapper.text()).toContain('Finance');
@@ -930,7 +939,9 @@ describe('AssetDetailView API collection and endpoint (P2 B5)', () => {
     expect(wrapper.text()).toContain('API endpoints');
     expect(wrapper.find('[data-testid="asset-api-endpoints-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('getPet');
-    expect(wrapper.text()).toContain('/pets/{id}');
+    // Pin APIEndpointsTab columns are name / request method /
+    // description — the endpoint URL lives on the endpoint detail tab,
+    // not in this table.
     expect(wrapper.text()).toContain('GET');
   }, 20000);
 
@@ -1977,18 +1988,26 @@ describe('AssetDetailView widget layer (B-8)', () => {
               name: 'sales',
               fullyQualifiedName: 'bi.sales',
               project: 'Finance',
-              charts: [{ name: 'revenue', type: 'chart' }],
+              charts: [{ id: 'chart-1', name: 'revenue', type: 'chart' }],
               dataModels: [{ name: 'sales_model', type: 'dashboardDataModel' }],
               service: { name: 'superset' },
             })
-          : null,
+          : url.includes('/api/v1/charts/chart-1')
+            ? jsonResponse({
+                id: 'chart-1',
+                name: 'revenue',
+                fullyQualifiedName: 'bi.sales.revenue',
+                chartType: 'Bar',
+                tags: [],
+              })
+            : null,
     );
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('dashboard', 'bi.sales');
     await settle(wrapper);
     expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
     const cell = cellFor(wrapper, DetailWidgetKeys.CHARTS_TABLE);
-    expect(cell.find('[data-testid="asset-charts-table"]').exists()).toBe(true);
+    expect(cell.find('[data-testid="dashboard-chart-table"]').exists()).toBe(true);
     expect(cell.text()).toContain('revenue');
     expect(cell.find('[data-testid="asset-data-models-table"]').exists()).toBe(true);
     wrapper.unmount();
@@ -2172,8 +2191,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     // The other half of the exclusion: no data model mounts GenericTab
     // ONLY on CHILDREN; SCHEMA renders its default pane (the schema
     // piece, empty here because there are no columns). The children
-    // cell renders the related panel from the embedded `children`
-    // refs — the CONTAINER_CHILDREN branch of the widget chain.
+    // cell renders the ContainerChildrenWidget, which self-fetches from
+    // the children endpoint (pin ContainerChildren) — never the
+    // embedded `children` refs.
     const schemaLayout = [{ i: DetailWidgetKeys.CONTAINER_SCHEMA, x: 0, y: 0, w: 8, h: 2 }];
     const childrenLayout = [{ i: DetailWidgetKeys.CONTAINER_CHILDREN, x: 0, y: 0, w: 8, h: 2 }];
     stubWithDoc(
@@ -2187,16 +2207,21 @@ describe('AssetDetailView widget layer (B-8)', () => {
         { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
       ]),
       (url) =>
-        url.includes('/api/v1/containers/name/')
+        url.includes('/api/v1/containers/name/s3.landing/children')
           ? jsonResponse({
-              id: 'ct-1',
-              name: 'landing',
-              fullyQualifiedName: 's3.landing',
-              description: 'Landing bucket',
-              children: [{ name: 'child1', type: 'container' }],
-              service: { name: 's3' },
+              data: [{ id: 'ct-2', name: 'child1', fullyQualifiedName: 's3.landing.child1', description: 'Child bucket' }],
+              paging: { total: 1 },
             })
-          : null,
+          : url.includes('/api/v1/containers/name/')
+            ? jsonResponse({
+                id: 'ct-1',
+                name: 'landing',
+                fullyQualifiedName: 's3.landing',
+                description: 'Landing bucket',
+                children: [{ name: 'child1', type: 'container' }],
+                service: { name: 's3' },
+              })
+            : null,
     );
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('container', 's3.landing');
@@ -2205,11 +2230,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     expect(grids.length).toBe(1);
     expect(grids[0].props('layout')).toEqual(childrenLayout);
     expect(grids[0].props('pageType')).toBe('Container');
-    expect(
-      cellFor(wrapper, DetailWidgetKeys.CONTAINER_CHILDREN)
-        .find('[data-testid="asset-related-table"]')
-        .exists(),
-    ).toBe(true);
+    const childrenCell = cellFor(wrapper, DetailWidgetKeys.CONTAINER_CHILDREN);
+    expect(childrenCell.find('[data-testid="container-list-table"]').exists()).toBe(true);
+    expect(childrenCell.text()).toContain('child1');
     expect(cellFor(wrapper, DetailWidgetKeys.CONTAINER_SCHEMA).exists()).toBe(false);
     // The excluded schema tab renders its default pane: the schema
     // piece with no rows shows the empty state, not a table.
