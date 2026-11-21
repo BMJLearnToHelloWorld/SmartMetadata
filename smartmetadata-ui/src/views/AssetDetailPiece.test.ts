@@ -153,6 +153,11 @@ function baseContext(overrides: Partial<AssetDetailPieceContext> = {}): AssetDet
     // `boolean | null | undefined`, so pin it to a defined value here.
     // Fail-closed default false; an explicit override (incl. null) is kept.
     canViewBasic: overrides.canViewBasic ?? false,
+    // D-2 batch 5a: tableConstraintsAccess / onTableConstraintsUpdate are
+    // required context fields; pin them the same way (fail-closed false,
+    // save mock resolving so a modal save succeeds silently by default).
+    tableConstraintsAccess: overrides.tableConstraintsAccess ?? false,
+    onTableConstraintsUpdate: overrides.onTableConstraintsUpdate ?? vi.fn(async () => undefined),
   };
 }
 
@@ -352,7 +357,7 @@ describe('AssetDetailPiece D-1 table widgets', () => {
       'tableAliases',
       baseAsset({ aliases: ['svc.db.schema.orders_alias', 'svc.db.schema."my.tbl"'] }),
     );
-    expect(wrapper.find('[data-testid="asset-table-aliases-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-aliases-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('orders_alias');
     // A quoted dotted name stays one segment (official Fqn.split rule).
     expect(wrapper.text()).toContain('my.tbl');
@@ -376,10 +381,10 @@ describe('AssetDetailPiece D-1 table widgets', () => {
       }),
     );
     expect(wrapper.find('[data-testid="PRIMARY_KEY-container"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Primary Key');
+    expect(wrapper.text()).toContain('Primary key');
     expect(wrapper.text()).toContain('id');
     expect(wrapper.find('[data-testid="FOREIGN_KEY-container"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Foreign Key');
+    expect(wrapper.text()).toContain('Foreign key');
     const link = wrapper.find('[data-testid="FOREIGN_KEY-container"] a');
     expect(link.exists()).toBe(true);
     expect(link.attributes('title')).toBe('svc.db.schema.customers.id');

@@ -11,7 +11,8 @@ import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
 import { mapTableJoins } from '@/catalog/tableJoins';
 import { mapUsageSummary } from '@/catalog/usagePercentile';
-import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType, TagLabelType, TagRef } from '@/types/api';
+import { mapTableAliases, mapTableConstraints, mapTablePartition } from '@/governance/tableWidgets';
+import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagLabelType, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
 import { asNumber, mapEntityRefs } from './json';
@@ -291,68 +292,6 @@ function mapStringList(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
-const TABLE_CONSTRAINT_TYPES: readonly TableConstraintType[] = [
-  'PRIMARY_KEY',
-  'UNIQUE',
-  'FOREIGN_KEY',
-  'SORT_KEY',
-  'DIST_KEY',
-  'CLUSTER_KEY',
-];
-
-/**
- * Table partition columns (official `tablePartition.columns`): only
- * rows with a column name survive; the interval type is kept verbatim
- * and rendered as-is (`--` when absent, per the pin widget).
- */
-function mapPartitionColumns(value: unknown): PartitionColumnDetails[] {
-  const rec = asRecord(value);
-  if (!rec || !Array.isArray(rec.columns)) {
-    return [];
-  }
-  return rec.columns.flatMap((item) => {
-    const column = asRecord(item);
-    const columnName = column ? asString(column.columnName) : '';
-    if (!columnName) {
-      return [];
-    }
-    const intervalType = (column ? asString(column.intervalType) : '') || undefined;
-    return intervalType ? [{ columnName, intervalType }] : [{ columnName }];
-  });
-}
-
-/**
- * Table constraints (official generated `TableConstraint`): unknown
- * constraint types are dropped rather than rendered under a wrong
- * heading; string lists keep strings only.
- */
-function mapTableConstraints(value: unknown): TableConstraint[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item) => {
-    const rec = asRecord(item);
-    if (!rec) {
-      return [];
-    }
-    const constraintType = asString(rec.constraintType);
-    if (!TABLE_CONSTRAINT_TYPES.includes(constraintType as TableConstraintType)) {
-      return [];
-    }
-    const columns = mapStringList(rec.columns);
-    const referredColumns = mapStringList(rec.referredColumns);
-    const relationshipType = asString(rec.relationshipType) || undefined;
-    return [
-      {
-        constraintType: constraintType as TableConstraintType,
-        ...(columns.length ? { columns } : {}),
-        ...(referredColumns.length ? { referredColumns } : {}),
-        ...(relationshipType ? { relationshipType } : {}),
-      },
-    ];
-  });
-}
-
 function mapRef(value: unknown): EntityRef | undefined {
   const rec = asRecord(value);
   if (!rec) {
@@ -399,6 +338,10 @@ export async function fetchAssetDetail(
   const schema = schemaRowsFor(entityType, body);
   const code =
     mapStoredProcedureCode(body.storedProcedureCode) ?? mapStoredProcedureCode(body.metricExpression);
+  const tablePartition = mapTablePartition(body.tablePartition);
+  const tableConstraints = mapTableConstraints(body.tableConstraints);
+  const aliases = mapTableAliases(body.aliases);
+  const partitionCount = tablePartition?.columns.length ?? 0;
   const relatedChildren = relatedRefsFor(entityType, body);
   const tasks = Array.isArray(body.tasks)
     ? body.tasks.flatMap((item) => {
@@ -407,9 +350,6 @@ export async function fetchAssetDetail(
       })
     : [];
   const pipelineStatus = mapCatalogPipelineStatus(body.pipelineStatus) ?? undefined;
-  const partitionColumns = mapPartitionColumns(body.tablePartition);
-  const tableConstraints = mapTableConstraints(body.tableConstraints);
-  const aliases = mapStringList(body.aliases);
   return {
     entityType,
     id: asString(body.id) || undefined,
@@ -428,10 +368,10 @@ export async function fetchAssetDetail(
     partitions:
       typeof body.partitions === 'number'
         ? body.partitions
-        : entityType === 'table' && partitionColumns.length > 0
-          ? partitionColumns.length
+        : entityType === 'table' && partitionCount > 0
+          ? partitionCount
           : undefined,
-    tablePartition: partitionColumns.length > 0 ? { columns: partitionColumns } : undefined,
+    tablePartition,
     tableConstraints: tableConstraints.length > 0 ? tableConstraints : undefined,
     aliases: aliases.length > 0 ? aliases : undefined,
     sourceUrl: asString(body.sourceUrl) || undefined,

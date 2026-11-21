@@ -52,10 +52,12 @@ import BulkAssetResultPanel from '@/features/crud/BulkAssetResultPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import WidgetDomainTypeCell from '@/components/shared/widgets/WidgetDomainTypeCell.vue';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import {
   certificationPatch,
+  domainTypePatch,
   entityRefsPatch,
   extensionPatch,
   ownersPatch,
@@ -220,6 +222,14 @@ const canDeleteDomain = computed(
   () =>
     domain.value?.deleted !== true &&
     (permissionStore.isAdminUser || domainFlags.value.canDelete),
+);
+/**
+ * D-2 batch 5a DomainType gate (pin `canEditAll`, `EditAll`): P1 both
+ * lines, `isAdminUser || canEditAll`. The `domainFlags` derivation
+ * already passes the domain's `deleted` flag (A8 frozen rule).
+ */
+const canEditDomainType = computed(
+  () => permissionStore.isAdminUser || domainFlags.value.canEditAll,
 );
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
@@ -525,6 +535,20 @@ async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 5a DomainType cell save: one JSON Patch op on the type
+ * (pin `onUpdate({...domain, domainType})` shape). Throws on failure
+ * so the cell keeps its editor open.
+ */
+async function onDomainTypeUpdate(domainType: string): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  await patchDomain(domain.value.id, domainTypePatch(domain.value.domainType, domainType));
+  message.success(t('governance.domains.updated'));
+  await load();
+}
+
 async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
   if (!domain.value) {
     return;
@@ -674,9 +698,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <WidgetTagsCell
@@ -805,9 +831,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <WidgetTagsCell
@@ -959,9 +987,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <WidgetTagsCell
@@ -1083,9 +1113,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <WidgetTagsCell
@@ -1174,9 +1206,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <WidgetTagsCell

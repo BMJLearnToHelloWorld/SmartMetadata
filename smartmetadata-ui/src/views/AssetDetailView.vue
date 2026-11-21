@@ -91,14 +91,14 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, dataProductsPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnDescriptionPatch, columnTagsPatch, API_SCHEMA_FIELD_BASES, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
+import { descriptionPatch, dataProductsPatch, domainsPatch, extensionPatch, ownersPatch, tableConstraintsPatch, tagsPatch, columnDescriptionPatch, columnTagsPatch, API_SCHEMA_FIELD_BASES, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import { schemaRowKeys, searchSchemaRows, updateNestedSchemaRows } from '@/utils/schemaColumns';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import type { AssetDetail, CatalogPipelineStatus, EntityRef, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus, EntityRef, SchemaRow, TableConstraint, TagRef } from '@/types/api';
 import type { TagSource } from '@/types/governance';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
@@ -179,6 +179,15 @@ const canEditOwners = computed(() => isAdminUser.value || assetFlags.value.canEd
 const canEditDomains = computed(() => isAdminUser.value || assetFlags.value.canEditDomains);
 const canEditAll = computed(() => isAdminUser.value || assetFlags.value.canEditAll);
 const canEditCustomProperties = computed(() => isAdminUser.value || assetFlags.value.canEditCustomFields);
+/**
+ * D-2 batch 5a table-constraints gate (pin `canEditAll`, deleted-gated):
+ * P1 both lines, `isAdminUser || canEditAll`. The permission store's
+ * admin line is the same one DomainDetailView uses for its asset
+ * writes; the auth store's user is the same principal.
+ */
+const canEditTableConstraints = computed(
+  () => permissionStore.isAdminUser || assetFlags.value.canEditAll,
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : assetOps.value ? assetFlags.value.canViewCustomFields : false,
@@ -275,6 +284,24 @@ async function onDataProductsChange(products: EntityRef[]): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 5a table-constraints cell save: one JSON Patch op on the
+ * whole constraints array (pin `onUpdate({...data, tableConstraints:
+ * values})` shape). Throws on failure so the modal stays open.
+ */
+async function onTableConstraintsUpdate(values: TableConstraint[]): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  await patchAsset(
+    props.entityType,
+    asset.value.id,
+    tableConstraintsPatch(asset.value.tableConstraints, values),
+  );
+  message.success(t('asset.updated'));
+  await load();
+}
+
 async function onCustomPropertySave(name: string, value: unknown): Promise<void> {
   if (!asset.value?.id) {
     return;
@@ -288,6 +315,10 @@ async function onCustomPropertySave(name: string, value: unknown): Promise<void>
   await patchAsset(props.entityType, asset.value.id, extensionPatch(asset.value.extension, next));
   message.success(t('asset.updated'));
   await load();
+}
+
+function onReferredTableClick(fqn: string): void {
+  void router.push({ name: 'asset', params: { entityType: 'table', fqn } });
 }
 const tests = ref<TestCase[]>([]);
 const testsError = ref('');
@@ -1696,6 +1727,9 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   onDomainsChange,
   onDataProductsChange,
   onCustomPropertySave,
+  tableConstraintsAccess: canEditTableConstraints.value,
+  onTableConstraintsUpdate,
+  onReferredTableClick,
   schemaTagOptions: catalog.value.tags,
   schemaTagAccess: schemaTagAccess.value,
   onSchemaTagChange,
