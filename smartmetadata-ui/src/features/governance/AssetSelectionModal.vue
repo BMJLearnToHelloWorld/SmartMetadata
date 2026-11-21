@@ -10,6 +10,7 @@ import FormModal from '@/components/shared/FormModal.vue';
 import NextPrevious from '@/components/shared/NextPrevious.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { searchAssets } from '@/api/search';
+import { addAssetsToGlossaryTerm, getGlossaryTermByFqn } from '@/api/glossaryTerms';
 import { addAssetsToTags, getTagByFqn } from '@/api/tags';
 import {
   buildTagAssetsQuickFilterQuery,
@@ -25,8 +26,17 @@ import type { EntityRef, SearchHit } from '@/types/api';
 
 /**
  * Pin AssetSelectionModal (components/DataAssets/AssetsSelectionModal/
- * AssetSelectionModal.tsx + useAssetSelectionState.ts), TAG subset —
- * the TagPage add-assets modal (pages/TagPage/TagPage.tsx:982-991).
+ * AssetSelectionModal.tsx + useAssetSelectionState.ts), TAG + GLOSSARY
+ * subsets — the TagPage add-assets modal (pages/TagPage/TagPage.tsx:982-991)
+ * and the GlossaryTerm add-assets modal
+ * (components/Glossary/GlossaryTerms/GlossaryTermsV1.component.tsx:366-376).
+ *
+ * The `type` prop selects the pin branch: 'tag' saves through
+ * addAssetsToTags, 'glossaryTerm' through addAssetsToGlossaryTerm
+ * (useAssetSelectionState.ts:413-414 vs the GLOSSARY branch). The
+ * picker queryFilter comes from the parent in both cases (Tag:
+ * getQueryFilterToExcludeTermsAndEntities, GlossaryTerm:
+ * getQueryFilterToExcludeTerm).
  *
  * - Search (index ALL, page size 25 = PAGE_SIZE_MEDIUM) with the
  *   parent queryFilter merged with the quick-filter query; the
@@ -51,6 +61,20 @@ const props = defineProps<{
   open: boolean;
   /** Serialized query_filter JSON (see getQueryFilterToExcludeTermsAndEntities). */
   queryFilter?: string;
+  /**
+   * Pin AssetsOfEntity branch, as in AssetsTabs.vue: 'tag' is TagPage,
+   * 'glossaryTerm' is GlossaryTermsV1 (pin passes type GLOSSARY).
+   * Defaults to 'tag'.
+   */
+  type?: 'tag' | 'glossaryTerm';
+  /**
+   * Entity id when the parent already loaded the entity: skips the
+   * by-FQN resolution fetch (same rationale as the AssetsTabs entityId
+   * prop). Without it the modal resolves the id itself — TAG via
+   * getTagByFqn, GLOSSARY via getGlossaryTermByFqn (pin
+   * useAssetSelectionState.ts:227-230 fetches the active entity by FQN).
+   */
+  entityId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -69,7 +93,7 @@ const totalCount = ref(0);
 const facets = ref<SearchFacet[]>([]);
 const loading = ref(false);
 const searchError = ref('');
-const tagId = ref<string | undefined>();
+const resolvedEntityId = ref<string | undefined>();
 const saving = ref(false);
 const selected = ref<Set<string>>(new Set());
 const quickFilterSelections = ref<TagAssetsQuickFilterSelections>({});
@@ -138,10 +162,17 @@ async function fetchEntities(): Promise<void> {
 }
 
 async function fetchCurrentEntity(): Promise<void> {
+  if (props.entityId) {
+    resolvedEntityId.value = props.entityId;
+    return;
+  }
   try {
-    tagId.value = (await getTagByFqn(props.entityFqn)).id;
+    resolvedEntityId.value =
+      props.type === 'glossaryTerm'
+        ? (await getGlossaryTermByFqn(props.entityFqn)).id
+        : (await getTagByFqn(props.entityFqn)).id;
   } catch (error) {
-    tagId.value = undefined;
+    resolvedEntityId.value = undefined;
     message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
   }
 }
@@ -162,7 +193,7 @@ async function onSave(): Promise<void> {
     message.warning(t('governance.assets.pickAtLeastOne'));
     return;
   }
-  if (!tagId.value) {
+  if (!resolvedEntityId.value) {
     message.error(t('crud.loadFailed'));
     return;
   }
@@ -177,7 +208,13 @@ async function onSave(): Promise<void> {
         fullyQualifiedName: hit.fullyQualifiedName,
         displayName: hit.displayName,
       }));
-    await addAssetsToTags(tagId.value, refs);
+    // Pin useAssetSelectionState save branches: GLOSSARY saves through
+    // addAssetsToGlossaryTerm, TAG through addAssetsToTags.
+    if (props.type === 'glossaryTerm') {
+      await addAssetsToGlossaryTerm(resolvedEntityId.value, refs);
+    } else {
+      await addAssetsToTags(resolvedEntityId.value, refs);
+    }
     // Pin ES_UPDATE_DELAY (constants.ts:129, 500ms): ES is eventually
     // consistent, so the parent refresh happens after the index catches
     // up — emitting immediately would re-fetch the old count/list.
@@ -222,7 +259,7 @@ onMounted(() => {
     :ok-text="t('crud.add')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    :ok-disabled="selected.size === 0 || !tagId"
+    :ok-disabled="selected.size === 0 || !resolvedEntityId"
     test-id="asset-selection-modal"
     @ok="onSave"
     @cancel="onCancel"

@@ -565,7 +565,7 @@ onMounted(() => {
           <AssetsTabs
             ref="assetsTabRef"
             :entity-fqn="tag.fullyQualifiedName || tag.name"
-            :tag-id="tag.id"
+            :entity-id="tag.id"
             :permissions="assetPermissions"
             :asset-count="assetCount"
             :is-summary-panel-open="Boolean(previewAsset)"

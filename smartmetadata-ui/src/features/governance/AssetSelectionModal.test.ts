@@ -17,6 +17,8 @@ import AssetSelectionModal from './AssetSelectionModal.vue';
 const searchAssets = vi.fn();
 const getTagByFqn = vi.fn();
 const addAssetsToTags = vi.fn();
+const getGlossaryTermByFqn = vi.fn();
+const addAssetsToGlossaryTerm = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
@@ -25,6 +27,11 @@ vi.mock('@/api/search', () => ({
 vi.mock('@/api/tags', () => ({
   getTagByFqn: (...args: unknown[]) => getTagByFqn(...args),
   addAssetsToTags: (...args: unknown[]) => addAssetsToTags(...args),
+}));
+
+vi.mock('@/api/glossaryTerms', () => ({
+  getGlossaryTermByFqn: (...args: unknown[]) => getGlossaryTermByFqn(...args),
+  addAssetsToGlossaryTerm: (...args: unknown[]) => addAssetsToGlossaryTerm(...args),
 }));
 
 const ORDERS: SearchHit = {
@@ -64,9 +71,9 @@ function footerButton(primary: boolean): HTMLElement | null {
   ) as HTMLElement | null;
 }
 
-async function mountModal() {
+async function mountModal(props: Record<string, unknown> = {}) {
   const wrapper = mount(AssetSelectionModal, {
-    props: { entityFqn: 'PII.Sensitive', open: true, queryFilter: EXCLUSION_FILTER },
+    props: { entityFqn: 'PII.Sensitive', open: true, queryFilter: EXCLUSION_FILTER, ...props },
     global: { plugins: [Antd, createTestI18n()] },
     attachTo: document.body,
   });
@@ -80,9 +87,13 @@ describe('AssetSelectionModal (pin TagPage add-assets modal)', () => {
     searchAssets.mockReset();
     getTagByFqn.mockReset();
     addAssetsToTags.mockReset();
+    getGlossaryTermByFqn.mockReset();
+    addAssetsToGlossaryTerm.mockReset();
     searchAssets.mockResolvedValue({ total: 2, hits: [ORDERS, DASHBOARD], facets: [] });
     getTagByFqn.mockResolvedValue({ id: 'tg1', name: 'Sensitive', fullyQualifiedName: 'PII.Sensitive' });
     addAssetsToTags.mockResolvedValue({ jobId: 'job-1' });
+    getGlossaryTermByFqn.mockResolvedValue({ id: 'term1', name: 'term', fullyQualifiedName: 'gloss.term' });
+    addAssetsToGlossaryTerm.mockResolvedValue({ numberOfRowsPassed: 1 });
   });
 
   afterEach(() => {
@@ -235,6 +246,65 @@ describe('AssetSelectionModal (pin TagPage add-assets modal)', () => {
     cancelButton!.click();
     await flushPromises();
     expect(wrapper.emitted('cancel')).toHaveLength(1);
+    wrapper.unmount();
+  });
+});
+
+describe('AssetSelectionModal (pin GlossaryTermsV1 add-assets modal, B-15 G-1)', () => {
+  beforeEach(() => {
+    searchAssets.mockReset();
+    getGlossaryTermByFqn.mockReset();
+    addAssetsToGlossaryTerm.mockReset();
+    addAssetsToTags.mockReset();
+    searchAssets.mockResolvedValue({ total: 2, hits: [ORDERS, DASHBOARD], facets: [] });
+    getGlossaryTermByFqn.mockResolvedValue({ id: 'term1', name: 'term', fullyQualifiedName: 'gloss.term' });
+    addAssetsToGlossaryTerm.mockResolvedValue({ numberOfRowsPassed: 1 });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function selectFirstAndSave(): Promise<void> {
+    const checkbox = document.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    expect(checkbox).not.toBeNull();
+    checkbox!.checked = true;
+    checkbox!.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+    const okButton = footerButton(true);
+    expect(okButton).not.toBeNull();
+    expect(okButton!.hasAttribute('disabled')).toBe(false);
+    okButton!.click();
+    await flushPromises();
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await flushPromises();
+  }
+
+  it('skips the FQN resolution fetch when entityId is given and saves through the glossary endpoint', async () => {
+    const wrapper = await mountModal({
+      entityFqn: 'gloss.term',
+      type: 'glossaryTerm',
+      entityId: 'term1',
+    });
+    expect(getGlossaryTermByFqn).not.toHaveBeenCalled();
+    await selectFirstAndSave();
+    expect(addAssetsToGlossaryTerm).toHaveBeenCalledWith('term1', [
+      expect.objectContaining({ id: 't1', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' }),
+    ]);
+    expect(addAssetsToTags).not.toHaveBeenCalled();
+    expect(wrapper.emitted('save')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('resolves the term id by FQN when no entityId is given', async () => {
+    const wrapper = await mountModal({ entityFqn: 'gloss.term', type: 'glossaryTerm' });
+    expect(getGlossaryTermByFqn).toHaveBeenCalledWith('gloss.term');
+    await selectFirstAndSave();
+    expect(addAssetsToGlossaryTerm).toHaveBeenCalledWith('term1', [
+      expect.objectContaining({ id: 't1' }),
+    ]);
+    expect(wrapper.emitted('save')).toHaveLength(1);
     wrapper.unmount();
   });
 });
