@@ -35,6 +35,8 @@ export const usePermissionStore = defineStore('permissions', () => {
   const resourceCache = ref(new Map<string, OperationPermissions>());
   const entityCache = ref(new Map<string, OperationPermissions>());
   const principal = ref<string | undefined>(undefined);
+  /** Bulk GET /permissions already served for this principal. */
+  const bulkLoaded = ref(false);
 
   /** Official useAuth: isAdminUser = currentUser?.isAdmin. */
   const isAdminUser = computed(() => auth.user?.isAdmin === true);
@@ -45,6 +47,7 @@ export const usePermissionStore = defineStore('permissions', () => {
       principal.value = current;
       resourceCache.value = new Map();
       entityCache.value = new Map();
+      bulkLoaded.value = false;
       // The My Data widget cache is keyed by widget, not by principal —
       // a login switch must not serve the previous viewer's rows.
       resetWidgetLoadCache();
@@ -55,15 +58,28 @@ export const usePermissionStore = defineStore('permissions', () => {
     principal.value = undefined;
     resourceCache.value = new Map();
     entityCache.value = new Map();
+    bulkLoaded.value = false;
     resetWidgetLoadCache();
   }
 
+  /**
+   * One bulk GET /permissions?limit=100 filling the resource cache —
+   * the product read of pin's single UIPermission object, which
+   * TagPage reads its per-type EditTags grants from. Once per
+   * principal: a second caller reuses the cache instead of
+   * re-fetching; a failed load stays unmarked so the next caller
+   * retries.
+   */
   async function loadLoggedInUserPermissions(): Promise<void> {
     ensureFresh();
+    if (bulkLoaded.value) {
+      return;
+    }
     const page = await getLoggedInUserPermissions();
     for (const entry of page.data) {
       resourceCache.value.set(entry.resource, toOperationPermissions(entry));
     }
+    bulkLoaded.value = true;
   }
 
   async function getResourcePermission(resource: string): Promise<OperationPermissions> {

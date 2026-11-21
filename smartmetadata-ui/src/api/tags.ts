@@ -9,8 +9,10 @@
  */
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
+import type { EntityRef } from '@/types/api';
 import type { ClassificationTag, CreateTagRequest, EntityStyle } from '@/types/governance';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
+import { getEncodedFqn } from '@/utils/fqnPaths';
 import { apiRequest } from './client';
 
 export const TAG_FIELDS = 'owners,reviewers,domains,children,usageCount';
@@ -106,6 +108,84 @@ export async function getTag(id: string): Promise<ClassificationTag> {
     throw new Error('Tag response was missing id and name');
   }
   return mapped;
+}
+
+/**
+ * Official getTagByFqn (rest/tagAPI.ts): GET /tags/name/{fqn}. The
+ * AssetsTabs remove path resolves its active entity by FQN, so the
+ * tag id for the add/remove calls comes from here, never from a
+ * guessed id.
+ */
+export async function getTagByFqn(fqn: string): Promise<ClassificationTag> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/tags/name/${getEncodedFqn(fqn)}`, {
+    query: { fields: TAG_FIELDS },
+  });
+  const mapped = mapTag(raw);
+  if (!mapped) {
+    throw new Error('Tag response was missing id and name');
+  }
+  return mapped;
+}
+
+/**
+ * Bulk tag-assets job response (server EntityResource.editAssetsAsync):
+ * both add and remove answer 200 with a BulkAssetsOperationResponse
+ * {jobId, message}; the edit itself runs in the background and reports
+ * through the websocket. A 200 therefore means "job accepted", never
+ * "the tag was updated" — callers must not map the body as a Tag.
+ */
+export interface TagAssetsJobResponse {
+  jobId?: string;
+  message?: string;
+}
+
+function mapTagAssetsJobResponse(raw: unknown): TagAssetsJobResponse {
+  const rec = asRecord(raw) ?? {};
+  return {
+    jobId: asString(rec.jobId) || undefined,
+    message: asString(rec.message) || undefined,
+  };
+}
+
+/**
+ * Official addAssetsToTags (rest/tagAPI.ts): PUT
+ * /tags/{tagId}/assets/add with AddTagToAssetsRequest
+ * {assets: EntityReference[], dryRun}. The server answers 200 with a
+ * BulkAssetsOperationResponse {jobId, message} (pin's TS type says
+ * CSVExportResponse; the fork server returns the job response — see
+ * EntityResource.editAssetsAsync); the edit runs async, so callers
+ * wait ES_UPDATE_DELAY before refreshing.
+ */
+export async function addAssetsToTags(
+  tagId: string,
+  assets: EntityRef[],
+  dryRun = false,
+): Promise<TagAssetsJobResponse> {
+  const raw = await apiRequest<unknown>(`/v1/tags/${encodeURIComponent(tagId)}/assets/add`, {
+    method: 'PUT',
+    json: { assets, dryRun },
+  });
+  return mapTagAssetsJobResponse(raw);
+}
+
+/**
+ * Official removeAssetsFromTags (rest/tagAPI.ts): PUT
+ * /tags/{tagId}/assets/remove with {assets, dryRun: false}. Same job
+ * response as add (200 = accepted); the updated Tag is NOT returned,
+ * despite pin's TS type saying so.
+ */
+export async function removeAssetsFromTags(
+  tagId: string,
+  assets: EntityRef[],
+): Promise<TagAssetsJobResponse> {
+  const raw = await apiRequest<unknown>(
+    `/v1/tags/${encodeURIComponent(tagId)}/assets/remove`,
+    {
+      method: 'PUT',
+      json: { assets, dryRun: false },
+    },
+  );
+  return mapTagAssetsJobResponse(raw);
 }
 
 export async function createTag(body: CreateTagRequest): Promise<ClassificationTag> {
