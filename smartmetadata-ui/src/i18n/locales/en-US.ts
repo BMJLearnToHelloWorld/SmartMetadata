@@ -1484,6 +1484,7 @@ const enUS = {
       assets: 'Metric assets are not served by this console yet.',
       tagAssets: 'Tag assets are not served by this console yet.',
       dataObservability: 'Data observability is not served by this console yet.',
+      relationsGraph: 'Relations graph is not served for glossary terms yet.',
     },
     name: 'Name',
     noCustomProperties: 'No custom properties defined',
@@ -2352,6 +2353,17 @@ const enUS = {
         'GET /v1/dataQuality/testCases/search/list is residual on this server. Owner, tier, tag, glossary, data product, and date filters apply only when that index is present.',
       residualFilterApply:
         'Those filters need the test-case search index. Listed rows stay unfiltered rather than faking a catalog-wide slice.',
+    },
+    dashboard: {
+      statusLead: 'Daily counts per status in the selected range.',
+      incidentsTitle: 'Incident Metrics',
+      incidentsLead: 'Open and resolved incidents per day, with average response and resolution time.',
+      openIncidents: 'Open Incidents',
+      resolvedIncidents: 'Resolved Incidents',
+      responseTime: 'Response Time',
+      resolutionTime: 'Resolution Time',
+      chartEmpty: 'No values in this range.',
+      selectAll: 'Select all',
     },
     testCases: {
       title: 'Test Cases',

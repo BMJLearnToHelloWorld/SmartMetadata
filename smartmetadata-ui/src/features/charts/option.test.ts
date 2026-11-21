@@ -30,4 +30,15 @@ describe('buildChartOption', () => {
     const defaultOption = buildChartOption('donut', series);
     expect(defaultOption.color).toEqual([...SM_CHART_COLORS]);
   });
+
+  it('renders area as a smooth line with a filled area (pin CustomAreaChart)', () => {
+    const option = buildChartOption('area', [
+      { name: 'success', points: [{ label: '2023-11-14', value: 2 }] },
+    ]);
+    const series = option.series as Array<Record<string, unknown>>;
+    expect(series).toHaveLength(1);
+    expect(series[0].type).toBe('line');
+    expect(series[0].smooth).toBe(true);
+    expect(series[0].areaStyle).toEqual({});
+  });
 });

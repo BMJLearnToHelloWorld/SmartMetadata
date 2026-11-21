@@ -301,10 +301,12 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     ]);
     expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
-    // B-15 Lane A: the assets tab mounts AssetsTabs, so only
-    // data-observability keeps an honest residual state.
+    // Merged (r2): the assets tab mounts AssetsTabs and
+    // data-observability mounts the shared DQ dashboard, so no tab
+    // keeps a residual.
     const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
-    expect(residuals).toHaveLength(1);
+    expect(residuals).toHaveLength(0);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
@@ -406,9 +408,11 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     );
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountTagView();
-    // Neither data-observability is the widget-layout tab: it keeps
-    // its residual state; the assets tab mounts AssetsTabs instead.
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
+    // Merged (r2): neither assets nor data-observability is the
+    // widget-layout tab, and both now have real content (AssetsTabs,
+    // DQ dashboard), so no tab keeps a residual; overview keeps its pane.
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
@@ -434,8 +438,10 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
     // Every other tab keeps its existing panel; the assets tab mounts
-    // AssetsTabs, so only data-observability keeps a residual.
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
+    // AssetsTabs and data-observability mounts the DQ dashboard, so no
+    // tab keeps a residual.
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
