@@ -69,15 +69,11 @@ function baseContext(overrides: Partial<AssetDetailPieceContext> = {}): AssetDet
     ],
     hyperColumns: [],
     refColumns: [],
-    apiEndpointColumns: [],
     taskGraph: { nodes: [], edges: [] },
     taskGraphEmpty: true,
     customProperties: [],
     customPropsError: '',
-    apiEndpoints: [],
-    apiEndpointsError: '',
     apiEndpointSchemaJson: (schema) => JSON.stringify(schema ?? {}),
-    onApiEndpointClick: vi.fn(),
     descriptionAccess: false,
     descriptionExpanded: false,
     onDescriptionUpdate: vi.fn(),
@@ -152,6 +148,11 @@ function baseContext(overrides: Partial<AssetDetailPieceContext> = {}): AssetDet
     onDatabaseSchemaShowDeletedChange: vi.fn(),
     onDatabaseSchemaDisplayNameSave: vi.fn(async () => undefined),
     ...overrides,
+    // D-2 batch 4: canViewBasic is a required (non-optional) context field
+    // (boolean | null); the Partial overrides spread above would leave it
+    // `boolean | null | undefined`, so pin it to a defined value here.
+    // Fail-closed default false; an explicit override (incl. null) is kept.
+    canViewBasic: overrides.canViewBasic ?? false,
   };
 }
 

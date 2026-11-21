@@ -179,6 +179,7 @@ export function mapSearchResponse(payload: unknown): SearchPage {
           : undefined,
       entityStatus: asString(source.entityStatus) || undefined,
       parent: mapOwners(source.parent ? [source.parent] : [])[0],
+      requestMethod: asString(source.requestMethod) || undefined,
       metricType: asString(source.metricType) || undefined,
       granularity: asString(source.granularity) || undefined,
       childrenCount:

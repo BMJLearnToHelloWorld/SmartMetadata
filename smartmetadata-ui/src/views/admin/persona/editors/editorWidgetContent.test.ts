@@ -47,7 +47,6 @@ describe('buildEditorPieceContext', () => {
     expect(context.taskGraphEmpty).toBe(true);
     expect(context.apiEndpointSchemaJson(undefined)).toBe('');
     expect(context.schemaExpandable.rowExpandable({} as never)).toBe(false);
-    expect(() => context.onApiEndpointClick({} as never)).not.toThrow();
     // D-2 batch 3: the preview context fails closed — nothing is
     // editable and every schema callback is a resolving no-op.
     expect(context.schemaAccess).toEqual({
