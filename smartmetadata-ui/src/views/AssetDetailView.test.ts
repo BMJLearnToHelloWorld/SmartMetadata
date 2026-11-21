@@ -306,11 +306,11 @@ describe('AssetDetailView governance', () => {
     // A partition column without an interval type renders the pin `--`.
     expect(wrapper.text()).toContain('region');
     expect(wrapper.find('[data-testid="PRIMARY_KEY-container"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Primary Key');
+    expect(wrapper.text()).toContain('Primary key');
     expect(wrapper.find('[data-testid="FOREIGN_KEY-container"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Foreign Key');
+    expect(wrapper.text()).toContain('Foreign key');
     expect(wrapper.text()).toContain('customer_id');
-    expect(wrapper.find('[data-testid="asset-table-aliases-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-aliases-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('orders_alias');
     await wrapper.find('[data-testid="FOREIGN_KEY-container"] a').trigger('click');
     await flushPromises();

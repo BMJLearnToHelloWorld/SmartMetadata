@@ -8,8 +8,6 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Descriptions, Empty, Input, Pagination, Select, Space, Switch, Tag, Typography, type TableProps } from 'ant-design-vue';
 import { EditOutlined, SearchOutlined } from '@ant-design/icons-vue';
-import { splitFqn, unquoteFqnPart } from '@/catalog/fqn';
-import { getTableFQNFromColumnFQN } from '@/catalog/tableJoins';
 import ApiEndpointsWidget from '@/components/lists/ApiEndpointsWidget.vue';
 import ContainerChildrenWidget from '@/components/lists/ContainerChildrenWidget.vue';
 import DashboardChartsWidget from '@/components/lists/DashboardChartsWidget.vue';
@@ -25,6 +23,9 @@ import WidgetDataProductsCell from '@/components/shared/widgets/WidgetDataProduc
 import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
 import WidgetKnowledgePagesCell from '@/components/shared/widgets/WidgetKnowledgePagesCell.vue';
 import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetPartitionedKeysCell from '@/components/shared/widgets/WidgetPartitionedKeysCell.vue';
+import WidgetTableAliasesCell from '@/components/shared/widgets/WidgetTableAliasesCell.vue';
+import WidgetTableConstraintsCell from '@/components/shared/widgets/WidgetTableConstraintsCell.vue';
 import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
@@ -36,13 +37,14 @@ import type { TagLabelInput } from '@/governance/assetPatch';
 import type { DatabaseSchemaRow } from '@/api/databaseSchemas';
 import { assetLocation } from '@/catalog/entityRoutes';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
-import type { AssetDetail, EntityRef, PartitionColumnDetails, SchemaRow, TableConstraint, TableConstraintType } from '@/types/api';
+import type { AssetDetail, EntityRef, SchemaRow, TableConstraint } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption, Domain, TagSource } from '@/types/governance';
 import type { OwnerOption } from '@/governance/catalogOptions';
 import { isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
+import { flattenColumnNames } from '@/governance/tableWidgets';
 
 /**
  * One shared piece of asset-detail content, rendered by both the
@@ -243,6 +245,16 @@ export interface AssetDetailPieceContext {
   onDatabaseSchemaPrevPage: () => void;
   onDatabaseSchemaShowDeletedChange: (show: boolean) => void;
   onDatabaseSchemaDisplayNameSave: (row: DatabaseSchemaRow, displayName: string) => Promise<unknown>;
+  /**
+   * D-2 batch 5a table-constraints cell: `tableConstraintsAccess` is
+   * the P1 `isAdminUser || canEditAll` gate (deleted-gated); the modal
+   * saves through `onTableConstraintsUpdate`, which throws on failure
+   * so the modal stays open; `onReferredTableClick` navigates a
+   * foreign-key referred column to its parent table.
+   */
+  tableConstraintsAccess: boolean;
+  onTableConstraintsUpdate: (values: TableConstraint[]) => Promise<unknown>;
+  onReferredTableClick?: (fqn: string) => void;
 }
 
 const props = withDefaults(
@@ -264,76 +276,6 @@ const props = withDefaults(
 );
 
 const { t } = useI18n();
-
-/**
- * D-1 Table widgets (official Table SCHEMA tab right column, y=7/8/9):
- * partitioned keys (columns of `tablePartition`), table constraints,
- * and aliases (FQN list, trailing name shown). The pieces render only
- * when the view mounts them — the view gates on data presence, the
- * same rule official `filterWidgets` applies — so an empty piece here
- * renders nothing, except constraints, which keep the section title
- * with an empty state (the product default-pane convention).
- */
-const partitionedRows = computed<PartitionColumnDetails[]>(
-  () => props.context.asset.tablePartition?.columns ?? [],
-);
-
-const partitionedColumns = computed<TableProps['columns']>(() => [
-  { title: t('asset.columns.column'), dataIndex: 'columnName', key: 'columnName' },
-  { title: t('asset.columns.type'), dataIndex: 'intervalType', key: 'intervalType' },
-]);
-
-const aliasRows = computed(() =>
-  (props.context.asset.aliases ?? []).map((alias) => ({
-    // Official TableAliases: aliases are FQNs; the service, database
-    // and schema are established by the page, so only the trailing
-    // name carries new information. `splitFqn` is quote-aware like
-    // official `Fqn.split`, so a dotted quoted name stays whole.
-    key: alias,
-    name: (() => {
-      const parts = splitFqn(alias);
-      return parts.length > 0 ? unquoteFqnPart(parts[parts.length - 1] as string) : alias;
-    })(),
-    fqn: alias,
-  })),
-);
-
-const aliasColumns = computed<TableProps['columns']>(() => [
-  { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
-]);
-
-function constraintTypeLabel(type: TableConstraintType | undefined): string {
-  // Literal t() calls (not a key map): the referenced-keys test only
-  // resolves static calls, so a map lookup would silently skip the
-  // both-catalogs check.
-  switch (type) {
-    case 'PRIMARY_KEY':
-      return t('label.primary-key');
-    case 'UNIQUE':
-      return t('label.unique');
-    case 'FOREIGN_KEY':
-      return t('label.foreign-key');
-    case 'SORT_KEY':
-      return t('label.sort-key');
-    case 'DIST_KEY':
-      return t('label.dist-key');
-    case 'CLUSTER_KEY':
-      return t('label.cluster-key');
-    default:
-      return '';
-  }
-}
-
-function constraintColumns(constraint: TableConstraint): string {
-  return (constraint.columns ?? []).join(', ');
-}
-
-function onReferredColumnClick(referredColumn: string): void {
-  const tableFqn = getTableFQNFromColumnFQN(referredColumn);
-  if (tableFqn) {
-    props.context.onTableFqnClick?.(tableFqn);
-  }
-}
 
 const showMetricExpression = computed(
   () =>
@@ -442,6 +384,8 @@ function openDatabaseSchema(row: DatabaseSchemaRow): void {
   }
   void router.push(assetLocation('databaseSchema', row.fullyQualifiedName));
 }
+/** Table column names (top-level + nested) for the constraints modal. */
+const tableColumnNames = computed(() => flattenColumnNames(props.context.asset.schemaRows));
 </script>
 
 <template>
@@ -1053,74 +997,28 @@ function openDatabaseSchema(row: DatabaseSchemaRow): void {
     <FrequentlyJoinedTables :joins="context.asset.joins" />
   </template>
   <template v-else-if="piece === 'partitionedKeys'">
-    <Typography.Title :level="5">{{ t('label.table-partition-plural') }}</Typography.Title>
-    <SmTable
-      row-key="columnName"
-      test-id="asset-partitioned-keys-table"
-      :columns="partitionedColumns"
-      :data-source="partitionedRows"
-      :pagination="false"
-      size="small"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'intervalType'">
-          {{ (record as PartitionColumnDetails).intervalType || '--' }}
-        </template>
-      </template>
-    </SmTable>
+    <div data-testid="asset-widget-partitioned-keys">
+      <Typography.Text type="secondary">{{ t('asset.partitionedKeys') }}</Typography.Text>
+      <WidgetPartitionedKeysCell :columns="context.asset.tablePartition?.columns" />
+    </div>
   </template>
   <template v-else-if="piece === 'tableConstraints'">
-    <Typography.Title :level="5">{{ t('label.table-constraints') }}</Typography.Title>
-    <Empty
-      v-if="!context.asset.tableConstraints?.length"
-      data-testid="asset-table-constraints-empty"
-      :description="t('asset.constraintsEmpty')"
-    />
-    <Space v-else direction="vertical" style="width: 100%">
-      <div
-        v-for="(constraint, index) in context.asset.tableConstraints"
-        :key="`${constraint.constraintType ?? 'unknown'}-${index}`"
-        :data-testid="`${constraint.constraintType ?? 'unknown'}-container`"
-      >
-        <Typography.Text strong>{{ constraintTypeLabel(constraint.constraintType) }}</Typography.Text>
-        <Typography.Paragraph v-if="constraintColumns(constraint)" style="margin-bottom: 0">
-          {{ constraintColumns(constraint) }}
-        </Typography.Paragraph>
-        <template v-if="constraint.constraintType === 'FOREIGN_KEY' && constraint.referredColumns?.length">
-          <div
-            v-for="referred in constraint.referredColumns"
-            :key="referred"
-          >
-            <a
-              v-if="context.onTableFqnClick"
-              href="#"
-              :title="referred"
-              @click.prevent="onReferredColumnClick(referred)"
-            >
-              {{ referred }}
-            </a>
-            <Typography.Text v-else :title="referred">{{ referred }}</Typography.Text>
-          </div>
-        </template>
-      </div>
-    </Space>
+    <div data-testid="asset-widget-table-constraints">
+      <Typography.Text type="secondary">{{ t('asset.tableConstraints') }}</Typography.Text>
+      <WidgetTableConstraintsCell
+        :constraints="context.asset.tableConstraints"
+        :column-names="tableColumnNames"
+        :has-edit-access="context.tableConstraintsAccess"
+        :on-save="context.onTableConstraintsUpdate"
+        :on-referred-table-click="context.onReferredTableClick ?? context.onTableFqnClick"
+      />
+    </div>
   </template>
   <template v-else-if="piece === 'tableAliases'">
-    <Typography.Title :level="5">{{ t('label.alias-plural') }}</Typography.Title>
-    <SmTable
-      row-key="key"
-      test-id="asset-table-aliases-table"
-      :columns="aliasColumns"
-      :data-source="aliasRows"
-      :pagination="false"
-      size="small"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'name'">
-          <span :title="(record as { fqn: string }).fqn">{{ (record as { name: string }).name }}</span>
-        </template>
-      </template>
-    </SmTable>
+    <div data-testid="asset-widget-table-aliases">
+      <Typography.Text type="secondary">{{ t('asset.tableAliases') }}</Typography.Text>
+      <WidgetTableAliasesCell :aliases="context.asset.aliases" />
+    </div>
   </template>
   <!-- D-2 batch 3: shared column modals at piece root so the schema,
        features and API-schema tables all edit through the same state. -->
