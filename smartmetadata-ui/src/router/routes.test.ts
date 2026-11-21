@@ -184,7 +184,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     }
   });
 
-  it('registers each policy-rule action pattern exactly once (M1a)', () => {
+  it('registers each policy-rule action pattern exactly once (M1a, R-14(a))', () => {
     const paths = router.getRoutes().map((route) => route.path);
     expect(paths.filter((path) => path === '/settings/access/policies/:fqn/add-rule')).toHaveLength(1);
     expect(
@@ -627,6 +627,30 @@ describe('settings sections faces', () => {
     expect(resolved.name).toBe(name);
     if (params) {
       expect(resolved.params).toMatchObject(params);
+    }
+  });
+
+  it('resolves the four access detail routes by name with {fqn} (R-14(a))', () => {
+    // Pin detail routes are `:fqn` and every location in
+    // views/admin/accessPaths.ts navigates with {fqn}; before the
+    // rename the named resolution could not satisfy the required `:id`
+    // param and the path resolution delivered prop `id`, leaving the
+    // views' `fqn` prop undefined (PolicyDetailView "No policy found").
+    const cases: Array<[string, Record<string, string>, string]> = [
+      ['admin-role', { fqn: 'r1' }, '/settings/access/roles/r1'],
+      ['admin-policy', { fqn: 'p1' }, '/settings/access/policies/p1'],
+      ['admin-policy-rule-add', { fqn: 'p1' }, '/settings/access/policies/p1/add-rule'],
+      [
+        'admin-policy-rule-edit',
+        { fqn: 'p1', ruleName: 'rule1' },
+        '/settings/access/policies/p1/edit-rule/rule1',
+      ],
+    ];
+    for (const [name, params, path] of cases) {
+      const resolved = router.resolve({ name, params });
+      expect(resolved.name).toBe(name);
+      expect(resolved.params).toMatchObject(params);
+      expect(resolved.path).toBe(path);
     }
   });
 

@@ -76,8 +76,6 @@ export interface ServiceCategoryRow {
   entityType: string;
   /** Search index for the services search path. */
   searchIndex: ServiceSearchIndexValue;
-  /** Count-label key (getCountLabel). */
-  countLabelKey: string;
   /** Child entity type for the main tab / version child table, if any. */
   childEntityType?: string;
 }
@@ -96,7 +94,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'databaseService',
     entityType: 'databaseService',
     searchIndex: 'databaseService',
-    countLabelKey: 'settings.services.count.database',
     childEntityType: 'database',
   },
   {
@@ -111,7 +108,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'dashboardService',
     entityType: 'dashboardService',
     searchIndex: 'dashboardService',
-    countLabelKey: 'settings.services.count.dashboard',
     childEntityType: 'dashboard',
   },
   {
@@ -126,7 +122,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'messagingService',
     entityType: 'messagingService',
     searchIndex: 'messagingService',
-    countLabelKey: 'settings.services.count.messaging',
     childEntityType: 'topic',
   },
   {
@@ -141,7 +136,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'pipelineService',
     entityType: 'pipelineService',
     searchIndex: 'pipelineService',
-    countLabelKey: 'settings.services.count.pipeline',
     childEntityType: 'pipeline',
   },
   {
@@ -156,7 +150,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'storageService',
     entityType: 'storageService',
     searchIndex: 'storageService',
-    countLabelKey: 'settings.services.count.storage',
     childEntityType: 'container',
   },
   {
@@ -171,7 +164,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'apiService',
     entityType: 'apiService',
     searchIndex: 'apiService',
-    countLabelKey: 'settings.services.count.api',
     childEntityType: 'apiCollection',
   },
   {
@@ -186,7 +178,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'mlmodelService',
     entityType: 'mlmodelService',
     searchIndex: 'mlModelService',
-    countLabelKey: 'settings.services.count.mlmodel',
     childEntityType: 'mlmodel',
   },
   {
@@ -201,8 +192,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'metadataService',
     entityType: 'metadataService',
     searchIndex: 'metadataService',
-    // Pin getCountLabel default branch: metadata takes database-plural.
-    countLabelKey: 'settings.services.count.database',
   },
   {
     kind: 'search',
@@ -216,7 +205,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'searchService',
     entityType: 'searchService',
     searchIndex: 'searchService',
-    countLabelKey: 'settings.services.count.search',
     childEntityType: 'searchIndex',
   },
   {
@@ -231,7 +219,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     resourceEntity: 'driveService',
     entityType: 'driveService',
     searchIndex: 'driveService',
-    countLabelKey: 'settings.services.count.drive',
     childEntityType: 'directory',
   },
   {
@@ -248,8 +235,6 @@ export const SERVICE_CATEGORY_ROWS: readonly ServiceCategoryRow[] = [
     // Official getSearchIndexFromService has NO security entry: the
     // fallback DATABASE_SERVICE index applies (quirk, copied verbatim).
     searchIndex: 'databaseService',
-    // Pin getCountLabel default branch: security takes database-plural.
-    countLabelKey: 'settings.services.count.database',
   },
 ];
 
@@ -346,16 +331,6 @@ export function getEntityTypeFromServiceCategory(serviceCategory: string): strin
 export function getSearchIndexFromService(serviceName: string): string {
   const row = BY_ENUM_VALUE.get(serviceName);
   return row ? row.searchIndex : 'databaseService';
-}
-
-/**
- * Pin getCountLabel (ServicePureUtils.ts:188-210), returning the i18n
- * key instead of the translated string. metadata/security (and anything
- * unknown) take the default database-plural key.
- */
-export function getCountLabelKey(serviceName: string): string {
-  const row = BY_ENUM_VALUE.get(serviceName);
-  return row ? row.countLabelKey : DATABASE_CATEGORY_ROW.countLabelKey;
 }
 
 /** Pin getServicePageHeader fallback: unknown categories render DATABASES. */

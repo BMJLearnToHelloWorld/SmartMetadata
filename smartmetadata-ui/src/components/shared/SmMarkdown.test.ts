@@ -44,4 +44,27 @@ describe('SmMarkdown', () => {
     expect(wrapper.find('pre code').text()).toContain('**not bold**');
     expect(wrapper.find('strong').exists()).toBe(false);
   });
+
+  it('highlights matches of the search term case-insensitively', () => {
+    const wrapper = mount(SmMarkdown, {
+      props: { markdown: 'Owns DATA governance and data quality', highlight: 'Data' },
+    });
+    const highlights = wrapper.findAll('[data-highlight="true"]');
+    expect(highlights.map((el) => el.text())).toEqual(['DATA', 'data']);
+  });
+
+  it('does not highlight without a search term', () => {
+    const wrapper = mount(SmMarkdown, {
+      props: { markdown: 'Plain data text' },
+    });
+    expect(wrapper.find('[data-highlight="true"]').exists()).toBe(false);
+  });
+
+  it('keeps bold rendering around a highlighted match', () => {
+    const wrapper = mount(SmMarkdown, {
+      props: { markdown: 'Hello **data world**', highlight: 'data' },
+    });
+    expect(wrapper.find('strong').text()).toBe('data world');
+    expect(wrapper.find('[data-highlight="true"]').text()).toBe('data');
+  });
 });

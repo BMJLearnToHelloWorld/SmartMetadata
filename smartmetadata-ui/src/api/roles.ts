@@ -36,9 +36,20 @@ function mapRole(raw: Record<string, unknown>): AdminRole | null {
   };
 }
 
-export function listRoles(limit = 100, after?: string, fields: string = ROLE_FIELDS): Promise<Paged<AdminRole>> {
+/**
+ * Pin getRoles (rest/rolesAPIV1.ts:30-50): GET /roles with an explicit
+ * `fields` string, `default` flag and limit. The `defaultRoles` flag
+ * defaults to undefined (not sent); AddAttributeModal passes `false`
+ * to match pin `getRoles('', …, false, 100)`.
+ */
+export function listRoles(
+  limit = 100,
+  after?: string,
+  fields: string = ROLE_FIELDS,
+  defaultRoles?: boolean,
+): Promise<Paged<AdminRole>> {
   return apiRequest<unknown>('/v1/roles', {
-    query: { fields, limit, after },
+    query: { fields, limit, after, default: defaultRoles },
   }).then((payload) => parsePaged(payload, mapRole));
 }
 

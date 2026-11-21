@@ -19,7 +19,6 @@ import {
   getAnnouncementsPath,
   getNotificationAlertDetailsPath,
   getNotificationAlertsEditPath,
-  getObservabilityAlertDetailsPath,
   getObservabilityAlertsEditPath,
   resolveAlertFace,
 } from './alertPaths';
@@ -29,19 +28,24 @@ describe('alert paths', () => {
     expect(getNotificationAlertDetailsPath('dq-alert')).toBe(
       '/settings/notifications/alerts/dq-alert/configuration',
     );
-    expect(getObservabilityAlertDetailsPath('dq-alert')).toBe(
+    // The observability detail builder lives in the shared fqnPaths module
+    // (II-9: the local duplicate was deleted); this module only dispatches
+    // to it by face. The shared builder itself is locked by fqnPaths.test.ts.
+    expect(getAlertDetailsPath('Observability', 'dq-alert')).toBe(
       '/observability/alert/dq-alert/configuration',
     );
-    expect(getObservabilityAlertDetailsPath('dq-alert', 'recentEvents')).toBe(
+    expect(getAlertDetailsPath('Observability', 'dq-alert', 'recentEvents')).toBe(
       '/observability/alert/dq-alert/recentEvents',
     );
-    expect(getObservabilityAlertDetailsPath('svc.db.tbl')).toBe(
+    expect(getAlertDetailsPath('Observability', 'svc.db.tbl')).toBe(
       '/observability/alert/svc.db.tbl/configuration',
     );
   });
 
   it('encodes FQNs with slashes in the path segment', () => {
-    expect(getObservabilityAlertDetailsPath('a/b')).toBe('/observability/alert/a%2Fb/configuration');
+    expect(getAlertDetailsPath('Observability', 'a/b')).toBe(
+      '/observability/alert/a%2Fb/configuration',
+    );
     expect(getObservabilityAlertsEditPath('a/b')).toBe('/observability/alerts/edit/a%2Fb');
     expect(getNotificationAlertsEditPath('a/b')).toBe(
       '/settings/notifications/edit-notification/a%2Fb',

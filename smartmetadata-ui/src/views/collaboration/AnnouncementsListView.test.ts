@@ -50,10 +50,9 @@ async function mountView(): Promise<{ wrapper: VueWrapper; router: Router }> {
     routes: [
       { path: '/settings', name: 'admin-settings', component: stub },
       { path: '/settings/:category', name: 'settings-category', component: stub },
-      { path: '/settings/notifications', name: 'settings-notifications', component: stub },
       {
         path: '/settings/notifications/announcements',
-        name: 'settings-announcements',
+        name: 'announcements',
         component: AnnouncementsListView,
       },
       {
