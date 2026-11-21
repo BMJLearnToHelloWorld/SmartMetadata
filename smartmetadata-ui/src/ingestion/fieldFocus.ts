@@ -326,6 +326,99 @@ export function getFocusedMarkdown(markdownContent: string, fieldName?: string):
   return getFieldMarkdown(markdownContent, fieldName) || markdownContent;
 }
 
+const DOC_SECTION_BLOCK_REGEX = /\$\$section\n([\s\S]*?)\n\$\$/g;
+const DOC_MARKDOWN_MATCH_ID = /\$\(id="(.*?)"\)/;
+const DOC_ADMONITION_TYPES = [
+  'note',
+  'warning',
+  'danger',
+  'info',
+  'tip',
+  'caution',
+] as const;
+
+export type DocSegment =
+  | { kind: 'prose'; markdown: string }
+  | { kind: 'section'; id: string; markdown: string }
+  | { kind: 'admonition'; admonitionType: string; markdown: string };
+
+function splitDocSections(markdown: string): DocSegment[] {
+  const segments: DocSegment[] = [];
+  const sectionRegex = new RegExp(
+    DOC_SECTION_BLOCK_REGEX.source,
+    DOC_SECTION_BLOCK_REGEX.flags,
+  );
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = sectionRegex.exec(markdown)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({
+        kind: 'prose',
+        markdown: markdown.slice(lastIndex, match.index),
+      });
+    }
+    const sectionContent = match[1];
+    const idMatch = DOC_MARKDOWN_MATCH_ID.exec(sectionContent);
+    const id = idMatch ? idMatch[1] : '';
+    const cleanContent = sectionContent.replace(DOC_MARKDOWN_MATCH_ID, '').trim();
+    segments.push({ kind: 'section', id, markdown: cleanContent });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < markdown.length) {
+    segments.push({ kind: 'prose', markdown: markdown.slice(lastIndex) });
+  }
+
+  return segments;
+}
+
+/**
+ * Splits doc markdown into renderable segments (pin `processDocMarkdown`
+ * shape in `utils/ServiceUtils.tsx`): admonition blocks first, then
+ * `$$section` blocks with their `$(id="...")` markers removed and
+ * trimmed. Returns segments instead of HTML because the product
+ * markdown renderer escapes raw HTML: callers render each segment
+ * through it inside the matching wrapper element. Admonition-in-section
+ * nesting would diverge from pin's HTML output; no doc nests blocks
+ * (verified: the SSO docs contain only `$$section` blocks), so the
+ * boundary is unreachable here. Used by the shared ServiceDocPanel's
+ * full-document mode (pin default, `focusedMode` unset).
+ */
+export function splitDocMarkdown(markdown: string): DocSegment[] {
+  const admonitionRegex = new RegExp(
+    `^\\$\\$(${DOC_ADMONITION_TYPES.join('|')})\\n([\\s\\S]*?)\\n\\$\\$`,
+    'gm',
+  );
+  const segments: DocSegment[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  const pushProse = (text: string): void => {
+    if (text) {
+      segments.push(...splitDocSections(text));
+    }
+  };
+
+  while ((match = admonitionRegex.exec(markdown)) !== null) {
+    if (match.index > lastIndex) {
+      pushProse(markdown.slice(lastIndex, match.index));
+    }
+    segments.push({
+      kind: 'admonition',
+      admonitionType: match[1],
+      markdown: match[2].trim(),
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < markdown.length) {
+    pushProse(markdown.slice(lastIndex));
+  }
+
+  return segments;
+}
+
 /** Pin hasAuthMethodGuidance: the markdown documents both password and key-pair auth. */
 export function hasAuthMethodGuidance(markdownContent: string): boolean {
   return Boolean(

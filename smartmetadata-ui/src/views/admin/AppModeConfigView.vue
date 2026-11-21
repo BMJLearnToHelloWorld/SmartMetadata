@@ -24,7 +24,6 @@ import {
   patchAppConfiguration,
   settingAsAppConfiguration,
 } from '@/api/system';
-import type { SsoSettingSource } from '@/admin/ssoSettingsSource';
 import SettingsSourceBanner from '@/components/shared/SettingsSourceBanner.vue';
 import {
   findSettingsRegistryItem,
@@ -32,7 +31,7 @@ import {
   registryTitle,
   type SettingsTranslator,
 } from '@/settings/registry';
-import { findSettingSource, isPathManaged } from '@/utils/settingsSource';
+import { findSettingSource, isPathManaged, type SettingSource } from '@/utils/settingsSource';
 
 // Sentinel value for the "no tenant default" radio option — the wire value
 // for that choice is `null`, but form controls can't carry `null`, so the
@@ -63,7 +62,7 @@ const initialValue = ref<AppModeValue>(NO_DEFAULT_VALUE);
 const currentValue = ref<AppModeValue>(NO_DEFAULT_VALUE);
 const isLoading = ref(true);
 const isSaving = ref(false);
-const sources = ref<SsoSettingSource[]>([]);
+const sources = ref<SettingSource[]>([]);
 
 const isManagedByDeployment = computed(() =>
   isPathManaged(findSettingSource(sources.value, 'appConfiguration'), '/defaultAppMode'),

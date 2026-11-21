@@ -14,14 +14,17 @@
  * Ported from official `utils/platform/settingsSource.utils.ts` at pin
  * a3012259ca (392b3efd object tree), with the generated
  * `generated/system/settingsSourceResponse.ts` shapes. Only ENV mode
- * manages fields. `configType` is a plain string here (the SSO-scoped
- * port in `@/admin/ssoSettingsSource` uses the same shape, so the two
- * source types are structurally identical).
+ * manages fields. `configType` is a plain string here (pin types it as
+ * the `SettingType` enum; the wire value is the same string). This is
+ * the single SettingSource implementation: the former SSO-scoped port
+ * (`@/admin/ssoSettingsSource`) was unified into this module (II-6);
+ * the SSO security predicates live in `@/admin/ssoSecuritySources`
+ * and reuse only these functions.
  *
  * Intentionally not ported: `applyManagedPathsToUiSchema` (RJSF
  * `UiSchema`-specific; the product has no RJSF renderer — Vue callers
  * check `isPointerManaged` per field instead, the same
- * ancestor-or-self semantics; the SSO port records the same decision).
+ * ancestor-or-self semantics).
  */
 
 export const WHOLE_SETTING_PATH = '/';
@@ -155,8 +158,37 @@ export const getEnvSourceVariables = (sources: SettingSource[]): string[] => [
   ),
 ];
 
+/**
+ * Deep clone for JSON-shaped values. `structuredClone` cannot clone Vue
+ * reactive proxies (`DataCloneError`), and this module's callers pass
+ * form state held in refs — so the clone walks plain objects and arrays
+ * by property access, which reads through proxies, mirroring what pin's
+ * lodash `cloneDeep` does. Non-plain values cannot occur in form data
+ * and pass through untouched.
+ */
+function isPlainCloneableObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 function cloneDeepValue<T>(value: T): T {
-  return structuredClone(value);
+  if (value === undefined) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneDeepValue(item)) as T;
+  }
+  if (isPlainCloneableObject(value)) {
+    const cloned: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      cloned[key] = cloneDeepValue(child);
+    }
+    return cloned as T;
+  }
+  return value;
 }
 
 function getAtPath(source: unknown, segments: string[]): unknown {

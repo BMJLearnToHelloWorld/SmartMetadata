@@ -39,7 +39,8 @@ const { t } = useI18n();
  * affordance that makes the collapsed state reachable (pin's state
  * toggles only from its own expand button). `onStopResize` receives
  * the first panel's new flex fraction when a drag ends. The panel
- * testids carry the panel className, as in pin.
+ * testids carry the panel className, as in pin; the container carries
+ * pin's `resizable-panels` testid.
  */
 const SPLITTER_WIDTH = 8;
 
@@ -111,6 +112,7 @@ function toggleCollapse(): void {
   <div
     ref="containerRef"
     :class="className"
+    data-testid="resizable-panels"
     style="display: flex; height: 100%; width: 100%"
     @pointermove="onSplitterPointerMove"
     @pointerup="onSplitterPointerUp"

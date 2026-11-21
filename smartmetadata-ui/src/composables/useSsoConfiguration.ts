@@ -16,16 +16,16 @@ import {
   handleSsoClientTypeChange,
 } from '@/admin/ssoDefaults';
 import type { SsoClientType } from '@/admin/ssoProviders';
+import type { SsoSecuritySources } from '@/admin/ssoSecuritySources';
 import {
   getSsoProviderSchema,
   normalizeSsoFormData,
   type SsoFormData,
 } from '@/admin/ssoSchemas';
 import {
-  isSsoPointerManaged,
-  pinSsoManagedFields,
-  type SsoSecuritySources,
-} from '@/admin/ssoSettingsSource';
+  isPointerManaged,
+  pinManagedFields,
+} from '@/utils/settingsSource';
 import {
   parseSsoSamlMetadataXml,
   SSO_MAX_XML_SIZE,
@@ -236,13 +236,13 @@ export function useSsoConfiguration(options: SsoConfigurationOptions = {}) {
   const canChangeProvider = computed(
     () =>
       !isFormReadOnly.value &&
-      !isSsoPointerManaged(authenticationManagedPaths.value, '/provider'),
+      !isPointerManaged(authenticationManagedPaths.value, '/provider'),
   );
   const canUploadSamlMetadata = computed(
     () =>
       !isFormReadOnly.value &&
       !SSO_SAML_METADATA_POINTERS.some((pointer) =>
-        isSsoPointerManaged(authenticationManagedPaths.value, pointer),
+        isPointerManaged(authenticationManagedPaths.value, pointer),
       ),
   );
 
@@ -617,8 +617,8 @@ export function useSsoConfiguration(options: SsoConfigurationOptions = {}) {
 
     // A field the deployment owns keeps its saved value, so a stale form
     // cannot send a change the server would reject.
-    const candidate = pinSsoManagedFields(
-      pinSsoManagedFields(
+    const candidate = pinManagedFields(
+      pinManagedFields(
         cleanedFormData,
         savedData.value,
         authenticationManagedPaths.value,

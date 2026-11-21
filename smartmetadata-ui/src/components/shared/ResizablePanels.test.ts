@@ -12,13 +12,13 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import { createI18n } from 'vue-i18n';
 import { defineComponent, h } from 'vue';
-import AppResizablePanels from './AppResizablePanels.vue';
+import ResizablePanels from './ResizablePanels.vue';
 
 function mountPanels(props: Record<string, unknown> = {}) {
   const host = defineComponent({
     render() {
       return h(
-        AppResizablePanels,
+        ResizablePanels,
         {
           firstPanel: { minWidth: 700, flex: 0.7, className: 'first-panel' },
           secondPanel: { minWidth: 400, flex: 0.3, className: 'second-panel' },
@@ -43,7 +43,7 @@ function mountPanels(props: Record<string, unknown> = {}) {
   });
 }
 
-describe('AppResizablePanels', () => {
+describe('ResizablePanels (pin common/ResizablePanels)', () => {
   it('renders both panels wrapped in cards by default', () => {
     const wrapper = mountPanels();
     expect(wrapper.text()).toContain('FORM');

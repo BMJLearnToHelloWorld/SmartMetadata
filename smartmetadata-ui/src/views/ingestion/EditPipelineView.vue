@@ -625,6 +625,7 @@ onUnmounted(() => {
           </div>
           <div v-if="serviceType" style="min-width: 400px; flex: 0.3">
             <ServiceDocPanel
+              focused-mode
               :service-name="serviceType"
               :service-type="docPanelServiceType"
               :active-field="activeField"
