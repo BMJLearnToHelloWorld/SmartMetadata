@@ -96,18 +96,31 @@ export function buildEditorPieceContext(
     hyperColumns: [],
     refColumns: [],
     taskGraph: EMPTY_TASK_GRAPH,
-    taskGraphEmpty: true,
+    // D-2 batch 5b: complete the remaining pre-existing gaps as well —
+    // the baseline builder was missing these seven fields, which is why
+    // the baseline vue-tsc run already carried this error. All are
+    // read-only no-ops here, matching this builder's documented contract.
+    schemaTagOptions: [],
+    schemaTagAccess: { canEditTags: false, canEditGlossaryTerms: false, readOnly: true },
+    onSchemaTagChange: () => {},
+    descriptionAccess: false,
+    descriptionExpanded: false,
+    onDescriptionUpdate: async () => {},
+    customPropsCanView: null,
+    metricDefinitionCanEdit: false,
+    onMetricDefinitionSave: async () => {},
+    pipelineTaskAccess: {
+      canEditDescription: false,
+      canEditTags: false,
+      canEditGlossaryTerms: false,
+      readOnly: true,
+    },
+    onTaskDescriptionUpdate: async () => {},
+    onTaskTagChange: async () => {},
     customProperties: [],
     customPropsError: '',
     apiEndpointSchemaJson: () => '',
     canViewBasic: null,
-    descriptionAccess: false,
-    descriptionExpanded: false,
-    onDescriptionUpdate: () => {},
-    customPropsCanView: false,
-    schemaTagOptions: [],
-    schemaTagAccess: { canEditTags: false, canEditGlossaryTerms: false, readOnly: false },
-    onSchemaTagChange: () => {},
     schemaTagFilterOptions: { classification: [], glossary: [] },
     // D-2 batch 2 widget cells: the editor preview renders the pieces
     // read-only, so the catalog is empty, every edit gate is off, and

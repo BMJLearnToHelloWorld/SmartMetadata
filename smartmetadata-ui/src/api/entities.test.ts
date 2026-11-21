@@ -336,8 +336,10 @@ describe('asset entity writes', () => {
               fullyQualifiedName: 'kpi.mau',
               metricType: 'COUNT',
               unitOfMeasurement: 'EVENTS',
+              customUnitOfMeasurement: 'per session',
               granularity: 'DAY',
               metricExpression: { language: 'SQL', code: 'SELECT COUNT(*) FROM users' },
+              dataProducts: [{ id: 'dp-1', name: 'sales-metrics', type: 'dataProduct' }],
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
@@ -391,8 +393,12 @@ describe('asset entity writes', () => {
     const metric = await fetchAssetDetail('metric', 'kpi.mau');
     expect(metric.metricType).toBe('COUNT');
     expect(metric.unitOfMeasurement).toBe('EVENTS');
+    expect(metric.customUnitOfMeasurement).toBe('per session');
     expect(metric.granularity).toBe('DAY');
     expect(metric.storedProcedureCode).toEqual({ language: 'SQL', code: 'SELECT COUNT(*) FROM users' });
+    expect(metric.dataProducts).toMatchObject([
+      { id: 'dp-1', name: 'sales-metrics', type: 'dataProduct' },
+    ]);
     expect(lastFetch().url).toContain('/api/v1/metrics/name/');
 
     const model = await fetchAssetDetail('dashboardDataModel', 'bi.sales.model');

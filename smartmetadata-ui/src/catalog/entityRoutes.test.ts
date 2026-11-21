@@ -74,7 +74,7 @@ describe('entityRoutes', () => {
     });
     expect(resolveDetailEndpoint('metric', 'kpi.mau')).toEqual({
       path: `/v1/metrics/name/${encodeURIComponent('kpi.mau')}`,
-      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers,votes,dataProducts,certification',
+      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts,certification',
     });
     expect(resolveDetailEndpoint('dashboardDataModel', 'bi.sales.model')).toEqual({
       path: `/v1/dashboard/datamodels/name/${encodeURIComponent('bi.sales.model')}`,

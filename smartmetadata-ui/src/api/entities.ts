@@ -382,6 +382,7 @@ export async function fetchAssetDetail(
     chartType: asString(body.chartType) || undefined,
     metricType: asString(body.metricType) || undefined,
     unitOfMeasurement: asString(body.unitOfMeasurement) || undefined,
+    customUnitOfMeasurement: asString(body.customUnitOfMeasurement) || undefined,
     granularity: asString(body.granularity) || undefined,
     dataModelType: asString(body.dataModelType) || undefined,
     algorithm: asString(body.algorithm) || undefined,
@@ -410,6 +411,9 @@ export async function fetchAssetDetail(
     // D-2 batch 2: spec fields the product never requested before
     // (see BENCHMARK §9/§11). Certification maps through the same tag
     // mapper as `tags`; a missing or FQN-less label maps to undefined.
+    // D-2 batch 5b: data products the asset belongs to (official
+    // EntityReference list), read side for the default-panel row and
+    // the DATA_PRODUCTS grid cell.
     dataProducts: mapEntityRefs(body.dataProducts),
     certification: mapCertification(asRecord(body.certification)),
     schemaRows: schema.rows,

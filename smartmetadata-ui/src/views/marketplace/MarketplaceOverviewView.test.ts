@@ -94,6 +94,16 @@ function stubFetch(
           paging: { total: 1 },
         });
       }
+      if (url.includes('/v1/permissions/')) {
+        // The marketplace widgets gate their Add buttons on resource-level
+        // Create permission; allow it so the create flows are exercised.
+        // mapResourcePermission requires the resource name in the payload.
+        const resource = url.split('/v1/permissions/')[1]?.split('?')[0] ?? 'dataProduct';
+        return jsonResponse({
+          resource,
+          permissions: [{ operation: 'Create', access: 'allow' }],
+        });
+      }
       return new Response('not found', { status: 404 });
     }),
   );
@@ -135,9 +145,11 @@ describe('MarketplaceOverviewView', () => {
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="marketplace-overview"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="marketplace-data-products"]').text()).toContain('Sales Metrics');
-    expect(wrapper.find('[data-testid="marketplace-data-products"]').text()).toContain('(1)');
-    expect(wrapper.find('[data-testid="marketplace-domains"]').text()).toContain('Sales');
+    // The widgets self-fetch: wait for the search round-trip to land.
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="marketplace-dp-widget"]').text()).toContain('Sales Metrics');
+    });
+    expect(wrapper.find('[data-testid="marketplace-domains-widget"]').text()).toContain('Sales');
     expect(wrapper.find('[data-testid="marketplace-announcements"]').text()).toContain('Launch');
     expect(wrapper.find('[data-testid="marketplace-announcements"]').text()).not.toContain('Unrelated');
   });
@@ -324,13 +336,16 @@ describe('MarketplaceOverviewView', () => {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     await flushPromises();
-    await wrapper.find('[data-testid="marketplace-add-data-product"]').trigger('click');
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="add-data-product-btn"]').exists()).toBe(true);
+    });
+    await wrapper.find('[data-testid="add-data-product-btn"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="marketplace-data-product-owners"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="marketplace-data-product-experts"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="marketplace-data-product-icon-url"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="marketplace-data-product-color"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="marketplace-add-domain"]').trigger('click');
+    await wrapper.find('[data-testid="add-domain-btn"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="marketplace-domain-owners"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="marketplace-domain-experts"]').exists()).toBe(true);
@@ -376,8 +391,8 @@ describe('MarketplaceOverviewView', () => {
     const html = wrapper.find('[data-testid="marketplace-overview"]').html();
     const hero = html.indexOf('data-testid="marketplace-hero"');
     const announcements = html.indexOf('data-testid="marketplace-announcements"');
-    const products = html.indexOf('data-testid="marketplace-data-products"');
-    const domains = html.indexOf('data-testid="marketplace-domains"');
+    const products = html.indexOf('data-testid="marketplace-dp-widget"');
+    const domains = html.indexOf('data-testid="marketplace-domains-widget"');
     expect(hero).toBeGreaterThan(-1);
     expect(announcements).toBeGreaterThan(-1);
     expect(products).toBeGreaterThan(-1);
@@ -398,8 +413,8 @@ describe('MarketplaceOverviewView', () => {
     await flushPromises();
     await flushPromises();
     const html = wrapper.find('[data-testid="marketplace-overview"]').html();
-    const products = html.indexOf('data-testid="marketplace-data-products"');
-    const domains = html.indexOf('data-testid="marketplace-domains"');
+    const products = html.indexOf('data-testid="marketplace-dp-widget"');
+    const domains = html.indexOf('data-testid="marketplace-domains-widget"');
     expect(products).toBeGreaterThan(-1);
     expect(domains).toBeGreaterThan(-1);
     expect(products).toBeLessThan(domains);
@@ -442,8 +457,8 @@ describe('MarketplaceOverviewView', () => {
     await flushPromises();
     await flushPromises();
     const html = wrapper.find('[data-testid="marketplace-overview"]').html();
-    const products = html.indexOf('data-testid="marketplace-data-products"');
-    const domains = html.indexOf('data-testid="marketplace-domains"');
+    const products = html.indexOf('data-testid="marketplace-dp-widget"');
+    const domains = html.indexOf('data-testid="marketplace-domains-widget"');
     expect(products).toBeGreaterThan(-1);
     expect(domains).toBeGreaterThan(-1);
     expect(domains).toBeLessThan(products);
@@ -490,14 +505,14 @@ describe('MarketplaceOverviewView', () => {
     const column = wrapper.find('.marketplace-widget-column');
     expect(column.exists()).toBe(true);
     const columnHtml = column.html();
-    expect(column.findAll('[data-testid="marketplace-domains"]')).toHaveLength(2);
-    expect(column.findAll('[data-testid="marketplace-data-products"]')).toHaveLength(1);
-    const firstDomains = columnHtml.indexOf('data-testid="marketplace-domains"');
+    expect(column.findAll('[data-testid="marketplace-domains-widget"]')).toHaveLength(2);
+    expect(column.findAll('[data-testid="marketplace-dp-widget"]')).toHaveLength(1);
+    const firstDomains = columnHtml.indexOf('data-testid="marketplace-domains-widget"');
     const secondDomains = columnHtml.indexOf(
-      'data-testid="marketplace-domains"',
+      'data-testid="marketplace-domains-widget"',
       firstDomains + 1,
     );
-    const products = columnHtml.indexOf('data-testid="marketplace-data-products"');
+    const products = columnHtml.indexOf('data-testid="marketplace-dp-widget"');
     expect(firstDomains).toBeGreaterThan(-1);
     expect(secondDomains).toBeGreaterThan(firstDomains);
     expect(products).toBeGreaterThan(secondDomains);
@@ -535,8 +550,8 @@ describe('MarketplaceOverviewView', () => {
     await flushPromises();
     await flushPromises();
     const html = wrapper.find('[data-testid="marketplace-overview"]').html();
-    const products = html.indexOf('data-testid="marketplace-data-products"');
-    const domains = html.indexOf('data-testid="marketplace-domains"');
+    const products = html.indexOf('data-testid="marketplace-dp-widget"');
+    const domains = html.indexOf('data-testid="marketplace-domains-widget"');
     expect(products).toBeGreaterThan(-1);
     expect(domains).toBeGreaterThan(-1);
     expect(products).toBeLessThan(domains);
@@ -572,8 +587,8 @@ describe('MarketplaceOverviewView', () => {
     await flushPromises();
     await flushPromises();
     expect(wrapper.find('[data-testid="marketplace-layout-error"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="marketplace-data-products"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="marketplace-domains"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="marketplace-dp-widget"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="marketplace-domains-widget"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -591,8 +606,8 @@ describe('MarketplaceOverviewView', () => {
     await flushPromises();
     await flushPromises();
     const html = wrapper.find('[data-testid="marketplace-overview"]').html();
-    const products = html.indexOf('data-testid="marketplace-data-products"');
-    const domains = html.indexOf('data-testid="marketplace-domains"');
+    const products = html.indexOf('data-testid="marketplace-dp-widget"');
+    const domains = html.indexOf('data-testid="marketplace-domains-widget"');
     expect(products).toBeGreaterThan(-1);
     expect(domains).toBeGreaterThan(-1);
     expect(products).toBeLessThan(domains);
@@ -612,7 +627,10 @@ describe('MarketplaceOverviewView', () => {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     await flushPromises();
-    await wrapper.find('[data-testid="marketplace-add-data-product"]').trigger('click');
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="add-data-product-btn"]').exists()).toBe(true);
+    });
+    await wrapper.find('[data-testid="add-data-product-btn"]').trigger('click');
     await wrapper.find('[data-testid="marketplace-data-product-name"]').setValue('churn-metrics');
     await wrapper.find('.ant-modal-footer .ant-btn-primary').trigger('click');
     await flushPromises();

@@ -26,6 +26,27 @@ describe('catalog pipeline mappers', () => {
     expect(mapPipelineTask({ name: 'extract', downstreamTasks: ['load', 1, ''] })?.downstreamTasks).toEqual(['load']);
   });
 
+  it('maps task tags and owners, dropping tag members without a FQN or name', () => {
+    const mapped = mapPipelineTask({
+      name: 'extract',
+      downstreamTasks: [],
+      tags: [
+        { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+        { tagFQN: 'Glossary.Term', name: 'Term', source: 'Glossary', labelType: 'Derived', state: 'Suggested' },
+        { source: 'Classification' },
+        'not-an-object',
+        { tagFQN: 'Bad.Source', source: 'Bogus', labelType: 'Bogus', state: 'Bogus' },
+      ],
+      owners: [{ id: 'u-1', name: 'alice', type: 'user' }],
+    });
+    expect(mapped?.tags).toEqual([
+      { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      { tagFQN: 'Glossary.Term', name: 'Term', source: 'Glossary', labelType: 'Derived', state: 'Suggested' },
+      { tagFQN: 'Bad.Source', name: 'Bad.Source', source: undefined, labelType: undefined, state: undefined },
+    ]);
+    expect(mapped?.owners).toMatchObject([{ id: 'u-1', name: 'alice', type: 'user' }]);
+  });
+
   it('requires timestamp and executionStatus on a status row', () => {
     expect(mapCatalogPipelineStatus({ executionStatus: 'Successful' })).toBeNull();
     expect(

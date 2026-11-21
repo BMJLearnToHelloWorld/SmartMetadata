@@ -120,3 +120,41 @@ describe('AssetOverviewFields glossary-terms split (D-1)', () => {
     wrapper.unmount();
   });
 });
+
+describe('AssetOverviewFields data products row (D-2 batch 5b, pin DataProductsWidget read side)', () => {
+  function mountWithProducts(dataProducts: AssetDetail['dataProducts']) {
+    const asset: AssetDetail = {
+      entityType: 'table',
+      name: 'orders',
+      fullyQualifiedName: 'svc.db.schema.orders',
+      owners: [],
+      tags: [],
+      domains: [],
+      dataProducts,
+      schemaRows: [],
+      schemaLabel: 'Columns',
+    };
+    return mount(AssetOverviewFields, {
+      props: { asset, entityType: 'table' },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+  }
+
+  it('renders the data product names, preferring displayName', () => {
+    const wrapper = mountWithProducts([
+      { id: 'dp-1', name: 'sales-metrics', displayName: 'Sales Metrics', type: 'dataProduct' },
+      { id: 'dp-2', name: 'orders-mart', type: 'dataProduct' },
+    ]);
+    expect(wrapper.text()).toContain('Data Products');
+    expect(wrapper.text()).toContain('Sales Metrics');
+    expect(wrapper.text()).toContain('orders-mart');
+    wrapper.unmount();
+  });
+
+  it('renders an empty dash when the asset has no data products', () => {
+    const wrapper = mountWithProducts([]);
+    expect(wrapper.text()).toContain('Data Products');
+    expect(wrapper.text()).toContain('—');
+    wrapper.unmount();
+  });
+});
