@@ -395,6 +395,12 @@ export function createSsoScrollToErrorHandler(
 
   return () => {
     setTimeout(() => {
+      // jsdom teardown can delete the `document` global before this
+      // timer fires; pin has no equivalent guard because in a browser
+      // the document never goes away.
+      if (typeof document === 'undefined') {
+        return;
+      }
       const firstError = document.querySelector(errorSelector);
       if (firstError) {
         const scrollableContainer = firstError.closest(scrollContainer);

@@ -643,6 +643,21 @@ describe('scroll handler', () => {
       vi.advanceTimersByTime(100);
     }).not.toThrow();
   });
+
+  it('does nothing when the document is gone (torn-down jsdom)', () => {
+    // jsdom teardown can delete the `document` global before the 100ms
+    // timer fires; the handler must no-op instead of throwing an
+    // unhandled ReferenceError.
+    vi.stubGlobal('document', undefined);
+    try {
+      expect(() => {
+        createSsoFormScrollHandler()();
+        vi.advanceTimersByTime(100);
+      }).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe('hasSsoFieldValidationErrors', () => {
