@@ -17,6 +17,7 @@ import {
   buildIamAuthType,
 } from '@/ingestion/connectionFields';
 import type {
+  AwsCredentialsConfig,
   CatalogService,
   ElasticSearchSslConfig,
   EsSslCertPaths,
@@ -246,7 +247,6 @@ export function createEmptyServiceForm(): ServiceFormValues {
     trackingUri: '',
     registryUri: '',
     openApiSchemaUrl: '',
-    credentialsJson: '',
     delegatedEmail: '',
     driveId: '',
     organization: '',
@@ -272,11 +272,28 @@ export function createEmptyServiceForm(): ServiceFormValues {
     enableVersionValidation: true,
     extraHeaders: '',
     omStoreServiceConnection: true,
+    includeTopics: true,
+    includeTables: true,
+    includeDashboards: true,
+    includePipelines: true,
+    includeMlModels: true,
+    includeUsers: true,
+    includeTeams: true,
+    includeGlossaryTerms: true,
+    includeTags: true,
+    includePolicy: true,
+    includeMessagingServices: true,
+    includeDatabaseServices: true,
+    includePipelineServices: true,
+    limitRecords: 1000,
+    forceEntityOverwriting: false,
+    omElasticSearchType: '',
+    omElasticSearchConfig: '',
     gcpConfigType: 'gcpValues',
-    gcpCredentialsPath: '',
-    gcpExternalAccountJson: '',
-    impersonateServiceAccount: '',
-    impersonateLifetime: 3600,
+    // T-2 (2026-11-20): the shared GCP impersonate lifetime (pin default
+    // 3600; the old GoogleDrive-only impersonateLifetime default). The
+    // other authGcp* leaves stay unset on create (blank = unset).
+    authGcpImpersonateLifetime: 3600,
     includeTeamDrives: true,
     includeGoogleSheets: false,
     elasticSearchAuthMode: 'basicAuth',
@@ -378,6 +395,56 @@ export function createEmptyServiceForm(): ServiceFormValues {
     tenantId: '',
     siteUrl: '',
     siteName: '',
+    // T-2 (2026-11-20): spec defaults for Superset / Rest / the ten
+    // blocked-C rows. Branch selectors start on their field defaults
+    // (Superset api / basic, Rest url, Sftp usernamePassword, AlationSink
+    // basicAuth, OpenSearch basicAuth).
+    supersetConnectionBranch: 'api',
+    supersetDbAuthBranch: 'basic',
+    supersetDbScheme: '',
+    supersetDbUsername: '',
+    supersetDbPassword: '',
+    supersetDbHostPort: '',
+    supersetDbDatabase: '',
+    supersetDbDatabaseName: '',
+    supersetDbDatabaseSchema: '',
+    supersetDbIngestAllDatabases: false,
+    supersetDbSslMode: 'disable',
+    supersetDbSslCaCertificate: '',
+    supersetDbSslCertificate: '',
+    supersetDbSslKey: '',
+    supersetDbClassificationName: 'PostgresPolicyTags',
+    supersetDbQueryStatementSource: 'pg_stat_statements',
+    supersetDbUseSlowLogs: false,
+    supersetDbQueryHistoryTable: '',
+    supersetDbConnectionOptions: '',
+    supersetDbConnectionArguments: '',
+    restSchemaBranch: 'url',
+    openApiSchemaFilePath: '',
+    openApiSchemaS3Url: '',
+    apiEndpointFilterPattern: undefined,
+    sourcePythonClass: '',
+    alationSinkAuthBranch: 'basicAuth',
+    alationSinkAccessToken: '',
+    datasourceLinks: '',
+    alationSinkSSLCaCertificate: '',
+    alationSinkSSLCertificate: '',
+    alationSinkSSLKey: '',
+    maxConnectionLifeTime: 50,
+    validateSSL: false,
+    encrypted: false,
+    databaseServiceName: '',
+    messagingServiceName: '',
+    entity_type: '',
+    sftpHost: '',
+    sftpPort: 22,
+    sftpAuthBranch: 'usernamePassword',
+    sftpPrivateKey: '',
+    sftpPrivateKeyPassphrase: '',
+    rootDirectories: '["/"]',
+    structuredDataFilesOnly: false,
+    extractSampleData: false,
+    openSearchAuthBranch: 'basicAuth',
   };
 }
 
@@ -412,7 +479,6 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
   const esCerts = elasticSearchCertificatesFromConfig(config);
   const esCertPaths = esCerts && 'caCertPath' in esCerts ? esCerts : undefined;
   const esCertValues = esCerts && 'caCertValue' in esCerts ? esCerts : undefined;
-  const driveRefill = googleDriveRefill(config);
   return {
     name: service.name,
     displayName: service.displayName,
@@ -432,7 +498,11 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
       // nested username into the top-level field.
       service.serviceType === 'Alation'
         ? (typeof config.authType?.username === 'string' ? config.authType.username : '')
-        : typeof config.username === 'string'
+        : service.serviceType === 'Superset'
+          ? typeof config.connection?.provider === 'string'
+            ? (typeof config.connection.username === 'string' ? config.connection.username : '')
+            : ''
+          : typeof config.username === 'string'
           ? config.username
           : typeof config.connection?.username === 'string'
             ? config.connection.username
@@ -550,7 +620,31 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
       'string'
         ? ((config.openAPISchemaConnection as Record<string, unknown>).openAPISchemaURL as string)
         : '',
-    credentialsJson: '',
+    // Rest (restConnection.json): the openAPISchemaConnection oneOf branch
+    // is inferred from the stored leaf; the S3 AWS leaves refill in
+    // hydrateAuthBranchForm; the apiEndpointFilterPattern leaf refills
+    // here (it is not one of the 19 filtered fields).
+    restSchemaBranch:
+      typeof (config.openAPISchemaConnection as Record<string, unknown> | undefined)
+        ?.openAPISchemaFilePath === 'string'
+        ? 'filePath'
+        : typeof (config.openAPISchemaConnection as Record<string, unknown> | undefined)
+              ?.openAPISchemaS3URL === 'string'
+          ? 's3'
+          : 'url',
+    openApiSchemaFilePath:
+      typeof (config.openAPISchemaConnection as Record<string, unknown> | undefined)
+        ?.openAPISchemaFilePath === 'string'
+        ? ((config.openAPISchemaConnection as Record<string, unknown>).openAPISchemaFilePath as string)
+        : '',
+    openApiSchemaS3Url:
+      typeof (config.openAPISchemaConnection as Record<string, unknown> | undefined)
+        ?.openAPISchemaS3URL === 'string'
+        ? ((config.openAPISchemaConnection as Record<string, unknown>).openAPISchemaS3URL as string)
+        : '',
+    apiEndpointFilterPattern: isFilterPatternConfig(config.apiEndpointFilterPattern)
+      ? config.apiEndpointFilterPattern
+      : undefined,
     delegatedEmail: typeof config.delegatedEmail === 'string' ? config.delegatedEmail : '',
     driveId: typeof config.driveId === 'string' ? config.driveId : '',
     organization: typeof config.organization === 'string' ? config.organization : '',
@@ -595,17 +689,48 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     extraHeaders: stringifyJsonMap(config.extraHeaders),
     omStoreServiceConnection:
       typeof config.storeServiceConnection === 'boolean' ? config.storeServiceConnection : true,
+    // OpenMetadata (openMetadataConnection.json), B group — 13 include*
+    // switches (all default True), limitRecords (default 1000),
+    // forceEntityOverwriting (default False), elasticsSearch
+    // (conditionally required `type` + string-map `config`).
+    includeTopics: typeof config.includeTopics === 'boolean' ? config.includeTopics : true,
+    includeTables: typeof config.includeTables === 'boolean' ? config.includeTables : true,
+    includeDashboards:
+      typeof config.includeDashboards === 'boolean' ? config.includeDashboards : true,
+    includePipelines:
+      typeof config.includePipelines === 'boolean' ? config.includePipelines : true,
+    includeMlModels: typeof config.includeMlModels === 'boolean' ? config.includeMlModels : true,
+    includeUsers: typeof config.includeUsers === 'boolean' ? config.includeUsers : true,
+    includeTeams: typeof config.includeTeams === 'boolean' ? config.includeTeams : true,
+    includeGlossaryTerms:
+      typeof config.includeGlossaryTerms === 'boolean' ? config.includeGlossaryTerms : true,
+    includeTags: typeof config.includeTags === 'boolean' ? config.includeTags : true,
+    includePolicy: typeof config.includePolicy === 'boolean' ? config.includePolicy : true,
+    includeMessagingServices:
+      typeof config.includeMessagingServices === 'boolean'
+        ? config.includeMessagingServices
+        : true,
+    includeDatabaseServices:
+      typeof config.includeDatabaseServices === 'boolean'
+        ? config.includeDatabaseServices
+        : true,
+    includePipelineServices:
+      typeof config.includePipelineServices === 'boolean'
+        ? config.includePipelineServices
+        : true,
+    limitRecords: typeof config.limitRecords === 'number' ? config.limitRecords : 1000,
+    forceEntityOverwriting:
+      typeof config.forceEntityOverwriting === 'boolean' ? config.forceEntityOverwriting : false,
+    omElasticSearchType:
+      typeof (config.elasticsSearch as { type?: unknown } | undefined)?.type === 'string'
+        ? (config.elasticsSearch as { type: string }).type
+        : '',
+    omElasticSearchConfig: stringifyJsonMap(
+      (config.elasticsSearch as { config?: Record<string, string> } | undefined)?.config,
+    ),
     openMetadataSSLCaCertificate: '',
     openMetadataSSLCertificate: '',
     openMetadataSSLKey: '',
-    // GoogleDrive (googleDriveConnection.json): the credential JSON textareas
-    // refill empty (secret discipline); only the branch, the path, and the
-    // impersonate fields refill.
-    gcpConfigType: driveRefill.gcpConfigType,
-    gcpCredentialsPath: driveRefill.gcpCredentialsPath,
-    gcpExternalAccountJson: '',
-    impersonateServiceAccount: driveRefill.impersonateServiceAccount,
-    impersonateLifetime: driveRefill.impersonateLifetime,
     includeTeamDrives: typeof config.includeTeamDrives === 'boolean' ? config.includeTeamDrives : true,
     includeGoogleSheets:
       typeof config.includeGoogleSheets === 'boolean' ? config.includeGoogleSheets : false,
@@ -815,6 +940,108 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     tenantId: typeof config.tenantId === 'string' ? config.tenantId : '',
     siteUrl: typeof config.siteUrl === 'string' ? config.siteUrl : '',
     siteName: typeof config.siteName === 'string' ? config.siteName : '',
+    // T-2 (2026-11-20): Superset nested connection + the ten blocked-C
+    // rows. The nested auth branch + shared auth keys refill in
+    // hydrateAuthBranchForm (paired call in EditServiceConnectionView);
+    // the OpenSearch auth selector is inferred here (top-level authType).
+    supersetConnectionBranch:
+      typeof config.connection?.provider === 'string'
+        ? 'api'
+        : typeof config.connection?.scheme === 'string' &&
+            config.connection.scheme.includes('postgresql')
+          ? 'postgres'
+          : typeof config.connection?.scheme === 'string' &&
+              config.connection.scheme.includes('mysql')
+            ? 'mysql'
+            : 'api',
+    supersetDbScheme:
+      typeof config.connection?.scheme === 'string' ? config.connection.scheme : '',
+    supersetDbUsername:
+      typeof config.connection?.username === 'string' ? config.connection.username : '',
+    supersetDbPassword: '',
+    supersetDbHostPort:
+      typeof config.connection?.hostPort === 'string' ? config.connection.hostPort : '',
+    supersetDbDatabase:
+      typeof config.connection?.database === 'string' ? config.connection.database : '',
+    supersetDbDatabaseName:
+      typeof config.connection?.databaseName === 'string' ? config.connection.databaseName : '',
+    supersetDbDatabaseSchema:
+      typeof config.connection?.databaseSchema === 'string'
+        ? config.connection.databaseSchema
+        : '',
+    supersetDbIngestAllDatabases:
+      typeof config.connection?.ingestAllDatabases === 'boolean'
+        ? config.connection.ingestAllDatabases
+        : false,
+    supersetDbSslMode:
+      typeof config.connection?.sslMode === 'string' ? config.connection.sslMode : 'disable',
+    supersetDbSslCaCertificate: '',
+    supersetDbSslCertificate: '',
+    supersetDbSslKey: '',
+    supersetDbClassificationName:
+      typeof config.connection?.classificationName === 'string'
+        ? config.connection.classificationName
+        : 'PostgresPolicyTags',
+    supersetDbQueryStatementSource:
+      typeof config.connection?.queryStatementSource === 'string'
+        ? config.connection.queryStatementSource
+        : 'pg_stat_statements',
+    supersetDbUseSlowLogs:
+      typeof config.connection?.useSlowLogs === 'boolean' ? config.connection.useSlowLogs : false,
+    supersetDbQueryHistoryTable:
+      typeof config.connection?.queryHistoryTable === 'string'
+        ? config.connection.queryHistoryTable
+        : '',
+    supersetDbConnectionOptions: stringifyJsonMap(config.connection?.connectionOptions),
+    supersetDbConnectionArguments: stringifyJsonMap(config.connection?.connectionArguments),
+    // CustomMlModel / CustomSearch (sourcePythonClass).
+    sourcePythonClass:
+      typeof config.sourcePythonClass === 'string' ? config.sourcePythonClass : '',
+    // AlationSink (alationSinkConnection.json): the API access token never
+    // refills; the branch selector is inferred from the stored authType.
+    alationSinkAuthBranch:
+      typeof config.authType?.accessToken === 'string' ? 'apiToken' : 'basicAuth',
+    alationSinkAccessToken: '',
+    datasourceLinks: stringifyJsonMap(config.datasourceLinks),
+    alationSinkSSLCaCertificate: '',
+    alationSinkSSLCertificate: '',
+    alationSinkSSLKey: '',
+    // Amundsen (amundsenConnection.json): flat username / password.
+    maxConnectionLifeTime:
+      typeof config.maxConnectionLifeTime === 'number' ? config.maxConnectionLifeTime : 50,
+    validateSSL: typeof config.validateSSL === 'boolean' ? config.validateSSL : false,
+    encrypted: typeof config.encrypted === 'boolean' ? config.encrypted : false,
+    // Atlas (atlasConnection.json): the two service-name arrays refill as JSON.
+    databaseServiceName: Array.isArray(config.databaseServiceName)
+      ? JSON.stringify(config.databaseServiceName)
+      : '',
+    messagingServiceName: Array.isArray(config.messagingServiceName)
+      ? JSON.stringify(config.messagingServiceName)
+      : '',
+    entity_type: typeof config.entity_type === 'string' ? config.entity_type : '',
+    // Sftp (sftpConnection.json): host + port are separate leaves; the
+    // private key + passphrase never refill.
+    sftpHost: typeof config.host === 'string' ? config.host : '',
+    sftpPort: typeof config.port === 'number' ? config.port : 22,
+    sftpAuthBranch:
+      typeof config.authType?.privateKey === 'string' ? 'privateKey' : 'usernamePassword',
+    sftpPrivateKey: '',
+    sftpPrivateKeyPassphrase: '',
+    rootDirectories: Array.isArray(config.rootDirectories)
+      ? JSON.stringify(config.rootDirectories)
+      : '["/"]',
+    structuredDataFilesOnly:
+      typeof config.structuredDataFilesOnly === 'boolean'
+        ? config.structuredDataFilesOnly
+        : false,
+    extractSampleData:
+      typeof config.extractSampleData === 'boolean' ? config.extractSampleData : false,
+    // OpenSearch (openSearchConnection.json): the auth selector is inferred
+    // from the stored authType; the AWS leaves refill in
+    // hydrateAuthBranchForm; the ssl certificate leaves refill via the
+    // shared esCerts keys above.
+    openSearchAuthBranch:
+      typeof config.authType?.awsConfig === 'object' ? 'awsCredentials' : 'basicAuth',
   };
 }
 
@@ -888,85 +1115,6 @@ function maskServerApiKeys(
     typeof server.apiKey === 'string' ? { ...server, apiKey: '********' } : server,
   );
 }
-
-interface GoogleDriveRefill {
-  gcpConfigType: 'gcpValues' | 'gcpCredentialsPath' | 'gcpExternalAccount' | 'gcpADC';
-  gcpCredentialsPath: string;
-  impersonateServiceAccount: string;
-  impersonateLifetime: number;
-}
-
-/**
- * W3-3A: GoogleDrive credentials refill (ADR:2026-11-10-leanforms-3a-googledrive-credentials).
- * The stored wrapper is { gcpConfig, gcpImpersonateServiceAccount? }
- * (gcpCredentials.json); the branch is identified by gcpConfig.type, which
- * is a const in all four branches (service_account / gcp_credential_path /
- * external_account / gcp_adc). The credential JSON textareas refill EMPTY —
- * secrets are never prefilled (the builder preserves the stored
- * credentials when the textarea is left blank); only the branch selector
- * and the impersonate fields refill. A legacy bare service-account JSON
- * (no gcpConfig) infers the gcpValues branch, and an edit-save re-wraps
- * it (see buildServiceConnection) instead of dropping it.
- */
-function googleDriveRefill(config: ServiceConnectionConfig): GoogleDriveRefill {
-  const refill: GoogleDriveRefill = {
-    gcpConfigType: 'gcpValues',
-    gcpCredentialsPath: '',
-    impersonateServiceAccount: '',
-    impersonateLifetime: 3600,
-  };
-  const credentials = config.credentials;
-  if (!credentials || typeof credentials !== 'object') {
-    return refill;
-  }
-  const impersonate = credentials.gcpImpersonateServiceAccount;
-  if (impersonate) {
-    if (typeof impersonate.impersonateServiceAccount === 'string') {
-      refill.impersonateServiceAccount = impersonate.impersonateServiceAccount;
-    }
-    if (typeof impersonate.lifetime === 'number') {
-      refill.impersonateLifetime = impersonate.lifetime;
-    }
-  }
-  const gcpConfig = credentials.gcpConfig;
-  const type =
-    gcpConfig && typeof gcpConfig === 'object' && !Array.isArray(gcpConfig)
-      ? gcpConfig.type
-      : credentials.type;
-  if (type === 'gcp_credential_path') {
-    refill.gcpConfigType = 'gcpCredentialsPath';
-    // The path is not a secret, so it refills like any other plain field.
-    if (gcpConfig && typeof gcpConfig === 'object' && !Array.isArray(gcpConfig) && typeof gcpConfig.path === 'string') {
-      refill.gcpCredentialsPath = gcpConfig.path;
-    }
-  } else if (type === 'gcp_adc') {
-    refill.gcpConfigType = 'gcpADC';
-  } else if (type === 'external_account') {
-    refill.gcpConfigType = 'gcpExternalAccount';
-  } else {
-    refill.gcpConfigType = 'gcpValues';
-  }
-  return refill;
-}
-
-/** W3-3A: the stored gcpConfig object when it belongs to the given branch,
- * so an edit-save preserves branch leaves the form does not model
- * (projectId on the path/ADC branches — optional per spec, no form field). */
-function prevGcpConfigOfType(
-  existing: ServiceConnection | undefined,
-  typeConst: string,
-): Record<string, unknown> | undefined {
-  const credentials = existing?.config?.credentials;
-  if (!credentials || typeof credentials !== 'object') {
-    return undefined;
-  }
-  const gcpConfig = credentials.gcpConfig;
-  if (!gcpConfig || typeof gcpConfig !== 'object' || Array.isArray(gcpConfig)) {
-    return undefined;
-  }
-  return gcpConfig.type === typeConst ? gcpConfig : undefined;
-}
-
 
 function applyPassword(
   config: ServiceConnectionConfig,
@@ -1095,10 +1243,9 @@ function stringifyJsonMap(value: unknown): string {
 
 /**
  * Parse a JSON-object textarea (connectionOptions/connectionArguments) into a
- * string map. Mirrors the GoogleDrive credentialsJson precedent: invalid JSON,
- * a non-object, or a non-string value throws instead of sending a
- * schema-invalid config (all 11 database schemas are additionalProperties:
- * false with string map values).
+ * string map. Invalid JSON, a non-object, or a non-string value throws
+ * instead of sending a schema-invalid config (all 11 database schemas are
+ * additionalProperties: false with string map values).
  */
 function parseJsonMap(raw: string | undefined, field: string): Record<string, string> | undefined {
   const text = raw?.trim() ?? '';
@@ -1241,25 +1388,31 @@ interface SslLeafFormKeys {
     | 'consumerConfigSSLCaCertificate'
     | 'schemaRegistrySSLCaCertificate'
     | 'supersetSSLCaCertificate'
+    | 'supersetDbSslCaCertificate'
     | 'restSSLCaCertificate'
     | 'openMetadataSSLCaCertificate'
-    | 'alationDbSslCaCertificate';
+    | 'alationDbSslCaCertificate'
+    | 'alationSinkSSLCaCertificate';
   sslCertificate:
     | 'sslCertificate'
     | 'consumerConfigSSLCertificate'
     | 'schemaRegistrySSLCertificate'
     | 'supersetSSLCertificate'
+    | 'supersetDbSslCertificate'
     | 'restSSLCertificate'
     | 'openMetadataSSLCertificate'
-    | 'alationDbSslCertificate';
+    | 'alationDbSslCertificate'
+    | 'alationSinkSSLCertificate';
   sslKey:
     | 'sslKey'
     | 'consumerConfigSSLKey'
     | 'schemaRegistrySSLKey'
     | 'supersetSSLKey'
+    | 'supersetDbSslKey'
     | 'restSSLKey'
     | 'openMetadataSSLKey'
-    | 'alationDbSslKey';
+    | 'alationDbSslKey'
+    | 'alationSinkSSLKey';
 }
 
 function sslConfigFromFormKeys(
@@ -1406,13 +1559,79 @@ function preservedGoogleDriveCredentials(
   return Object.keys(bare).length ? { gcpConfig: bare } : undefined;
 }
 
-function policyAgentConfigFromForm(form: ServiceFormValues): Record<string, boolean> {
+/**
+ * T-2 (2026-11-20): the `supportsMaskedAccess` default differs by type —
+ * Snowflake's spec default is true, Databricks / UnityCatalog's is false
+ * (see each schema's `policyAgentConfig.default`). The shared helper
+ * previously emitted true for all three.
+ */
+function policyAgentConfigFromForm(
+  form: ServiceFormValues,
+  serviceType?: string,
+): Record<string, boolean> {
   return {
     enabled: form.policyAgentEnabled ?? true,
     supportsColumnAccess: form.policyAgentSupportsColumnAccess ?? false,
     supportsFullAccess: form.policyAgentSupportsFullAccess ?? true,
-    supportsMaskedAccess: form.policyAgentSupportsMaskedAccess ?? true,
+    supportsMaskedAccess:
+      form.policyAgentSupportsMaskedAccess ??
+      (serviceType === 'Databricks' || serviceType === 'UnityCatalog' ? false : true),
   };
+}
+
+/**
+ * T-2 (2026-11-20): the top-level `awsConfig` object (s3Connection.json /
+ * sageMakerConnection.json share the AWSCredentials shape). Secrets follow
+ * the blank-means-keep discipline against the stored awsConfig.
+ */
+function buildTopLevelAwsConfig(
+  form: ServiceFormValues,
+  existing?: ServiceConnectionConfig,
+): NonNullable<ServiceConnectionConfig['awsConfig']> {
+  const awsConfig: NonNullable<ServiceConnectionConfig['awsConfig']> = {};
+  if (typeof form.awsIamEnabled === 'boolean') {
+    awsConfig.enabled = form.awsIamEnabled;
+  }
+  if (form.awsRegion?.trim()) {
+    awsConfig.awsRegion = form.awsRegion.trim();
+  }
+  if (form.awsAccessKeyId?.trim()) {
+    awsConfig.awsAccessKeyId = form.awsAccessKeyId.trim();
+  }
+  if (form.awsEndPointURL?.trim()) {
+    awsConfig.endPointURL = form.awsEndPointURL.trim();
+  }
+  if (form.awsProfileName?.trim()) {
+    awsConfig.profileName = form.awsProfileName.trim();
+  }
+  if (form.assumeRoleArn?.trim()) {
+    awsConfig.assumeRoleArn = form.assumeRoleArn.trim();
+  }
+  if (form.assumeRoleSessionName?.trim()) {
+    awsConfig.assumeRoleSessionName = form.assumeRoleSessionName.trim();
+  }
+  if (form.assumeRoleSourceIdentity?.trim()) {
+    awsConfig.assumeRoleSourceIdentity = form.assumeRoleSourceIdentity.trim();
+  }
+  const secret = form.awsSecretAccessKey?.trim() ?? '';
+  if (shouldPersistSecret(secret)) {
+    awsConfig.awsSecretAccessKey = secret;
+  } else if (!secret) {
+    const prev = existing?.awsConfig?.awsSecretAccessKey;
+    if (prev && isMaskedSecret(prev)) {
+      awsConfig.awsSecretAccessKey = prev;
+    }
+  }
+  const session = form.awsSessionToken?.trim() ?? '';
+  if (shouldPersistSecret(session)) {
+    awsConfig.awsSessionToken = session;
+  } else if (!session) {
+    const prev = existing?.awsConfig?.awsSessionToken;
+    if (prev && isMaskedSecret(prev)) {
+      awsConfig.awsSessionToken = prev;
+    }
+  }
+  return awsConfig;
 }
 
 /**
@@ -1539,6 +1758,145 @@ function buildAlationDbConnection(
   }
   return nested;
 }
+
+/**
+ * T-2 (2026-11-20): Superset's nested `connection` oneOf
+ * (supersetConnection.json — SupersetApiConnection / PostgresConnection /
+ * MysqlConnection). Mirrors `buildAlationDbConnection`: the nested database
+ * leaves use the `supersetDb*` form keys, the auth branch uses the shared
+ * `authAws*` / `authAzure*` / `authGcp*` keys, and the basic password is
+ * the nested `supersetDbPassword` (the top-level `password` is the
+ * Superset API auth, never the nested database auth).
+ */
+function buildSupersetDbConnection(
+  form: ServiceFormValues,
+  prev: ServiceConnectionConfig['connection'],
+  branch: 'postgres' | 'mysql',
+): NonNullable<ServiceConnectionConfig['connection']> {
+  const nested: NonNullable<ServiceConnectionConfig['connection']> = {
+    type: branch === 'postgres' ? 'Postgres' : 'Mysql',
+  };
+  nested.scheme =
+    branch === 'postgres'
+      ? form.supersetDbScheme?.trim() || 'postgresql+psycopg2'
+      : 'mysql+pymysql';
+  if (form.supersetDbUsername?.trim()) {
+    nested.username = form.supersetDbUsername.trim();
+  }
+  const authBranch = form.supersetDbAuthBranch ?? 'basic';
+  const prevAuth = prev?.authType;
+  const prevExisting = prevAuth ? { authType: prevAuth } : undefined;
+  if (authBranch === 'iam') {
+    const auth = buildIamAuthType(form, prevExisting);
+    if (auth) {
+      nested.authType = auth;
+    }
+  } else if (authBranch === 'azure') {
+    const auth = buildAzureAuthType(form, prevExisting);
+    if (auth) {
+      nested.authType = auth;
+    }
+  } else if (authBranch === 'gcp') {
+    if (branch === 'mysql') {
+      nested.authType = buildGcpAuthType(form, prevExisting);
+    }
+  } else {
+    const password = secretFieldValue(
+      form.supersetDbPassword,
+      typeof prevAuth?.password === 'string' ? prevAuth.password : undefined,
+    );
+    if (password) {
+      nested.authType = { password };
+    }
+  }
+  if (form.supersetDbHostPort?.trim()) {
+    nested.hostPort = form.supersetDbHostPort.trim();
+  }
+  if (branch === 'postgres') {
+    if (form.supersetDbDatabase?.trim()) {
+      nested.database = form.supersetDbDatabase.trim();
+    }
+    if (typeof form.supersetDbIngestAllDatabases === 'boolean') {
+      nested.ingestAllDatabases = form.supersetDbIngestAllDatabases;
+    }
+    if (form.supersetDbSslMode?.trim()) {
+      nested.sslMode = form.supersetDbSslMode.trim();
+    }
+    const sslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'supersetDbSslCaCertificate',
+        sslCertificate: 'supersetDbSslCertificate',
+        sslKey: 'supersetDbSslKey',
+      },
+      asSslClientConfig(prev?.sslConfig),
+    );
+    if (sslConfig) {
+      nested.sslConfig = sslConfig;
+    }
+    if (form.supersetDbClassificationName?.trim()) {
+      nested.classificationName = form.supersetDbClassificationName.trim();
+    }
+    if (form.supersetDbQueryStatementSource?.trim()) {
+      nested.queryStatementSource = form.supersetDbQueryStatementSource.trim();
+    }
+  } else {
+    if (form.supersetDbDatabaseName?.trim()) {
+      nested.databaseName = form.supersetDbDatabaseName.trim();
+    }
+    if (form.supersetDbDatabaseSchema?.trim()) {
+      nested.databaseSchema = form.supersetDbDatabaseSchema.trim();
+    }
+    const sslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'supersetDbSslCaCertificate',
+        sslCertificate: 'supersetDbSslCertificate',
+        sslKey: 'supersetDbSslKey',
+      },
+      asSslClientConfig(prev?.sslConfig),
+    );
+    if (sslConfig) {
+      nested.sslConfig = sslConfig;
+    }
+    if (typeof form.supersetDbUseSlowLogs === 'boolean') {
+      nested.useSlowLogs = form.supersetDbUseSlowLogs;
+    }
+    if (form.supersetDbQueryHistoryTable?.trim()) {
+      nested.queryHistoryTable = form.supersetDbQueryHistoryTable.trim();
+    }
+  }
+  const connectionOptions = parseJsonMap(
+    form.supersetDbConnectionOptions,
+    'Connection options',
+  );
+  if (connectionOptions) {
+    nested.connectionOptions = connectionOptions;
+  }
+  const connectionArguments = parseJsonMap(
+    form.supersetDbConnectionArguments,
+    'Connection arguments',
+  );
+  if (connectionArguments) {
+    nested.connectionArguments = connectionArguments;
+  }
+  return nested;
+}
+
+/**
+ * T-2 (2026-11-20): four connection schemas allow a type-only payload
+ * (Sklearn / CustomDrive / CustomMlModel / CustomSearch — every leaf
+ * optional, required is [] or ['type']). The empty-body guard must not
+ * block them: an empty form IS the connection for these types. The
+ * form-level Q4 check (ConnectionConfigForm.submit) reads the same list
+ * — one source of truth, never a second copy of the condition.
+ */
+export const TYPE_ONLY_CONNECTION_TYPES: readonly string[] = [
+  'Sklearn',
+  'CustomDrive',
+  'CustomMlModel',
+  'CustomSearch',
+];
 
 export function buildServiceConnection(
   form: ServiceFormValues,
@@ -1896,7 +2254,7 @@ export function buildServiceConnection(
     if (form.snowflakeSourceHost?.trim()) {
       config.snowflakeSourceHost = form.snowflakeSourceHost.trim();
     }
-    config.policyAgentConfig = policyAgentConfigFromForm(form);
+    config.policyAgentConfig = policyAgentConfigFromForm(form, 'Snowflake');
     const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
     if (connectionOptions) {
       config.connectionOptions = connectionOptions;
@@ -2119,32 +2477,55 @@ export function buildServiceConnection(
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
     }
-    const nested: NonNullable<ServiceConnectionConfig['connection']> = {
-      provider: form.provider?.trim() || 'db',
-    };
-    if (form.username?.trim()) {
-      nested.username = form.username.trim();
+    // T-2 (2026-11-20): the `connection` oneOf (supersetConnection.json) —
+    // SupersetApiConnection / PostgresConnection / MysqlConnection. The API
+    // password lives nested in `connection.password` and is handled here
+    // (not by the generic applyPassword), so a stale API password can
+    // never leak into a database-branch connection.
+    const connBranch = form.supersetConnectionBranch ?? 'api';
+    if (connBranch === 'postgres' || connBranch === 'mysql') {
+      config.connection = buildSupersetDbConnection(
+        form,
+        existing?.config?.connection,
+        connBranch,
+      );
+    } else {
+      const nested: NonNullable<ServiceConnectionConfig['connection']> = {
+        provider: form.provider?.trim() || 'db',
+      };
+      if (form.username?.trim()) {
+        nested.username = form.username.trim();
+      }
+      const apiPassword = secretFieldValue(
+        form.password,
+        typeof existing?.config?.connection?.password === 'string'
+          ? existing.config.connection.password
+          : undefined,
+      );
+      if (apiPassword) {
+        nested.password = apiPassword;
+      }
+      // W2-5 lean-forms tier 2 (supersetApiConnection.json): verifySSL and
+      // sslConfig live nested in connection. Always visible, no showWhen
+      // linkage (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible);
+      // the leaves use the Superset triplet, never the top-level keys.
+      if (form.verifySSL?.trim()) {
+        nested.verifySSL = form.verifySSL.trim();
+      }
+      const supersetSSL = sslConfigFromFormKeys(
+        form,
+        {
+          caCertificate: 'supersetSSLCaCertificate',
+          sslCertificate: 'supersetSSLCertificate',
+          sslKey: 'supersetSSLKey',
+        },
+        existing?.config?.connection?.sslConfig,
+      );
+      if (supersetSSL) {
+        nested.sslConfig = supersetSSL;
+      }
+      config.connection = nested;
     }
-    // W2-5 lean-forms tier 2 (supersetApiConnection.json): verifySSL and
-    // sslConfig live nested in connection. Always visible, no showWhen
-    // linkage (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible);
-    // the leaves use the Superset triplet, never the top-level keys.
-    if (form.verifySSL?.trim()) {
-      nested.verifySSL = form.verifySSL.trim();
-    }
-    const supersetSSL = sslConfigFromFormKeys(
-      form,
-      {
-        caCertificate: 'supersetSSLCaCertificate',
-        sslCertificate: 'supersetSSLCertificate',
-        sslKey: 'supersetSSLKey',
-      },
-      existing?.config?.connection?.sslConfig,
-    );
-    if (supersetSSL) {
-      nested.sslConfig = supersetSSL;
-    }
-    config.connection = nested;
   } else if (type === 'Metabase') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
@@ -2162,50 +2543,7 @@ export function buildServiceConnection(
       }
     }
   } else if (type === 'S3') {
-    const awsConfig: NonNullable<ServiceConnectionConfig['awsConfig']> = {};
-    if (typeof form.awsIamEnabled === 'boolean') {
-      awsConfig.enabled = form.awsIamEnabled;
-    }
-    if (form.awsRegion?.trim()) {
-      awsConfig.awsRegion = form.awsRegion.trim();
-    }
-    if (form.awsAccessKeyId?.trim()) {
-      awsConfig.awsAccessKeyId = form.awsAccessKeyId.trim();
-    }
-    if (form.awsEndPointURL?.trim()) {
-      awsConfig.endPointURL = form.awsEndPointURL.trim();
-    }
-    if (form.awsProfileName?.trim()) {
-      awsConfig.profileName = form.awsProfileName.trim();
-    }
-    if (form.assumeRoleArn?.trim()) {
-      awsConfig.assumeRoleArn = form.assumeRoleArn.trim();
-    }
-    if (form.assumeRoleSessionName?.trim()) {
-      awsConfig.assumeRoleSessionName = form.assumeRoleSessionName.trim();
-    }
-    if (form.assumeRoleSourceIdentity?.trim()) {
-      awsConfig.assumeRoleSourceIdentity = form.assumeRoleSourceIdentity.trim();
-    }
-    const secret = form.awsSecretAccessKey?.trim() ?? '';
-    if (shouldPersistSecret(secret)) {
-      awsConfig.awsSecretAccessKey = secret;
-    } else if (!secret) {
-      const prev = existing?.config?.awsConfig?.awsSecretAccessKey;
-      if (prev && isMaskedSecret(prev)) {
-        awsConfig.awsSecretAccessKey = prev;
-      }
-    }
-    const session = form.awsSessionToken?.trim() ?? '';
-    if (shouldPersistSecret(session)) {
-      awsConfig.awsSessionToken = session;
-    } else if (!session) {
-      const prev = existing?.config?.awsConfig?.awsSessionToken;
-      if (prev && isMaskedSecret(prev)) {
-        awsConfig.awsSessionToken = prev;
-      }
-    }
-    config.awsConfig = awsConfig;
+    config.awsConfig = buildTopLevelAwsConfig(form, existing?.config);
     const buckets = (form.bucketNames ?? '')
       .split(/[,\n]/)
       .map((item) => item.trim())
@@ -2327,7 +2665,7 @@ export function buildServiceConnection(
     if (typeof form.connectionTimeout === 'number') {
       config.connectionTimeout = form.connectionTimeout;
     }
-    config.policyAgentConfig = policyAgentConfigFromForm(form);
+    config.policyAgentConfig = policyAgentConfigFromForm(form, type);
     const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
     if (connectionOptions) {
       config.connectionOptions = connectionOptions;
@@ -2390,16 +2728,99 @@ export function buildServiceConnection(
     if (typeof form.enableVersionValidation === 'boolean') {
       config.enableVersionValidation = form.enableVersionValidation;
     }
+    // T-2 (2026-11-20): the B group (openMetadataConnection.json) — 13
+    // include* switches (all default True), limitRecords (default 1000),
+    // forceEntityOverwriting (default False). The create form prefills the
+    // defaults; the edit refill defaults a missing key to the same value.
+    const includeKeys = [
+      'includeTopics',
+      'includeTables',
+      'includeDashboards',
+      'includePipelines',
+      'includeMlModels',
+      'includeUsers',
+      'includeTeams',
+      'includeGlossaryTerms',
+      'includeTags',
+      'includePolicy',
+      'includeMessagingServices',
+      'includeDatabaseServices',
+      'includePipelineServices',
+    ] as const;
+    for (const key of includeKeys) {
+      if (typeof form[key] === 'boolean') {
+        config[key] = form[key];
+      }
+    }
+    if (typeof form.limitRecords === 'number') {
+      config.limitRecords = form.limitRecords;
+    }
+    if (typeof form.forceEntityOverwriting === 'boolean') {
+      config.forceEntityOverwriting = form.forceEntityOverwriting;
+    }
     if (typeof form.omStoreServiceConnection === 'boolean') {
       config.storeServiceConnection = form.omStoreServiceConnection;
+    }
+    // T-2: `elasticsSearch` is conditionally required — its `type` is
+    // required when the object appears, but the object itself is optional.
+    // The form models it as a plain optional text leaf, so the whole
+    // object is only emitted when a type is typed (see the T-2 verdict,
+    // connectionCoverage.ts OpenMetadata row, grid ③).
+    const omEsType = form.omElasticSearchType?.trim() ?? '';
+    if (omEsType) {
+      const elasticsSearch: { type: string; config?: Record<string, string> } = {
+        type: omEsType,
+      };
+      const omEsConfig = parseJsonMap(form.omElasticSearchConfig, 'ElasticSearch config');
+      if (omEsConfig) {
+        elasticsSearch.config = omEsConfig;
+      }
+      config.elasticsSearch = elasticsSearch;
     }
     const extraHeaders = parseJsonMap(form.extraHeaders, 'Extra headers');
     if (extraHeaders) {
       config.extraHeaders = extraHeaders;
     }
   } else if (type === 'Rest') {
-    if (form.openApiSchemaUrl?.trim()) {
+    // T-2 (2026-11-20): the `openAPISchemaConnection` oneOf
+    // (restConnection.json) — OpenAPISchemaURL / OpenAPISchemaFilePath /
+    // OpenAPISchemaS3. The S3 branch reuses the shared `authAws*` keys
+    // (buildIamAuthType); the apiEndpointFilterPattern leaf is rendered
+    // in the connection form (it is not one of the 19 filtered fields).
+    const schemaBranch = form.restSchemaBranch ?? 'url';
+    if (schemaBranch === 'filePath') {
+      if (form.openApiSchemaFilePath?.trim()) {
+        config.openAPISchemaConnection = {
+          openAPISchemaFilePath: form.openApiSchemaFilePath.trim(),
+        };
+      }
+    } else if (schemaBranch === 's3') {
+      const s3Connection: {
+        openAPISchemaS3URL?: string;
+        awsCredentials?: AwsCredentialsConfig;
+      } = {};
+      if (form.openApiSchemaS3Url?.trim()) {
+        s3Connection.openAPISchemaS3URL = form.openApiSchemaS3Url.trim();
+      }
+      const prevS3 = existing?.config?.openAPISchemaConnection;
+      const prevAws =
+        prevS3 && typeof prevS3 === 'object' && 'awsCredentials' in prevS3
+          ? (prevS3 as { awsCredentials?: ServiceConnectionConfig['awsConfig'] })
+              .awsCredentials
+          : undefined;
+      const aws = buildIamAuthType(form, prevAws ? { authType: { awsConfig: prevAws } } : undefined)?.awsConfig;
+      if (aws && Object.keys(aws).length > 0) {
+        s3Connection.awsCredentials = aws;
+      }
+      if (Object.keys(s3Connection).length > 0) {
+        config.openAPISchemaConnection = s3Connection;
+      }
+    } else if (form.openApiSchemaUrl?.trim()) {
       config.openAPISchemaConnection = { openAPISchemaURL: form.openApiSchemaUrl.trim() };
+    }
+    const apiEndpointFilter = nonEmptyFilterPattern(form.apiEndpointFilterPattern);
+    if (apiEndpointFilter) {
+      config.apiEndpointFilterPattern = apiEndpointFilter;
     }
     const token = form.apiKey?.trim() ?? '';
     if (shouldPersistSecret(token)) {
@@ -2430,70 +2851,30 @@ export function buildServiceConnection(
       config.sslConfig = restSslConfig;
     }
   } else if (type === 'GoogleDrive') {
-    // W3-3A: credentials take the gcpConfig wrapper (gcpCredentials.json) —
-    // a bare service-account JSON is schema-invalid and fails ingestion
-    // (ADR:2026-11-10-leanforms-3a-googledrive-credentials). A blank branch
-    // input preserves the stored credentials: blank means "keep what you
-    // have", never "delete the credentials".
+    // T-2 (2026-11-20): per-leaf credentials (googleDriveConnection.json) —
+    // the four gcpConfig variants share the `authGcp*` form keys with the
+    // Mysql / Alation / VertexAI GCP branches (buildGcpVariant), selected
+    // by `gcpConfigType`. A blank edit preserves the stored credentials:
+    // blank means "keep what you have", never "delete the credentials"
+    // (the refill prefills every non-secret leaf, so a variant with only
+    // its `type` means nothing new was entered). The ADC branch is the
+    // config itself — an empty variant still emits `{type: 'gcp_adc'}`.
     const gcpType = form.gcpConfigType ?? 'gcpValues';
-    if (gcpType === 'gcpValues') {
-      const raw = form.credentialsJson?.trim() ?? '';
-      if (raw) {
-        const parsed = parseJsonObject(raw, 'Google Drive credentials');
-        if (parsed) {
-          config.credentials = { gcpConfig: parsed };
-        }
-      } else {
-        const preserved = preservedGoogleDriveCredentials(existing);
-        if (preserved) {
-          config.credentials = preserved;
-        }
-      }
-    } else if (gcpType === 'gcpCredentialsPath') {
-      const path = form.gcpCredentialsPath?.trim() ?? '';
-      if (path) {
-        // Preserve a stored projectId for the same branch (opaque; the
-        // spec leaves it optional and the form has no field for it).
-        const prev = prevGcpConfigOfType(existing, 'gcp_credential_path');
-        config.credentials = {
-          gcpConfig: { ...(prev ?? {}), type: 'gcp_credential_path', path },
-        };
-      } else {
-        const preserved = preservedGoogleDriveCredentials(existing);
-        if (preserved) {
-          config.credentials = preserved;
-        }
-      }
-    } else if (gcpType === 'gcpExternalAccount') {
-      const raw = form.gcpExternalAccountJson?.trim() ?? '';
-      if (raw) {
-        const parsed = parseJsonObject(raw, 'External account credentials');
-        if (parsed) {
-          config.credentials = { gcpConfig: parsed };
-        }
-      } else {
-        const preserved = preservedGoogleDriveCredentials(existing);
-        if (preserved) {
-          config.credentials = preserved;
-        }
-      }
-    } else {
-      // gcpADC: no inputs — the branch alone is the config. A stored
-      // projectId for the same branch is preserved (opaque).
-      const prev = prevGcpConfigOfType(existing, 'gcp_adc');
-      config.credentials = { gcpConfig: { ...(prev ?? {}), type: 'gcp_adc' } };
+    const storedCredentials = existing?.config?.credentials;
+    const storedGcpConfig =
+      storedCredentials && typeof storedCredentials === 'object'
+        ? storedCredentials.gcpConfig
+        : undefined;
+    const variant = buildGcpVariant(form, storedGcpConfig, gcpType);
+    const credentials: NonNullable<ServiceConnectionConfig['credentials']> =
+      Object.keys(variant).length > 1
+        ? { gcpConfig: variant }
+        : (preservedGoogleDriveCredentials(existing) ?? { gcpConfig: variant });
+    const impersonate = buildGcpImpersonateServiceAccount(form);
+    if (impersonate?.impersonateServiceAccount) {
+      credentials.gcpImpersonateServiceAccount = impersonate;
     }
-    const impersonateEmail = form.impersonateServiceAccount?.trim() ?? '';
-    if (impersonateEmail && config.credentials && typeof config.credentials === 'object') {
-      config.credentials = {
-        ...config.credentials,
-        gcpImpersonateServiceAccount: {
-          impersonateServiceAccount: impersonateEmail,
-          lifetime:
-            typeof form.impersonateLifetime === 'number' ? form.impersonateLifetime : 3600,
-        },
-      };
-    }
+    config.credentials = credentials;
     if (form.delegatedEmail?.trim()) {
       config.delegatedEmail = form.delegatedEmail.trim();
     }
@@ -2668,6 +3049,287 @@ export function buildServiceConnection(
     if (typeof form.fetchPrompts === 'boolean') {
       config.fetchPrompts = form.fetchPrompts;
     }
+  } else if (type === 'CustomMlModel' || type === 'CustomSearch') {
+    // T-2 (2026-11-20): customMlModelConnection.json /
+    // customSearchConnection.json — required is ['type'] only; the one
+    // modelled leaf is sourcePythonClass plus connection options.
+    if (form.sourcePythonClass?.trim()) {
+      config.sourcePythonClass = form.sourcePythonClass.trim();
+    }
+    const customConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (customConnectionOptions) {
+      config.connectionOptions = customConnectionOptions;
+    }
+  } else if (type === 'SageMaker') {
+    // T-2 (2026-11-20): sageMakerConnection.json — the top-level
+    // `awsConfig` object (required), same AWSCredentials shape as S3.
+    config.awsConfig = buildTopLevelAwsConfig(form, existing?.config);
+  } else if (type === 'Sklearn') {
+    // T-2 (2026-11-20): sklearnConnection.json has no modelled leaves
+    // (only `type` + filter patterns + capability flags). The config
+    // stays `{type: 'Sklearn'}` — see the type-only exemption at the
+    // empty-body guard below.
+  } else if (type === 'AlationSink') {
+    // T-2 (2026-11-20): alationSinkConnection.json — authType oneOf
+    // (BasicAuth {username, password} / ApiAccessTokenAuth {accessToken}),
+    // projectName, paginationLimit, datasourceLinks (string map),
+    // verifySSL, sslConfig (validateSSLClientConfig triplet).
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    const sinkAuthBranch = form.alationSinkAuthBranch ?? 'basicAuth';
+    const prevSinkAuth = existing?.config?.authType;
+    const sinkAuth: NonNullable<ServiceConnectionConfig['authType']> = {};
+    if (sinkAuthBranch === 'apiToken') {
+      const token = secretFieldValue(
+        form.alationSinkAccessToken,
+        typeof prevSinkAuth?.accessToken === 'string' ? prevSinkAuth.accessToken : undefined,
+      );
+      if (token) {
+        sinkAuth.accessToken = token;
+      }
+    } else {
+      if (form.username?.trim()) {
+        sinkAuth.username = form.username.trim();
+      }
+      const secret = secretFieldValue(
+        form.password,
+        typeof prevSinkAuth?.password === 'string' ? prevSinkAuth.password : undefined,
+      );
+      if (secret) {
+        sinkAuth.password = secret;
+      }
+    }
+    if (Object.keys(sinkAuth).length) {
+      config.authType = sinkAuth;
+    }
+    if (form.projectName?.trim()) {
+      config.projectName = form.projectName.trim();
+    }
+    if (typeof form.paginationLimit === 'number') {
+      config.paginationLimit = form.paginationLimit;
+    }
+    const datasourceLinks = parseJsonMap(form.datasourceLinks, 'Datasource links');
+    if (datasourceLinks) {
+      config.datasourceLinks = datasourceLinks;
+    }
+    if (form.verifySSL?.trim()) {
+      config.verifySSL = form.verifySSL.trim();
+    }
+    const sinkSslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'alationSinkSSLCaCertificate',
+        sslCertificate: 'alationSinkSSLCertificate',
+        sslKey: 'alationSinkSSLKey',
+      },
+      asSslClientConfig(existing?.config?.sslConfig),
+    );
+    if (sinkSslConfig) {
+      config.sslConfig = sinkSslConfig;
+    }
+    const sinkConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (sinkConnectionOptions) {
+      config.connectionOptions = sinkConnectionOptions;
+    }
+    const sinkConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (sinkConnectionArguments) {
+      config.connectionArguments = sinkConnectionArguments;
+    }
+  } else if (type === 'Amundsen') {
+    // T-2 (2026-11-20): amundsenConnection.json — flat username /
+    // password (no authType wrapper), all three required.
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    const amundsenSecret = secretFieldValue(
+      form.password,
+      typeof existing?.config?.password === 'string' ? existing.config.password : undefined,
+    );
+    if (amundsenSecret) {
+      config.password = amundsenSecret;
+    }
+    if (typeof form.maxConnectionLifeTime === 'number') {
+      config.maxConnectionLifeTime = form.maxConnectionLifeTime;
+    }
+    if (typeof form.validateSSL === 'boolean') {
+      config.validateSSL = form.validateSSL;
+    }
+    if (typeof form.encrypted === 'boolean') {
+      config.encrypted = form.encrypted;
+    }
+  } else if (type === 'Atlas') {
+    // T-2 (2026-11-20): atlasConnection.json — flat username / password,
+    // entity_type, and the two service-name string arrays.
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    const atlasSecret = secretFieldValue(
+      form.password,
+      typeof existing?.config?.password === 'string' ? existing.config.password : undefined,
+    );
+    if (atlasSecret) {
+      config.password = atlasSecret;
+    }
+    if (form.entity_type?.trim()) {
+      config.entity_type = form.entity_type.trim();
+    }
+    const databaseServiceName = parseJsonArray(
+      form.databaseServiceName,
+      'Database service names',
+      isJsonString,
+      'strings',
+    );
+    if (databaseServiceName) {
+      config.databaseServiceName = databaseServiceName;
+    }
+    const messagingServiceName = parseJsonArray(
+      form.messagingServiceName,
+      'Messaging service names',
+      isJsonString,
+      'strings',
+    );
+    if (messagingServiceName) {
+      config.messagingServiceName = messagingServiceName;
+    }
+    const atlasConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (atlasConnectionOptions) {
+      config.connectionOptions = atlasConnectionOptions;
+    }
+    const atlasConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (atlasConnectionArguments) {
+      config.connectionArguments = atlasConnectionArguments;
+    }
+  } else if (type === 'CustomDrive') {
+    // T-2 (2026-11-20): customDriveConnection.json — only the two
+    // connection maps; no other modelled leaves.
+    const driveConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (driveConnectionOptions) {
+      config.connectionOptions = driveConnectionOptions;
+    }
+    const driveConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (driveConnectionArguments) {
+      config.connectionArguments = driveConnectionArguments;
+    }
+  } else if (type === 'Sftp') {
+    // T-2 (2026-11-20): sftpConnection.json — host + port are separate
+    // leaves (no hostPort); authType oneOf (Username/Password /
+    // Private Key). The private key is a fileOrInput secret.
+    if (form.sftpHost?.trim()) {
+      config.host = form.sftpHost.trim();
+    }
+    if (typeof form.sftpPort === 'number') {
+      config.port = form.sftpPort;
+    }
+    const sftpBranch = form.sftpAuthBranch ?? 'usernamePassword';
+    const prevSftpAuth = existing?.config?.authType;
+    const sftpAuth: NonNullable<ServiceConnectionConfig['authType']> = {};
+    if (form.username?.trim()) {
+      sftpAuth.username = form.username.trim();
+    }
+    if (sftpBranch === 'privateKey') {
+      const key = secretFieldValue(
+        form.sftpPrivateKey,
+        typeof prevSftpAuth?.privateKey === 'string' ? prevSftpAuth.privateKey : undefined,
+      );
+      if (key) {
+        sftpAuth.privateKey = key;
+      }
+      const passphrase = secretFieldValue(
+        form.sftpPrivateKeyPassphrase,
+        typeof prevSftpAuth?.privateKeyPassphrase === 'string'
+          ? prevSftpAuth.privateKeyPassphrase
+          : undefined,
+      );
+      if (passphrase) {
+        sftpAuth.privateKeyPassphrase = passphrase;
+      }
+    } else {
+      const secret = secretFieldValue(
+        form.password,
+        typeof prevSftpAuth?.password === 'string' ? prevSftpAuth.password : undefined,
+      );
+      if (secret) {
+        sftpAuth.password = secret;
+      }
+    }
+    if (Object.keys(sftpAuth).length) {
+      config.authType = sftpAuth;
+    }
+    const rootDirectories = parseJsonArray(
+      form.rootDirectories,
+      'Root directories',
+      isJsonString,
+      'strings',
+    );
+    if (rootDirectories) {
+      config.rootDirectories = rootDirectories;
+    }
+    const sftpConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (sftpConnectionOptions) {
+      config.connectionOptions = sftpConnectionOptions;
+    }
+    const sftpConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (sftpConnectionArguments) {
+      config.connectionArguments = sftpConnectionArguments;
+    }
+    if (typeof form.structuredDataFilesOnly === 'boolean') {
+      config.structuredDataFilesOnly = form.structuredDataFilesOnly;
+    }
+    if (typeof form.extractSampleData === 'boolean') {
+      config.extractSampleData = form.extractSampleData;
+    }
+  } else if (type === 'OpenSearch') {
+    // T-2 (2026-11-20): openSearchConnection.json — authType oneOf
+    // (Basic Authentication {username, password} / AWSCredentials
+    // {awsConfig}), verifySSL, sslConfig (certificates oneOf, same shape
+    // as ElasticSearch), connectionTimeoutSecs, connectionArguments.
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    const osAuthBranch = form.openSearchAuthBranch ?? 'basicAuth';
+    const prevOsAuth = existing?.config?.authType;
+    if (osAuthBranch === 'awsCredentials') {
+      const auth = buildIamAuthType(form, prevOsAuth ? { authType: prevOsAuth } : undefined);
+      if (auth) {
+        config.authType = auth;
+      }
+    } else {
+      const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
+      if (form.username?.trim()) {
+        auth.username = form.username.trim();
+      }
+      const secret = secretFieldValue(
+        form.password,
+        typeof prevOsAuth?.password === 'string' ? prevOsAuth.password : undefined,
+      );
+      if (secret) {
+        auth.password = secret;
+      }
+      if (Object.keys(auth).length) {
+        config.authType = auth;
+      }
+    }
+    if (form.verifySSL?.trim()) {
+      config.verifySSL = form.verifySSL.trim();
+    }
+    const osSslConfig = elasticSearchSslConfigFromForm(form, existing?.config);
+    if (osSslConfig) {
+      config.sslConfig = osSslConfig;
+    }
+    if (typeof form.connectionTimeoutSecs === 'number') {
+      config.connectionTimeoutSecs = form.connectionTimeoutSecs;
+    }
+    const osConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (osConnectionArguments) {
+      config.connectionArguments = osConnectionArguments;
+    }
   } else {
     return existing;
   }
@@ -2691,6 +3353,22 @@ export function buildServiceConnection(
     'Collibra',
     'MetadataES',
     'SharePoint',
+    // T-2 (2026-11-20): the ten blocked-C rows + Superset build their own
+    // auth shapes in-branch (nested connection.password, flat
+    // config.password, authType {accessToken}/{privateKey}/{awsConfig},
+    // or no password at all) — the generic applyPassword would write a
+    // wrong-shape `authType = {password}` over them.
+    'Superset',
+    'CustomMlModel',
+    'SageMaker',
+    'Sklearn',
+    'AlationSink',
+    'Amundsen',
+    'Atlas',
+    'CustomDrive',
+    'Sftp',
+    'CustomSearch',
+    'OpenSearch',
   ];
   if (!NO_GENERIC_PASSWORD.includes(type)) {
     applyPassword(config, form, existing?.config);
@@ -2714,10 +3392,74 @@ export function buildServiceConnection(
       }
     }
   }
-  if (Object.keys(config).length <= 1) {
+  if (Object.keys(config).length <= 1 && !TYPE_ONLY_CONNECTION_TYPES.includes(type)) {
     return undefined;
   }
   return { config };
+}
+
+/**
+ * T-2 (2026-11-20): mask every secret leaf of an authType object — the
+ * flat leaves plus the AWS session secrets, the Azure client secret, and
+ * the GCP private key. Shared by the top-level authType (Mysql / Postgres /
+ * OpenSearch / Sftp / ...) and the nested one (Alation / Superset
+ * connection). The top-level awsConfig / azureConfig / gcpConfig objects
+ * were a pre-existing display gap (A2 noted it out of scope); closing it
+ * here because OpenSearch's top-level authType ships on this lane.
+ */
+function maskAuthTypeSecrets(
+  auth: NonNullable<ServiceConnectionConfig['authType']>,
+): NonNullable<ServiceConnectionConfig['authType']> {
+  const next = { ...auth };
+  for (const key of [
+    'password',
+    'token',
+    'clientSecret',
+    'azureClientSecret',
+    'apiKey',
+    'authString',
+    // A2: Alation ApiAccessTokenAuth.
+    'accessToken',
+    // T-2: Sftp private-key auth.
+    'privateKey',
+    'privateKeyPassphrase',
+  ] as const) {
+    if (typeof next[key] === 'string') {
+      next[key] = '********';
+    }
+  }
+  if (next.awsConfig && typeof next.awsConfig === 'object') {
+    const aws = { ...next.awsConfig };
+    for (const key of ['awsSecretAccessKey', 'awsSessionToken'] as const) {
+      if (typeof aws[key] === 'string') {
+        aws[key] = '********';
+      }
+    }
+    next.awsConfig = aws;
+  }
+  if (next.azureConfig && typeof next.azureConfig === 'object') {
+    const azure = { ...next.azureConfig };
+    if (typeof azure.clientSecret === 'string') {
+      azure.clientSecret = '********';
+    }
+    next.azureConfig = azure;
+  }
+  if (next.gcpConfig && typeof next.gcpConfig === 'object') {
+    const gcp = { ...next.gcpConfig };
+    const inner = gcp.gcpConfig;
+    if (
+      inner &&
+      typeof inner === 'object' &&
+      typeof (inner as Record<string, unknown>)['privateKey'] === 'string'
+    ) {
+      gcp.gcpConfig = {
+        ...(inner as Record<string, unknown>),
+        privateKey: '********',
+      };
+    }
+    next.gcpConfig = gcp;
+  }
+  return next;
 }
 
 /** The three validateSSLClientConfig PEM leaves, shared by every sslConfig object. */
@@ -2729,22 +3471,7 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   const config = { ...connection.config };
   if (config.authType && typeof config.authType === 'object') {
-    const auth = { ...config.authType };
-    for (const key of [
-      'password',
-      'token',
-      'clientSecret',
-      'azureClientSecret',
-      'apiKey',
-      'authString',
-      // A2: Alation ApiAccessTokenAuth.
-      'accessToken',
-    ] as const) {
-      if (typeof auth[key] === 'string') {
-        auth[key] = '********';
-      }
-    }
-    config.authType = auth;
+    config.authType = maskAuthTypeSecrets(config.authType);
   }
   if (typeof config.password === 'string') {
     config.password = '********';
@@ -2772,6 +3499,20 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   // (ADR:2026-11-10-leanforms-3a-googledrive-credentials).
   if (config.credentials && typeof config.credentials === 'object') {
     config.credentials = '********';
+  }
+  // T-2 (2026-11-20): Rest's S3 branch nests the AWSCredentials under
+  // openAPISchemaConnection.awsCredentials — mask the session secrets.
+  const openApiSchema = config.openAPISchemaConnection as
+    | { awsCredentials?: AwsCredentialsConfig }
+    | undefined;
+  if (openApiSchema?.awsCredentials && typeof openApiSchema.awsCredentials === 'object') {
+    const aws = { ...openApiSchema.awsCredentials };
+    for (const key of ['awsSecretAccessKey', 'awsSessionToken'] as const) {
+      if (typeof aws[key] === 'string') {
+        aws[key] = '********';
+      }
+    }
+    config.openAPISchemaConnection = { ...openApiSchema, awsCredentials: aws };
   }
   // W3-3A: Mcp servers[].apiKey — walk the array, mask each key
   // (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key).
@@ -2849,59 +3590,11 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
       }
       nested.sslConfig = sslConfig;
     }
-    // A2: Alation's nested authType mirrors the top-level one — mask its
-    // password, the nested AWS session secrets, the Azure client secret,
-    // and the nested GCP private key. (The top-level authType.awsConfig /
-    // azureConfig / gcpConfig objects are a pre-existing display gap for
-    // the Mysql/Postgres types, out of this lane's scope; the nested shape
-    // is new surface introduced here, so it is masked as built.)
+    // A2: Alation's nested authType mirrors the top-level one (the
+    // Superset nested authType is the same shape) — mask it with the
+    // shared helper.
     if (nested.authType && typeof nested.authType === 'object') {
-      const nestedAuth = { ...nested.authType };
-      for (const key of [
-        'password',
-        'token',
-        'clientSecret',
-        'azureClientSecret',
-        'apiKey',
-        'authString',
-        'accessToken',
-      ] as const) {
-        if (typeof nestedAuth[key] === 'string') {
-          nestedAuth[key] = '********';
-        }
-      }
-      if (nestedAuth.awsConfig && typeof nestedAuth.awsConfig === 'object') {
-        const aws = { ...nestedAuth.awsConfig };
-        for (const key of ['awsSecretAccessKey', 'awsSessionToken'] as const) {
-          if (typeof aws[key] === 'string') {
-            aws[key] = '********';
-          }
-        }
-        nestedAuth.awsConfig = aws;
-      }
-      if (nestedAuth.azureConfig && typeof nestedAuth.azureConfig === 'object') {
-        const azure = { ...nestedAuth.azureConfig };
-        if (typeof azure.clientSecret === 'string') {
-          azure.clientSecret = '********';
-        }
-        nestedAuth.azureConfig = azure;
-      }
-      if (nestedAuth.gcpConfig && typeof nestedAuth.gcpConfig === 'object') {
-        const gcp = { ...nestedAuth.gcpConfig };
-        const inner = gcp.gcpConfig;
-        if (
-          inner &&
-          typeof inner === 'object' &&
-          typeof (inner as Record<string, unknown>)['privateKey'] === 'string'
-        ) {
-          gcp.gcpConfig = {
-            ...(inner as Record<string, unknown>),
-            privateKey: '********',
-          };
-        }
-        nestedAuth.gcpConfig = gcp;
-      }
-      nested.authType = nestedAuth;
+      nested.authType = maskAuthTypeSecrets(nested.authType);
     }
     config.connection = nested;
   }

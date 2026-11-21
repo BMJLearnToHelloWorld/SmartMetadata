@@ -17,6 +17,7 @@ import {
   clearInactiveAlationDbAuthBranchFields,
   clearInactiveAuthBranchFields,
   clearInactiveBranchFields,
+  clearInactiveSupersetDbAuthBranchFields,
   connectionFieldGroupName,
   connectionFieldsForType,
   hasStoredFileFieldValue,
@@ -104,6 +105,9 @@ function onSelectorChange(field: ConnectionFieldDef, value: string | undefined):
     clearInactiveAuthBranchFields(type.value, props.form, next || 'basic');
   } else if (field.key === 'alationDbAuthBranch') {
     clearInactiveAlationDbAuthBranchFields(props.form, next || 'basic');
+    clearInactiveBranchFields(allFields.value, props.form, String(field.key), next);
+  } else if (field.key === 'supersetDbAuthBranch') {
+    clearInactiveSupersetDbAuthBranchFields(props.form, next || 'basic');
     clearInactiveBranchFields(allFields.value, props.form, String(field.key), next);
   } else {
     clearInactiveBranchFields(allFields.value, props.form, String(field.key), next);

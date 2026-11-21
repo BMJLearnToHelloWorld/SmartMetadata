@@ -18,6 +18,7 @@ import {
   kindForServiceType,
   redactConnectionForDisplay,
 } from './connections';
+import { hydrateAuthBranchForm } from './connectionFields';
 import { mergeEditConfig } from './serviceEditMerge';
 import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
@@ -105,21 +106,29 @@ describe('service connections', () => {
     expect(
       buildServiceConnection({
         name: 'drive', kind: 'drive', serviceType: 'GoogleDrive',
-        credentialsJson: '{"type": "service_account"}', delegatedEmail: 'user@example.com',
+        // T-2 (2026-11-20): credentials are per-leaf now (no JSON blob) —
+        // the variant leaves use the shared authGcp* keys, and the
+        // gcpConfig wrapper is built from them (gcpCredentials.json
+        // requires gcpConfig, additionalProperties: false).
+        authGcpProjectId: 'p1',
+        authGcpPrivateKey: '---KEY---',
+        authGcpClientEmail: 'svc@p1.iam.gserviceaccount.com',
+        delegatedEmail: 'user@example.com',
       }),
     ).toEqual({
       config: {
         type: 'GoogleDrive',
-        // W3-3A (J-Q3): credentials take the gcpConfig wrapper — the bare
-        // service-account JSON is schema-invalid (gcpCredentials.json
-        // requires gcpConfig, additionalProperties: false).
-        credentials: { gcpConfig: { type: 'service_account' } },
+        credentials: {
+          gcpConfig: {
+            type: 'service_account',
+            projectId: 'p1',
+            privateKey: '---KEY---',
+            clientEmail: 'svc@p1.iam.gserviceaccount.com',
+          },
+        },
         delegatedEmail: 'user@example.com',
       },
     });
-    expect(() =>
-      buildServiceConnection({ name: 'drive', kind: 'drive', serviceType: 'GoogleDrive', credentialsJson: 'not-json' }),
-    ).toThrow('valid JSON');
     expect(
       buildServiceConnection({
         name: 'es', kind: 'search', serviceType: 'ElasticSearch',
@@ -395,7 +404,11 @@ describe('service connections', () => {
           enabled: true,
           supportsColumnAccess: false,
           supportsFullAccess: true,
-          supportsMaskedAccess: true,
+          // T-2: the pin spec default is false for Databricks /
+          // UnityCatalog (databricksConnection.json /
+          // unityCatalogConnection.json policyAgentConfig.default); only
+          // Snowflake defaults true.
+          supportsMaskedAccess: false,
         },
       },
     });
@@ -422,7 +435,8 @@ describe('service connections', () => {
           enabled: true,
           supportsColumnAccess: false,
           supportsFullAccess: true,
-          supportsMaskedAccess: true,
+          // T-2: pin spec default false (see the Databricks note above).
+          supportsMaskedAccess: false,
         },
       },
     });
@@ -1491,7 +1505,7 @@ describe('lean-forms tier 3A (W3-3A)', () => {
     expect(form.enableVersionValidation).toBe(true);
     expect(form.omStoreServiceConnection).toBe(true);
     expect(form.gcpConfigType).toBe('gcpValues');
-    expect(form.impersonateLifetime).toBe(3600);
+    expect(form.authGcpImpersonateLifetime).toBe(3600);
     expect(form.includeTeamDrives).toBe(true);
     expect(form.includeGoogleSheets).toBe(false);
     expect(form.elasticSearchAuthMode).toBe('basicAuth');
@@ -1537,7 +1551,10 @@ describe('lean-forms tier 3A (W3-3A)', () => {
     });
   });
 
-  it('builds the OpenMetadata A-group payload 1:1 (12 items, spec order)', () => {
+  it('builds the OpenMetadata A-group + B-group payload 1:1 (T-2)', () => {
+    // T-2 (2026-11-20): the B group (13 include* switches, limitRecords,
+    // forceEntityOverwriting) now emits its pin defaults alongside the
+    // A group; elasticsSearch is conditionally emitted (see below).
     expect(
       buildServiceConnection(
         tier3AForm({
@@ -1564,22 +1581,65 @@ describe('lean-forms tier 3A (W3-3A)', () => {
         secretsManagerLoader: 'noop',
         apiVersion: 'v1',
         enableVersionValidation: true,
+        includeTopics: true,
+        includeTables: true,
+        includeDashboards: true,
+        includePipelines: true,
+        includeMlModels: true,
+        includeUsers: true,
+        includeTeams: true,
+        includeGlossaryTerms: true,
+        includeTags: true,
+        includePolicy: true,
+        includeMessagingServices: true,
+        includeDatabaseServices: true,
+        includePipelineServices: true,
+        limitRecords: 1000,
+        forceEntityOverwriting: false,
         storeServiceConnection: true,
         extraHeaders: { 'X-Tenant': 'acme' },
       },
     });
+    // elasticsSearch: emitted only when a type is typed (its `type` is
+    // conditionally required — the object itself is optional); a config
+    // without a type is dropped, never sent typeless.
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'metadata',
+          serviceType: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          omElasticSearchType: 'metadata',
+          omElasticSearchConfig: '{"index": "openmetadata"}',
+        }),
+      )?.config?.elasticsSearch,
+    ).toEqual({ type: 'metadata', config: { index: 'openmetadata' } });
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'metadata',
+          serviceType: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          omElasticSearchConfig: '{"index": "openmetadata"}',
+        }),
+      )?.config?.elasticsSearch,
+    ).toBeUndefined();
   });
 
   it('builds the GoogleDrive payload 1:1 with the gcpConfig wrapper + impersonate block', () => {
+    // T-2 (2026-11-20): credentials are per-leaf now (shared authGcp*
+    // keys) — the variant leaves are camelCase per gcpCredentials.json,
+    // and the impersonate block uses the shared impersonate keys.
     expect(
       buildServiceConnection(
         tier3AForm({
           kind: 'drive',
           serviceType: 'GoogleDrive',
-          credentialsJson:
-            '{"type": "service_account", "project_id": "p1", "private_key": "---KEY---", "client_email": "svc@p1.iam.gserviceaccount.com"}',
-          impersonateServiceAccount: 'target@example.com',
-          impersonateLifetime: 1800,
+          authGcpProjectId: 'p1',
+          authGcpPrivateKey: '---KEY---',
+          authGcpClientEmail: 'svc@p1.iam.gserviceaccount.com',
+          authGcpImpersonateEmail: 'target@example.com',
+          authGcpImpersonateLifetime: 1800,
           delegatedEmail: 'user@example.com',
           driveId: 'drive-1',
           connectionOptions: '{"opt": "v"}',
@@ -1592,9 +1652,9 @@ describe('lean-forms tier 3A (W3-3A)', () => {
         credentials: {
           gcpConfig: {
             type: 'service_account',
-            project_id: 'p1',
-            private_key: '---KEY---',
-            client_email: 'svc@p1.iam.gserviceaccount.com',
+            projectId: 'p1',
+            privateKey: '---KEY---',
+            clientEmail: 'svc@p1.iam.gserviceaccount.com',
           },
           gcpImpersonateServiceAccount: {
             impersonateServiceAccount: 'target@example.com',
@@ -1616,7 +1676,7 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           kind: 'drive',
           serviceType: 'GoogleDrive',
           gcpConfigType: 'gcpCredentialsPath',
-          gcpCredentialsPath: '/etc/gcp/creds.json',
+          authGcpPath: '/etc/gcp/creds.json',
         }),
       )?.config?.credentials,
     ).toEqual({ gcpConfig: { type: 'gcp_credential_path', path: '/etc/gcp/creds.json' } });
@@ -1631,7 +1691,7 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           kind: 'drive',
           serviceType: 'GoogleDrive',
           gcpConfigType: 'gcpExternalAccount',
-          gcpExternalAccountJson: '{"type": "external_account", "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/p"}',
+          authGcpAudience: '//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/p',
         }),
       )?.config?.credentials,
     ).toEqual({
@@ -1905,7 +1965,11 @@ describe('lean-forms tier 3A (W3-3A)', () => {
     });
     expect(bareDatabricks.connectionTimeout).toBeUndefined();
 
-    const drive = formValuesFromService({
+    // T-2 (2026-11-20): the credential refill runs through the view's
+    // paired hydrateAuthBranchForm call (as EditServiceConnectionView does),
+    // on the shared authGcp* keys — formValuesFromService alone no longer
+    // carries the branch selector.
+    const driveStored = {
       id: 'd1',
       name: 'drive',
       kind: 'drive',
@@ -1926,16 +1990,23 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           includeGoogleSheets: true,
         },
       },
-    });
+    } as CatalogService;
+    const drive = hydrateAuthBranchForm(
+      'GoogleDrive',
+      driveStored.connection?.config ?? {},
+      formValuesFromService(driveStored),
+    );
     expect(drive.gcpConfigType).toBe('gcpCredentialsPath');
-    expect(drive.gcpCredentialsPath).toBe('/etc/gcp/creds.json');
-    expect(drive.credentialsJson).toBe('');
-    expect(drive.impersonateServiceAccount).toBe('target@example.com');
-    expect(drive.impersonateLifetime).toBe(1800);
+    expect(drive.authGcpPath).toBe('/etc/gcp/creds.json');
+    expect(drive.authGcpImpersonateEmail).toBe('target@example.com');
+    expect(drive.authGcpImpersonateLifetime).toBe(1800);
     expect(drive.includeTeamDrives).toBe(false);
     expect(drive.includeGoogleSheets).toBe(true);
-    // Legacy bare credentials infer the values branch; the JSON stays blank.
-    const legacy = formValuesFromService({
+    // Legacy bare credentials infer the values branch; the private key
+    // never refills (secret discipline) and the snake_case leaves refill
+    // nothing — the edit-save re-wraps the stored object verbatim instead
+    // (see the blank-keep test below).
+    const legacyStored = {
       id: 'd2',
       name: 'drive2',
       kind: 'drive',
@@ -1946,9 +2017,14 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           credentials: { type: 'service_account', project_id: 'p1', private_key: '---KEY---' },
         },
       },
-    });
+    } as CatalogService;
+    const legacy = hydrateAuthBranchForm(
+      'GoogleDrive',
+      legacyStored.connection?.config ?? {},
+      formValuesFromService(legacyStored),
+    );
     expect(legacy.gcpConfigType).toBe('gcpValues');
-    expect(legacy.credentialsJson).toBe('');
+    expect(legacy.authGcpPrivateKey).toBeUndefined();
 
     const rest = formValuesFromService({
       id: 'r1',
@@ -2229,14 +2305,17 @@ describe('lean-forms tier 3A (W3-3A)', () => {
     expect(rewrapped?.config?.credentials).toEqual({
       gcpConfig: { type: 'service_account', project_id: 'p1', private_key: '---KEY---' },
     });
-    // A stored path-branch projectId survives an edit-save (opaque: the
-    // form has no projectId field for the path/ADC branches).
+    // A stored path-branch projectId survives an edit-save: the edit
+    // refill prefills authGcpProjectId from the stored variant, so the
+    // per-leaf builder re-emits it from the form (it does not read the
+    // stored object for non-secret leaves).
     const pathKept = buildServiceConnection(
       tier3AForm({
         kind: 'drive',
         serviceType: 'GoogleDrive',
         gcpConfigType: 'gcpCredentialsPath',
-        gcpCredentialsPath: '/etc/gcp/creds.json',
+        authGcpPath: '/etc/gcp/creds.json',
+        authGcpProjectId: 'p1',
       }),
       {
         config: {
@@ -2291,16 +2370,6 @@ describe('lean-forms tier 3A (W3-3A)', () => {
         tier3AForm({ kind: 'mcp', serviceType: 'Mcp', configFilePaths: '[1, 2]' }),
       ),
     ).toThrow('strings');
-    expect(() =>
-      buildServiceConnection(
-        tier3AForm({
-          kind: 'drive',
-          serviceType: 'GoogleDrive',
-          gcpConfigType: 'gcpExternalAccount',
-          gcpExternalAccountJson: 'not-json',
-        }),
-      ),
-    ).toThrow('valid JSON');
     expect(() =>
       buildServiceConnection(
         tier3AForm({
@@ -3142,5 +3211,703 @@ describe('A2 A-class builders (T-2)', () => {
     });
     expect(collibra?.config?.username).toBe('u');
     expect(collibra?.config?.password).toBe('********');
+  });
+});
+
+describe('T-2 builders (remaining rows)', () => {
+  function supersetForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'superset',
+      kind: 'dashboard',
+      serviceType: 'Superset',
+      hostPort: 'superset.example.com:8088',
+      username: 'admin',
+      password: 'api-secret',
+      ...overrides,
+    };
+  }
+
+  function restForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'rest',
+      kind: 'api',
+      serviceType: 'Rest',
+      openApiSchemaUrl: 'https://example.com/openapi.json',
+      ...overrides,
+    };
+  }
+
+  function openMetadataForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'om',
+      kind: 'metadata',
+      serviceType: 'OpenMetadata',
+      hostPort: 'localhost:8585',
+      ...overrides,
+    };
+  }
+
+  function googleDriveForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'drive',
+      kind: 'drive',
+      serviceType: 'GoogleDrive',
+      authGcpProjectId: 'proj-1',
+      authGcpPrivateKey: 'private-key-material',
+      authGcpClientEmail: 'svc@proj.iam.gserviceaccount.com',
+      ...overrides,
+    };
+  }
+
+  function sagemakerForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'sagemaker',
+      kind: 'mlmodel',
+      serviceType: 'SageMaker',
+      awsRegion: 'us-east-1',
+      awsAccessKeyId: 'AKID',
+      awsSecretAccessKey: 's3cr3t',
+      ...overrides,
+    };
+  }
+
+  function alationSinkForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'sink',
+      kind: 'metadata',
+      serviceType: 'AlationSink',
+      hostPort: 'alation.example.com:443',
+      username: 'sink-user',
+      password: 'sink-secret',
+      ...overrides,
+    };
+  }
+
+  function amundsenForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'amundsen',
+      kind: 'metadata',
+      serviceType: 'Amundsen',
+      hostPort: 'neo4j:7687',
+      username: 'neo4j',
+      password: 'amundsen-secret',
+      ...overrides,
+    };
+  }
+
+  function atlasForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'atlas',
+      kind: 'metadata',
+      serviceType: 'Atlas',
+      hostPort: 'atlas.example.com:21000',
+      username: 'atlas-user',
+      password: 'atlas-secret',
+      entity_type: 'hive_table',
+      ...overrides,
+    };
+  }
+
+  function sftpForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'sftp',
+      kind: 'drive',
+      serviceType: 'Sftp',
+      sftpHost: 'sftp.example.com',
+      username: 'sftp-user',
+      password: 'sftp-secret',
+      ...overrides,
+    };
+  }
+
+  function openSearchForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'opensearch',
+      kind: 'search',
+      serviceType: 'OpenSearch',
+      hostPort: 'opensearch.example.com:9200',
+      username: 'admin',
+      password: 'os-secret',
+      ...overrides,
+    };
+  }
+
+  it('builds the Superset API branch with the spec defaults', () => {
+    expect(buildServiceConnection(supersetForm())?.config).toEqual({
+      type: 'Superset',
+      hostPort: 'superset.example.com:8088',
+      connection: {
+        provider: 'db',
+        username: 'admin',
+        password: 'api-secret',
+        verifySSL: 'no-ssl',
+      },
+    });
+  });
+
+  it('builds the Superset Postgres branch with the spec defaults', () => {
+    const connection = buildServiceConnection(
+      supersetForm({
+        supersetConnectionBranch: 'postgres',
+        supersetDbUsername: 'db-user',
+        supersetDbPassword: 'db-secret',
+        supersetDbHostPort: 'db:5432',
+        supersetDbDatabase: 'superset',
+      }),
+    );
+    expect(connection?.config).toEqual({
+      type: 'Superset',
+      hostPort: 'superset.example.com:8088',
+      connection: {
+        type: 'Postgres',
+        scheme: 'postgresql+psycopg2',
+        username: 'db-user',
+        authType: { password: 'db-secret' },
+        hostPort: 'db:5432',
+        database: 'superset',
+        ingestAllDatabases: false,
+        sslMode: 'disable',
+        classificationName: 'PostgresPolicyTags',
+        queryStatementSource: 'pg_stat_statements',
+      },
+    });
+  });
+
+  it('builds the Superset Mysql branch with GCP auth (Postgres has no GCP branch)', () => {
+    const connection = buildServiceConnection(
+      supersetForm({
+        supersetConnectionBranch: 'mysql',
+        supersetDbAuthBranch: 'gcp',
+        supersetDbUsername: 'db-user',
+        supersetDbHostPort: 'db:3306',
+        supersetDbDatabaseName: 'superset',
+        authGcpEnableIamAuth: false,
+        authGcpProjectId: 'proj-1',
+        authGcpPrivateKey: 'private-key-material',
+        authGcpClientEmail: 'svc@proj.iam.gserviceaccount.com',
+      }),
+    );
+    expect(connection?.config?.connection).toEqual({
+      type: 'Mysql',
+      scheme: 'mysql+pymysql',
+      username: 'db-user',
+      authType: {
+        enableIamAuth: false,
+        gcpConfig: {
+          gcpConfig: {
+            type: 'service_account',
+            projectId: 'proj-1',
+            privateKey: 'private-key-material',
+            clientEmail: 'svc@proj.iam.gserviceaccount.com',
+          },
+        },
+      },
+      hostPort: 'db:3306',
+      databaseName: 'superset',
+      useSlowLogs: false,
+    });
+  });
+
+  it('does not leak a stale API password into a Superset database-branch connection', () => {
+    const existing = {
+      config: {
+        type: 'Superset',
+        hostPort: 'superset.example.com:8088',
+        connection: { provider: 'db', username: 'admin', password: 'api-secret' },
+      },
+    };
+    const connection = buildServiceConnection(
+      supersetForm({
+        supersetConnectionBranch: 'postgres',
+        supersetDbUsername: 'db-user',
+        supersetDbPassword: 'db-secret',
+        supersetDbHostPort: 'db:5432',
+        supersetDbDatabase: 'superset',
+      }),
+      existing,
+    );
+    const nested = connection?.config?.connection as unknown as Record<string, unknown>;
+    expect(nested['password']).toBeUndefined();
+    expect(nested['authType']).toEqual({ password: 'db-secret' });
+  });
+
+  it('keeps a masked Superset database password on edit and replaces it when retyped', () => {
+    const existing = {
+      config: {
+        type: 'Superset',
+        hostPort: 'superset.example.com:8088',
+        connection: {
+          type: 'Postgres',
+          username: 'db-user',
+          authType: { password: '********' },
+          hostPort: 'db:5432',
+          database: 'superset',
+        },
+      },
+    };
+    const kept = buildServiceConnection(
+      supersetForm({
+        supersetConnectionBranch: 'postgres',
+        supersetDbUsername: 'db-user',
+        supersetDbPassword: '',
+        supersetDbHostPort: 'db:5432',
+        supersetDbDatabase: 'superset',
+      }),
+      existing,
+    );
+    expect(
+      (kept?.config?.connection as { authType?: { password?: string } })?.authType?.password,
+    ).toBe('********');
+    const retyped = buildServiceConnection(
+      supersetForm({
+        supersetConnectionBranch: 'postgres',
+        supersetDbUsername: 'db-user',
+        supersetDbPassword: 'new-db-secret',
+        supersetDbHostPort: 'db:5432',
+        supersetDbDatabase: 'superset',
+      }),
+      existing,
+    );
+    expect(
+      (retyped?.config?.connection as { authType?: { password?: string } })?.authType?.password,
+    ).toBe('new-db-secret');
+  });
+
+  it('builds the Rest URL branch and the filter-pattern leaf', () => {
+    const connection = buildServiceConnection(
+      restForm({
+        apiEndpointFilterPattern: { includes: ['/api/v1/*'] },
+        docURL: 'https://example.com/docs',
+      }),
+    );
+    expect(connection?.config).toEqual({
+      type: 'Rest',
+      openAPISchemaConnection: { openAPISchemaURL: 'https://example.com/openapi.json' },
+      apiEndpointFilterPattern: { includes: ['/api/v1/*'] },
+      docURL: 'https://example.com/docs',
+      verifySSL: 'no-ssl',
+    });
+  });
+
+  it('builds the Rest filePath branch', () => {
+    const connection = buildServiceConnection(
+      restForm({ restSchemaBranch: 'filePath', openApiSchemaFilePath: '/tmp/openapi.json' }),
+    );
+    expect(connection?.config?.openAPISchemaConnection).toEqual({
+      openAPISchemaFilePath: '/tmp/openapi.json',
+    });
+  });
+
+  it('builds the Rest S3 branch with shared AWS credentials', () => {
+    const connection = buildServiceConnection(
+      restForm({
+        restSchemaBranch: 's3',
+        openApiSchemaS3Url: 'https://bucket.s3.amazonaws.com/openapi.json',
+        authAwsEnabled: true,
+        authAwsAccessKeyId: 'AKID',
+        authAwsSecretAccessKey: 's3cr3t',
+        authAwsRegion: 'us-east-1',
+      }),
+    );
+    expect(connection?.config?.openAPISchemaConnection).toEqual({
+      openAPISchemaS3URL: 'https://bucket.s3.amazonaws.com/openapi.json',
+      awsCredentials: {
+        enabled: true,
+        awsAccessKeyId: 'AKID',
+        awsSecretAccessKey: 's3cr3t',
+        awsRegion: 'us-east-1',
+      },
+    });
+  });
+
+  it('builds the OpenMetadata B group from the create defaults', () => {
+    const connection = buildServiceConnection(openMetadataForm());
+    expect(connection?.config).toEqual({
+      type: 'OpenMetadata',
+      hostPort: 'localhost:8585',
+      clusterName: 'openmetadata',
+      authProvider: 'basic',
+      secretsManagerProvider: 'db',
+      secretsManagerLoader: 'noop',
+      apiVersion: 'v1',
+      enableVersionValidation: true,
+      includeTopics: true,
+      includeTables: true,
+      includeDashboards: true,
+      includePipelines: true,
+      includeMlModels: true,
+      includeUsers: true,
+      includeTeams: true,
+      includeGlossaryTerms: true,
+      includeTags: true,
+      includePolicy: true,
+      includeMessagingServices: true,
+      includeDatabaseServices: true,
+      includePipelineServices: true,
+      limitRecords: 1000,
+      forceEntityOverwriting: false,
+      storeServiceConnection: true,
+      verifySSL: 'no-ssl',
+    });
+  });
+
+  it('emits elasticsSearch only when a type is typed, and jwtToken only when set', () => {
+    const withEs = buildServiceConnection(
+      openMetadataForm({
+        omElasticSearchType: 'metadata',
+        omElasticSearchConfig: '{"index": "es"}',
+        jwtToken: 'jwt-123',
+      }),
+    );
+    expect(withEs?.config?.elasticsSearch).toEqual({ type: 'metadata', config: { index: 'es' } });
+    expect(withEs?.config?.securityConfig).toEqual({ jwtToken: 'jwt-123' });
+    const withoutEs = buildServiceConnection(
+      openMetadataForm({ omElasticSearchConfig: '{"index": "es"}' }),
+    );
+    expect(withoutEs?.config?.elasticsSearch).toBeUndefined();
+    expect(withoutEs?.config?.securityConfig).toBeUndefined();
+  });
+
+  it('builds the GoogleDrive values variant per leaf', () => {
+    const connection = buildServiceConnection(googleDriveForm());
+    expect(connection?.config).toEqual({
+      type: 'GoogleDrive',
+      credentials: {
+        gcpConfig: {
+          type: 'service_account',
+          projectId: 'proj-1',
+          privateKey: 'private-key-material',
+          clientEmail: 'svc@proj.iam.gserviceaccount.com',
+        },
+      },
+      includeTeamDrives: true,
+      includeGoogleSheets: false,
+    });
+  });
+
+  it('builds the GoogleDrive ADC branch even when empty, and the path branch', () => {
+    const adc = buildServiceConnection(
+      googleDriveForm({
+        gcpConfigType: 'gcpADC',
+        authGcpProjectId: '',
+        authGcpPrivateKey: '',
+        authGcpClientEmail: '',
+      }),
+    );
+    expect(adc?.config?.credentials).toEqual({ gcpConfig: { type: 'gcp_adc' } });
+    const path = buildServiceConnection(
+      googleDriveForm({
+        gcpConfigType: 'gcpCredentialsPath',
+        authGcpPath: '/tmp/sa.json',
+        authGcpProjectId: 'proj-1',
+        authGcpPrivateKey: '',
+        authGcpClientEmail: '',
+      }),
+    );
+    expect(path?.config?.credentials).toEqual({
+      gcpConfig: { type: 'gcp_credential_path', path: '/tmp/sa.json', projectId: 'proj-1' },
+    });
+  });
+
+  it('keeps stored GoogleDrive credentials when the edit leaves every leaf blank', () => {
+    const existing = {
+      config: {
+        type: 'GoogleDrive',
+        credentials: {
+          gcpConfig: {
+            type: 'service_account',
+            projectId: 'proj-1',
+            privateKey: '********',
+            clientEmail: 'svc@proj.iam.gserviceaccount.com',
+          },
+        },
+        includeTeamDrives: true,
+        includeGoogleSheets: false,
+      },
+    };
+    const form = formValuesFromService({
+      serviceType: 'GoogleDrive',
+      connection: { config: existing.config },
+    } as unknown as CatalogService);
+    hydrateAuthBranchForm('GoogleDrive', existing.config, form);
+    const kept = buildServiceConnection(form, existing);
+    expect(kept?.config?.credentials).toEqual(existing.config.credentials);
+  });
+
+  it('builds the SageMaker top-level awsConfig', () => {
+    expect(buildServiceConnection(sagemakerForm())?.config).toEqual({
+      type: 'SageMaker',
+      awsConfig: {
+        enabled: false,
+        awsRegion: 'us-east-1',
+        awsAccessKeyId: 'AKID',
+        awsSecretAccessKey: 's3cr3t',
+      },
+    });
+  });
+
+  it('builds the AlationSink basicAuth branch with the spec defaults', () => {
+    expect(buildServiceConnection(alationSinkForm())?.config).toEqual({
+      type: 'AlationSink',
+      hostPort: 'alation.example.com:443',
+      authType: { username: 'sink-user', password: 'sink-secret' },
+      projectName: 'AlationAPI',
+      paginationLimit: 10,
+      verifySSL: 'no-ssl',
+    });
+  });
+
+  it('builds the AlationSink apiToken branch and keeps the token on edit', () => {
+    const connection = buildServiceConnection(
+      alationSinkForm({ alationSinkAuthBranch: 'apiToken', alationSinkAccessToken: 'tok-123' }),
+    );
+    expect(connection?.config?.authType).toEqual({ accessToken: 'tok-123' });
+    expect(connection?.config?.projectName).toBe('AlationAPI');
+    const existing = { config: { type: 'AlationSink', authType: { accessToken: '********' } } };
+    const kept = buildServiceConnection(
+      alationSinkForm({ alationSinkAuthBranch: 'apiToken', alationSinkAccessToken: '' }),
+      existing,
+    );
+    expect(kept?.config?.authType).toEqual({ accessToken: '********' });
+  });
+
+  it('builds the Amundsen flat connection with the spec defaults', () => {
+    expect(buildServiceConnection(amundsenForm())?.config).toEqual({
+      type: 'Amundsen',
+      hostPort: 'neo4j:7687',
+      username: 'neo4j',
+      password: 'amundsen-secret',
+      maxConnectionLifeTime: 50,
+      validateSSL: false,
+      encrypted: false,
+    });
+  });
+
+  it('builds the Atlas flat connection and parses the service-name arrays', () => {
+    expect(buildServiceConnection(atlasForm())?.config).toEqual({
+      type: 'Atlas',
+      hostPort: 'atlas.example.com:21000',
+      username: 'atlas-user',
+      password: 'atlas-secret',
+      entity_type: 'hive_table',
+    });
+    const withArrays = buildServiceConnection(
+      atlasForm({
+        databaseServiceName: '["hive", "mysql"]',
+        messagingServiceName: '["kafka"]',
+      }),
+    );
+    expect(withArrays?.config?.databaseServiceName).toEqual(['hive', 'mysql']);
+    expect(withArrays?.config?.messagingServiceName).toEqual(['kafka']);
+  });
+
+  it('builds the Sftp usernamePassword branch with the spec defaults', () => {
+    expect(buildServiceConnection(sftpForm())?.config).toEqual({
+      type: 'Sftp',
+      host: 'sftp.example.com',
+      port: 22,
+      authType: { username: 'sftp-user', password: 'sftp-secret' },
+      rootDirectories: ['/'],
+      structuredDataFilesOnly: false,
+      extractSampleData: false,
+    });
+  });
+
+  it('builds the Sftp privateKey branch and keeps the key on edit', () => {
+    const connection = buildServiceConnection(
+      sftpForm({
+        sftpAuthBranch: 'privateKey',
+        sftpPrivateKey: 'key-material',
+        sftpPrivateKeyPassphrase: 'passphrase',
+      }),
+    );
+    expect(connection?.config?.authType).toEqual({
+      username: 'sftp-user',
+      privateKey: 'key-material',
+      privateKeyPassphrase: 'passphrase',
+    });
+    const existing = {
+      config: {
+        type: 'Sftp',
+        authType: { username: 'sftp-user', privateKey: '********' },
+      },
+    };
+    const kept = buildServiceConnection(
+      sftpForm({ sftpAuthBranch: 'privateKey', sftpPrivateKey: '' }),
+      existing,
+    );
+    expect(kept?.config?.authType).toEqual({ username: 'sftp-user', privateKey: '********' });
+  });
+
+  it('builds the OpenSearch basic branch with the spec defaults', () => {
+    expect(buildServiceConnection(openSearchForm())?.config).toEqual({
+      type: 'OpenSearch',
+      hostPort: 'opensearch.example.com:9200',
+      authType: { username: 'admin', password: 'os-secret' },
+      connectionTimeoutSecs: 30,
+      verifySSL: 'no-ssl',
+    });
+  });
+
+  it('builds the OpenSearch AWS branch with the region required', () => {
+    const connection = buildServiceConnection(
+      openSearchForm({
+        openSearchAuthBranch: 'awsCredentials',
+        authAwsEnabled: true,
+        authAwsAccessKeyId: 'AKID',
+        authAwsSecretAccessKey: 's3cr3t',
+        authAwsRegion: 'us-east-1',
+      }),
+    );
+    expect(connection?.config?.authType).toEqual({
+      awsConfig: {
+        enabled: true,
+        awsAccessKeyId: 'AKID',
+        awsSecretAccessKey: 's3cr3t',
+        awsRegion: 'us-east-1',
+      },
+    });
+  });
+
+  it('builds the type-only connections instead of blocking them (Q4 exemption)', () => {
+    for (const serviceType of ['Sklearn', 'CustomDrive', 'CustomMlModel', 'CustomSearch'] as const) {
+      const form: ServiceFormValues = {
+        ...createEmptyServiceForm(),
+        name: 't',
+        kind:
+          serviceType === 'CustomDrive'
+            ? 'drive'
+            : serviceType === 'CustomSearch'
+              ? 'search'
+              : 'mlmodel',
+        serviceType,
+      };
+      expect(buildServiceConnection(form)?.config).toEqual({ type: serviceType });
+    }
+    const custom = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'c',
+      kind: 'mlmodel',
+      serviceType: 'CustomMlModel',
+      sourcePythonClass: 'my.module.MyModel',
+    });
+    expect(custom?.config).toEqual({
+      type: 'CustomMlModel',
+      sourcePythonClass: 'my.module.MyModel',
+    });
+    const drive = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'd',
+      kind: 'drive',
+      serviceType: 'CustomDrive',
+      connectionOptions: '{"a": "b"}',
+    });
+    expect(drive?.config).toEqual({
+      type: 'CustomDrive',
+      connectionOptions: { a: 'b' },
+    });
+  });
+
+  it('round-trips the Superset Postgres branch through refill + rebuild', () => {
+    const built = buildServiceConnection(
+      supersetForm({
+        supersetConnectionBranch: 'postgres',
+        supersetDbUsername: 'db-user',
+        supersetDbPassword: 'db-secret',
+        supersetDbHostPort: 'db:5432',
+        supersetDbDatabase: 'superset',
+      }),
+    );
+    // The edit flow sees the stored secret masked (redactConnectionForDisplay
+    // is what the display layer does); the rebuild carries the mask.
+    const redacted = redactConnectionForDisplay({ config: built?.config });
+    const form = formValuesFromService({
+      serviceType: 'Superset',
+      connection: { config: redacted?.config },
+    } as unknown as CatalogService);
+    hydrateAuthBranchForm('Superset', redacted?.config ?? {}, form);
+    expect(form.supersetConnectionBranch).toBe('postgres');
+    expect(form.supersetDbUsername).toBe('db-user');
+    expect(form.supersetDbHostPort).toBe('db:5432');
+    expect(form.supersetDbDatabase).toBe('superset');
+    expect(form.supersetDbPassword).toBe('');
+    const rebuilt = buildServiceConnection(form, { config: redacted?.config });
+    expect(rebuilt?.config?.connection).toEqual({
+      ...(built?.config?.connection as Record<string, unknown>),
+      authType: { password: '********' },
+    });
+  });
+
+  it('round-trips the Rest S3 branch through refill + rebuild', () => {
+    const built = buildServiceConnection(
+      restForm({
+        restSchemaBranch: 's3',
+        openApiSchemaS3Url: 'https://bucket.s3.amazonaws.com/openapi.json',
+        authAwsEnabled: true,
+        authAwsAccessKeyId: 'AKID',
+        authAwsSecretAccessKey: 's3cr3t',
+        authAwsRegion: 'us-east-1',
+      }),
+    );
+    const redacted = redactConnectionForDisplay({ config: built?.config });
+    const form = formValuesFromService({
+      serviceType: 'Rest',
+      connection: { config: redacted?.config },
+    } as unknown as CatalogService);
+    hydrateAuthBranchForm('Rest', redacted?.config ?? {}, form);
+    expect(form.restSchemaBranch).toBe('s3');
+    expect(form.openApiSchemaS3Url).toBe('https://bucket.s3.amazonaws.com/openapi.json');
+    expect(form.authAwsRegion).toBe('us-east-1');
+    // Secrets are never refilled into the form (blank means keep).
+    expect(form.authAwsSecretAccessKey).toBeFalsy();
+    const rebuilt = buildServiceConnection(form, { config: redacted?.config });
+    expect(rebuilt?.config?.openAPISchemaConnection).toEqual({
+      ...(built?.config?.openAPISchemaConnection as Record<string, unknown>),
+      awsCredentials: {
+        ...((built?.config?.openAPISchemaConnection as Record<string, unknown>)
+          .awsCredentials as Record<string, unknown>),
+        awsSecretAccessKey: '********',
+      },
+    });
+  });
+
+  it('round-trips the OpenSearch AWS branch through refill + rebuild', () => {
+    const built = buildServiceConnection(
+      openSearchForm({
+        openSearchAuthBranch: 'awsCredentials',
+        authAwsEnabled: true,
+        authAwsAccessKeyId: 'AKID',
+        authAwsSecretAccessKey: 's3cr3t',
+        authAwsRegion: 'us-east-1',
+      }),
+    );
+    const redacted = redactConnectionForDisplay({ config: built?.config });
+    const form = formValuesFromService({
+      serviceType: 'OpenSearch',
+      connection: { config: redacted?.config },
+    } as unknown as CatalogService);
+    hydrateAuthBranchForm('OpenSearch', redacted?.config ?? {}, form);
+    expect(form.openSearchAuthBranch).toBe('awsCredentials');
+    expect(form.authAwsRegion).toBe('us-east-1');
+    const rebuilt = buildServiceConnection(form, { config: redacted?.config });
+    expect(rebuilt?.config?.authType).toEqual({
+      awsConfig: {
+        ...((built?.config?.authType as Record<string, unknown>).awsConfig as Record<
+          string,
+          unknown
+        >),
+        awsSecretAccessKey: '********',
+      },
+    });
   });
 });

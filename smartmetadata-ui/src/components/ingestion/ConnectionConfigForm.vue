@@ -16,7 +16,10 @@ import {
   mergeAuthBranchIntoConfig,
   missingRequiredConnectionFields,
 } from '@/ingestion/connectionFields';
-import { buildServiceConnection } from '@/ingestion/connections';
+import {
+  TYPE_ONLY_CONNECTION_TYPES,
+  buildServiceConnection,
+} from '@/ingestion/connections';
 import { shouldTestConnection } from '@/ingestion/connectionTest';
 import type { FetchConnectionSchema } from '@/ingestion/connectionSchemaLoader';
 import { useConnectionGuard } from '@/ingestion/useConnectionGuard';
@@ -221,8 +224,15 @@ function submit(): boolean {
   }
   mergeAuthBranchIntoConfig(props.serviceType, props.form, config, props.storedConfig);
   // Q4 payload defense: an empty or type-only body is never a new
-  // connection, even when the required set is empty.
-  if (connectionBodyIsEmpty(config as Record<string, unknown>)) {
+  // connection, even when the required set is empty — except for the
+  // four type-only schemas (TYPE_ONLY_CONNECTION_TYPES), where an empty
+  // form IS the connection. The builder already returns undefined for a
+  // non-exempt empty body, so this check only ever fires on the exempt
+  // types unless mergeAuthBranchIntoConfig added nothing.
+  if (
+    connectionBodyIsEmpty(config as Record<string, unknown>) &&
+    !TYPE_ONLY_CONNECTION_TYPES.includes(props.serviceType)
+  ) {
     return false;
   }
   emit('save', config);

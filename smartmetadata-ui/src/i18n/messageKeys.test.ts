@@ -135,10 +135,19 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('connection.omStoreServiceConnection');
     expect(keys).toContain('connection.extraHeaders');
     expect(keys).toContain('connection.gcpConfigType');
-    expect(keys).toContain('connection.gcpCredentialsPath');
-    expect(keys).toContain('connection.gcpExternalAccountJson');
-    expect(keys).toContain('connection.impersonateServiceAccount');
-    expect(keys).toContain('connection.impersonateLifetime');
+    // T-2 (2026-11-20): the GoogleDrive blob fields (credentialsJson /
+    // gcpExternalAccountJson) and their keys (gcpCredentialsPath,
+    // impersonateServiceAccount, impersonateLifetime) were deleted with the
+    // per-leaf rebuild; the per-leaf GCP fields carry pin titles and need
+    // no locale entry. Assert the T-2 keys that did land in the catalog.
+    expect(keys).toContain('connection.sourcePythonClass');
+    expect(keys).toContain('connection.sftpHost');
+    expect(keys).toContain('connection.alationSinkAccessToken');
+    expect(keys).toContain('connection.supersetConnection');
+    expect(keys).toContain('connection.restSchemaBranch');
+    expect(keys).toContain('connection.openApiSchemaS3Url');
+    expect(keys).toContain('connection.limitRecords');
+    expect(keys).toContain('connection.omElasticSearchType');
     expect(keys).toContain('connection.includeTeamDrives');
     expect(keys).toContain('connection.includeGoogleSheets');
     expect(keys).toContain('connection.apiKeyId');

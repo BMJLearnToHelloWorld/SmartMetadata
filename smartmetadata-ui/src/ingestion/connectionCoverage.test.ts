@@ -17,17 +17,34 @@ import {
 } from './connectionCoverage';
 
 describe('connectionCoverage ledger', () => {
-  it('holds the 39-row universe with the A2 counts (5 covered, WEBHOOK removed)', () => {
+  it('holds the 39-row universe with the T-2 counts (39 covered, WEBHOOK removed)', () => {
     expect(CONNECTION_COVERAGE_ROWS).toHaveLength(39);
     expect(coverageCounts()).toEqual({
-      covered: 5,
-      pending: 24,
-      blocked: 10,
+      covered: 39,
+      pending: 0,
+      blocked: 0,
       total: 39,
       wizardExposed: 31,
       wizardExcluded: 8,
       noLoader: 5,
     });
+  });
+
+  it('gives every row a filled six-grid verdict (T-2 §1.4)', () => {
+    for (const row of CONNECTION_COVERAGE_ROWS) {
+      expect(row.status).toBe('covered');
+      expect(row.verdict).toBeDefined();
+      for (const cell of [
+        'schemaSource',
+        'branches',
+        'required',
+        'secretKeep',
+        'serialization',
+        'tests',
+      ] as const) {
+        expect(row.verdict?.[cell].length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it('keys rows by (kind, type): mlmodel VertexAI is a covered row, llm VertexAI is not', () => {
@@ -102,13 +119,11 @@ describe('connectionCoverage ledger', () => {
     );
   });
 
-  it('classifies the 10 blocked rows as all C', () => {
-    const blocked = CONNECTION_COVERAGE_ROWS.filter((row) => row.status === 'blocked');
-    const byClass = { A: 0, B: 0, C: 0 };
-    for (const row of blocked) {
-      if (row.uncoveredClass) byClass[row.uncoveredClass]++;
-    }
-    expect(byClass).toEqual({ A: 0, B: 0, C: 10 });
+  it('has no blocked rows left: the T-2 flip cleared the 10 class-C rows', () => {
+    expect(CONNECTION_COVERAGE_ROWS.filter((row) => row.status === 'blocked')).toEqual([]);
+    expect(
+      CONNECTION_COVERAGE_ROWS.filter((row) => row.uncoveredClass !== undefined),
+    ).toEqual([]);
   });
 });
 
