@@ -7,8 +7,11 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString } from '@/api/json';
+import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import { encodeFqnForApi } from '@/catalog/entityRoutes';
+import type { IncludeFilter, Paged } from '@/types/admin';
+import type { EntityRef, TagRef } from '@/types/api';
+import { mapTags } from './entities';
 import { apiRequest } from './client';
 
 export interface TableColumnRef {
@@ -51,4 +54,91 @@ export async function getTableByName(fqn: string): Promise<TableColumns> {
     name: asString(raw.name) || fqn,
     columns,
   };
+}
+
+/**
+ * Official SchemaTablesTab list fields (rest/tableAPI.ts getTableList
+ * callers pass `commonTableFields`, utils/DatasetDetailsUtils.ts:24):
+ * tags, owners, domains, dataProducts, certification.
+ */
+export const TABLE_LIST_FIELDS = 'tags,owners,domains,dataProducts,certification';
+
+export interface SchemaTableRow {
+  id: string;
+  name: string;
+  displayName?: string;
+  fullyQualifiedName: string;
+  description?: string;
+  owners: EntityRef[];
+  domains: EntityRef[];
+  dataProducts: EntityRef[];
+  tags: TagRef[];
+  /** Pin Table.certification (AssetCertification): the tag label, if any. */
+  certification?: { tagLabel?: TagRef };
+  deleted?: boolean;
+}
+
+function mapSchemaTableRow(raw: Record<string, unknown>): SchemaTableRow | null {
+  const name = asString(raw.name);
+  if (!name) {
+    return null;
+  }
+  const certification = asRecord(raw.certification);
+  const tagLabel = certification ? mapTags([certification.tagLabel])[0] : undefined;
+  return {
+    id: asString(raw.id) || name,
+    name,
+    displayName: asString(raw.displayName) || undefined,
+    fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
+    description: asString(raw.description) || undefined,
+    owners: mapEntityRefs(raw.owners),
+    domains: mapEntityRefs(raw.domains),
+    dataProducts: mapEntityRefs(raw.dataProducts),
+    tags: mapTags(raw.tags),
+    certification: tagLabel ? { tagLabel } : undefined,
+    deleted: raw.deleted === true ? true : undefined,
+  };
+}
+
+export interface ListTablesQuery {
+  databaseSchema: string;
+  limit?: number;
+  include?: IncludeFilter;
+  after?: string;
+  before?: string;
+}
+
+/**
+ * Official getTableList (rest/tableAPI.ts:225): GET /v1/tables with the
+ * owning schema FQN. Cursor-paged (before/after); `include` toggles
+ * non-deleted / deleted / all, mirroring pin Include.
+ */
+export function listTables(query: ListTablesQuery): Promise<Paged<SchemaTableRow>> {
+  return apiRequest<unknown>('/v1/tables', {
+    query: {
+      fields: TABLE_LIST_FIELDS,
+      databaseSchema: query.databaseSchema,
+      limit: query.limit ?? 50,
+      include: query.include ?? 'non-deleted',
+      after: query.after,
+      before: query.before,
+    },
+  }).then((payload) => parsePaged(payload, mapSchemaTableRow));
+}
+
+/**
+ * Official patchTableDetails (rest/tableAPI.ts:84): PATCH /v1/tables/{id}
+ * with a JSON Patch document; returns the updated table.
+ */
+export async function patchTableDetails(id: string, patch: unknown[]): Promise<SchemaTableRow> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/tables/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+  const mapped = mapSchemaTableRow(raw);
+  if (!mapped) {
+    throw new Error('Update table succeeded but the response had no table');
+  }
+  return mapped;
 }

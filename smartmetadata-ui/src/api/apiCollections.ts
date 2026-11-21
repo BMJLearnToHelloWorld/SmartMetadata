@@ -14,6 +14,7 @@ export interface ApiEndpointRef {
   fullyQualifiedName?: string;
   endpointURL?: string;
   requestMethod?: string;
+  description?: string;
 }
 
 function mapApiEndpoint(raw: Record<string, unknown>): ApiEndpointRef | null {
@@ -28,6 +29,7 @@ function mapApiEndpoint(raw: Record<string, unknown>): ApiEndpointRef | null {
     fullyQualifiedName: asString(raw.fullyQualifiedName) || undefined,
     endpointURL: asString(raw.endpointURL) || undefined,
     requestMethod: asString(raw.requestMethod) || undefined,
+    description: asString(raw.description) || undefined,
   };
 }
 
@@ -39,12 +41,19 @@ export function listApiEndpoints(query: {
   apiCollection?: string;
   service?: string;
   limit?: number;
+  include?: 'non-deleted' | 'deleted' | 'all';
+  after?: string;
+  before?: string;
 } = {}): Promise<Paged<ApiEndpointRef>> {
   return apiRequest<unknown>('/v1/apiEndpoints', {
     query: {
+      fields: 'owners',
       apiCollection: query.apiCollection,
       service: query.service,
       limit: query.limit ?? 50,
+      include: query.include ?? 'non-deleted',
+      after: query.after,
+      before: query.before,
     },
   }).then((payload) => parsePaged(payload, mapApiEndpoint));
 }

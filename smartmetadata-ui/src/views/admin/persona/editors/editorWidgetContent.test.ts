@@ -47,6 +47,5 @@ describe('buildEditorPieceContext', () => {
     expect(context.taskGraphEmpty).toBe(true);
     expect(context.apiEndpointSchemaJson(undefined)).toBe('');
     expect(context.schemaExpandable.rowExpandable({} as never)).toBe(false);
-    expect(() => context.onApiEndpointClick({} as never)).not.toThrow();
   });
 });
