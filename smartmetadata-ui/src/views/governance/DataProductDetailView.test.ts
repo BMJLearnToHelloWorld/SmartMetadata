@@ -406,13 +406,29 @@ describe('DataProductDetailView widget grid (B-8)', () => {
     wrapper.unmount();
   });
 
-  it('renders existing panes unchanged without a customized entry', async () => {
+  it('mounts the default widget grid without a customized entry (batch 6 unconditional mount)', async () => {
     stubWithDoc(null);
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountProduct();
-    expect(wrapper.text()).toContain('Predicts customer churn');
+    // Batch 6: documentation is an unconditional-mount tab — with no
+    // customized page the grid mounts with the default layout and the
+    // legacy Descriptions pane is gone. The description still renders,
+    // inside the widget-description branch.
+    expect(widgetTestIds(wrapper)).toEqual([
+      'widget-description',
+      'widget-domain',
+      'widget-owners',
+      'widget-tier',
+      'widget-certification',
+      'widget-tags',
+      'widget-glossary-terms',
+      'widget-experts',
+      'widget-knowledge-article',
+      'widget-custom-properties',
+    ]);
+    expect(wrapper.findAll('.ant-descriptions-row')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Predicts customer churn');
     expect(wrapper.find('[data-testid="add-data-product-assets"]').exists()).toBe(true);
-    expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
   });
 

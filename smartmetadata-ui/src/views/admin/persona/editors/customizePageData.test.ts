@@ -220,8 +220,16 @@ describe('customizePageData dispatch', () => {
     expect(getWidgetHeight('StoredProcedure', 'KnowledgePanel.TableConstraints')).toBe(4);
   });
 
-  it('starts with an empty unconditional-mount registry (Batch 6)', () => {
-    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({});
+  it('holds exactly the batch-6 flipped mount tabs in the registry (Batch 6)', () => {
+    // D-2 batch 6 governance r2: infra defined the empty registry; the
+    // governance lane merged its 4 flipped tabs into it. The asset tabs
+    // below stay false until the asset lanes flip them.
+    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({
+      DataProduct: ['documentation'],
+      Domain: ['documentation'],
+      Glossary: ['terms'],
+      GlossaryTerm: ['overview'],
+    });
     expect(isUnconditionalMountTab('Table', 'schema')).toBe(false);
     expect(isUnconditionalMountTab('Chart', 'details')).toBe(false);
     expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(false);
@@ -293,5 +301,26 @@ describe('customizePageData dispatch', () => {
     expect(isWidgetLayoutTab('GlossaryTerm', 'assets')).toBe(false);
     expect(isWidgetLayoutTab('Pipeline', 'overview')).toBe(false);
     expect(isWidgetLayoutTab('NoSuchPage', 'overview')).toBe(false);
+  });
+
+  it('lists exactly the batch-6 flipped mount tabs as unconditional', () => {
+    // D-2 batch 6 governance lane: one tab at a time, only tabs whose
+    // widgets are all ready and whose default-panel equivalence is
+    // verified against pin. Tag/overview and Metric/overview are NOT
+    // listed: Tag's disabled toggle lives only in its default panel
+    // (pin puts it in the page header), and Metric's default layout
+    // carries a DataProducts widget its view chain never dispatches
+    // while its default panel's owners/domains rows are outside the
+    // grid (pin shows them in the page header).
+    expect(isUnconditionalMountTab('Glossary', 'terms')).toBe(true);
+    expect(isUnconditionalMountTab('GlossaryTerm', 'overview')).toBe(true);
+    expect(isUnconditionalMountTab('Domain', 'documentation')).toBe(true);
+    expect(isUnconditionalMountTab('DataProduct', 'documentation')).toBe(true);
+    expect(isUnconditionalMountTab('Tag', 'overview')).toBe(false);
+    expect(isUnconditionalMountTab('Metric', 'overview')).toBe(false);
+    expect(isUnconditionalMountTab('Glossary', 'overview')).toBe(false);
+    expect(isUnconditionalMountTab('Domain', 'assets')).toBe(false);
+    expect(isUnconditionalMountTab('GlossaryTerm', 'data_observability')).toBe(false);
+    expect(isUnconditionalMountTab('NoSuchPage', 'overview')).toBe(false);
   });
 });

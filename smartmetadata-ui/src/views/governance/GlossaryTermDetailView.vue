@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Form, Input, Select, Tag, message } from 'ant-design-vue';
+import { Button, Form, Input, Select, Tag, message } from 'ant-design-vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import WidgetCertificationTagCell from '@/components/shared/widgets/WidgetCertificationTagCell.vue';
@@ -25,7 +25,8 @@ import GenericTab from '@/components/customize/GenericTab.vue';
 import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
-import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { isUnconditionalMountTab, isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTerms, patchGlossaryTerm, updateGlossaryTerm } from '@/api/glossaryTerms';
 import { searchAssets } from '@/api/search';
 import { getGlossaryTermAssetsQueryFilter, getQueryFilterToExcludeTerm } from '@/catalog/glossaryTermAssets';
@@ -351,19 +352,28 @@ const termDqInitialFilters = computed<DqDashboardChartFilters | undefined>(() =>
   return fqn ? { glossaryTerms: [fqn] } : undefined;
 });
 
-// Widget layer (B-8): the widget grid mounts ONLY on this page type's
-// widget-layout tab (GlossaryTerm: overview — only buildOverviewTab
-// mounts GenericTab officially; every other tab renders fixed
-// children), and only when the customized page has a tab entry
-// resolving to the rendered tab key whose official id is that mount
-// tab (`isWidgetLayoutTab`, reading layoutAppliesTo). The editor
+// Widget layer (B-8, batch 6 mount-gate convergence): the widget grid
+// mounts on this page type's widget-layout tab (GlossaryTerm:
+// overview — only buildOverviewTab mounts GenericTab officially;
+// every other tab renders fixed children) — with the default layout
+// when no customized page exists (the official
+// getLayoutFromCustomizedPage default branch), because the overview
+// tab is an unconditional-mount tab (`isUnconditionalMountTab`,
+// verified against pin: the overview default layout's widgets are all
+// dispatched by this view's chains and the default panel's content
+// rows — description, related terms — are covered by the grid; the
+// name/fqn/glossary rows are shell chrome and the read-only parent
+// row has no pin overview-tab equivalent). When a customized page
+// exists, the grid renders the entry's resolved layout. The
+// unconditional branch fires only for the mount slot key: the same
+// function also gates the data_observability slot, which is not a
+// mount tab and keeps its fixed DataQualityDashboard. The editor
 // saves ALL tabs with layout: [] on the non-mount ones, so entry
 // resolution alone would blank every other tab; non-mount tabs
-// always keep their existing panels. The grid renders the entry's
-// resolved layout, including empty when the entry carries no layout.
-// The entry's own id — never the rendered key — is passed to the
-// layout resolver, because the official lookup matches tab entries
-// by id only (`customizeWidgetLayout.ts`).
+// always keep their existing panels. The entry's own id — never the
+// rendered key — is passed to the layout resolver, because the
+// official lookup matches tab entries by id only
+// (`customizeWidgetLayout.ts`).
 // Dispatch-resolvable keys with no branch in this view's widget chains,
 // absent on purpose, so their cells stay empty (same disclosure format
 // as AssetDetailView): DATA_PRODUCTS — the GlossaryTerm spec carries it,
@@ -376,17 +386,25 @@ const termDqInitialFilters = computed<DqDashboardChartFilters | undefined>(() =>
 // it. LEFT_PANEL is structural, not a missing branch: GenericTab
 // renders the panel's children and never offers the panel itself to
 // the slot.
-function customizedEntryFor(tabKey: string) {
+function widgetLayoutFor(tabKey: string): WidgetConfig[] | null {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
-  if (!entry?.id || !isWidgetLayoutTab('GlossaryTerm', entry.id)) {
-    return undefined;
+  // Batch 6 mount-gate convergence: the official tab id for this slot
+  // (the entry's id when customized, the mount tab id otherwise).
+  const tabId = entry?.id ?? 'overview';
+  // A flipped mount tab mounts the grid with the default layout when
+  // no customized entry exists (official getLayoutFromCustomizedPage
+  // default branch); an unflipped tab keeps the legacy default pane.
+  // Only the mount slot may take the unconditional branch — this
+  // function also gates the data_observability slot, and without the
+  // slot check that tab would mount the overview default grid when no
+  // entry exists.
+  if (!entry && (tabKey !== 'overview' || !isUnconditionalMountTab('GlossaryTerm', tabId))) {
+    return null;
   }
-  return entry;
-}
-
-function widgetLayoutFor(tabKey: string) {
-  const entry = customizedEntryFor(tabKey);
-  return entry ? resolveWidgetLayout('GlossaryTerm', entry.id, customizedPage.value) : [];
+  if (entry && (!entry.id || !isWidgetLayoutTab('GlossaryTerm', entry.id))) {
+    return null;
+  }
+  return resolveWidgetLayout('GlossaryTerm', tabId, customizedPage.value);
 }
 
 async function load(): Promise<void> {
@@ -743,7 +761,7 @@ onMounted(() => {
       </Button>
     </template>
     <template #overview>
-      <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="GlossaryTerm">
+      <GenericTab v-if="widgetLayoutFor('overview') !== null" :layout="widgetLayoutFor('overview') ?? []" page-type="GlossaryTerm">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
             <EntityDescriptionCell
@@ -855,23 +873,6 @@ onMounted(() => {
           </div>
         </template>
       </GenericTab>
-      <Descriptions v-else-if="term" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ term.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.fqn')">{{ term.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('terms.glossary')">{{ term.glossary?.name || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.parent')">{{ term.parent?.name || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">
-              <EntityDescriptionCell
-                :description="term.description"
-                :entity-name="term.displayName || term.name"
-                :has-edit-access="canEditDescription"
-                :on-description-update="onDescriptionUpdate"
-              />
-            </Descriptions.Item>
-        <Descriptions.Item :label="t('terms.relatedTerms')">
-          {{ term.relatedTerms.map((item) => item.displayName || item.name).join(', ') || '—' }}
-        </Descriptions.Item>
-      </Descriptions>
     </template>
     <template #glossary_terms>
       <!-- B-15 G-2: the pin terms tab (GlossaryTermUtils buildTermsTab):
@@ -954,7 +955,7 @@ onMounted(() => {
       />
     </template>
     <template #data_observability>
-      <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="GlossaryTerm">
+      <GenericTab v-if="widgetLayoutFor('data_observability') !== null" :layout="widgetLayoutFor('data_observability') ?? []" page-type="GlossaryTerm">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
             <EntityDescriptionCell
