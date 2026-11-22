@@ -11,6 +11,7 @@
 import { listKnowledgePages } from '@/api/contextCenter';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
 import type { KnowledgePage } from '@/types/contextCenter';
+import { FileTextOutlined, LinkOutlined } from '@ant-design/icons-vue';
 import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -72,6 +73,13 @@ onMounted(async () => {
     <a-list :data-source="pages" size="small">
       <template #renderItem="{ item }: { item: KnowledgePage }">
         <a-list-item :key="item.id" data-testid="knowledge-pages-row">
+          <span class="knowledge-pages-cell__icon">
+            <FileTextOutlined
+              v-if="item.pageType === 'Article'"
+              data-testid="article-icon"
+            />
+            <LinkOutlined v-else data-testid="link-icon" />
+          </span>
           <RouterLink
             v-if="item.pageType === 'Article'"
             :to="{ name: 'context-center-article', params: { fqn: item.fullyQualifiedName } }"
@@ -102,5 +110,12 @@ onMounted(async () => {
 
 .knowledge-pages-cell__title {
   font-weight: 600;
+}
+
+.knowledge-pages-cell__icon {
+  display: inline-flex;
+  margin-right: 8px;
+  font-size: 16px;
+  vertical-align: middle;
 }
 </style>
