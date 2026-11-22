@@ -41,7 +41,7 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
   table: {
     collection: 'tables',
     fields:
-      'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,tablePartition,tableConstraints,aliases,followers,votes,joins,dataProducts,certification',
+      'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,tablePartition,tableConstraints,aliases,followers,votes,joins,dataProducts,certification,testSuite',
   },
   topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes,dataProducts,certification' },
   dashboard: {
@@ -74,7 +74,7 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
   },
   metric: {
     collection: 'metrics',
-    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts,certification',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts,certification,relatedMetrics',
   },
   dashboardDataModel: {
     collection: 'dashboard/datamodels',

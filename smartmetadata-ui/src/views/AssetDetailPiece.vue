@@ -39,6 +39,7 @@ import type { TagLabelInput } from '@/governance/assetPatch';
 import type { DatabaseSchemaRow } from '@/api/databaseSchemas';
 import { assetLocation } from '@/catalog/entityRoutes';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
+import WidgetAssetHealthCell from '@/components/shared/widgets/WidgetAssetHealthCell.vue';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, EntityRef, PipelineTask, SchemaRow, TableConstraint } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
@@ -94,7 +95,8 @@ export type AssetDetailPieceId =
   | 'tableAliases'
   | 'dataProducts'
   | 'knowledgePages'
-  | 'databaseSchemas';
+  | 'databaseSchemas'
+  | 'assetHealth';
 
 export interface AssetDetailPieceContext {
   asset: AssetDetail;
@@ -1036,6 +1038,25 @@ const tableColumnNames = computed(() => flattenColumnNames(props.context.asset.s
       <Typography.Text type="secondary">{{ t('asset.tableAliases') }}</Typography.Text>
       <WidgetTableAliasesCell :aliases="context.asset.aliases" />
     </div>
+  </template>
+  <!-- D-2 batch 5c rebase: keep this branch inside the piece v-if chain.
+       The modals below are plain siblings and must not sit between chain
+       branches (Vue requires v-else-if adjacent to v-if/v-else-if). -->
+  <template
+    v-else-if="
+      piece === 'assetHealth' &&
+      context.entityType === 'table' &&
+      context.asset.id &&
+      context.asset.service?.fullyQualifiedName
+    "
+  >
+    <WidgetAssetHealthCell
+      :table-id="context.asset.id"
+      :table-fqn="context.asset.fullyQualifiedName"
+      :service-fqn="context.asset.service.fullyQualifiedName"
+      :service-id="context.asset.service.id"
+      :test-suite-id="context.asset.testSuite?.id"
+    />
   </template>
   <!-- D-2 batch 3: shared column modals at piece root so the schema,
        features and API-schema tables all edit through the same state. -->

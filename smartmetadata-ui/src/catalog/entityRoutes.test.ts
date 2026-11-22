@@ -38,7 +38,7 @@ describe('entityRoutes', () => {
   it('maps wired catalog types onto documented collections', () => {
     expect(resolveDetailEndpoint('table', 'svc.db.schema.orders')).toEqual({
       path: `/v1/tables/name/${encodeURIComponent('svc.db.schema.orders')}`,
-      fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,tablePartition,tableConstraints,aliases,followers,votes,joins,dataProducts,certification',
+      fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,tablePartition,tableConstraints,aliases,followers,votes,joins,dataProducts,certification,testSuite',
     });
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
@@ -74,7 +74,7 @@ describe('entityRoutes', () => {
     });
     expect(resolveDetailEndpoint('metric', 'kpi.mau')).toEqual({
       path: `/v1/metrics/name/${encodeURIComponent('kpi.mau')}`,
-      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts,certification',
+      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts,certification,relatedMetrics',
     });
     expect(resolveDetailEndpoint('dashboardDataModel', 'bi.sales.model')).toEqual({
       path: `/v1/dashboard/datamodels/name/${encodeURIComponent('bi.sales.model')}`,

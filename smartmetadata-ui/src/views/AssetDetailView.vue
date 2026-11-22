@@ -649,10 +649,10 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
 // its specific keys, then the shared CommonWidgets dispatcher; see
 // `detailWidgetDispatch.ts` for the file:line table). Keys with no
 // product pane are absent on purpose, so their cells stay empty
-// (residual R-4: data products, related metrics / metric hierarchy):
-// asset health (no product pane), experts / tier / certification (no detail
-// surfaces; tier already renders in the shell header), related metrics /
-// metric hierarchy (no metric surfaces). The widget's `config` (e.g. the
+// (residual R-4: related metrics / metric hierarchy):
+// experts / tier / certification (no detail surfaces; tier already
+// renders in the shell header), related metrics / metric hierarchy
+// (no metric surfaces). The widget's `config` (e.g. the
 // custom-properties propertyLayout) is not consumed: the product panels
 // take no layout input.
 const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
@@ -683,6 +683,7 @@ const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.TABLE_ALIASES]: 'tableAliases',
   [DetailWidgetKeys.DATA_PRODUCTS]: 'dataProducts',
   [DetailWidgetKeys.KNOWLEDGE_ARTICLE]: 'knowledgePages',
+  [DetailWidgetKeys.ASSET_HEALTH]: 'assetHealth',
 };
 
 function pieceForContentKey(contentKey: string | null): AssetDetailPieceId | null {

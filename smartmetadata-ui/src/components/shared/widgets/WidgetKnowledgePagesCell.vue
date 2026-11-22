@@ -1,54 +1,41 @@
-<!--
-  Copyright 2026 SmartMetadata authors.
-  Licensed under the Apache License, Version 2.0.
--->
+/**
+ * Copyright 2026 SmartMetadata authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ */
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { RouterLink } from 'vue-router';
-import { useI18n } from 'vue-i18n';
-import { Button, Spin, Typography } from 'ant-design-vue';
-import { FileTextOutlined, LinkOutlined } from '@ant-design/icons-vue';
 import { listKnowledgePages } from '@/api/contextCenter';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
 import type { KnowledgePage } from '@/types/contextCenter';
+import { onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 /**
- * KnowledgePages fallback cell (D-2 batch 2): the product port of pin
- * `KnowledgePages` as reached through the only fallback resolver in
- * the pin tree (`CommonWidgetClassBase.ts:26-41` — exact / prefix /
- * case-insensitive match on `KNOWLEDGE_ARTICLE` → `KnowledgePages`).
- * Self-fetches `listKnowledgePages({entityId, entityType, limit: 10})`;
- * empty or failed load renders nothing (pin returns null, load
- * failure silent); more than 10 total shows a view-all link to the
- * context-center filter. Articles link to the article page, quick
- * links open in a new tab through the safe-URL helper. This cell is
- * read-only: pin KnowledgePages has no edit action.
+ * Official KnowledgePages widget
+ * (openmetadata-ui/.../KnowledgeCenter/KnowledgePages/KnowledgePages.tsx):
+ * the pages linked to this entity, ten at most, articles opening in the
+ * app and quick links in a new window. An entity with no pages shows
+ * nothing at all — official removes the widget from the grid — and a
+ * failed load stays silent for the same reason. No write, no permission.
  */
-const props = withDefaults(
-  defineProps<{
-    entityId: string;
-    entityType: string;
-    testId?: string;
-  }>(),
-  { testId: 'widget-knowledge-pages-cell' },
-);
-
-const { t } = useI18n();
-
 const PAGE_SIZE = 10;
 
-const loading = ref(false);
-const total = ref(0);
+const props = defineProps<{
+  entityId: string;
+  entityType: string;
+}>();
+
+const { t } = useI18n();
 const pages = ref<KnowledgePage[]>([]);
+const total = ref(0);
+const loading = ref(true);
+const empty = ref(false);
 
-const hasContent = computed(() => pages.value.length > 0);
-
-function displayName(page: KnowledgePage): string {
-  return page.displayName || page.name;
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
+onMounted(async () => {
   try {
     const result = await listKnowledgePages({
       entityId: props.entityId,
@@ -57,56 +44,63 @@ async function load(): Promise<void> {
     });
     pages.value = result.data;
     total.value = result.total ?? 0;
+    empty.value = result.data.length === 0;
   } catch {
-    // Pin KnowledgePages swallows load failures (renders null).
-    pages.value = [];
-    total.value = 0;
+    empty.value = true;
   } finally {
     loading.value = false;
   }
-}
-
-onMounted(() => {
-  void load();
 });
 </script>
 
 <template>
-  <div v-if="loading" :data-testid="testId">
-    <Spin size="small" />
-  </div>
-  <div v-else-if="hasContent" :data-testid="testId">
-    <Typography.Title :level="5">{{ t('label.contextCenter') }}</Typography.Title>
-    <div v-for="page in pages" :key="page.id" class="knowledge-pages__row">
+  <a-spin v-if="loading" data-testid="knowledge-pages-loading" />
+  <div v-else-if="!empty" class="knowledge-pages-cell" data-testid="knowledge-pages">
+    <div class="knowledge-pages-cell__header">
+      <span class="knowledge-pages-cell__title">{{ t('label.context-center') }}</span>
       <RouterLink
-        v-if="page.pageType === 'Article'"
-        :to="{ name: 'context-center-article', params: { fqn: page.fullyQualifiedName } }"
-        data-testid="knowledge-page-article"
+        v-if="total > 10"
+        data-testid="knowledge-pages-view-all"
+        :to="{
+          name: 'context-center-filter',
+          query: { entityId: props.entityId, entityType: props.entityType },
+        }"
       >
-        <FileTextOutlined /> {{ displayName(page) }}
+        {{ t('label.view-all') }}
       </RouterLink>
-      <a
-        v-else
-        :href="getSafeHttpUrl(page.pageUrl ?? '') ?? undefined"
-        target="_blank"
-        rel="noopener noreferrer"
-        data-testid="knowledge-page-quick-link"
-      >
-        <LinkOutlined /> {{ displayName(page) }}
-      </a>
     </div>
-    <RouterLink
-      v-if="total > PAGE_SIZE"
-      :to="{ name: 'context-center-filter', query: { entityId, entityType } }"
-      data-testid="knowledge-pages-view-all"
-    >
-      <Button type="link" size="small">{{ t('label.viewAll') }}</Button>
-    </RouterLink>
+    <a-list :data-source="pages" size="small">
+      <template #renderItem="{ item }: { item: KnowledgePage }">
+        <a-list-item :key="item.id" data-testid="knowledge-pages-row">
+          <RouterLink
+            v-if="item.pageType === 'Article'"
+            :to="{ name: 'context-center-article', params: { fqn: item.fullyQualifiedName } }"
+          >
+            {{ item.displayName || item.name }}
+          </RouterLink>
+          <a
+            v-else
+            :href="getSafeHttpUrl(item.pageUrl) ?? '#'"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ item.displayName || item.name }}
+          </a>
+        </a-list-item>
+      </template>
+    </a-list>
   </div>
 </template>
 
 <style scoped>
-.knowledge-pages__row {
-  margin-bottom: 4px;
+.knowledge-pages-cell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.knowledge-pages-cell__title {
+  font-weight: 600;
 }
 </style>

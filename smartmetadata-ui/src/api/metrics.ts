@@ -8,7 +8,7 @@
  */
 import { apiRequest } from './client';
 import { notifyCsvJobsRefresh } from './csvJobs';
-import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from './json';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from './json';
 import { mapCertification, mapTags } from './entities';
 import type { Paged } from '@/types/admin';
 import type { EntityRef, TagRef } from '@/types/api';
@@ -114,6 +114,8 @@ export interface Metric {
   expressionLanguage?: string;
   expressionCode?: string;
   entityStatus?: string;
+  /** Soft-delete flag (pin generated entity/data/metric.ts). */
+  deleted?: boolean;
   childrenCount?: number;
   parent?: EntityRef;
   metricGroup?: EntityRef;
@@ -273,6 +275,7 @@ export function mapMetric(raw: unknown): Metric | null {
     expressionLanguage: asString(expression?.language) || undefined,
     expressionCode: asString(expression?.code) || undefined,
     entityStatus: asString(rec.entityStatus) || undefined,
+    deleted: asBoolean(rec.deleted) ?? undefined,
     childrenCount: asNumber(rec.childrenCount),
     parent: parentRefs[0],
     metricGroup: groupRefs[0],
@@ -330,6 +333,76 @@ export async function getMetricHierarchy(
     },
   });
   return parsePaged(payload, mapMetricHierarchyItem);
+}
+
+export interface MetricHierarchyContextQuery {
+  childLimit?: number;
+  childOffset?: number;
+  siblingLimit?: number;
+  siblingOffset?: number;
+}
+
+/**
+ * Official MetricHierarchyContext (generated/api/data/metricHierarchyContext.ts):
+ * ancestors ordered root-to-parent, one page of immediate children and
+ * one page of same-parent siblings, each with its offset-paging total.
+ */
+export interface MetricHierarchyContext {
+  ancestors: Metric[];
+  children: Metric[];
+  childrenTotal: number;
+  current: Metric;
+  group?: MetricGroup;
+  siblingTotal: number;
+  siblings: Metric[];
+}
+
+function mapHierarchyMetrics(value: unknown): Metric[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const mapped = mapMetric(item);
+    return mapped ? [mapped] : [];
+  });
+}
+
+/**
+ * Official getMetricHierarchyContext (rest/metricsAPI.ts): GET
+ * /v1/metrics/{id}/hierarchy — the MetricHierarchy card's context
+ * source. The server endpoint (MetricResource) exists with no backend
+ * change; only this frontend function was missing. Defaults follow the
+ * server (childLimit/siblingLimit 20); the card passes the official
+ * peer limit of 25.
+ */
+export async function getMetricHierarchyContext(
+  id: string,
+  query: MetricHierarchyContextQuery = {},
+): Promise<MetricHierarchyContext> {
+  const payload = await apiRequest<unknown>(`/v1/metrics/${encodeURIComponent(id)}/hierarchy`, {
+    query: {
+      childLimit: query.childLimit,
+      childOffset: query.childOffset,
+      siblingLimit: query.siblingLimit,
+      siblingOffset: query.siblingOffset,
+    },
+  });
+  const rec = asRecord(payload) ?? {};
+  const current = mapMetric(rec.current);
+  if (!current) {
+    throw new Error('Metric hierarchy response was missing its current metric');
+  }
+  const childrenPaging = asRecord(rec.childrenPaging);
+  const siblingPaging = asRecord(rec.siblingPaging);
+  return {
+    ancestors: mapHierarchyMetrics(rec.ancestors),
+    children: mapHierarchyMetrics(rec.children),
+    childrenTotal: asNumber(childrenPaging?.total) ?? 0,
+    current,
+    group: mapMetricGroup(rec.group) ?? undefined,
+    siblingTotal: asNumber(siblingPaging?.total) ?? 0,
+    siblings: mapHierarchyMetrics(rec.siblings),
+  };
 }
 
 export interface MetricGroupMetricsQuery {
