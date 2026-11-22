@@ -1694,6 +1694,29 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
+  it('renders existing panes with no grid when the customized page carries no tab list (Batch 6)', async () => {
+    // Batch 6 mount-gate convergence: with the registry empty, a
+    // customized page without a `tabs` list leaves the default tabs
+    // in place but no entry resolves for the mount slot, so the grid
+    // stays unmounted and the default pane renders — the same
+    // no-entry behavior as with no persona document at all.
+    stubWithDoc(
+      {
+        name: 'analyst-persona',
+        fullyQualifiedName: 'persona.analyst',
+        entityType: 'Page',
+        data: { pages: [{ pageType: 'Table' }] },
+      },
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
   it('renders the D-F2 Tags and Glossary Terms columns with per-source chips (read-only without permission)', async () => {
     const table = {
       ...BASE_TABLE,

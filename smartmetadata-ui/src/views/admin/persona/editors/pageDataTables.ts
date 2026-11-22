@@ -140,10 +140,13 @@ export const PAGE_DATA_TABLES: Record<string, PageDataTable> =
       "KnowledgePanel.Tags": 2,
       "KnowledgePanel.GlossaryTerms": 2,
       "KnowledgePanel.CustomProperties": 4,
-      "KnowledgePanel.KnowledgeArticle": 2,
+      // Pin TableClassBase.ts:364-368: KnowledgeArticle is not in SIZEABLE_WIDGET_KEYS (:79-92), so the effective height is the 1 fallback, not the raw defaultWidgetHeight value 2 (:106).
+      "KnowledgePanel.KnowledgeArticle": 1,
       "KnowledgePanel.TableConstraints": 2,
       "KnowledgePanel.PartitionedKeys": 2,
       "KnowledgePanel.TableAliases": 2,
+      // Pin TableClassBase.ts:89,109: TABLE_SHARDING is sizeable with defaultWidgetHeight 2 (was missing, so it fell back to 1).
+      "KnowledgePanel.TableSharding": 2,
       "KnowledgePanel.AssetHealth": 3
     },
     "heightFallback": 1,
@@ -619,7 +622,9 @@ export const PAGE_DATA_TABLES: Record<string, PageDataTable> =
       "KnowledgePanel.DataProducts": 2,
       "KnowledgePanel.Tags": 2,
       "KnowledgePanel.GlossaryTerms": 2,
-      "KnowledgePanel.CustomProperties": 4
+      "KnowledgePanel.CustomProperties": 4,
+      // Pin StoredProcedureClassBase.ts:230-232: TABLE_CONSTRAINTS falls through with CUSTOM_PROPERTIES to defaultWidgetHeight[CUSTOM_PROPERTIES] (:77) = 4 (was missing, so it fell back to 1).
+      "KnowledgePanel.TableConstraints": 4
     },
     "heightFallback": 1,
     "layoutAppliesTo": [

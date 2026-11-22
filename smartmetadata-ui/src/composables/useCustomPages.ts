@@ -204,6 +204,27 @@ export const CUSTOMIZED_TAB_KEY_ALIASES: Record<string, readonly string[]> = {
   'search-index-settings': ['search_index_settings'],
 };
 
+   /**
+    * Batch 6: the official tab id that renders as `renderedKey` on the
+    * asset detail view, for the mount-gate flip (no customized entry to
+    * read the id from). Identity except the two alias targets:
+    * `endpoint` is the APIEndpoint SCHEMA tab (pin APIEndpointSchema
+    * renders in the product `endpoint` tab), `apiEndpoints` is the
+    * APICollection API_ENDPOINT tab. `overview` is identity here:
+    * Chart's `details` tab renders in the product `overview` slot, so
+    * Chart's flip uses the pageType-scoped override in AssetDetailView,
+    * not this helper.
+    */
+   export function resolveMountTabId(renderedKey: string): string {
+     if (renderedKey === 'endpoint') {
+       return 'schema';
+     }
+     if (renderedKey === 'apiEndpoints') {
+       return 'apiEndpoint';
+     }
+     return renderedKey;
+   }
+
 function readCustomizedTabIds(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
