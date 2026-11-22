@@ -61,10 +61,11 @@ import {
   getDetailsTabWithNewLabel,
   getRenderedActiveTab,
   pageTypeForEntityType,
+  resolveMountTabId,
   useCustomPages,
 } from '@/composables/useCustomPages';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
-import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { isUnconditionalMountTab, isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { getTierTag } from '@/ingestion/tierTags';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
@@ -580,24 +581,44 @@ const tabs = computed<EntityDetailTab[]>(() => {
   });
 });
 
-// B-8 widget layer: a tab renders the widget grid only when the
+   // Batch 6: pageType-scoped slot→mount-tab overrides for the flip (no
+   // customized entry to read the id from). Chart's `details` tab renders
+   // in the product `overview` slot (CUSTOMIZED_TAB_KEY_ALIASES
+   // `details` → `overview`); every other slot maps through
+   // resolveMountTabId.
+   const SLOT_MOUNT_TAB_OVERRIDES: Record<string, Record<string, string>> = {
+     Chart: { overview: 'details' },
+   };
+
+   function mountTabIdFor(pageTypeValue: string, slotKey: string): string {
+     return SLOT_MOUNT_TAB_OVERRIDES[pageTypeValue]?.[slotKey] ?? resolveMountTabId(slotKey);
+   }
+
+// B-8 widget layer: a tab renders the widget grid only when the tab
+// is a mount tab for this page type (`isWidgetLayoutTab` — the tab
+// whose detail page officially mounts `GenericTab`) AND either the
 // customized page carries a tab entry resolving to the rendered tab
-// key AND the entry's official id is a mount tab for this page type
-// (`isWidgetLayoutTab` — the tab whose detail page officially mounts
-// `GenericTab`). The editor saves an entry for every system tab with
-// `layout: []` on the non-editable ones, so entry existence alone
-// would blank every non-primary tab of any editor-saved page; the
-// mount check is what keeps those tabs on their fixed children. The
-// check uses the ENTRY's id — not the rendered key, which may differ
-// through an alias (e.g. rendered `apiEndpoints` from entry
-// `apiEndpoint`, rendered `overview` from entry `details`) — because
-// the official mount set is keyed by tab id. A resolved mount tab
-// whose layout is []/missing/non-array still renders an empty grid:
-// no default pane leaks in — except the Container mount excluded by
-// the data-model mutual-exclusion gate below, which renders its
-// default pane. `null` means "no grid" (no entry, a non-mount entry,
-// an excluded Container mount, or no customized page): the existing
-// default pane renders unchanged. An empty array is a real (empty)
+// key, or the tab is a flipped unconditional-mount tab
+// (`isUnconditionalMountTab` — Batch 6 mount-gate convergence: a
+// flipped tab mounts the grid with the default layout when no
+// customized entry exists, per the official
+// `getLayoutFromCustomizedPage` default branch). The editor saves an
+// entry for every system tab with `layout: []` on the non-editable
+// ones, so entry existence alone would blank every non-primary tab of
+// any editor-saved page; the mount check is what keeps those tabs on
+// their fixed children. The check uses the official tab id — the
+// ENTRY's id when customized, the slot-derived id (`mountTabIdFor`)
+// otherwise — not the rendered key, which may differ through an alias
+// (e.g. rendered `apiEndpoints` from entry `apiEndpoint`, rendered
+// `overview` from entry `details`) — because the official mount set is
+// keyed by tab id. A resolved mount tab whose layout is []/missing/
+// non-array still renders an empty grid: no default pane leaks in —
+// except the Container mount excluded by the data-model
+// mutual-exclusion gate below, which renders its default pane.
+// `null` means "no grid" (an unflipped tab without an entry, a
+// non-mount entry, an excluded Container mount, or no page type): the
+// existing default pane renders unchanged. A flipped tab without an
+// entry mounts the default layout. An empty array is a real (empty)
 // grid, so callers compare against `null` rather than truthiness.
 function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
   const pageTypeValue = pageType.value;
@@ -605,10 +626,16 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
     return null;
   }
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, slotKey);
-  if (!entry?.id) {
+  // Batch 6 mount-gate convergence: the official tab id for this slot
+  // (the entry's id when customized, the slot-derived id otherwise).
+  const tabId = entry?.id ?? mountTabIdFor(pageTypeValue, slotKey);
+  // A flipped mount tab mounts the grid with the default layout when
+  // no customized entry exists (official getLayoutFromCustomizedPage
+  // default branch); an unflipped tab keeps the legacy default pane.
+  if (!entry && !isUnconditionalMountTab(pageTypeValue, tabId)) {
     return null;
   }
-  if (!isWidgetLayoutTab(pageTypeValue, entry.id)) {
+  if (entry && !isWidgetLayoutTab(pageTypeValue, tabId)) {
     return null;
   }
   // Container mount mutual exclusion (official
@@ -635,13 +662,13 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
   if (props.entityType === 'container') {
     const dataModelEmpty = (asset.value?.schemaRows.length ?? 0) === 0;
     if (
-      (entry.id === 'children' && !dataModelEmpty) ||
-      (entry.id === 'schema' && dataModelEmpty)
+      (tabId === 'children' && !dataModelEmpty) ||
+      (tabId === 'schema' && dataModelEmpty)
     ) {
       return null;
     }
   }
-  return resolveWidgetLayout(pageTypeValue, entry.id, customizedPage.value);
+  return resolveWidgetLayout(pageTypeValue, tabId, customizedPage.value);
 }
 
 // Content-key → shared content piece, following the official

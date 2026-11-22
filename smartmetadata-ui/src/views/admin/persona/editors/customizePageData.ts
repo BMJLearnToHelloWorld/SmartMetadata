@@ -221,6 +221,25 @@ export function isWidgetLayoutTab(pageType: string, tabId: string): boolean {
   return table ? table.layoutAppliesTo.includes(tabId) : false;
 }
 
+   /**
+    * Batch 6 mount-gate convergence: (pageType, tabId) pairs whose mount
+    * gate is unconditional — the widget grid mounts with the default
+    * layout when no customized page exists, instead of the legacy
+    * default pane. A tab is listed here only when its widgets are all
+    * ready and its default-panel equivalence is verified against pin
+    * source for that tab. One tab at a time; never flip a whole page
+    * type at once. Pin: officially GenericTab always mounts on a mount
+    * tab (GenericProvider getWidgetLayout + getLayoutFromCustomizedPage
+    * default branch); the product mount gate used to require a
+    * customized tab entry, rendering the pre-existing default pane
+    * instead — this table retires that gate, tab by tab.
+    */
+   export const UNCONDITIONAL_MOUNT_TABS: Record<string, readonly string[]> = {};
+
+   export function isUnconditionalMountTab(pageType: string, tabId: string): boolean {
+     return UNCONDITIONAL_MOUNT_TABS[pageType]?.includes(tabId) ?? false;
+   }
+
 export function getCustomizableWidgetByPage(pageType: string): CommonWidgetType[] {
   const table = PAGE_DATA_TABLES[pageType];
   if (!table) {

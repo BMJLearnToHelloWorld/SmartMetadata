@@ -20,6 +20,7 @@ import {
   getRenderedActiveTab,
   getTabLabelMapFromTabs,
   pageTypeForEntityType,
+  resolveMountTabId,
   useCustomPages,
 } from './useCustomPages';
 
@@ -740,5 +741,21 @@ describe('findCustomizedTabEntry', () => {
     const layout = [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 2 }];
     const entry = { id: 'schema', layout };
     expect(findCustomizedTabEntry([entry], 'schema')?.layout).toBe(layout);
+  });
+});
+
+describe('resolveMountTabId', () => {
+  it('maps the two alias targets and leaves every other key identical (Batch 6)', () => {
+    // Pin: APIEndpoint mounts GenericTab on SCHEMA (APIEndpointUtils.tsx:109),
+    // APICollection on API_ENDPOINT (APICollectionUtils.tsx:~103); Chart's
+    // `details` mount is pageType-scoped in AssetDetailView, so `overview`
+    // stays identity here.
+    expect(resolveMountTabId('endpoint')).toBe('schema');
+    expect(resolveMountTabId('apiEndpoints')).toBe('apiEndpoint');
+    expect(resolveMountTabId('overview')).toBe('overview');
+    expect(resolveMountTabId('schema')).toBe('schema');
+    expect(resolveMountTabId('details')).toBe('details');
+    expect(resolveMountTabId('activity')).toBe('activity');
+    expect(resolveMountTabId('')).toBe('');
   });
 });

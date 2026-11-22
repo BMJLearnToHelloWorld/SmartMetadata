@@ -11,12 +11,14 @@ import { describe, expect, it } from 'vitest';
 import {
   DETAILS_PAGE_TYPES,
   PageTypeToEntityTypeMap,
+  UNCONDITIONAL_MOUNT_TABS,
   getCustomizableWidgetByPage,
   getDefaultTabs,
   getDefaultWidgetForTab,
   getDummyDataByPage,
   getTabDisplayName,
   getWidgetHeight,
+  isUnconditionalMountTab,
   isWidgetLayoutTab,
 } from './customizePageData';
 import { PAGE_DATA_TABLES } from './pageDataTables';
@@ -208,6 +210,23 @@ describe('customizePageData dispatch', () => {
     expect(getWidgetHeight('Metric', 'KnowledgePanel.NoSuchWidget')).toBe(1);
     expect(getWidgetHeight('Glossary', 'KnowledgePanel.Description')).toBe(2);
     expect(getWidgetHeight('NoSuchPage', 'KnowledgePanel.Description')).toBe(1);
+    // Batch 6 heightMap fixes (pin TableClassBase / StoredProcedureClassBase):
+    // Table KnowledgeArticle is not sizeable, so the effective height is
+    // the 1 fallback, not the raw map value 2; TableSharding is sizeable
+    // at 2; StoredProcedure TABLE_CONSTRAINTS falls through to the
+    // CUSTOM_PROPERTIES height 4.
+    expect(getWidgetHeight('Table', 'KnowledgePanel.KnowledgeArticle')).toBe(1);
+    expect(getWidgetHeight('Table', 'KnowledgePanel.TableSharding')).toBe(2);
+    expect(getWidgetHeight('StoredProcedure', 'KnowledgePanel.TableConstraints')).toBe(4);
+  });
+
+  it('starts with an empty unconditional-mount registry (Batch 6)', () => {
+    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({});
+    expect(isUnconditionalMountTab('Table', 'schema')).toBe(false);
+    expect(isUnconditionalMountTab('Chart', 'details')).toBe(false);
+    expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(false);
+    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(false);
+    expect(isUnconditionalMountTab('NoSuchPage', 'schema')).toBe(false);
   });
 
   it('returns header projections of the official dummy data', () => {
