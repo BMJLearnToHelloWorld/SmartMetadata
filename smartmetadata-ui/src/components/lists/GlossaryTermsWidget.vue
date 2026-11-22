@@ -4,7 +4,7 @@
 -->
 <script setup lang="ts">
 import { EditOutlined, PlusOutlined } from '@ant-design/icons-vue';
-import { Alert, Button, Checkbox, Input, message, Modal, Select, Tag, Typography } from 'ant-design-vue';
+import { Alert, Button, Checkbox, Input, message, Modal, Popover, Select, Tag, Typography } from 'ant-design-vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
@@ -28,6 +28,7 @@ import {
 import DescriptionCell from '@/components/shared/DescriptionCell.vue';
 import NextPrevious from '@/components/shared/NextPrevious.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import WidgetWorkflowHistoryCell from '@/components/shared/widgets/WidgetWorkflowHistoryCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { joinRefNames } from '@/features/crud/paging';
 import { useAuthStore } from '@/stores/auth';
@@ -56,9 +57,11 @@ import type { Paging, PagingHandlerParams } from '@/utils/pagination';
  * While the permission load is unresolved the flags are all-false, so
  * every gated action stays hidden (fail-closed).
  *
- * Not built here (residuals R-1/R-2): proposal-source / AI-draft
- * badges (no GlossaryReview proposal infra in the product) and the
- * WorkflowHistory popover on the status badge.
+ * Not built here (residual R-1): proposal-source / AI-draft badges
+ * (no GlossaryReview proposal infra in the product). The
+ * WorkflowHistory popover on the status badge (D-2 batch 5c rebase)
+ * opens on hover with a 120ms close grace (pin GlossaryTermStatusCell,
+ * STATUS_POPOVER_CLOSE_DELAY_MS).
  */
 const props = withDefaults(
   defineProps<{
@@ -836,9 +839,26 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="column.key === 'status'">
           <span class="lists-widget__status-cell">
-            <Tag v-if="(record as TermTreeNode).status" :color="statusColor((record as TermTreeNode).status)">
-              {{ (record as TermTreeNode).status }}
-            </Tag>
+            <Popover
+              v-if="(record as TermTreeNode).status"
+              placement="topLeft"
+              trigger="hover"
+              :mouse-enter-delay="0"
+              :mouse-leave-delay="0.12"
+            >
+              <template #content>
+                <div data-testid="workflow-history-popover" style="min-width: 260px">
+                  <WidgetWorkflowHistoryCell
+                    :glossary-term-fqn="(record as TermTreeNode).fullyQualifiedName"
+                    :entity-status="(record as TermTreeNode).status"
+                    :is-widget="false"
+                  />
+                </div>
+              </template>
+              <Tag :color="statusColor((record as TermTreeNode).status)">
+                {{ (record as TermTreeNode).status }}
+              </Tag>
+            </Popover>
             <span v-else>—</span>
             <template v-if="(record as TermTreeNode).status === 'InReview' && canDecide(record as TermTreeNode).permission">
               <Button

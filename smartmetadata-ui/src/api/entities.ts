@@ -431,6 +431,8 @@ export async function fetchAssetDetail(
     extension: asRecord(body.extension) || undefined,
     usageSummary: mapUsageSummary(body.usageSummary),
     joins: mapTableJoins(body.joins),
+    testSuite: mapRef(body.testSuite),
+    relatedMetrics: mapEntityRefs(body.relatedMetrics),
     deleted: typeof body.deleted === 'boolean' ? body.deleted : undefined,
   };
 }

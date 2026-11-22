@@ -9,90 +9,131 @@
  */
 import { mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
+import { persistSession } from '@/auth/token';
 import { createTestI18n } from '@/test/i18n';
-import { listKnowledgePages } from '@/api/contextCenter';
-import type { KnowledgePage } from '@/types/contextCenter';
 import WidgetKnowledgePagesCell from './WidgetKnowledgePagesCell.vue';
 
-vi.mock('@/api/contextCenter', () => ({
-  listKnowledgePages: vi.fn(),
-}));
-
-const mockedListKnowledgePages = vi.mocked(listKnowledgePages);
-
-const PAGES: KnowledgePage[] = [
-  {
-    id: 'p1',
-    name: 'getting-started',
-    fullyQualifiedName: 'Getting Started',
-    displayName: 'Getting Started',
-    pageType: 'Article',
-  },
-  {
-    id: 'p2',
-    name: 'runbook',
-    fullyQualifiedName: 'Runbook',
-    displayName: 'Runbook',
-    pageType: 'QuickLink',
-    pageUrl: 'https://example.com/runbook',
-  },
-];
-
-function mountCell() {
-  return mount(WidgetKnowledgePagesCell, {
-    attachTo: document.body,
-    props: { entityId: 'e1', entityType: 'table' },
-    global: {
-      plugins: [Antd, createTestI18n()],
-      stubs: { RouterLink: { template: '<a><slot /></a>' } },
-    },
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
-afterEach(() => {
-  document.body.innerHTML = '';
-  vi.clearAllMocks();
-});
+function mountCell() {
+  return mount(WidgetKnowledgePagesCell, {
+    props: { entityId: 'table-1', entityType: 'table' },
+    global: { plugins: [Antd, createTestI18n()], stubs: { RouterLink: { name: 'RouterLink', template: '<a><slot /></a>', props: ['to'] } } },
+    attachTo: document.body,
+  });
+}
+
+async function flush() {
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await nextTick();
+}
 
 describe('WidgetKnowledgePagesCell', () => {
-  it('fetches the entity pages and renders articles and quick links', async () => {
-    mockedListKnowledgePages.mockResolvedValue({ data: PAGES, total: 2 });
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('renders articles as in-app links and quick links in a new window', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'p1',
+              name: 'guide',
+              fullyQualifiedName: 'guide',
+              displayName: 'Guide',
+              pageType: 'Article',
+            },
+            {
+              id: 'p2',
+              name: 'docs',
+              fullyQualifiedName: 'docs',
+              displayName: 'Docs',
+              pageType: 'QuickLink',
+              page: { url: 'https://example.com/docs' },
+            },
+          ],
+          paging: { total: 2 },
+        }),
+      ),
+    );
     const wrapper = mountCell();
-    await vi.waitFor(() => expect(mockedListKnowledgePages).toHaveBeenCalled());
-    await nextTick();
-    expect(mockedListKnowledgePages).toHaveBeenCalledWith({ entityId: 'e1', entityType: 'table', limit: 10 });
-    expect(wrapper.text()).toContain('Getting Started');
-    expect(wrapper.text()).toContain('Runbook');
-    expect(wrapper.find('[data-testid="knowledge-page-article"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="knowledge-page-quick-link"]').exists()).toBe(true);
+    await flush();
+    expect(wrapper.find('[data-testid="knowledge-pages"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Guide');
+    expect(wrapper.text()).toContain('Docs');
+    const quickLink = wrapper.find('a[href="https://example.com/docs"]');
+    expect(quickLink.exists()).toBe(true);
+    expect(quickLink.attributes('target')).toBe('_blank');
     expect(wrapper.find('[data-testid="knowledge-pages-view-all"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it('shows a view-all link when the total exceeds the page size', async () => {
-    mockedListKnowledgePages.mockResolvedValue({ data: PAGES, total: 12 });
+  it('shows the view-all link once the entity has more than ten pages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'p1',
+              name: 'guide',
+              fullyQualifiedName: 'guide',
+              displayName: 'Guide',
+              pageType: 'Article',
+            },
+          ],
+          paging: { total: 11 },
+        }),
+      ),
+    );
     const wrapper = mountCell();
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="knowledge-pages-view-all"]').exists()).toBe(true));
+    await flush();
+    const viewAll = wrapper.find('[data-testid="knowledge-pages-view-all"]');
+    expect(viewAll.exists()).toBe(true);
+    const viewAllLink = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((link) => (link.props('to') as { name?: string }).name === 'context-center-filter');
+    expect(viewAllLink).toBeDefined();
+    expect(
+      (viewAllLink?.props('to') as { query?: Record<string, string> }).query,
+    ).toEqual({ entityId: 'table-1', entityType: 'table' });
     wrapper.unmount();
   });
 
-  it('renders nothing when the list is empty', async () => {
-    mockedListKnowledgePages.mockResolvedValue({ data: [], total: 0 });
+  it('renders nothing when the entity has no pages', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ data: [], paging: { total: 0 } })));
     const wrapper = mountCell();
-    await vi.waitFor(() => expect(mockedListKnowledgePages).toHaveBeenCalled());
-    await nextTick();
-    expect(wrapper.find('[data-testid="widget-knowledge-pages-cell"]').exists()).toBe(false);
+    await flush();
+    expect(wrapper.find('[data-testid="knowledge-pages"]').exists()).toBe(false);
+    expect(wrapper.html()).not.toContain('knowledge-pages');
     wrapper.unmount();
   });
 
   it('renders nothing when the load fails', async () => {
-    mockedListKnowledgePages.mockRejectedValue(new Error('load failed'));
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('down');
+    }));
     const wrapper = mountCell();
-    await vi.waitFor(() => expect(mockedListKnowledgePages).toHaveBeenCalled());
-    await nextTick();
-    expect(wrapper.find('[data-testid="widget-knowledge-pages-cell"]').exists()).toBe(false);
+    await flush();
+    expect(wrapper.find('[data-testid="knowledge-pages"]').exists()).toBe(false);
     wrapper.unmount();
   });
 });

@@ -625,6 +625,9 @@ onMounted(() => {
               :on-change="onCertificationChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
@@ -739,6 +742,9 @@ onMounted(() => {
               :has-edit-access="canEditCertification"
               :on-change="onCertificationChange"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -877,6 +883,9 @@ onMounted(() => {
               :on-change="onCertificationChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
@@ -981,6 +990,9 @@ onMounted(() => {
               :has-edit-access="canEditCertification"
               :on-change="onCertificationChange"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel

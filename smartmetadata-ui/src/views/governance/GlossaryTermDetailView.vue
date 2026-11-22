@@ -15,6 +15,7 @@ import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
 import WidgetReviewerCell from '@/components/shared/widgets/WidgetReviewerCell.vue';
 import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
 import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
+import WidgetWorkflowHistoryCell from '@/components/shared/widgets/WidgetWorkflowHistoryCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { usePermissionStore } from '@/stores/permissions';
 import FormModal from '@/components/shared/FormModal.vue';
@@ -368,8 +369,7 @@ const termDqInitialFilters = computed<DqDashboardChartFilters | undefined>(() =>
 // as AssetDetailView): DATA_PRODUCTS — the GlossaryTerm spec carries it,
 // but GLOSSARY_TERM_FIELDS does not request it and `mapTerm` does not
 // map it, so there is no supporting data; EXPERTS — the GlossaryTerm spec carries no such field;
-// WORKFLOW_HISTORY — no workflow-history data source exists in this
-// view; KNOWLEDGE_ARTICLE — no knowledge-article data source exists in
+// KNOWLEDGE_ARTICLE — no knowledge-article data source exists in
 // the product. OWNERS never surfaces as a content key here: the
 // GlossaryTerm OWNER startsWith check resolves `KnowledgePanel.Owners`
 // to OWNER (see `detailWidgetDispatch.ts`), so the OWNER branch covers
@@ -806,6 +806,12 @@ onMounted(() => {
               :on-tags-change="onTagsChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.WORKFLOW_HISTORY && term" data-testid="widget-workflow-history">
+            <WidgetWorkflowHistoryCell
+              :glossary-term-fqn="term.fullyQualifiedName"
+              :entity-status="term.status"
+            />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
             <WidgetSynonymsCell
               :synonyms="term.synonyms"
@@ -1009,6 +1015,12 @@ onMounted(() => {
               :options="catalog.tags"
               :has-edit-access="canEditCertification"
               :on-tags-change="onTagsChange"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.WORKFLOW_HISTORY && term" data-testid="widget-workflow-history">
+            <WidgetWorkflowHistoryCell
+              :glossary-term-fqn="term.fullyQualifiedName"
+              :entity-status="term.status"
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">

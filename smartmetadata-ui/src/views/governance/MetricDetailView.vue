@@ -21,13 +21,19 @@ import {
 import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
 import { getDerivedPermissionFlags } from '@/api/permissions';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
+import { setFieldPatch } from '@/admin/jsonPatch';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import MetricCreateDrawer from '@/components/governance/MetricCreateDrawer.vue';
 import WidgetCertificationCell from '@/components/shared/widgets/WidgetCertificationCell.vue';
 import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetKnowledgePagesCell from '@/components/shared/widgets/WidgetKnowledgePagesCell.vue';
+import WidgetMetricHierarchyCell from '@/components/shared/widgets/WidgetMetricHierarchyCell.vue';
 import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetRelatedMetricsCell from '@/components/shared/widgets/WidgetRelatedMetricsCell.vue';
 import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
 import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
 import MetricDefinitionWidget from '@/components/widgets/MetricDefinitionWidget.vue';
+import { useMetricCreateDrawer } from '@/features/metrics/useMetricCreateDrawer';
 import { usePermissionStore } from '@/stores/permissions';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { listEntityActivity } from '@/api/activity';
@@ -49,7 +55,7 @@ import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
-import type { AssetDetail } from '@/types/api';
+import type { AssetDetail, EntityRef } from '@/types/api';
 
 /**
  * Stage 4 metric detail page, following the official MetricDetailsPage
@@ -106,6 +112,53 @@ const canDeleteMetric = computed(
     metric.value?.deleted !== true &&
     (permissionStore.isAdminUser || metricPermissions.canDelete.value),
 );
+
+/**
+ * D-2 batch 5c: the three grid-editable metric widgets. RelatedMetrics
+ * edits under the derived canEditAll flag, never on a deleted metric
+ * (official RelatedMetrics gate). The hierarchy add-child button reads
+ * the raw Create permission with no derivation (A8 §2.3 exception 2)
+ * and the P1 admin line on top, never on a deleted metric. The create
+ * drawer handle is created once per view and handed to both the cell
+ * and the drawer, so the cell's button opens the mounted drawer.
+ */
+const createDrawer = useMetricCreateDrawer();
+const hierarchyRefreshKey = ref(0);
+const canEditRelatedMetrics = computed(
+  () => metricPermissions.canEditAll.value && metric.value?.deleted !== true,
+);
+const canAddChildMetric = computed(
+  () =>
+    (permissionStore.isAdminUser || metricPermissions.permissions.value.Create === true) &&
+    metric.value?.deleted !== true,
+);
+
+/**
+ * Official RelatedMetrics save: patchMetric with a relatedMetrics JSON
+ * Patch. Throws on failure so the cell keeps its editor open.
+ */
+async function onRelatedMetricsChange(refs: EntityRef[]): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  await patchMetric(
+    metric.value.id,
+    setFieldPatch('/relatedMetrics', metric.value.relatedMetrics, refs),
+  );
+  message.success(t('crud.updated'));
+  await load();
+}
+
+function onAddChildMetric(): void {
+  if (metric.value) {
+    createDrawer.openDrawer(metric.value.fullyQualifiedName);
+  }
+}
+
+async function onChildMetricCreated(): Promise<void> {
+  hierarchyRefreshKey.value += 1;
+  await load();
+}
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   metricPermissions.isLoading.value ? null : metricPermissions.can('ViewCustomFields'),
@@ -276,14 +329,13 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // as AssetDetailView; residual R-4): DATA_PRODUCTS — the field is now
 // requested and mapped on AssetDetail, but the Metric layout carries no
 // DataProducts widget (only Asset wires it, BENCHMARK §15); EXPERTS /
-// REVIEWER / RELATED_METRICS / METRIC_HIERARCHY — this view reads the
-// metric through `fetchAssetDetail`, whose AssetDetail shape carries
-// none of these fields, so there is no supporting data in the loaded
-// object (the Metric spec carries them; the `api/metrics.ts` Metric
-// shape is a different, list-oriented read path); KNOWLEDGE_ARTICLE —
-// no knowledge-article data source exists in the product. LEFT_PANEL is
-// structural, not a missing branch: GenericTab renders the panel's
-// children and never offers the panel itself to the slot.
+// REVIEWER — this view reads the metric through `fetchAssetDetail`, whose
+// AssetDetail shape carries none of these fields, so there is no
+// supporting data in the loaded object (the Metric spec carries them;
+// the `api/metrics.ts` Metric shape is a different, list-oriented read
+// path). LEFT_PANEL is structural, not a missing branch: GenericTab
+// renders the panel's children and never offers the panel itself to
+// the slot.
 function customizedEntryFor(tabKey: string) {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
   if (!entry?.id || !isWidgetLayoutTab('Metric', entry.id)) {
@@ -483,6 +535,24 @@ onMounted(() => {
               :on-change="onCertificationChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_METRICS && metric" data-testid="widget-related-metrics">
+            <WidgetRelatedMetricsCell
+              :metric="metric"
+              :has-edit-access="canEditRelatedMetrics"
+              :on-save="onRelatedMetricsChange"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.METRIC_HIERARCHY && metric" data-testid="widget-metric-hierarchy">
+            <WidgetMetricHierarchyCell
+              :key="hierarchyRefreshKey"
+              :metric="metric"
+              :can-add-child="canAddChildMetric"
+              :on-add-child="onAddChildMetric"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && metric?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="metric.id" entity-type="metric" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
@@ -592,6 +662,24 @@ onMounted(() => {
               :on-change="onCertificationChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_METRICS && metric" data-testid="widget-related-metrics">
+            <WidgetRelatedMetricsCell
+              :metric="metric"
+              :has-edit-access="canEditRelatedMetrics"
+              :on-save="onRelatedMetricsChange"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.METRIC_HIERARCHY && metric" data-testid="widget-metric-hierarchy">
+            <WidgetMetricHierarchyCell
+              :key="hierarchyRefreshKey"
+              :metric="metric"
+              :can-add-child="canAddChildMetric"
+              :on-add-child="onAddChildMetric"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && metric?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="metric.id" entity-type="metric" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
@@ -683,6 +771,24 @@ onMounted(() => {
               :on-change="onCertificationChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_METRICS && metric" data-testid="widget-related-metrics">
+            <WidgetRelatedMetricsCell
+              :metric="metric"
+              :has-edit-access="canEditRelatedMetrics"
+              :on-save="onRelatedMetricsChange"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.METRIC_HIERARCHY && metric" data-testid="widget-metric-hierarchy">
+            <WidgetMetricHierarchyCell
+              :key="hierarchyRefreshKey"
+              :metric="metric"
+              :can-add-child="canAddChildMetric"
+              :on-add-child="onAddChildMetric"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && metric?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="metric.id" entity-type="metric" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
@@ -768,6 +874,24 @@ onMounted(() => {
               :has-edit-access="canEditCertification"
               :on-change="onCertificationChange"
             />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_METRICS && metric" data-testid="widget-related-metrics">
+            <WidgetRelatedMetricsCell
+              :metric="metric"
+              :has-edit-access="canEditRelatedMetrics"
+              :on-save="onRelatedMetricsChange"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.METRIC_HIERARCHY && metric" data-testid="widget-metric-hierarchy">
+            <WidgetMetricHierarchyCell
+              :key="hierarchyRefreshKey"
+              :metric="metric"
+              :can-add-child="canAddChildMetric"
+              :on-add-child="onAddChildMetric"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && metric?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="metric.id" entity-type="metric" />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -862,6 +986,24 @@ onMounted(() => {
               :on-change="onCertificationChange"
             />
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_METRICS && metric" data-testid="widget-related-metrics">
+            <WidgetRelatedMetricsCell
+              :metric="metric"
+              :has-edit-access="canEditRelatedMetrics"
+              :on-save="onRelatedMetricsChange"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.METRIC_HIERARCHY && metric" data-testid="widget-metric-hierarchy">
+            <WidgetMetricHierarchyCell
+              :key="hierarchyRefreshKey"
+              :metric="metric"
+              :can-add-child="canAddChildMetric"
+              :on-add-child="onAddChildMetric"
+            />
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && metric?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="metric.id" entity-type="metric" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
@@ -887,5 +1029,10 @@ onMounted(() => {
       :on-property-save="onCustomPropertySave"
       />
     </template>
+    <MetricCreateDrawer
+      v-model:open="createDrawer.open.value"
+      :parent-metric-fqn="createDrawer.parentMetricFqn.value"
+      @created="onChildMetricCreated"
+    />
   </EntityDetailShell>
 </template>

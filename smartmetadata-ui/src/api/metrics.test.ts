@@ -12,6 +12,7 @@ import {
   getMetricAncestorFqns,
   getMetricGroupMetrics,
   getMetricHierarchy,
+  getMetricHierarchyContext,
   getMetricObservability,
   getMetricParentIds,
   getMetricSearchPaths,
@@ -214,6 +215,47 @@ describe('getMetricHierarchy', () => {
     );
     expect(() => mapMetricHierarchyItem({ kind: 'metric' })).toThrow(/missing its metric/);
     expect(() => mapMetricHierarchyItem({ kind: 'metricGroup' })).toThrow(/missing its group/);
+  });
+});
+
+describe('getMetricHierarchyContext', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads one metric hierarchy context with child/sibling paging totals', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          current: { id: 'm2', name: 'dau', fullyQualifiedName: 'kpi.dau' },
+          ancestors: [{ id: 'm1', name: 'mau', fullyQualifiedName: 'kpi.mau' }],
+          children: [{ id: 'm3', name: 'dau-ios', fullyQualifiedName: 'kpi.dau-ios' }],
+          childrenPaging: { total: 3 },
+          siblings: [{ id: 'm4', name: 'wau', fullyQualifiedName: 'kpi.wau' }],
+          siblingPaging: { total: 1 },
+        }),
+      ),
+    );
+    const context = await getMetricHierarchyContext('m2', {
+      childLimit: 25,
+      childOffset: 0,
+      siblingLimit: 25,
+      siblingOffset: 0,
+    });
+    const url = lastUrl();
+    expect(url.pathname).toContain('/api/v1/metrics/m2/hierarchy');
+    expect(url.searchParams.get('childLimit')).toBe('25');
+    expect(url.searchParams.get('siblingLimit')).toBe('25');
+    expect(context.current.id).toBe('m2');
+    expect(context.ancestors.map((metric) => metric.id)).toEqual(['m1']);
+    expect(context.childrenTotal).toBe(3);
+    expect(context.siblingTotal).toBe(1);
+  });
+
+  it('throws when the context response has no current metric', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ children: [] })));
+    await expect(getMetricHierarchyContext('m2')).rejects.toThrow(/missing its current metric/);
   });
 });
 
