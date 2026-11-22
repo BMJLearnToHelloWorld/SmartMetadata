@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import {Button, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
@@ -25,7 +25,8 @@ import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
-import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { isUnconditionalMountTab, isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
@@ -50,7 +51,7 @@ import BulkAssetResultPanel from '@/features/crud/BulkAssetResultPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import { listDomains } from '@/api/domains';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
-import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import { entityLabel } from '@/features/crud/paging';
 import {
   certificationPatch,
   domainsPatch,
@@ -128,18 +129,26 @@ const tabs = computed<EntityDetailTab[]>(() =>
   ),
 );
 
-// Widget layer (B-8): the widget grid mounts ONLY on this page type's
-// widget-layout tab (DataProduct: documentation), and only when the
-// customized page has a tab entry resolving to the rendered tab key
-// whose official id is that mount tab (`isWidgetLayoutTab`, reading
-// layoutAppliesTo — the official GenericTab mount set, one tab per
-// page type). The editor saves ALL tabs with layout: [] on the
-// non-mount ones, so entry resolution alone would blank every other
-// tab; non-mount tabs always keep their existing panels. The grid
-// renders the entry's resolved layout, including empty when the entry
-// carries no layout. The entry's own id — never the rendered key —
-// is passed to the layout resolver, because the official lookup
-// matches tab entries by id only (`customizeWidgetLayout.ts`).
+// Widget layer (B-8, batch 6 mount-gate convergence): the widget grid
+// mounts on this page type's widget-layout tab (DataProduct:
+// documentation, rendered by the `overview` slot) — with the default
+// layout when no customized page exists (the official
+// getLayoutFromCustomizedPage default branch), because the
+// documentation tab is an unconditional-mount tab
+// (`isUnconditionalMountTab`, verified against pin: the documentation
+// default layout's widgets are all dispatched by this view's chains
+// and the default panel's rows — description, domains, owners — are
+// covered by the grid; the name/fqn rows are shell chrome). When a
+// customized page exists, the grid renders the entry's resolved
+// layout. The unconditional branch fires only for the mount slot key
+// (`overview`): the same function also gates the assets, activity
+// and customProperties slots, which keep their fixed panels. The
+// editor saves ALL tabs with layout: [] on the non-mount ones, so
+// entry resolution alone would blank every other tab; non-mount tabs
+// always keep their existing panels. The entry's own id — never the
+// rendered key — is passed to the layout resolver, because the
+// official lookup matches tab entries by id only
+// (`customizeWidgetLayout.ts`).
 // Dispatch-resolvable keys with no branch in this view's widget chains,
 // absent on purpose, so their cells stay empty (same disclosure format
 // as AssetDetailView): DATA_PRODUCTS — the DataProduct spec
@@ -147,17 +156,25 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // IS a data product). LEFT_PANEL is structural, not a missing branch:
 // GenericTab renders the panel's children and never offers the panel
 // itself to the slot.
-function customizedEntryFor(tabKey: string) {
+function widgetLayoutFor(tabKey: string): WidgetConfig[] | null {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
-  if (!entry?.id || !isWidgetLayoutTab('DataProduct', entry.id)) {
-    return undefined;
+  // Batch 6 mount-gate convergence: the official tab id for this slot
+  // (the entry's id when customized, the mount tab id otherwise).
+  const tabId = entry?.id ?? 'documentation';
+  // A flipped mount tab mounts the grid with the default layout when
+  // no customized entry exists (official getLayoutFromCustomizedPage
+  // default branch); an unflipped tab keeps the legacy default pane.
+  // Only the mount slot may take the unconditional branch — this
+  // function also gates the non-mount slots, and without the slot
+  // check every tab would mount the documentation default grid when
+  // no entry exists.
+  if (!entry && (tabKey !== 'overview' || !isUnconditionalMountTab('DataProduct', tabId))) {
+    return null;
   }
-  return entry;
-}
-
-function widgetLayoutFor(tabKey: string) {
-  const entry = customizedEntryFor(tabKey);
-  return entry ? resolveWidgetLayout('DataProduct', entry.id, customizedPage.value) : [];
+  if (entry && (!entry.id || !isWidgetLayoutTab('DataProduct', entry.id))) {
+    return null;
+  }
+  return resolveWidgetLayout('DataProduct', tabId, customizedPage.value);
 }
 
 /**
@@ -547,7 +564,7 @@ onMounted(() => {
       </Button>
     </template>
     <template #overview>
-      <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="DataProduct">
+      <GenericTab v-if="widgetLayoutFor('overview') !== null" :layout="widgetLayoutFor('overview') ?? []" page-type="DataProduct">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
@@ -645,27 +662,9 @@ onMounted(() => {
           </div>
         </template>
       </GenericTab>
-      <Descriptions v-else-if="product" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ product.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.fqn')">{{ product.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">
-              <EntityDescriptionCell
-                :description="product.description"
-                :entity-name="product.displayName || product.name"
-                :has-edit-access="canEditDescription"
-                :on-description-update="onDescriptionUpdate"
-              />
-            </Descriptions.Item>
-        <Descriptions.Item :label="t('governance.dataProducts.domains')">
-          {{ joinRefNames(product.domains) || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.owners')">
-          {{ joinRefNames(product.owners) || '—' }}
-        </Descriptions.Item>
-      </Descriptions>
     </template>
     <template #assets>
-      <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="DataProduct">
+      <GenericTab v-if="widgetLayoutFor('assets') !== null" :layout="widgetLayoutFor('assets') ?? []" page-type="DataProduct">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
@@ -805,7 +804,7 @@ onMounted(() => {
       </template>
     </template>
     <template #activity>
-      <GenericTab v-if="customizedEntryFor('activity')" :layout="widgetLayoutFor('activity')" page-type="DataProduct">
+      <GenericTab v-if="widgetLayoutFor('activity') !== null" :layout="widgetLayoutFor('activity') ?? []" page-type="DataProduct">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
@@ -913,7 +912,7 @@ onMounted(() => {
       />
     </template>
     <template #customProperties>
-      <GenericTab v-if="customizedEntryFor('customProperties')" :layout="widgetLayoutFor('customProperties')" page-type="DataProduct">
+      <GenericTab v-if="widgetLayoutFor('customProperties') !== null" :layout="widgetLayoutFor('customProperties') ?? []" page-type="DataProduct">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell

@@ -527,13 +527,28 @@ describe('DomainDetailView widget grid (B-8)', () => {
     wrapper.unmount();
   });
 
-  it('renders existing panes unchanged without a customized entry', async () => {
+  it('mounts the default widget grid without a customized entry (batch 6 unconditional mount)', async () => {
     stubWithDoc(null);
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountDomain();
+    // Batch 6: documentation is an unconditional-mount tab — with no
+    // customized page the grid mounts with the default layout and the
+    // legacy Descriptions pane is gone. The domain-type content moves
+    // into the widget-domain-type branch.
+    expect(widgetTestIds(wrapper)).toEqual([
+      'widget-description',
+      'widget-owners',
+      'widget-tier',
+      'widget-certification',
+      'widget-tags',
+      'widget-glossary-terms',
+      'widget-experts',
+      'widget-domain-type',
+      'widget-custom-properties',
+    ]);
     expect(wrapper.text()).toContain('Source-aligned');
+    expect(wrapper.findAll('.ant-descriptions-row')).toHaveLength(0);
     expect(wrapper.find('[data-testid="add-domain-assets"]').exists()).toBe(true);
-    expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
   });
 
@@ -609,11 +624,41 @@ describe('DomainDetailView default overview (D-1)', () => {
               { tagFQN: 'Business.term', name: 'term', source: 'Glossary' },
               { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' },
             ],
+            // Batch 6: the certification widget reads the standalone
+            // `certification` field (pin CertificationWidget), not the
+            // tags — the retired panel derived it from tags.
+            certification: { tagLabel: { tagFQN: 'Certification.Certified' } },
             extension: { region: 'EMEA' },
             children: [],
           });
         }
         if (url.includes('/api/v1/domains/d1/assets')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/classifications')) {
+          return jsonResponse({
+            data: [
+              { name: 'Tier', fullyQualifiedName: 'Tier' },
+              { name: 'Certification', fullyQualifiedName: 'Certification' },
+            ],
+            paging: { total: 2 },
+          });
+        }
+        if (url.includes('/api/v1/tags')) {
+          // The governance catalog resolves the certification name from
+          // these options; without them the cell renders a dash.
+          if (url.includes('parent=Certification')) {
+            return jsonResponse({
+              data: [{ name: 'Certified', displayName: 'Certified', fullyQualifiedName: 'Certification.Certified' }],
+              paging: { total: 1 },
+            });
+          }
+          if (url.includes('parent=Tier')) {
+            return jsonResponse({
+              data: [{ name: 'Tier1', displayName: 'Tier1', fullyQualifiedName: 'Tier.Tier1' }],
+              paging: { total: 1 },
+            });
+          }
           return jsonResponse({ data: [], paging: { total: 0 } });
         }
         if (url.includes('/api/v1/permissions/domain/name/')) {
@@ -665,20 +710,21 @@ describe('DomainDetailView default overview (D-1)', () => {
     await wrapper.vm.$nextTick();
     await tick();
 
-    // Bordered Descriptions renders each row as a <tr> whose label cell
-    // carries `.ant-descriptions-item-label` (there is no per-item wrapper).
-    const rows = wrapper.findAll('.ant-descriptions-row');
-    const findRow = (label: string) =>
-      rows.find((row) => row.find('.ant-descriptions-item-label').text().trim() === label);
-    expect(findRow('Tier')?.text()).toContain('Tier.Tier1');
-    expect(findRow('Certification')?.text()).toContain('Certification.Certified');
-    expect(findRow('Tags')?.text()).toContain('PII.Sensitive');
-    expect(findRow('Tags')?.text()).not.toContain('Business.term');
-    expect(findRow('Glossary Terms')?.text()).toContain('Business.term');
-    expect(findRow('Glossary Terms')?.text()).not.toContain('PII.Sensitive');
-    expect(findRow('Experts')?.text()).toContain('Bob');
-    // Custom properties render in the default panel too (same panel as
-    // the independent tab, without its edit button).
+    // Batch 6: the default overview is the widget grid now — the same
+    // fields render as widget branches, not Descriptions rows.
+    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier1');
+    expect(wrapper.find('[data-testid="widget-certification"]').text()).toContain('Certified');
+    // Batch 6: the widget cells render tag display names (pin widget
+    // behavior), not the FQNs the retired Descriptions rows showed.
+    const tags = wrapper.find('[data-testid="widget-tags"]');
+    expect(tags.text()).toContain('Sensitive');
+    expect(tags.text()).not.toContain('term');
+    const glossaryTerms = wrapper.find('[data-testid="widget-glossary-terms"]');
+    expect(glossaryTerms.text()).toContain('term');
+    expect(glossaryTerms.text()).not.toContain('Sensitive');
+    expect(wrapper.find('[data-testid="widget-experts"]').text()).toContain('Bob');
+    // Custom properties render in the grid widget (and in the standalone
+    // panel below the overview slot, kept from the pre-flip layout).
     expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Region');
     expect(wrapper.text()).toContain('EMEA');

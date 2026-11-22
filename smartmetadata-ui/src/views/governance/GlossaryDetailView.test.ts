@@ -824,13 +824,29 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
     wrapper.unmount();
   });
 
-  it('renders existing panes unchanged without a customized entry', async () => {
+  it('mounts the default widget grid without a customized entry (batch 6 unconditional mount)', async () => {
     stubWithDoc(null);
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountGlossary();
-    expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(true);
+    // Batch 6: terms is an unconditional-mount tab — with no customized
+    // page the grid mounts with the default layout and the legacy
+    // description + table panes are gone (the terms table now renders
+    // inside the widget grid). Branch slots only: the shared cells
+    // carry their own `widget-*-cell` root testids, which are not
+    // branches.
+    expect(
+      widgetTestIds(wrapper).filter((id) => !id.endsWith('-cell')),
+    ).toEqual([
+      'widget-description',
+      'widget-terms-table',
+      'widget-domain',
+      'widget-owners',
+      'widget-reviewer',
+      'widget-tags',
+    ]);
+    expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="glossary-terms-table"]').exists()).toBe(true);
-    expect(widgetTestIds(wrapper)).toEqual([]);
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Core terms');
     wrapper.unmount();
   });
 });
@@ -881,14 +897,16 @@ describe('GlossaryDetailView description gate (D-4)', () => {
 
   it('shows the description edit button with EditDescription', async () => {
     const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
-    expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(true);
+    // Batch 6: the description renders in the widget grid now
+    // (widget-description), not the retired glossary-description pane.
+    expect(wrapper.find('[data-testid="widget-description"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
   it('hides the description edit button without EditDescription', async () => {
     const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
-    expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="widget-description"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
     wrapper.unmount();
   });

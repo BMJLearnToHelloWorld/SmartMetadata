@@ -6,7 +6,7 @@
 import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Descriptions, Form, Input, Segmented, Select, message} from 'ant-design-vue';
+import {Alert, Button, Form, Input, Segmented, Select, message} from 'ant-design-vue';
 import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
@@ -25,7 +25,8 @@ import { usePersonaViewMode } from '@/composables/usePersonaViewMode';
 import EntityCardGrid, { type EntityCardItem } from '@/features/crud/EntityCardGrid.vue';
 import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
-import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { isUnconditionalMountTab, isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 import { listEntityActivity } from '@/api/activity';
 import { getDomainDryRunImpacts, type BulkAssetResponse, type BulkAssetResult } from '@/api/bulkAssets';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
@@ -51,9 +52,8 @@ import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPan
 import BulkAssetResultPanel from '@/features/crud/BulkAssetResultPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
-import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import { entityLabel } from '@/features/crud/paging';
 import WidgetDomainTypeCell from '@/components/shared/widgets/WidgetDomainTypeCell.vue';
-import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import {
   certificationPatch,
@@ -68,7 +68,7 @@ import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/cata
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
-import type { EntityRef, TagRef } from '@/types/api';
+import type { EntityRef } from '@/types/api';
 import type { PageViewMode } from '@/types/persona';
 
 const props = defineProps<{ fqn: string }>();
@@ -137,18 +137,26 @@ const tabs = computed<EntityDetailTab[]>(() =>
   ),
 );
 
-// Widget layer (B-8): the widget grid mounts ONLY on this page type's
-// widget-layout tab (Domain: documentation), and only when the
-// customized page has a tab entry resolving to the rendered tab key
-// whose official id is that mount tab (`isWidgetLayoutTab`, reading
-// layoutAppliesTo — the official GenericTab mount set, one tab per
-// page type). The editor saves ALL tabs with layout: [] on the
-// non-mount ones, so entry resolution alone would blank every other
-// tab; non-mount tabs always keep their existing panels. The grid
-// renders the entry's resolved layout, including empty when the entry
-// carries no layout. The entry's own id — never the rendered key —
-// is passed to the layout resolver, because the official lookup
-// matches tab entries by id only (`customizeWidgetLayout.ts`).
+// Widget layer (B-8, batch 6 mount-gate convergence): the widget grid
+// mounts on this page type's widget-layout tab (Domain:
+// documentation, rendered by the `overview` slot) — with the default
+// layout when no customized page exists (the official
+// getLayoutFromCustomizedPage default branch), because the
+// documentation tab is an unconditional-mount tab
+// (`isUnconditionalMountTab`, verified against pin: the documentation
+// default layout's widgets are all dispatched by this view's chains
+// and the default panel's rows map 1:1 onto grid widgets; the
+// name/fqn rows are shell chrome and the read-only parent row has no
+// pin page equivalent). When a customized page exists, the grid
+// renders the entry's resolved layout. The unconditional branch fires
+// only for the mount slot key (`overview`): the same function also
+// gates the assets, subDomains, activity and customProperties slots,
+// which keep their fixed panels. The editor saves ALL tabs with
+// layout: [] on the non-mount ones, so entry resolution alone would
+// blank every other tab; non-mount tabs always keep their existing
+// panels. The entry's own id — never the rendered key — is passed to
+// the layout resolver, because the official lookup matches tab
+// entries by id only (`customizeWidgetLayout.ts`).
 // Dispatch-resolvable keys with no branch in this view's widget chains,
 // absent on purpose, so their cells stay empty (same disclosure format
 // as AssetDetailView): DATA_PRODUCTS / DOMAIN / REVIEWER — the Domain
@@ -157,32 +165,25 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // source exists in the product. LEFT_PANEL is structural, not a missing
 // branch: GenericTab renders the panel's children and never offers the
 // panel itself to the slot.
-function customizedEntryFor(tabKey: string) {
+function widgetLayoutFor(tabKey: string): WidgetConfig[] | null {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
-  if (!entry?.id || !isWidgetLayoutTab('Domain', entry.id)) {
-    return undefined;
+  // Batch 6 mount-gate convergence: the official tab id for this slot
+  // (the entry's id when customized, the mount tab id otherwise).
+  const tabId = entry?.id ?? 'documentation';
+  // A flipped mount tab mounts the grid with the default layout when
+  // no customized entry exists (official getLayoutFromCustomizedPage
+  // default branch); an unflipped tab keeps the legacy default pane.
+  // Only the mount slot may take the unconditional branch — this
+  // function also gates the non-mount slots, and without the slot
+  // check every tab would mount the documentation default grid when
+  // no entry exists.
+  if (!entry && (tabKey !== 'overview' || !isUnconditionalMountTab('Domain', tabId))) {
+    return null;
   }
-  return entry;
-}
-
-function widgetLayoutFor(tabKey: string) {
-  const entry = customizedEntryFor(tabKey);
-  return entry ? resolveWidgetLayout('Domain', entry.id, customizedPage.value) : [];
-}
-
-// Tag labels split the official way: glossary-sourced labels are the
-// glossary-terms widget, the rest are the tags widget.
-const domainTags = computed(() =>
-  (domain.value?.tags ?? []).filter((tag) => tag.source !== 'Glossary'),
-);
-const domainGlossaryTerms = computed(() =>
-  (domain.value?.tags ?? []).filter((tag) => tag.source === 'Glossary'),
-);
-const domainTierTag = computed(() => getTierTag(domain.value?.tags ?? []));
-const domainCertificationTag = computed(() => getCertificationTag(domain.value?.tags ?? []));
-
-function tagFqnList(tags: readonly TagRef[]): string {
-  return tags.map((tag) => tag.tagFQN).join(', ');
+  if (entry && (!entry.id || !isWidgetLayoutTab('Domain', entry.id))) {
+    return null;
+  }
+  return resolveWidgetLayout('Domain', tabId, customizedPage.value);
 }
 
 /**
@@ -669,7 +670,7 @@ onMounted(() => {
       </Button>
     </template>
     <template #overview>
-      <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Domain">
+      <GenericTab v-if="widgetLayoutFor('overview') !== null" :layout="widgetLayoutFor('overview') ?? []" page-type="Domain">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
@@ -752,44 +753,6 @@ onMounted(() => {
           </div>
         </template>
       </GenericTab>
-      <Descriptions v-else-if="domain" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ domain.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.fqn')">{{ domain.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.type')">{{ domain.domainType }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.parent')">{{ domain.parent?.name || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">
-              <EntityDescriptionCell
-                :description="domain.description"
-                :entity-name="domain.displayName || domain.name"
-                :has-edit-access="canEditDescription"
-                :expanded="true"
-                :remove-blur="true"
-                :on-description-update="onDescriptionUpdate"
-              />
-            </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.owners')">
-          {{ joinRefNames(domain.owners) || '—' }}
-        </Descriptions.Item>
-        <!-- D-1 Domain right column (official DOCUMENTATION layout,
-             y=1..5): tier, certification, tags, glossary terms,
-             experts. Same computeds as the widget-cell branches above,
-             so the default panel and the grid agree. -->
-        <Descriptions.Item :label="t('label.tier')">
-          {{ domainTierTag?.tagFQN || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('label.certification')">
-          {{ domainCertificationTag?.tagFQN || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('asset.fields.tags')">
-          {{ tagFqnList(domainTags) || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">
-          {{ tagFqnList(domainGlossaryTerms) || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.experts')">
-          {{ joinRefNames(domain.experts) || '—' }}
-        </Descriptions.Item>
-      </Descriptions>
       <!-- D-1 CustomProperties (official DOCUMENTATION y=7): the same
            read panel as the independent custom-properties tab, without
            its edit button — inline editing stays in the tab (D-2 batch 2). -->
@@ -802,7 +765,7 @@ onMounted(() => {
       />
     </template>
     <template #assets>
-      <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Domain">
+      <GenericTab v-if="widgetLayoutFor('assets') !== null" :layout="widgetLayoutFor('assets') ?? []" page-type="Domain">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
@@ -958,7 +921,7 @@ onMounted(() => {
       </template>
     </template>
     <template #subDomains>
-      <GenericTab v-if="customizedEntryFor('subDomains')" :layout="widgetLayoutFor('subDomains')" page-type="Domain">
+      <GenericTab v-if="widgetLayoutFor('subDomains') !== null" :layout="widgetLayoutFor('subDomains') ?? []" page-type="Domain">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
@@ -1084,7 +1047,7 @@ onMounted(() => {
       </template>
     </template>
     <template #activity>
-      <GenericTab v-if="customizedEntryFor('activity')" :layout="widgetLayoutFor('activity')" page-type="Domain">
+      <GenericTab v-if="widgetLayoutFor('activity') !== null" :layout="widgetLayoutFor('activity') ?? []" page-type="Domain">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
@@ -1177,7 +1140,7 @@ onMounted(() => {
       />
     </template>
     <template #customProperties>
-      <GenericTab v-if="customizedEntryFor('customProperties')" :layout="widgetLayoutFor('customProperties')" page-type="Domain">
+      <GenericTab v-if="widgetLayoutFor('customProperties') !== null" :layout="widgetLayoutFor('customProperties') ?? []" page-type="Domain">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
