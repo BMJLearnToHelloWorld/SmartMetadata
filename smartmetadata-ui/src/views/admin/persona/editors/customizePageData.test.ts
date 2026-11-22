@@ -220,11 +220,29 @@ describe('customizePageData dispatch', () => {
     expect(getWidgetHeight('StoredProcedure', 'KnowledgePanel.TableConstraints')).toBe(4);
   });
 
-  it('starts with an empty unconditional-mount registry (Batch 6)', () => {
-    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({});
+  it('lists the eight flipped schema-family tabs in the unconditional-mount registry (Batch 6 asset-schema)', () => {
+    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({
+      APIEndpoint: ['schema'],
+      Container: ['schema'],
+      DashboardDataModel: ['model'],
+      Database: ['schemas'],
+      DatabaseSchema: ['table'],
+      MlModel: ['features'],
+      SearchIndex: ['fields'],
+      Topic: ['schema'],
+    });
+    expect(isUnconditionalMountTab('Topic', 'schema')).toBe(true);
+    expect(isUnconditionalMountTab('Container', 'schema')).toBe(true);
+    expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(true);
+    expect(isUnconditionalMountTab('SearchIndex', 'fields')).toBe(true);
+    expect(isUnconditionalMountTab('DashboardDataModel', 'model')).toBe(true);
+    expect(isUnconditionalMountTab('MlModel', 'features')).toBe(true);
+    expect(isUnconditionalMountTab('DatabaseSchema', 'table')).toBe(true);
+    expect(isUnconditionalMountTab('Database', 'schemas')).toBe(true);
+    // Table/schema stays unflipped: pin's default layout carries a
+    // TableSharding widget with no product cell or data path (§3.1).
     expect(isUnconditionalMountTab('Table', 'schema')).toBe(false);
     expect(isUnconditionalMountTab('Chart', 'details')).toBe(false);
-    expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(false);
     expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(false);
     expect(isUnconditionalMountTab('NoSuchPage', 'schema')).toBe(false);
   });

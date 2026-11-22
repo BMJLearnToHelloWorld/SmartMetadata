@@ -234,7 +234,16 @@ export function isWidgetLayoutTab(pageType: string, tabId: string): boolean {
     * customized tab entry, rendering the pre-existing default pane
     * instead — this table retires that gate, tab by tab.
     */
-   export const UNCONDITIONAL_MOUNT_TABS: Record<string, readonly string[]> = {};
+   export const UNCONDITIONAL_MOUNT_TABS: Record<string, readonly string[]> = {
+     APIEndpoint: ['schema'],
+     Container: ['schema'],
+     DashboardDataModel: ['model'],
+     Database: ['schemas'],
+     DatabaseSchema: ['table'],
+     MlModel: ['features'],
+     SearchIndex: ['fields'],
+     Topic: ['schema'],
+   };
 
    export function isUnconditionalMountTab(pageType: string, tabId: string): boolean {
      return UNCONDITIONAL_MOUNT_TABS[pageType]?.includes(tabId) ?? false;

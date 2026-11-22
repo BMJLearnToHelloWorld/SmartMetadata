@@ -16,7 +16,7 @@ import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
-import { compactWidgetLayoutVertical } from '@/composables/customizeWidgetLayout';
+import { compactWidgetLayoutVertical, resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -683,6 +683,24 @@ describe('AssetDetailView non-table shells', () => {
             columns: [{ name: 'amount', dataType: 'DECIMAL' }],
           });
         }
+        if (url.includes('/api/v1/permissions/databaseSchema/name/')) {
+          return jsonResponse({
+            resource: 'databaseSchema',
+            permissions: [
+              { operation: 'ViewBasic', access: 'allow' },
+              { operation: 'ViewCustomFields', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/tables?')) {
+          // D-2 batch 6: the schema TABLES widget self-fetches the
+          // tables list (pin Tables widget), served here from the
+          // detail payload's tables.
+          return jsonResponse({
+            data: [{ name: 'orders', fullyQualifiedName: 'svc.analytics.marts.orders', type: 'table' }],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/databaseSchemas?')) {
           // D-2 batch 3: the database page lists its child schemas
           // (pin DatabaseSchema.component) instead of the payload copy.
@@ -742,9 +760,18 @@ describe('AssetDetailView non-table shells', () => {
     metric.wrapper.unmount();
 
     const model = await mountTypedView('dashboardDataModel', 'bi.sales.model');
+    // D-2 batch 6: the model tab mounts the grid with the default
+    // layout when there is no persona document; the legacy default
+    // pane is retired, including its dataModelType overview row,
+    // which no pin MODEL layout widget carries. The schema table and
+    // its rows now render inside the grid's DataModel cell.
+    expect(model.wrapper.findAllComponents(GenericTab).length).toBe(1);
+    expect(model.wrapper.findAllComponents(GenericTab)[0].props('layout')).toEqual(
+      resolveWidgetLayout('DashboardDataModel', 'model', null),
+    );
     expect(model.wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
     expect(model.wrapper.text()).toContain('amount');
-    expect(model.wrapper.text()).toContain('SupersetDataModel');
+    expect(model.wrapper.text()).not.toContain('SupersetDataModel');
     model.wrapper.unmount();
 
     const database = await mountTypedView('database', 'svc.analytics');
@@ -754,7 +781,21 @@ describe('AssetDetailView non-table shells', () => {
     database.wrapper.unmount();
 
     const schema = await mountTypedView('databaseSchema', 'svc.analytics.marts');
-    expect(schema.wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
+    // D-2 batch 6: the table tab mounts the grid with the default
+    // layout when there is no persona document; the legacy related
+    // panel is retired and the TABLES widget (SchemaTablesWidget,
+    // self-fetched) renders the tables instead. The extra flushes let
+    // the permission read resolve (canView) and the list fetch land.
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await schema.wrapper.vm.$nextTick();
+    expect(schema.wrapper.findAllComponents(GenericTab).length).toBe(1);
+    expect(schema.wrapper.findAllComponents(GenericTab)[0].props('layout')).toEqual(
+      resolveWidgetLayout('DatabaseSchema', 'table', null),
+    );
+    expect(schema.wrapper.find('[data-testid="schema-tables-widget"]').exists()).toBe(true);
+    expect(schema.wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(false);
     expect(schema.wrapper.text()).toContain('orders');
     expect(schema.wrapper.text()).toContain('analytics');
     schema.wrapper.unmount();
@@ -2537,6 +2578,309 @@ describe('AssetDetailView widget layer (B-8)', () => {
     const { wrapper } = await mountView('searchIndex', 'elasticsearch_sample.table_search_index');
     await settle(wrapper);
     expect(tabLabels(wrapper)).toEqual(['Fields']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Topic schema grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/topics/name/')
+        ? jsonResponse({
+            id: 'tp-1',
+            name: 'orders',
+            fullyQualifiedName: 'kafka.orders',
+            description: 'Orders topic',
+            messageSchema: { schemaFields: [{ name: 'id', dataType: 'STRING' }] },
+            owners: [],
+            tags: [],
+            domains: [],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('topic', 'kafka.orders');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Topic');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Topic', 'schema', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Orders topic');
+    // One schema table, inside the grid's TopicSchema cell: the
+    // retired default pane rendered a second one.
+    expect(wrapper.findAll('[data-testid="asset-schema-table"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Container schema grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/containers/name/')
+        ? jsonResponse({
+            id: 'ct-1',
+            name: 'landing',
+            fullyQualifiedName: 's3.landing',
+            description: 'Landing bucket',
+            dataModel: { columns: [{ name: 'key', dataType: 'STRING' }] },
+            children: [{ name: 'child1', type: 'container' }],
+            service: { name: 's3' },
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('container', 's3.landing');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Container');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Container', 'schema', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.CONTAINER_SCHEMA).find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    // The children tab is NOT flipped by this lane: no children grid.
+    expect(cellFor(wrapper, DetailWidgetKeys.CONTAINER_CHILDREN).exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the Container schema default pane when there is no persona document and the data model is empty (Batch 6 asset-schema)', async () => {
+    // The mutual-exclusion gate returns null for an empty data model,
+    // so the guarded #schema default pane renders even though the
+    // tab is flipped — the same pane the customized-page test pins.
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/containers/name/')
+        ? jsonResponse({
+            id: 'ct-1',
+            name: 'landing',
+            fullyQualifiedName: 's3.landing',
+            description: 'Landing bucket',
+            children: [{ name: 'child1', type: 'container' }],
+            service: { name: 's3' },
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('container', 's3.landing');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.findAll('[data-testid="asset-schema-empty"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the APIEndpoint endpoint grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/apiEndpoints/name/')
+        ? jsonResponse({
+            id: 'ae-1',
+            name: 'getPet',
+            fullyQualifiedName: 'svc.petstore.getPet',
+            endpointURL: '/pets/{id}',
+            requestMethod: 'GET',
+            requestSchema: { type: 'object', properties: { id: { type: 'integer' } } },
+            responseSchema: { type: 'object' },
+            owners: [],
+            tags: [],
+            domains: [],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('apiEndpoint', 'svc.petstore.getPet');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('APIEndpoint');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('APIEndpoint', 'schema', null));
+    // One api-schema piece, inside the grid's APISchema cell: the
+    // retired endpoint default pane rendered the same piece.
+    expect(wrapper.findAll('[data-testid="asset-api-request-schema"]').length).toBe(1);
+    expect(wrapper.text()).toContain('/pets/{id}');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the SearchIndex fields grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/searchIndexes/name/')
+        ? jsonResponse({
+            id: 'si-1',
+            name: 'table_search_index',
+            fullyQualifiedName: 'elasticsearch_sample.table_search_index',
+            description: 'Table Search Index',
+            fields: [{ name: 'id', dataType: 'KEYWORD' }],
+            owners: [],
+            tags: [],
+            domains: [],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('searchIndex', 'elasticsearch_sample.table_search_index');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('SearchIndex');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('SearchIndex', 'fields', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.SEARCH_INDEX_FIELDS).find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="asset-schema-table"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the DashboardDataModel model grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) => {
+      if (url.includes('/api/v1/dashboard/datamodels/name/') && url.includes('/columns')) {
+        return jsonResponse({ data: [{ name: 'amount', dataType: 'DECIMAL' }], paging: { total: 1 } });
+      }
+      return url.includes('/api/v1/dashboard/datamodels/name/')
+        ? jsonResponse({
+            id: 'dm-1',
+            name: 'sales_model',
+            fullyQualifiedName: 'bi.sales.model',
+            dataModelType: 'SupersetDataModel',
+            columns: [{ name: 'amount', dataType: 'DECIMAL' }],
+          })
+        : null;
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('dashboardDataModel', 'bi.sales.model');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('DashboardDataModel');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('DashboardDataModel', 'model', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DATA_MODEL).find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="asset-schema-table"]').length).toBe(1);
+    expect(wrapper.text()).toContain('amount');
+    // The retired default pane's dataModelType overview row has no
+    // pin MODEL widget; it does not survive the flip.
+    expect(wrapper.text()).not.toContain('SupersetDataModel');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the MlModel features grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/mlmodels/name/')
+        ? jsonResponse({
+            id: 'ml-1',
+            name: 'churn',
+            fullyQualifiedName: 'ml.churn',
+            description: 'Churn model',
+            mlFeatures: [{ name: 'age', dataType: 'INT' }],
+            mlHyperParameters: [],
+            owners: [],
+            tags: [],
+            domains: [],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('mlmodel', 'ml.churn');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('MlModel');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('MlModel', 'features', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.ML_MODEL_FEATURES).find('[data-testid="asset-features-table"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.ML_MODEL_FEATURES).text()).toContain('age');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the DatabaseSchema table grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/databaseSchemas/name/')
+        ? jsonResponse({
+            id: 'sch-1',
+            name: 'marts',
+            fullyQualifiedName: 'svc.analytics.marts',
+            database: { name: 'analytics' },
+            tables: [{ name: 'orders', type: 'table' }],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('databaseSchema', 'svc.analytics.marts');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('DatabaseSchema');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('DatabaseSchema', 'table', null));
+    // The TABLES widget shell mounts (its rows need canView + the
+    // list fetch, locked by the C-14 retarget instead); the retired
+    // related panel is gone.
+    expect(cellFor(wrapper, DetailWidgetKeys.TABLES).find('[data-testid="schema-tables-widget"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Database schemas grid with the default layout and no default pane when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) => {
+      if (url.includes('/api/v1/databaseSchemas?')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
+      return url.includes('/api/v1/databases/name/')
+        ? jsonResponse({
+            id: 'db-1',
+            name: 'analytics',
+            fullyQualifiedName: 'svc.analytics',
+            service: { name: 'svc' },
+            databaseSchemas: [],
+          })
+        : null;
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('database', 'svc.analytics');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Database');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Database', 'schemas', null));
+    expect(wrapper.findAll('[data-testid="asset-database-schemas-empty"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('uses the customized Topic schema layout instead of the default when the persona page carries the tab entry (Batch 6 asset-schema)', async () => {
+    // Behavior preserved: a flipped tab with a customized entry
+    // renders the entry's layout, exactly as before the flip.
+    const layout = [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 2 }];
+    stubWithDoc(
+      docWithPage('Topic', [{ id: 'schema', name: 'schema', layout }]),
+      (url) =>
+        url.includes('/api/v1/topics/name/')
+          ? jsonResponse({
+              id: 'tp-1',
+              name: 'orders',
+              fullyQualifiedName: 'kafka.orders',
+              description: 'Orders topic',
+              messageSchema: { schemaFields: [{ name: 'id', dataType: 'STRING' }] },
+              owners: [],
+              tags: [],
+              domains: [],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('topic', 'kafka.orders');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual(layout);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.TOPIC_SCHEMA).exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts no grid for the unflipped Chart overview tab when there is no persona document (Batch 6 asset-schema)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/charts/name/')
+        ? jsonResponse({
+            id: 'ch-1',
+            name: 'revenue',
+            fullyQualifiedName: 'bi.sales.revenue',
+            chartType: 'Bar',
+            service: { name: 'superset' },
+            dashboards: [{ name: 'sales', type: 'dashboard' }],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('chart', 'bi.sales.revenue');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.text()).toContain('Bar');
     wrapper.unmount();
   }, 20000);
 });

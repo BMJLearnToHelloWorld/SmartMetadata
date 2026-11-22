@@ -19,13 +19,15 @@ import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import AssetDetailView from './AssetDetailView.vue';
 
-// Batch 6 mount-gate convergence: the shipped registry is empty, so the
-// positive flip path is unreachable in production code. This file locks
-// the slot→mount-tab mapping (`mountTabIdFor` in AssetDetailView) by
-// stubbing ONLY the gate predicate — true for (Chart, details) and
-// false everywhere else — without touching the shipped registry. If
-// `mountTabIdFor('Chart', 'overview')` returned anything other than
-// 'details', the stub would refuse the mount and this test would fail.
+// Batch 6 mount-gate convergence: this file locks the slot→mount-tab
+// mapping (`mountTabIdFor` in AssetDetailView) by stubbing ONLY the
+// gate predicate — true for (Chart, details) and false everywhere
+// else — without touching the shipped registry. The stub isolates
+// the mapping test from the shipped registry (which flips real tabs
+// lane by lane), so a flipped shipped tab reads as unflipped here.
+// If `mountTabIdFor('Chart', 'overview')` returned anything other
+// than 'details', the stub would refuse the mount and this test
+// would fail.
 vi.mock('@/views/admin/persona/editors/customizePageData', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/views/admin/persona/editors/customizePageData')>();
   return {
@@ -153,7 +155,7 @@ describe('AssetDetailView mount-gate flip mechanism (Batch 6)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('mounts no grid for an unflipped page type even with the gate stubbed open for Chart', async () => {
+  it('mounts no grid for a page type the stubbed gate leaves closed (shipped-registry flips do not apply under this stub)', async () => {
     stubNoDoc((url) =>
       url.includes('/api/v1/apiEndpoints/name/')
         ? jsonResponse({
