@@ -79,6 +79,13 @@ describe('WidgetKnowledgePagesCell', () => {
     expect(wrapper.find('[data-testid="knowledge-pages"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Guide');
     expect(wrapper.text()).toContain('Docs');
+    // Pin renders a per-row icon (article-icon for articles, link-icon
+    // for quick links); the article row and the quick-link row each
+    // carry exactly one.
+    expect(wrapper.find('[data-testid="article-icon"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="link-icon"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="article-icon"]').length).toBe(1);
+    expect(wrapper.findAll('[data-testid="link-icon"]').length).toBe(1);
     const quickLink = wrapper.find('a[href="https://example.com/docs"]');
     expect(quickLink.exists()).toBe(true);
     expect(quickLink.attributes('target')).toBe('_blank');

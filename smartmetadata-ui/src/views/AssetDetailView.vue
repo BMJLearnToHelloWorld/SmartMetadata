@@ -649,7 +649,7 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
 // its specific keys, then the shared CommonWidgets dispatcher; see
 // `detailWidgetDispatch.ts` for the file:line table). Keys with no
 // product pane are absent on purpose, so their cells stay empty
-// (residual R-4: related metrics / metric hierarchy):
+// (residual R-4: data products, related metrics / metric hierarchy):
 // experts / tier / certification (no detail surfaces; tier already
 // renders in the shell header), related metrics / metric hierarchy
 // (no metric surfaces). The widget's `config` (e.g. the
