@@ -40,7 +40,8 @@ import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
-import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { isUnconditionalMountTab, isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 import GlossaryTermsWidget from '@/components/lists/GlossaryTermsWidget.vue';
 import type { TermTreeNode } from '@/catalog/glossaryTermTree';
 import { entityLabel } from '@/features/crud/paging';
@@ -278,17 +279,21 @@ const glossaryTabs = computed(() =>
   ),
 );
 
-// Widget layer (B-8): the widget grid mounts ONLY on this page type's
-// widget-layout tab (Glossary: terms), and only when the customized
-// page has a tab entry resolving to the rendered tab key whose
-// official id is that mount tab (`isWidgetLayoutTab`, reading
-// layoutAppliesTo — the official GenericTab mount set, one tab per
-// page type). The editor saves ALL tabs with layout: [] on the
-// non-mount ones, so entry resolution alone would blank every other
-// tab; non-mount tabs always keep their existing panels. The grid
-// renders the entry's resolved layout, including empty when the entry
-// carries no layout. The entry's own id — never the rendered key —
-// is passed to the layout resolver, because the official lookup
+// Widget layer (B-8, batch 6 mount-gate convergence): the widget grid
+// mounts on this page type's widget-layout tab (Glossary: terms) —
+// with the default layout when no customized page exists (the
+// official getLayoutFromCustomizedPage default branch), because the
+// terms tab is an unconditional-mount tab (`isUnconditionalMountTab`,
+// verified against pin: the terms default layout's widgets are all
+// dispatched by this view's chain and the default panel's content —
+// description + terms table — is covered by the grid). When a
+// customized page exists, the grid renders the entry's resolved
+// layout. Other tabs keep their existing panels: the unconditional
+// branch fires only for the mount slot key, so a missing entry on a
+// non-mount tab still yields null (and the editor saves ALL tabs with
+// layout: [] on the non-mount ones, so entry resolution alone would
+// blank every other tab). The entry's own id — never the rendered
+// key — is passed to the layout resolver, because the official lookup
 // matches tab entries by id only (`customizeWidgetLayout.ts`). The
 // rail aside stays visible in both modes: it is page chrome, not tab
 // content, so a DOMAIN/OWNERS/REVIEWER/TAGS widget duplicates the
@@ -305,17 +310,25 @@ const glossaryTabs = computed(() =>
 // knowledge-article data source exists in the product. LEFT_PANEL is
 // structural, not a missing branch: GenericTab renders the panel's
 // children and never offers the panel itself to the slot.
-function customizedEntryFor(tabKey: string) {
+function widgetLayoutFor(tabKey: string): WidgetConfig[] | null {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
-  if (!entry?.id || !isWidgetLayoutTab('Glossary', entry.id)) {
-    return undefined;
+  // Batch 6 mount-gate convergence: the official tab id for this slot
+  // (the entry's id when customized, the mount tab id otherwise).
+  const tabId = entry?.id ?? 'terms';
+  // A flipped mount tab mounts the grid with the default layout when
+  // no customized entry exists (official getLayoutFromCustomizedPage
+  // default branch); an unflipped tab keeps the legacy default pane.
+  // Only the mount slot may take the unconditional branch — this
+  // function also gates the non-mount tabs in the per-tab loop, and
+  // without the slot check every tab would mount the mount tab's
+  // default grid when no entry exists.
+  if (!entry && (tabKey !== 'terms' || !isUnconditionalMountTab('Glossary', tabId))) {
+    return null;
   }
-  return entry;
-}
-
-function widgetLayoutFor(tabKey: string) {
-  const entry = customizedEntryFor(tabKey);
-  return entry ? resolveWidgetLayout('Glossary', entry.id, customizedPage.value) : [];
+  if (entry && (!entry.id || !isWidgetLayoutTab('Glossary', entry.id))) {
+    return null;
+  }
+  return resolveWidgetLayout('Glossary', tabId, customizedPage.value);
 }
 
 const termCountLabel = computed(() => {
@@ -825,7 +838,7 @@ onMounted(() => {
               :tab="tab.label"
               :data-testid="`glossary-tab-${tab.key}`"
             >
-              <GenericTab v-if="customizedEntryFor(tab.key)" :layout="widgetLayoutFor(tab.key)" page-type="Glossary">
+              <GenericTab v-if="widgetLayoutFor(tab.key) !== null" :layout="widgetLayoutFor(tab.key) ?? []" page-type="Glossary">
                 <template #widget="{ contentKey, widget }">
                   <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && glossary" data-testid="widget-description">
                     <EntityDescriptionCell
@@ -915,30 +928,7 @@ onMounted(() => {
                 </template>
               </GenericTab>
               <template v-else>
-              <template v-if="tab.key === 'terms'">
-              <section class="glossary__description" data-testid="glossary-description">
-                <div class="glossary__section-head">
-                  <Typography.Text strong>{{ t('crud.description') }}</Typography.Text>
-                </div>
-                <EntityDescriptionCell
-                  :description="glossary.description"
-                  :entity-name="glossary.displayName || glossary.name"
-                  :has-edit-access="canEditDescription"
-                  :expanded="(glossary.termCount ?? terms.length) === 0"
-                  :empty-text="t('governance.glossaries.noDescription')"
-                  :on-description-update="onDescriptionUpdate"
-                />
-              </section>
-
-              <GlossaryTermsWidget
-                :glossary="glossary"
-                :deleted="glossary.deleted === true"
-                :refresh-key="termsRefreshKey"
-                @add-term="openCreateTerm"
-                @edit-term="openEditTerm"
-              />
-              </template>
-              <template v-else-if="tab.key === 'relations'">
+              <template v-if="tab.key === 'relations'">
                 <Spin :spinning="relationsLoading" data-testid="glossary-relations-loading">
                   <Alert v-if="relationsError" type="error" show-icon :message="relationsError" />
                   <OntologyGraphCanvas

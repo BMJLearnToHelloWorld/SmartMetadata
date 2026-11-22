@@ -172,9 +172,12 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
   }
 
   function widgetTestIds(wrapper: Awaited<ReturnType<typeof mountTerm>>['wrapper']): string[] {
+    // Branch slots only: the shared cells carry their own `widget-*-cell`
+    // root testids, which are not branches.
     return wrapper
       .findAll('[data-testid^="widget-"]')
-      .map((node) => node.attributes('data-testid') as string);
+      .map((node) => node.attributes('data-testid') as string)
+      .filter((id) => !id.endsWith('-cell'));
   }
 
   afterEach(() => {
@@ -201,7 +204,23 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="term-versions"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-term"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="delete-term"]').exists()).toBe(true);
-    expect(widgetTestIds(wrapper)).toEqual([]);
+    // Batch 6: overview is an unconditional-mount tab — with no
+    // customized page the grid mounts with the default layout and the
+    // legacy Descriptions pane is gone (no .ant-descriptions-row
+    // anywhere on the view).
+    expect(widgetTestIds(wrapper)).toEqual([
+      'widget-description',
+      'widget-synonyms',
+      'widget-references',
+      'widget-tags',
+      'widget-related-terms',
+      'widget-workflow-history',
+      'widget-domain',
+      'widget-owner',
+      'widget-reviewer',
+      'widget-custom-properties',
+    ]);
+    expect(wrapper.findAll('.ant-descriptions-row')).toHaveLength(0);
     // Relations graph is fixed content now (B-15); custom properties
     // renders its table (B-15); data observability mounts the shared
     // DQ dashboard (B-15). No residual state remains on this view.
@@ -584,6 +603,12 @@ describe('GlossaryTermDetailView custom properties (B-15)', () => {
           return jsonResponse([
             { name: 'region', displayName: 'Region', propertyType: 'string' },
           ]);
+        }
+        if (url.includes('/v1/governance/workflowInstances')) {
+          // Batch 6: the default grid mounts the WorkflowHistory widget;
+          // an empty run list keeps it silent (a 404 toasts 'not found'
+          // and would shadow the patch-failure toast below).
+          return jsonResponse({ data: [], paging: { total: 0 } });
         }
         if (url.includes('/v1/permissions/glossaryTerm/name/')) {
           if (permsPending) {
