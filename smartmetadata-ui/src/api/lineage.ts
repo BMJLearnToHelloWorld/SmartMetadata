@@ -126,6 +126,35 @@ export async function searchLineage(options: SearchLineageOptions): Promise<unkn
 }
 
 /**
+ * GET /v1/lineage/getPlatformLineage — the whole catalog's lineage,
+ * unfiltered. Pin rest/lineageAPI.ts getPlatformLineage (:180-190) sends
+ * view + depths + query_filter + includeDeleted + size; the pin server
+ * (LineageResource.java:505-548) only accepts view (service|domain|
+ * dataProduct|all), query_filter and includeDeleted, so only those are
+ * sent — the depths/size pin's UI sends are ignored server-side. The
+ * response is a SearchLineageResult, the same shape searchLineage
+ * returns, so mapSearchLineage consumes it unchanged. The endpoint is
+ * admin-only server-side (authorizeAdmin); callers surface a 403 as an
+ * honest error, never as an empty graph.
+ */
+export type PlatformLineageView = 'service' | 'domain' | 'dataProduct' | 'all';
+
+export interface GetPlatformLineageOptions {
+  view: PlatformLineageView;
+  queryFilter?: string;
+}
+
+export async function getPlatformLineage(options: GetPlatformLineageOptions): Promise<unknown> {
+  return apiRequest<unknown>('/v1/lineage/getPlatformLineage', {
+    query: {
+      view: options.view,
+      includeDeleted: false,
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
+    },
+  });
+}
+
+/**
  * PUT lineage edge by name. Body defaults to `{ source: 'Manual' }` (MCP create_lineage).
  */
 export async function putEntityLineage(options: PutEntityLineageOptions): Promise<unknown> {

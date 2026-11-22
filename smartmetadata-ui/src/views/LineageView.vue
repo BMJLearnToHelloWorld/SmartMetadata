@@ -3,30 +3,19 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { useRouter } from 'vue-router';
-import { Card } from 'ant-design-vue';
-import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
-import LineageEntitySearch from '@/components/lineage/LineageEntitySearch.vue';
-import { lineageLocation } from '@/catalog/entityRoutes';
+import LineageHomeView from './LineageHomeView.vue';
 
+/**
+ * Focused lineage route (`/lineage/:entityType/:fqn`). Pin serves both
+ * lineage routes from the single PlatformLineage page; this view is the
+ * thin route entry that forwards its params to it.
+ */
 defineProps<{
   entityType: string;
   fqn: string;
 }>();
-
-const router = useRouter();
-
-function openTarget(target: { entityType: string; fqn: string }): void {
-  void router.push(lineageLocation(target.entityType, target.fqn));
-}
 </script>
 
 <template>
-  <Card>
-    <LineageCanvas :entity-type="entityType" :fqn="fqn" variant="page">
-      <template #search>
-        <LineageEntitySearch @select="openTarget" />
-      </template>
-    </LineageCanvas>
-  </Card>
+  <LineageHomeView :entity-type="entityType" :fqn="fqn" />
 </template>

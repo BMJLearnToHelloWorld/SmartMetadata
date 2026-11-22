@@ -11,6 +11,7 @@ import {
   lineageDateToStartMillis,
   LINEAGE_TIME_PRESETS,
   normalizeLineageCanvasConfig,
+  resolveLineageLens,
   resolveLineageTimeRange,
   timeRangeForPreset,
 } from './config';
@@ -101,5 +102,14 @@ describe('lineage config tables', () => {
       customStartDate: '2026-01-05',
       pointDate: '2026-01-07',
     });
+  });
+
+  it('resolves the platform lens from the URL value, defaulting to service', () => {
+    expect(resolveLineageLens('domain')).toBe('domain');
+    expect(resolveLineageLens('dataProduct')).toBe('dataProduct');
+    expect(resolveLineageLens('service')).toBe('service');
+    expect(resolveLineageLens('all')).toBe('service');
+    expect(resolveLineageLens(undefined)).toBe('service');
+    expect(resolveLineageLens(null)).toBe('service');
   });
 });

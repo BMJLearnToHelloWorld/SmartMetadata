@@ -17,7 +17,7 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
-import { putEntityLineage, searchLineage } from '@/api/lineage';
+import { getPlatformLineage, putEntityLineage, searchLineage, type PlatformLineageView } from '@/api/lineage';
 import { assetLocation, isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import { highlightForColumn } from '@/lineage/columnPorts';
 import {
@@ -47,11 +47,29 @@ import LineageTimeFilter from './LineageTimeFilter.vue';
 
 const props = withDefaults(
   defineProps<{
-    entityType: string;
-    fqn: string;
+    entityType?: string;
+    fqn?: string;
     variant?: 'page' | 'tab';
+    /**
+     * Platform-wide view (pin PlatformLineage with no entity): the graph
+     * comes from getPlatformLineage instead of the entity search
+     * endpoint, and there is no focus entity to open. L4 replaces this
+     * slot with the scene map; the canvas stays the interim renderer.
+     */
+    platform?: boolean;
+    /** Lens driving the platform fetch's `view` param (pin ?lineageLens=). */
+    lens?: PlatformLineageView;
+    /** The unified lineage page renders its own header; tabs keep this one. */
+    showHeader?: boolean;
+    /**
+     * Pin `hasEditAccess` (useEntityPermissions → canEditLineage), passed
+     * down by the page. Defaults to true: the tab variant has no page
+     * passing a permission in yet (L6), so no-information keeps the
+     * current behaviour instead of silently disabling editing there.
+     */
+    hasEditAccess?: boolean;
   }>(),
-  { variant: 'page' },
+  { entityType: '', fqn: '', variant: 'page', platform: false, lens: 'service', showHeader: true, hasEditAccess: true },
 );
 
 const router = useRouter();
@@ -69,10 +87,20 @@ const highlightedEdgeIds = ref<string[]>([]);
 const center = computed(() => graph.value?.nodes.find((node) => node.isCenter));
 const empty = computed(() => (graph.value ? isLineageEmpty(graph.value) : false));
 
+/** PNG export names the platform view after its lens; the entity view after the focus entity. */
+const exportIdentity = computed(() =>
+  props.platform ? { entityType: 'platform', fqn: props.lens } : { entityType: props.entityType, fqn: props.fqn },
+);
+
 const lineageStore = useLineageStore();
 const shellConfig = useShellConfigStore();
 const configModalOpen = ref(false);
 const activeView = ref('diagram');
+
+/** Mirrors the export panel's png-available rule so the page button agrees with it. */
+const canExportPng = computed(
+  () => Boolean(graph.value && !empty.value && !errorMessage.value && activeView.value === 'diagram'),
+);
 
 // Ref to the mounted LineageGraph (diagram view only); the export panel
 // calls through here so no document.querySelector is needed to find the flow.
@@ -85,11 +113,22 @@ async function onExportPng(): Promise<void> {
     return;
   }
   try {
-    await graphApi.exportPng(props.entityType, props.fqn);
+    await graphApi.exportPng(exportIdentity.value.entityType, exportIdentity.value.fqn);
   } catch {
     message.error(t('lineage.exportPngFailed'));
   }
 }
+
+/**
+ * Page-level actions (pin PlatformLineage's export + config buttons),
+ * exposed so the unified page owns the buttons while the canvas keeps
+ * the single modal and the graph it exports.
+ */
+function openConfig(): void {
+  configModalOpen.value = true;
+}
+
+defineExpose({ exportPng: onExportPng, openConfig, canExportPng });
 
 const viewTabs = computed(() => [
   { key: 'diagram', label: t('lineage.viewDiagram') },
@@ -165,6 +204,17 @@ async function load(): Promise<void> {
   graph.value = null;
   clearHighlight();
   try {
+    if (props.platform) {
+      // Platform-wide view (pin PlatformLineage with no entity): the
+      // whole catalog's lineage via getPlatformLineage. The payload is
+      // a SearchLineageResult, so the search adapter consumes it; with
+      // no focus entity the adapter centres the depth-0 (or first) node.
+      // The endpoint is admin-only server-side: a 403 surfaces here as
+      // an error, never as an empty graph.
+      const payload = await getPlatformLineage({ view: props.lens });
+      graph.value = mapSearchLineage(payload, '');
+      return;
+    }
     // The graph is search-backed, like the official lineage page
     // (rest/lineageAPI.ts getLineageDataByFQN → /v1/lineage/getLineage):
     // the traversal GET accepts no time params, so a time-filtered graph
@@ -206,6 +256,14 @@ function openFullPage(): void {
 }
 
 async function onConnectEdge(payload: { from: LineageGraphNode; to: LineageGraphNode }): Promise<void> {
+  // Pin EntityLineageCanvas canEdit = hasEditAccess && !deleted &&
+  // platformView === None && !SERVICE_TYPES: without edit access the
+  // canvas offers no write. The page passes the fetched flag; the tab
+  // variant keeps the no-information default until L6 wires it there.
+  if (!props.hasEditAccess) {
+    errorMessage.value = t('lineage.editForbidden');
+    return;
+  }
   writing.value = true;
   errorMessage.value = '';
   try {
@@ -246,6 +304,8 @@ watch(
   () => [
     props.entityType,
     props.fqn,
+    props.platform,
+    props.lens,
     upstreamDepth.value,
     downstreamDepth.value,
     lineageStore.config.timePreset,
@@ -263,7 +323,7 @@ watch(
 <template>
   <Spin :spinning="loading || writing">
     <Space direction="vertical" size="middle" class="lineage-canvas">
-      <div v-if="variant === 'page'">
+      <div v-if="variant === 'page' && showHeader">
         <PageHeader :header="t('lineage.title')" :sub-header="t('lineage.graphLead', { type: entityType, fqn })" test-id="lineage" />
       </div>
       <Typography.Paragraph v-else type="secondary">
@@ -308,7 +368,7 @@ watch(
           {{ t('lineage.config') }}
         </Button>
         <Button
-          v-if="variant === 'page'"
+          v-if="variant === 'page' && !platform"
           data-testid="lineage-open-asset"
           type="link"
           @click="openCenterDetail"
@@ -341,14 +401,14 @@ watch(
       />
       <LineageExportPanel
         :model="graph"
-        :entity-type="entityType"
-        :fqn="fqn"
+        :entity-type="exportIdentity.entityType"
+        :fqn="exportIdentity.fqn"
         :png-available="Boolean(graph && !empty && !errorMessage && activeView === 'diagram')"
         :on-export-png="onExportPng"
       />
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
       <Alert
-        v-else-if="!isDetailWired(entityType)"
+        v-else-if="!platform && !isDetailWired(entityType)"
         type="info"
         show-icon
         :message="t('lineage.unwired')"
