@@ -2050,17 +2050,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <!-- D-2 batch 3: the database page's child-schema list (pin
-                 DatabaseSchema.component); other entities keep the
-                 related panel here. -->
-            <AssetDetailPiece
-              v-if="entityType === 'database'"
-              piece="databaseSchemas"
-              :context="pieceContext"
-            />
-            <AssetRelatedPanel v-else :asset="asset" />
-          </template>
       </template>
       <template v-if="asset" #table>
           <GenericTab
@@ -2072,9 +2061,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetRelatedPanel :asset="asset" />
-          </template>
       </template>
       <template v-if="asset" #children>
           <GenericTab
@@ -2100,17 +2086,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetOverviewFields
-              v-if="isSplit"
-              :asset="asset"
-              :entity-type="entityType"
-              :description-access="canEditDescription"
-              :description-expanded="descriptionExpanded"
-              :on-description-update="onDescriptionUpdate"
-            />
-            <AssetDetailPiece piece="schemaTable" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #fields>
           <GenericTab
@@ -2122,17 +2097,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetOverviewFields
-              v-if="isSplit"
-              :asset="asset"
-              :entity-type="entityType"
-              :description-access="canEditDescription"
-              :description-expanded="descriptionExpanded"
-              :on-description-update="onDescriptionUpdate"
-            />
-            <AssetDetailPiece piece="schemaTable" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #schema>
           <GenericTab
@@ -2144,7 +2108,12 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
+          <!-- D-2 batch 6: the schema default pane survives only for
+               the unflipped Table tab and for a Container whose data
+               model is empty (the mutual-exclusion gate in
+               `widgetLayoutFor` returns null there by design); Topic
+               and non-empty-Container schema tabs mount the grid. -->
+          <template v-else-if="entityType === 'table' || entityType === 'container'">
             <AssetOverviewFields
               v-if="isSplit"
               :asset="asset"
@@ -2182,9 +2151,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetDetailPiece piece="features" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #tasks>
           <GenericTab
@@ -2365,9 +2331,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetDetailPiece piece="apiSchema" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #activity_feed>
           <GenericTab
