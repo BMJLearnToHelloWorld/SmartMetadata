@@ -12,6 +12,7 @@ import { persistSession } from '@/auth/token';
 import {
   deleteEntityLineageByName,
   fetchEntityLineage,
+  getDataQualityLineage,
   getPlatformLineage,
   putEntityLineage,
   searchLineage,
@@ -210,5 +211,51 @@ describe('lineage API', () => {
     const { url } = lastFetch();
     expect(url).toContain('view=domain');
     expect(url).toContain(`query_filter=${encodeURIComponent('{"term":{"x":1}}')}`);
+  });
+
+  it('sends query_filter/column_filter and the directional path like getLineageDataByFQN', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ nodes: {} }), { status: 200 })),
+    );
+    await searchLineage({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+      upstreamDepth: 1,
+      downstreamDepth: 0,
+      direction: 'Upstream',
+      queryFilter: '{"query":{"bool":{"must":[]}}}',
+      columnFilter: 'columnName:customer_id',
+    });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/getLineage/Upstream');
+    expect(url).toContain('upstreamDepth=1');
+    expect(url).toContain('downstreamDepth=0');
+    expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{"bool":{"must":[]}}}')}`);
+    expect(url).toContain(`column_filter=${encodeURIComponent('columnName:customer_id')}`);
+  });
+
+  it('GETs /v1/lineage/getDataQualityLineage with upstreamDepth default 1', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ nodes: [], edges: [] }), { status: 200 })),
+    );
+    const body = (await getDataQualityLineage({
+      fqn: 'svc.db.schema.orders',
+      queryFilter: '{"query":{"bool":{"must":[]}}}',
+    })) as { nodes?: unknown[] };
+    expect(body.nodes).toEqual([]);
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/getDataQualityLineage');
+    expect(url).toContain('fqn=svc.db.schema.orders');
+    expect(url).toContain('upstreamDepth=1');
+    expect(url).toContain('includeDeleted=false');
+    expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{"bool":{"must":[]}}}')}`);
+  });
+
+  it('rejects an empty FQN for DQ lineage without calling fetch', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(getDataQualityLineage({ fqn: '  ' })).rejects.toThrow(/fqn/i);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

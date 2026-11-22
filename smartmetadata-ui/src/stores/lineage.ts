@@ -11,6 +11,11 @@ import {
   normalizeLineageCanvasConfig,
   type LineageCanvasConfig,
 } from '@/lineage/config';
+import {
+  EMPTY_LINEAGE_QUICK_FILTERS,
+  normalizeLineageQuickFilters,
+  type LineageQuickFilterSelection,
+} from '@/lineage/quickFilters';
 
 /**
  * Canvas session configuration. This is deliberately separate from the
@@ -26,6 +31,12 @@ export const useLineageStore = defineStore('lineage', () => {
   const config = ref<LineageCanvasConfig>({ ...DEFAULT_LINEAGE_CANVAS_CONFIG });
   const hydrated = ref(false);
   const hasStoredConfig = ref(false);
+  /**
+   * Quick-filter selections (domains/owners/tag/column), mirroring pin
+   * `useLineageStore.selectedQuickFilters`. In-memory only, like pin: a
+   * filter is a fetch-time selection, not a persisted preference.
+   */
+  const quickFilters = ref<LineageQuickFilterSelection[]>([...EMPTY_LINEAGE_QUICK_FILTERS]);
 
   function hydrate(): void {
     if (hydrated.value) {
@@ -67,5 +78,9 @@ export const useLineageStore = defineStore('lineage', () => {
     persist();
   }
 
-  return { config, hydrated, hydrate, applyDefaults, update };
+  function setQuickFilters(next: LineageQuickFilterSelection[]): void {
+    quickFilters.value = normalizeLineageQuickFilters(next);
+  }
+
+  return { config, hydrated, hydrate, applyDefaults, update, quickFilters, setQuickFilters };
 });

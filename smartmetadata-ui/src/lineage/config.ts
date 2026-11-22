@@ -37,14 +37,19 @@ export const LINEAGE_CONFIG_FIELDS: LineageConfigField[] = [
 export interface LineageLayerOption {
   value: LineageLayer;
   labelKey: string;
-  /** DataObservability has no overlay data on the product graph. */
+  /**
+   * DataObservability is backed by the DQ lineage fetch
+   * (`getDataQualityLineage`, L2): selecting it highlights the failing-test
+   * upstream walk. It is a session layer only — the multi-select Layers
+   * panel of the official canvas is L3's.
+   */
   supported: boolean;
 }
 
 export const LINEAGE_LAYERS: LineageLayerOption[] = [
   { value: 'EntityLineage', labelKey: 'settings.lineage.entityLineage', supported: true },
   { value: 'ColumnLevelLineage', labelKey: 'settings.lineage.columnLineage', supported: true },
-  { value: 'DataObservability', labelKey: 'settings.lineage.dataObservability', supported: false },
+  { value: 'DataObservability', labelKey: 'settings.lineage.dataObservability', supported: true },
 ];
 
 export interface LineagePipelineModeOption {

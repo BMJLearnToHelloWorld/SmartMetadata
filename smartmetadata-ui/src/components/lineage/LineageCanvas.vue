@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import {
   Alert,
   Button,
@@ -17,7 +17,7 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
-import { getPlatformLineage, putEntityLineage, searchLineage, type PlatformLineageView } from '@/api/lineage';
+import { getDataQualityLineage, getPlatformLineage, putEntityLineage, searchLineage, type PlatformLineageView } from '@/api/lineage';
 import { assetLocation, isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import { highlightForColumn } from '@/lineage/columnPorts';
 import {
@@ -27,13 +27,18 @@ import {
   LINEAGE_DEPTH_MIN,
 } from '@/lineage/depth';
 import {
+  collapseLineageModel,
+  dqHighlight,
+  extractDqNodeIds,
   isLineageEmpty,
   mapSearchLineage,
+  mergeLineageModels,
   type LineageGraphModel,
   type LineageGraphNode,
 } from '@/lineage/graphModel';
 import type { LineageCanvasConfig } from '@/lineage/config';
 import { resolveLineageTimeRange } from '@/lineage/config';
+import { buildLineageQueryFilter } from '@/lineage/quickFilters';
 import { useLineageStore } from '@/stores/lineage';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
@@ -43,6 +48,7 @@ import LineageConfigModal from './LineageConfigModal.vue';
 import LineageExportPanel from './LineageExportPanel.vue';
 import LineageGraph from './LineageGraph.vue';
 import LineageImpactPanel from './LineageImpactPanel.vue';
+import LineageQuickFilters from './LineageQuickFilters.vue';
 import LineageTimeFilter from './LineageTimeFilter.vue';
 
 const props = withDefaults(
@@ -73,6 +79,7 @@ const props = withDefaults(
 );
 
 const router = useRouter();
+const route = useRoute();
 const { t } = useI18n();
 const loading = ref(false);
 const writing = ref(false);
@@ -83,6 +90,14 @@ const downstreamDepth = ref(LINEAGE_DEPTH_DEFAULT);
 const highlightedColumnFqns = ref<string[]>([]);
 const highlightedNodeIds = ref<string[]>([]);
 const highlightedEdgeIds = ref<string[]>([]);
+const expandedUpstreamIds = ref<string[]>([]);
+const expandedDownstreamIds = ref<string[]>([]);
+/** Raw DQ node ids from the last DQ fetch; the highlight derives from the live graph. */
+const dqIds = ref<string[]>([]);
+
+const dqHighlightResult = computed(() =>
+  graph.value ? dqHighlight(graph.value, dqIds.value) : { nodeIds: [], edgeIds: [] },
+);
 
 const center = computed(() => graph.value?.nodes.find((node) => node.isCenter));
 const empty = computed(() => (graph.value ? isLineageEmpty(graph.value) : false));
@@ -198,10 +213,113 @@ function clearHighlight(): void {
   highlightedEdgeIds.value = [];
 }
 
+const LINEAGE_START_TIME_PARAM = 'lineageStartTime';
+const LINEAGE_END_TIME_PARAM = 'lineageEndTime';
+
+function parseEpochParam(value: unknown): number | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined;
+}
+
+function dateString(millis: number): string {
+  const date = new Date(millis);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Seed the time filter from the URL before the first fetch, mirroring pin
+ * Lineage.tsx:575-580 (`LINEAGE_START_TIME_PARAM` / `LINEAGE_END_TIME_PARAM`
+ * epoch millis). Both params → custom range; end-only → point in time;
+ * start-only → custom range ending today (pin keeps a raw open-ended range,
+ * which the product's preset model cannot represent).
+ */
+function seedTimeFilterFromRoute(): void {
+  const start = parseEpochParam(route.query[LINEAGE_START_TIME_PARAM]);
+  const end = parseEpochParam(route.query[LINEAGE_END_TIME_PARAM]);
+  if (start === undefined && end === undefined) {
+    return;
+  }
+  if (start !== undefined && end !== undefined) {
+    lineageStore.update({
+      timePreset: 'customRange',
+      customStartDate: dateString(start),
+      customEndDate: dateString(end),
+    });
+  } else if (end !== undefined) {
+    lineageStore.update({ timePreset: 'pointInTime', pointDate: dateString(end) });
+  } else if (start !== undefined) {
+    lineageStore.update({
+      timePreset: 'customRange',
+      customStartDate: dateString(start),
+      customEndDate: dateString(Date.now()),
+    });
+  }
+}
+
+/**
+ * Write the resolved time range back to the URL (replace, other query
+ * params preserved), mirroring pin Lineage.tsx:585-616. No-op when the URL
+ * already carries the range, so no navigation loop is possible.
+ */
+function writeTimeFilterToRoute(): void {
+  const range = resolveLineageTimeRange(lineageStore.config);
+  const query = { ...route.query };
+  const nextStart = range.startTime?.toString();
+  const nextEnd = range.endTime?.toString();
+  if (query[LINEAGE_START_TIME_PARAM] === nextStart && query[LINEAGE_END_TIME_PARAM] === nextEnd) {
+    return;
+  }
+  if (nextStart === undefined) {
+    delete query[LINEAGE_START_TIME_PARAM];
+  } else {
+    query[LINEAGE_START_TIME_PARAM] = nextStart;
+  }
+  if (nextEnd === undefined) {
+    delete query[LINEAGE_END_TIME_PARAM];
+  } else {
+    query[LINEAGE_END_TIME_PARAM] = nextEnd;
+  }
+  void router.replace({ query }).catch(() => undefined);
+}
+
+watch(
+  () => resolveLineageTimeRange(lineageStore.config),
+  () => writeTimeFilterToRoute(),
+);
+
+/**
+ * DQ lineage fetch, mirroring pin Lineage.tsx:775-790 + 2133-2137: fetched
+ * when the DataObservability layer is active (pin `isDQEnabled`), with the
+ * current query filter. A failure is swallowed (pin sets the DQ lineage to
+ * undefined) so a DQ failure never fails the graph.
+ */
+async function loadDqLineage(queryFilter: string): Promise<void> {
+  dqIds.value = [];
+  if (lineageStore.config.layer !== 'DataObservability' || !graph.value) {
+    return;
+  }
+  try {
+    const payload = await getDataQualityLineage({
+      fqn: props.fqn,
+      upstreamDepth: upstreamDepth.value,
+      ...(queryFilter ? { queryFilter } : {}),
+    });
+    dqIds.value = extractDqNodeIds(payload);
+  } catch {
+    dqIds.value = [];
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   graph.value = null;
+  dqIds.value = [];
   clearHighlight();
   try {
     if (props.platform) {
@@ -222,17 +340,22 @@ async function load(): Promise<void> {
     // the reload key below; all-time sends no time params. A search
     // failure is shown, never silently replaced by an unfiltered
     // traversal fetch (that would present unfiltered data as filtered).
+    // Pin sends query_filter: '' when no quick filter is set; the product
+    // omits the param instead (absent means unfiltered on the server).
     const range = resolveLineageTimeRange(lineageStore.config);
+    const queryFilter = buildLineageQueryFilter(lineageStore.quickFilters);
     const payload = await searchLineage({
       entityType: props.entityType,
       fqn: props.fqn,
       upstreamDepth: upstreamDepth.value,
       downstreamDepth: downstreamDepth.value,
       size: lineageStore.config.nodesPerLayer,
+      ...(queryFilter ? { queryFilter } : {}),
       ...(range.startTime !== undefined ? { startTime: range.startTime } : {}),
       ...(range.endTime !== undefined ? { endTime: range.endTime } : {}),
     });
     graph.value = mapSearchLineage(payload, props.fqn);
+    await loadDqLineage(queryFilter);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('lineage.loadFailed');
   } finally {
@@ -300,6 +423,74 @@ function highlightRow(row: { fromColumns: string; toColumn: string }): void {
   highlightedEdgeIds.value = next.edgeIds;
 }
 
+/**
+ * Load-on-expand, mirroring pin `loadChildNodesHandler` (Lineage.tsx:
+ * 1083-1160): one directional level via the `getLineage/{direction}`
+ * endpoint (requested direction depth 1, other direction 0), merged into
+ * the current graph. The node is marked expanded only on success, so a
+ * failed expand can be retried.
+ */
+async function onExpandChildren(payload: {
+  node: LineageGraphNode;
+  direction: 'upstream' | 'downstream';
+}): Promise<void> {
+  if (!graph.value || !payload.node.entityType || !payload.node.fullyQualifiedName) {
+    return;
+  }
+  const queryFilter = buildLineageQueryFilter(lineageStore.quickFilters);
+  const range = resolveLineageTimeRange(lineageStore.config);
+  writing.value = true;
+  try {
+    const result = await searchLineage({
+      entityType: payload.node.entityType,
+      fqn: payload.node.fullyQualifiedName,
+      upstreamDepth: payload.direction === 'upstream' ? 1 : 0,
+      downstreamDepth: payload.direction === 'downstream' ? 1 : 0,
+      direction: payload.direction === 'upstream' ? 'Upstream' : 'Downstream',
+      size: lineageStore.config.nodesPerLayer,
+      ...(queryFilter ? { queryFilter } : {}),
+      ...(range.startTime !== undefined ? { startTime: range.startTime } : {}),
+      ...(range.endTime !== undefined ? { endTime: range.endTime } : {}),
+    });
+    const extra = mapSearchLineage(result, payload.node.fullyQualifiedName);
+    graph.value = mergeLineageModels(graph.value, extra);
+    if (payload.direction === 'upstream') {
+      expandedUpstreamIds.value = [...expandedUpstreamIds.value, payload.node.id];
+    } else {
+      expandedDownstreamIds.value = [...expandedDownstreamIds.value, payload.node.id];
+    }
+    await loadDqLineage(queryFilter);
+  } catch {
+    message.error(t('lineage.loadFailed'));
+  } finally {
+    writing.value = false;
+  }
+}
+
+/**
+ * Collapse, mirroring pin `onNodeCollapse` (Lineage.tsx:1968-2015): the
+ * direction-connected nodes/edges are removed and the node is marked
+ * unexpanded, so it can be expanded again.
+ */
+function onCollapseChildren(payload: {
+  node: LineageGraphNode;
+  direction: 'upstream' | 'downstream';
+}): void {
+  if (!graph.value) {
+    return;
+  }
+  graph.value = collapseLineageModel(graph.value, payload.node.id, payload.direction);
+  if (payload.direction === 'upstream') {
+    expandedUpstreamIds.value = expandedUpstreamIds.value.filter((id) => id !== payload.node.id);
+  } else {
+    expandedDownstreamIds.value = expandedDownstreamIds.value.filter((id) => id !== payload.node.id);
+  }
+}
+
+// The URL seeds the time filter before the first fetch, so the first load
+// already carries the saved range (pin Lineage.tsx:575-580).
+seedTimeFilterFromRoute();
+
 watch(
   () => [
     props.entityType,
@@ -308,6 +499,8 @@ watch(
     props.lens,
     upstreamDepth.value,
     downstreamDepth.value,
+    lineageStore.config.layer,
+    lineageStore.quickFilters,
     lineageStore.config.timePreset,
     lineageStore.config.customStartDate,
     lineageStore.config.customEndDate,
@@ -393,6 +586,10 @@ watch(
         @apply-custom="(dates) => lineageStore.update({ timePreset: 'customRange', customStartDate: dates.startDate, customEndDate: dates.endDate })"
         @apply-point="(date) => lineageStore.update({ timePreset: 'pointInTime', pointDate: date })"
       />
+      <LineageQuickFilters
+        :value="lineageStore.quickFilters"
+        @change="(selections) => lineageStore.setQuickFilters(selections)"
+      />
       <DetailTabs
         :tabs="viewTabs"
         :active-key="activeView"
@@ -427,10 +624,16 @@ watch(
           :highlighted-column-fqns="highlightedColumnFqns"
           :highlighted-node-ids="highlightedNodeIds"
           :highlighted-edge-ids="highlightedEdgeIds"
+          :dq-node-ids="dqHighlightResult.nodeIds"
+          :dq-edge-ids="dqHighlightResult.edgeIds"
+          :expanded-upstream-ids="expandedUpstreamIds"
+          :expanded-downstream-ids="expandedDownstreamIds"
           :force-column-edges="lineageStore.config.layer === 'ColumnLevelLineage'"
           :pipeline-view-mode="lineageStore.config.pipelineViewMode"
           @navigate="openAsset"
           @connect="onConnectEdge"
+          @expand-children="onExpandChildren"
+          @collapse-children="onCollapseChildren"
         />
         <template v-if="graph?.hasColumnLineage">
           <Typography.Title :level="5">{{ t('lineage.columnsTitle') }}</Typography.Title>
