@@ -221,19 +221,39 @@ describe('customizePageData dispatch', () => {
   });
 
   it('holds exactly the batch-6 flipped mount tabs in the registry (Batch 6)', () => {
-    // D-2 batch 6 governance r2: infra defined the empty registry; the
-    // governance lane merged its 4 flipped tabs into it. The asset tabs
-    // below stay false until the asset lanes flip them.
+    // D-2 batch 6: infra defined the empty registry; the governance lane
+    // merged its 4 flipped tabs into it, and the asset-overview lane
+    // merged its 6 flipped tabs. The asset-schema tabs below stay false
+    // until the asset-schema lane flips them.
     expect(UNCONDITIONAL_MOUNT_TABS).toEqual({
+      APICollection: ['apiEndpoint'],
+      Chart: ['details'],
+      Container: ['children'],
+      Dashboard: ['details'],
       DataProduct: ['documentation'],
       Domain: ['documentation'],
       Glossary: ['terms'],
       GlossaryTerm: ['overview'],
+      Pipeline: ['tasks'],
+      StoredProcedure: ['code'],
     });
+    expect(isUnconditionalMountTab('Dashboard', 'details')).toBe(true);
+    expect(isUnconditionalMountTab('Chart', 'details')).toBe(true);
+    expect(isUnconditionalMountTab('Pipeline', 'tasks')).toBe(true);
+    expect(isUnconditionalMountTab('StoredProcedure', 'code')).toBe(true);
+    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(true);
+    expect(isUnconditionalMountTab('Container', 'children')).toBe(true);
+    expect(isUnconditionalMountTab('DataProduct', 'documentation')).toBe(true);
+    expect(isUnconditionalMountTab('Domain', 'documentation')).toBe(true);
+    expect(isUnconditionalMountTab('Glossary', 'terms')).toBe(true);
+    expect(isUnconditionalMountTab('GlossaryTerm', 'overview')).toBe(true);
+    // Table/schema stays unflipped: pin's default layout carries a
+    // TableSharding widget with no product cell or data path (§3.1).
+    // MlModel/details stays unflipped: MlModel mounts its grid on
+    // FEATURES, not DETAILS.
     expect(isUnconditionalMountTab('Table', 'schema')).toBe(false);
-    expect(isUnconditionalMountTab('Chart', 'details')).toBe(false);
+    expect(isUnconditionalMountTab('MlModel', 'details')).toBe(false);
     expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(false);
-    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(false);
     expect(isUnconditionalMountTab('NoSuchPage', 'schema')).toBe(false);
   });
 

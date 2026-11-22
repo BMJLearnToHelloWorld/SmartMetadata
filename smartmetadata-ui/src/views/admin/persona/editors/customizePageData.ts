@@ -235,10 +235,16 @@ export function isWidgetLayoutTab(pageType: string, tabId: string): boolean {
  * instead — this table retires that gate, tab by tab.
  */
 export const UNCONDITIONAL_MOUNT_TABS: Record<string, readonly string[]> = {
+  APICollection: ['apiEndpoint'],
+  Chart: ['details'],
+  Container: ['children'],
+  Dashboard: ['details'],
   DataProduct: ['documentation'],
   Domain: ['documentation'],
   Glossary: ['terms'],
   GlossaryTerm: ['overview'],
+  Pipeline: ['tasks'],
+  StoredProcedure: ['code'],
 };
 
 export function isUnconditionalMountTab(pageType: string, tabId: string): boolean {
