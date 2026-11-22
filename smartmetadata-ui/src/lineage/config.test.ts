@@ -80,7 +80,7 @@ describe('lineage config tables', () => {
     expect(clampNodesPerLayer('nope')).toBe(50);
   });
 
-  it('normalizes unsupported layer back to defaults, keeps customRange, and clamps depth to 0-3', () => {
+  it('keeps the DataObservability layer, normalizes an unknown layer, and clamps depth to 0-3', () => {
     const config = normalizeLineageCanvasConfig({
       upstreamDepth: 9,
       downstreamDepth: -2,
@@ -96,12 +96,15 @@ describe('lineage config tables', () => {
       upstreamDepth: 3,
       downstreamDepth: 0,
       nodesPerLayer: 5,
-      layer: 'EntityLineage',
+      layer: 'DataObservability',
       pipelineViewMode: 'Edge',
       timePreset: 'customRange',
       customStartDate: '2026-01-05',
       pointDate: '2026-01-07',
     });
+    expect(
+      normalizeLineageCanvasConfig({ layer: 'NoSuchLayer' }),
+    ).toMatchObject({ layer: 'EntityLineage' });
   });
 
   it('resolves the platform lens from the URL value, defaulting to service', () => {

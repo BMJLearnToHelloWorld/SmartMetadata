@@ -85,21 +85,32 @@ export interface SearchLineageOptions {
   /** Nodes per layer; the server defaults to 1000 when omitted. */
   size?: number;
   from?: number;
+  /** JSON query filter (pin getLineageDataByFQN `query_filter`). */
+  queryFilter?: string;
+  /** Column-level filter (pin getLineageDataByFQN `column_filter`). */
+  columnFilter?: string;
+  /**
+   * Directional fetch (pin `LineageDirection`: 'Upstream' | 'Downstream'):
+   * the request goes to `lineage/getLineage/{direction}`. Used by
+   * load-on-expand, which fetches one level in a single direction.
+   */
+  direction?: 'Upstream' | 'Downstream';
   startTime?: number;
   endTime?: number;
 }
 
 /**
- * GET /v1/lineage/getLineage — the search-backed lineage endpoint the
- * official lineage page uses (openmetadata-ui rest/lineageAPI.ts
+ * GET /v1/lineage/getLineage[/{direction}] — the search-backed lineage
+ * endpoint the official lineage page uses (openmetadata-ui rest/lineageAPI.ts
  * getLineageDataByFQN). Unlike the traversal GET above, this endpoint
- * accepts startTime/endTime/size (LineageResource.java:392-476, with
- * validateTemporalBounds) and returns a SearchLineageResult: nodes as a
- * map keyed by FQN (NodeInformation: ES entity map + nodeDepth + paging)
- * plus upstreamEdges/downstreamEdges maps (EsLineageData: fromEntity /
- * toEntity {id, fullyQualifiedName, type} + pipeline + sqlQuery +
- * columns). See graphModel.mapSearchLineage for the graph adapter.
- * Time params are only sent when defined, so all-time stays unfiltered.
+ * accepts query_filter/column_filter/size/from/startTime/endTime
+ * (LineageResource.java:392-476, with validateTemporalBounds) and returns a
+ * SearchLineageResult: nodes as a map keyed by FQN (NodeInformation: ES
+ * entity map + nodeDepth + paging) plus upstreamEdges/downstreamEdges maps
+ * (EsLineageData: fromEntity / toEntity {id, fullyQualifiedName, type} +
+ * pipeline + sqlQuery + columns). See graphModel.mapSearchLineage for the
+ * graph adapter. Time params are only sent when defined, so all-time stays
+ * unfiltered.
  */
 export async function searchLineage(options: SearchLineageOptions): Promise<unknown> {
   const entityType = options.entityType.trim();
@@ -110,7 +121,10 @@ export async function searchLineage(options: SearchLineageOptions): Promise<unkn
   if (!fqn) {
     throw new Error('Lineage requires an FQN');
   }
-  return apiRequest<unknown>('/v1/lineage/getLineage', {
+  const path = options.direction
+    ? `/v1/lineage/getLineage/${options.direction}`
+    : '/v1/lineage/getLineage';
+  return apiRequest<unknown>(path, {
     query: {
       fqn,
       type: entityType,
@@ -119,6 +133,46 @@ export async function searchLineage(options: SearchLineageOptions): Promise<unkn
       includeDeleted: false,
       ...(options.size !== undefined ? { size: options.size } : {}),
       ...(options.from !== undefined ? { from: options.from } : {}),
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
+      ...(options.columnFilter !== undefined ? { column_filter: options.columnFilter } : {}),
+      ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
+      ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
+}
+
+export interface DataQualityLineageOptions {
+  fqn: string;
+  /** Pin getDataQualityLineage defaults upstreamDepth to 1. */
+  upstreamDepth?: number;
+  /** JSON query filter (pin `query_filter`). */
+  queryFilter?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+/**
+ * GET /v1/lineage/getDataQualityLineage — the official DQ lineage fetch
+ * (openmetadata-ui rest/lineageAPI.ts getDataQualityLineage; product
+ * LineageResource.java:610 searchDataQualityLineage). Returns the failing-test
+ * upstream walk as `{ nodes: [{ id, fullyQualifiedName, ... }], edges: [...] }`
+ * (see RootCauseAnalysisTool.java: buildUpstreamAnalysis). The product server
+ * declares fqn/upstreamDepth/query_filter/includeDeleted; startTime/endTime
+ * are sent when defined, matching the pin client shape (the server ignores
+ * undeclared query params). Callers must swallow failures: pin sets the DQ
+ * lineage to undefined on error so a DQ failure never fails the graph.
+ */
+export async function getDataQualityLineage(options: DataQualityLineageOptions): Promise<unknown> {
+  const fqn = options.fqn.trim();
+  if (!fqn) {
+    throw new Error('Lineage requires an FQN');
+  }
+  return apiRequest<unknown>('/v1/lineage/getDataQualityLineage', {
+    query: {
+      fqn,
+      upstreamDepth: Math.max(0, Math.trunc(options.upstreamDepth ?? 1)),
+      includeDeleted: false,
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
       ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
       ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
     },

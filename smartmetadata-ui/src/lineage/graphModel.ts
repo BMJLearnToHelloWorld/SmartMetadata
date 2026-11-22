@@ -38,6 +38,16 @@ export interface LineageGraphNode {
   pathLabel: string;
   truncatedFqn: string;
   columns: LineageColumnPort[];
+  /**
+   * Children counts from the search response (`NodeInformation.paging`:
+   * `entityUpstreamCount` / `entityDownstreamCount`). Pin's node expand
+   * handles use them to know a fetched leaf still has children; traversal
+   * responses carry no paging, so those nodes report 0. Optional: callers
+   * that build nodes without a search response (e.g. impact-panel fixtures)
+   * omit them and readers treat a missing count as 0.
+   */
+  upstreamCount?: number;
+  downstreamCount?: number;
 }
 
 export interface LineageGraphEdge {
@@ -137,6 +147,8 @@ function referenceFrom(value: unknown, fallbackId = ''): LineageGraphNode | null
     pathLabel: lineagePathLabel(fullyQualifiedName),
     truncatedFqn: truncateLineageFqn(fullyQualifiedName),
     columns: [],
+    upstreamCount: 0,
+    downstreamCount: 0,
   };
 }
 
@@ -319,6 +331,13 @@ export function mapSearchLineage(payload: unknown, centerFqn: string): LineageGr
         node.truncatedFqn = truncateLineageFqn(key);
         node.serviceName = lineageServiceName(key);
       }
+      // Paging counts (see LineageGraphNode): a fetched leaf with a
+      // nonzero count still has children the server did not return.
+      const paging = asRecord(info?.paging);
+      const upCount = paging?.entityUpstreamCount;
+      const downCount = paging?.entityDownstreamCount;
+      node.upstreamCount = typeof upCount === 'number' && upCount > 0 ? upCount : 0;
+      node.downstreamCount = typeof downCount === 'number' && downCount > 0 ? downCount : 0;
       if (!byId.has(node.id)) {
         byId.set(node.id, node);
       }
@@ -413,6 +432,235 @@ export function lineageNodeSize(
     width: NODE_WIDTH,
     height: NODE_HEADER_HEIGHT + (expanded ? node.columns.length * COLUMN_ROW_HEIGHT + 8 : 0),
   };
+}
+
+export function lineageNodeNeighbors(
+  model: LineageGraphModel,
+  nodeId: string,
+): { hasUpstream: boolean; hasDownstream: boolean } {
+  return {
+    hasUpstream: model.edges.some((edge) => edge.target === nodeId),
+    hasDownstream: model.edges.some((edge) => edge.source === nodeId),
+  };
+}
+
+/**
+ * Which side of the center a node sits on, for pin's expand/collapse
+ * handle visibility (CustomNodeV1 `getHandleVisibility`: collapse is offered
+ * to upstream nodes / the root on the upstream side, and downstream nodes /
+ * the root on the downstream side). BFS distances from the center decide;
+ * a node reachable both ways takes the nearer side, an unreached node is
+ * 'other'.
+ */
+export function lineageNodeSide(
+  model: LineageGraphModel,
+  nodeId: string,
+): 'upstream' | 'downstream' | 'center' | 'other' {
+  if (nodeId === model.centerId) {
+    return 'center';
+  }
+  const distances = new Map<string, { side: 'upstream' | 'downstream'; depth: number }>();
+  const walk = (side: 'upstream' | 'downstream'): void => {
+    const queue: { id: string; depth: number }[] = [{ id: model.centerId, depth: 0 }];
+    const seen = new Set<string>([model.centerId]);
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        continue;
+      }
+      const next =
+        side === 'downstream'
+          ? model.edges.filter((edge) => edge.source === current.id).map((edge) => edge.target)
+          : model.edges.filter((edge) => edge.target === current.id).map((edge) => edge.source);
+      for (const id of next) {
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        const depth = current.depth + 1;
+        const prev = distances.get(id);
+        if (!prev || depth < prev.depth) {
+          distances.set(id, { side, depth });
+        }
+        queue.push({ id, depth });
+      }
+    }
+  };
+  walk('downstream');
+  walk('upstream');
+  return distances.get(nodeId)?.side ?? 'other';
+}
+
+/**
+ * Merge a load-on-expand fetch into the current graph, mirroring pin
+ * `loadChildNodesHandler` (Lineage.tsx:1083-1160): nodes keyed by id (the
+ * fresh fetch wins for a shared id), edges deduplicated by endpoint pair
+ * with column mappings unioned, the base center kept. Column ports are
+ * re-derived from the merged edges.
+ */
+export function mergeLineageModels(
+  base: LineageGraphModel,
+  extra: LineageGraphModel,
+): LineageGraphModel {
+  const byId = new Map<string, LineageGraphNode>();
+  for (const node of base.nodes) {
+    byId.set(node.id, { ...node, columns: [...node.columns] });
+  }
+  for (const node of extra.nodes) {
+    byId.set(node.id, { ...node, isCenter: node.id === base.centerId, columns: [...node.columns] });
+  }
+
+  const edgesByPair = new Map<string, LineageGraphEdge>();
+  for (const edge of [...base.edges, ...extra.edges]) {
+    const key = `${edge.source}->${edge.target}`;
+    const existing = edgesByPair.get(key);
+    if (!existing) {
+      edgesByPair.set(key, { ...edge, columnMappings: [...edge.columnMappings] });
+      continue;
+    }
+    const seen = new Set(existing.columnMappings.map((mapping) => JSON.stringify(mapping)));
+    for (const mapping of edge.columnMappings) {
+      if (!seen.has(JSON.stringify(mapping))) {
+        seen.add(JSON.stringify(mapping));
+        existing.columnMappings.push(mapping);
+      }
+    }
+  }
+
+  const edges = [...edgesByPair.values()];
+  const columnMappings = edges.flatMap((edge) => edge.columnMappings);
+  return attachColumnPorts({
+    centerId: base.centerId,
+    nodes: [...byId.values()],
+    edges,
+    columnMappings,
+    hasColumnLineage: columnMappings.length > 0,
+  });
+}
+
+/**
+ * Collapse a node in one direction, mirroring pin `onNodeCollapse`
+ * (Lineage.tsx:1968-2015): every node reachable from the node in that
+ * direction is removed with its incident edges. A reachable node survives
+ * when it still has another path into the remaining graph (an edge from/to
+ * a node outside the reachable set and outside the collapsed node), and the
+ * center node is never removed.
+ */
+export function collapseLineageModel(
+  model: LineageGraphModel,
+  nodeId: string,
+  direction: 'upstream' | 'downstream',
+): LineageGraphModel {
+  const step = (current: string): string[] =>
+    direction === 'downstream'
+      ? model.edges.filter((edge) => edge.source === current).map((edge) => edge.target)
+      : model.edges.filter((edge) => edge.target === current).map((edge) => edge.source);
+
+  const reachable = new Set<string>();
+  const queue = step(nodeId);
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (!next || next === nodeId || reachable.has(next)) {
+      continue;
+    }
+    reachable.add(next);
+    queue.push(...step(next));
+  }
+
+  const removed = new Set<string>();
+  for (const id of reachable) {
+    if (id === model.centerId) {
+      continue;
+    }
+    // Another path into the remaining graph: any edge to or from a node
+    // that is neither reachable nor the collapsed node. (Pin removes the
+    // whole connected set; keeping a node that is still attached elsewhere
+    // avoids dropping a shared node out from under its other parent.)
+    const hasOtherPath = model.edges.some((edge) => {
+      if (edge.source === id) {
+        return edge.target !== nodeId && !reachable.has(edge.target);
+      }
+      if (edge.target === id) {
+        return edge.source !== nodeId && !reachable.has(edge.source);
+      }
+      return false;
+    });
+    if (!hasOtherPath) {
+      removed.add(id);
+    }
+  }
+
+  const nodes = model.nodes.filter((node) => !removed.has(node.id));
+  const edges = model.edges.filter(
+    (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+  );
+  const columnMappings = edges.flatMap((edge) => edge.columnMappings);
+  return attachColumnPorts({
+    centerId: model.centerId,
+    nodes,
+    edges,
+    columnMappings,
+    hasColumnLineage: columnMappings.length > 0,
+  });
+}
+
+/**
+ * DQ node ids from a `getDataQualityLineage` payload: the product server
+ * returns `{ nodes: [{ id, fullyQualifiedName, ... }], edges: [...] }`
+ * (LineageResource.java:610; RootCauseAnalysisTool.java: buildUpstreamAnalysis
+ * reads the same `nodes` list). A map-shaped `nodes` is tolerated.
+ */
+export function extractDqNodeIds(payload: unknown): string[] {
+  const root = asRecord(payload);
+  const raw = root?.nodes;
+  const items = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? Object.values(raw as Record<string, unknown>)
+      : [];
+  const ids: string[] = [];
+  for (const item of items) {
+    const id = endpointId(item);
+    if (id) {
+      ids.push(id);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+/**
+ * DQ highlight, mirroring pin Lineage.tsx:2139-2151: the highlighted edges
+ * are all downstream edges of each DQ node (transitive, following
+ * source → target), and the highlighted nodes are the DQ nodes present in
+ * the graph. The graph's own node/edge ids are entity UUIDs, the same id
+ * space the DQ payload uses.
+ */
+export function dqHighlight(
+  model: LineageGraphModel,
+  dqNodeIds: readonly string[],
+): { nodeIds: string[]; edgeIds: string[] } {
+  const wanted = new Set(dqNodeIds);
+  const nodeIds = model.nodes.filter((node) => wanted.has(node.id)).map((node) => node.id);
+  const edgeIds = new Set<string>();
+  const visited = new Set<string>(nodeIds);
+  const queue = [...nodeIds];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    for (const edge of model.edges) {
+      if (edge.source !== current || edgeIds.has(edge.id)) {
+        continue;
+      }
+      edgeIds.add(edge.id);
+      if (!visited.has(edge.target)) {
+        visited.add(edge.target);
+        queue.push(edge.target);
+      }
+    }
+  }
+  return { nodeIds, edgeIds: [...edgeIds] };
 }
 
 export function layoutLineageGraph(

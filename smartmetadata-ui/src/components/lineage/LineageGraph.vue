@@ -12,10 +12,12 @@ import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import type { Connection, Edge, Node } from '@vue-flow/core';
-import { columnLineageEdges } from '@/lineage/columnPorts';
+import { columnBelongsToNode, columnLineageEdges } from '@/lineage/columnPorts';
 import { filterCanvasNodes } from '@/lineage/nodeChrome';
 import {
   layoutLineageGraph,
+  lineageNodeNeighbors,
+  lineageNodeSide,
   type LineageGraphModel,
   type LineageGraphNode,
 } from '@/lineage/graphModel';
@@ -37,6 +39,12 @@ const props = withDefaults(
     forceColumnEdges?: boolean;
     /** Edge mode labels edges by pipeline name when one exists. */
     pipelineViewMode?: 'Node' | 'Edge';
+    /** DQ lineage nodes/edges (pin dqHighlightedEdges + showDqTracing). */
+    dqNodeIds?: string[];
+    dqEdgeIds?: string[];
+    /** Nodes whose children were loaded in a direction (pin expandPerformed). */
+    expandedUpstreamIds?: string[];
+    expandedDownstreamIds?: string[];
   }>(),
   {
     variant: 'page',
@@ -45,6 +53,10 @@ const props = withDefaults(
     highlightedEdgeIds: () => [],
     forceColumnEdges: false,
     pipelineViewMode: 'Node',
+    dqNodeIds: () => [],
+    dqEdgeIds: () => [],
+    expandedUpstreamIds: () => [],
+    expandedDownstreamIds: () => [],
   },
 );
 
@@ -52,6 +64,8 @@ const emit = defineEmits<{
   navigate: [node: LineageGraphNode];
   'select-node': [node: LineageGraphNode];
   connect: [payload: { from: LineageGraphNode; to: LineageGraphNode }];
+  'expand-children': [payload: { node: LineageGraphNode; direction: 'upstream' | 'downstream' }];
+  'collapse-children': [payload: { node: LineageGraphNode; direction: 'upstream' | 'downstream' }];
 }>();
 
 const { t } = useI18n();
@@ -59,6 +73,8 @@ const expandedIds = ref<string[]>([]);
 const selectedNodeId = ref<string | undefined>();
 const fullscreen = ref(false);
 const layoutNonce = ref(0);
+/** Per-node "columns with lineage only" filter (pin nodeFilterState). */
+const columnsLineageOnlyIds = ref<string[]>([]);
 
 const nodeTypes = {
   asset: markRaw(LineageNode),
@@ -78,20 +94,69 @@ function toggleExpand(nodeId: string): void {
 }
 
 const nodes = computed<Node<LineageNodeData>[]>(() =>
-  positioned.value.nodes.map((node) => ({
-    id: node.id,
-    type: 'asset',
-    position: node.position,
-    draggable: true,
-    data: {
-      ...node,
-      expanded: expandedSet.value.has(node.id),
-      highlighted: props.highlightedNodeIds.includes(node.id) || selectedNodeId.value === node.id,
-      highlightedColumns: props.highlightedColumnFqns,
-      onToggleColumns: () => toggleExpand(node.id),
-    },
-  })),
+  positioned.value.nodes.map((node) => {
+    const neighbors = lineageNodeNeighbors(props.model, node.id);
+    return {
+      id: node.id,
+      type: 'asset',
+      position: node.position,
+      draggable: true,
+      data: {
+        ...node,
+        expanded: expandedSet.value.has(node.id),
+        highlighted: props.highlightedNodeIds.includes(node.id) || selectedNodeId.value === node.id,
+        highlightedColumns: props.highlightedColumnFqns,
+        onToggleColumns: () => toggleExpand(node.id),
+        hasUpstream: neighbors.hasUpstream,
+        hasDownstream: neighbors.hasDownstream,
+        side: lineageNodeSide(props.model, node.id),
+        expandedUpstream: props.expandedUpstreamIds.includes(node.id),
+        expandedDownstream: props.expandedDownstreamIds.includes(node.id),
+        columnsLineageOnly: columnsLineageOnlyIds.value.includes(node.id),
+        lineageColumnFqns: lineageColumnsByNode.value.get(node.id) ?? [],
+        dqTraced: props.dqNodeIds.includes(node.id),
+        onExpandChildren: (direction) => emit('expand-children', { node, direction }),
+        onCollapseChildren: (direction) => emit('collapse-children', { node, direction }),
+        onToggleColumnsLineageOnly: () => toggleColumnsLineageOnly(node.id),
+      },
+    };
+  }),
 );
+
+/** Column FQNs per node that carry lineage (the columns-only filter's allow-list). */
+const lineageColumnsByNode = computed(() => {
+  const byNode = new Map<string, string[]>();
+  const seen = new Map<string, Set<string>>();
+  const add = (nodeId: string, columnFqn: string): void => {
+    const node = props.model.nodes.find((item) => item.id === nodeId);
+    if (!node || !columnFqn || !columnBelongsToNode(columnFqn, node.fullyQualifiedName)) {
+      return;
+    }
+    const set = seen.get(nodeId) ?? new Set<string>();
+    if (!set.has(columnFqn)) {
+      set.add(columnFqn);
+      seen.set(nodeId, set);
+      byNode.set(nodeId, [...set]);
+    }
+  };
+  for (const edge of props.model.edges) {
+    for (const mapping of edge.columnMappings) {
+      for (const from of mapping.fromColumns) {
+        add(edge.source, from);
+      }
+      if (mapping.toColumn) {
+        add(edge.target, mapping.toColumn);
+      }
+    }
+  }
+  return byNode;
+});
+
+function toggleColumnsLineageOnly(nodeId: string): void {
+  columnsLineageOnlyIds.value = columnsLineageOnlyIds.value.includes(nodeId)
+    ? columnsLineageOnlyIds.value.filter((id) => id !== nodeId)
+    : [...columnsLineageOnlyIds.value, nodeId];
+}
 
 const visibleColumnEdges = computed(() =>
   columnLineageEdges(props.model).filter(
@@ -103,22 +168,26 @@ const visibleColumnEdges = computed(() =>
 );
 
 const edges = computed<Edge[]>(() => {
-  const entityEdges = props.model.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    label:
-      props.pipelineViewMode === 'Edge' && edge.pipelineName
-        ? edge.pipelineName
-        : edge.label || undefined,
-    type: 'smoothstep',
-    markerEnd: MarkerType.ArrowClosed,
-    class: props.highlightedEdgeIds.includes(edge.id) ? 'lineage-edge--active' : undefined,
-    style: {
-      stroke: props.highlightedEdgeIds.includes(edge.id) ? SM_COLOR_WARNING : SM_SURFACES.textQuaternary,
-      strokeWidth: props.highlightedEdgeIds.includes(edge.id) ? 2.5 : 2,
-    },
-  }));
+  const entityEdges = props.model.edges.map((edge) => {
+    const highlighted =
+      props.highlightedEdgeIds.includes(edge.id) || props.dqEdgeIds.includes(edge.id);
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      label:
+        props.pipelineViewMode === 'Edge' && edge.pipelineName
+          ? edge.pipelineName
+          : edge.label || undefined,
+      type: 'smoothstep',
+      markerEnd: MarkerType.ArrowClosed,
+      class: highlighted ? 'lineage-edge--active' : undefined,
+      style: {
+        stroke: highlighted ? SM_COLOR_WARNING : SM_SURFACES.textQuaternary,
+        strokeWidth: highlighted ? 2.5 : 2,
+      },
+    };
+  });
   const columnEdges = visibleColumnEdges.value.map((edge) => ({
     id: edge.id,
     source: edge.source,
@@ -241,6 +310,7 @@ watch(
   () => props.model.centerId,
   () => {
     expandedIds.value = [];
+    columnsLineageOnlyIds.value = [];
     selectedNodeId.value = undefined;
     layoutNonce.value += 1;
   },

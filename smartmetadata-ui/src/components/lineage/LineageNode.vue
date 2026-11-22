@@ -15,6 +15,23 @@ export interface LineageNodeData extends LineageGraphNode {
   highlighted?: boolean;
   highlightedColumns?: string[];
   onToggleColumns?: () => void;
+  /** Edges in each direction exist (pin ExpandCollapseHandles visibility). */
+  hasUpstream?: boolean;
+  hasDownstream?: boolean;
+  /** Side of the center (pin isUpstreamNode / isDownstreamNode / isRootNode). */
+  side?: 'upstream' | 'downstream' | 'center' | 'other';
+  /** A load-on-expand fetch already ran in this direction (pin expandPerformed). */
+  expandedUpstream?: boolean;
+  expandedDownstream?: boolean;
+  /** Per-node "columns with lineage only" filter (pin nodeFilterState). */
+  columnsLineageOnly?: boolean;
+  /** Column FQNs of this node that carry lineage (the filter's allow-list). */
+  lineageColumnFqns?: string[];
+  /** Pin showDqTracing: this node is in the DQ lineage walk. */
+  dqTraced?: boolean;
+  onExpandChildren?: (direction: 'upstream' | 'downstream') => void;
+  onCollapseChildren?: (direction: 'upstream' | 'downstream') => void;
+  onToggleColumnsLineageOnly?: () => void;
 }
 
 const props = defineProps<{
@@ -28,14 +45,74 @@ const typeLabel = computed(() => {
   return props.data.entityType && te(key) ? t(key) : props.data.entityType || t('lineage.entityFallback');
 });
 
-const visibleColumns = computed<LineageColumnPort[]>(() =>
-  props.data.expanded ? props.data.columns : [],
+const visibleColumns = computed<LineageColumnPort[]>(() => {
+  if (!props.data.expanded) {
+    return [];
+  }
+  if (!props.data.columnsLineageOnly) {
+    return props.data.columns;
+  }
+  const allowed = props.data.lineageColumnFqns;
+  if (!allowed) {
+    return props.data.columns;
+  }
+  const allow = new Set(allowed);
+  return props.data.columns.filter((column) => allow.has(column.fqn));
+});
+
+const showExpandRow = computed(
+  () => showExpandUpstream.value || showExpandDownstream.value || showCollapseUpstream.value || showCollapseDownstream.value,
+);
+
+/**
+ * Expand/collapse visibility mirrors pin CustomNodeV1 `getHandleVisibility`:
+ * downstream expand needs no count (any leaf may have children), upstream
+ * expand needs a nonzero upstream count; collapse is offered on a node's
+ * own side or the root — plus any node whose children were loaded here, so
+ * a load-on-expand can always be undone.
+ */
+const showExpandUpstream = computed(
+  () =>
+    !props.data.hasUpstream &&
+    !props.data.expandedUpstream &&
+    (props.data.upstreamCount ?? 0) > 0,
+);
+const showExpandDownstream = computed(
+  () => !props.data.hasDownstream && !props.data.expandedDownstream,
+);
+const showCollapseUpstream = computed(
+  () =>
+    Boolean(props.data.hasUpstream) &&
+    (props.data.side === 'upstream' || props.data.side === 'center' || props.data.expandedUpstream),
+);
+const showCollapseDownstream = computed(
+  () =>
+    Boolean(props.data.hasDownstream) &&
+    (props.data.side === 'downstream' || props.data.side === 'center' || props.data.expandedDownstream),
 );
 
 function onToggle(event: Event): void {
   event.stopPropagation();
   event.preventDefault();
   props.data.onToggleColumns?.();
+}
+
+function onToggleLineageOnly(event: Event): void {
+  event.stopPropagation();
+  event.preventDefault();
+  props.data.onToggleColumnsLineageOnly?.();
+}
+
+function onExpand(direction: 'upstream' | 'downstream', event: Event): void {
+  event.stopPropagation();
+  event.preventDefault();
+  props.data.onExpandChildren?.(direction);
+}
+
+function onCollapse(direction: 'upstream' | 'downstream', event: Event): void {
+  event.stopPropagation();
+  event.preventDefault();
+  props.data.onCollapseChildren?.(direction);
 }
 
 function columnClass(fqn: string): string {
@@ -49,14 +126,25 @@ function columnClass(fqn: string): string {
     :class="{
       'lineage-node--center': data.isCenter,
       'lineage-node--highlighted': data.highlighted,
+      'lineage-node--dq': data.dqTraced,
     }"
+    :data-testid="`lineage-node-${data.fullyQualifiedName}`"
     :data-entity-type="data.entityType"
     :data-expanded="data.expanded ? 'true' : 'false'"
+    :data-dq-traced="data.dqTraced ? 'true' : 'false'"
     :title="data.fullyQualifiedName"
   >
     <Handle type="target" :position="Position.Left" />
     <div class="lineage-node__head">
       <Tag :color="entityTypeColor(data.entityType)" class="lineage-node__chip">{{ typeLabel }}</Tag>
+      <span
+        v-if="data.dqTraced"
+        class="lineage-node__dq"
+        data-testid="lineage-node-dq-badge"
+        :title="t('lineage.dqTraced')"
+      >
+        DQ
+      </span>
       <button
         v-if="data.columns.length"
         type="button"
@@ -72,6 +160,16 @@ function columnClass(fqn: string): string {
     <div v-if="data.pathLabel" class="lineage-node__path">{{ data.pathLabel }}</div>
     <div class="lineage-node__fqn">{{ data.truncatedFqn || data.fullyQualifiedName || '—' }}</div>
     <div v-if="visibleColumns.length" class="lineage-node__columns" data-testid="lineage-node-columns">
+      <button
+        type="button"
+        class="lineage-node__filter"
+        :class="{ 'lineage-node__filter--active': data.columnsLineageOnly }"
+        data-testid="lineage-node-columns-lineage-only"
+        :aria-pressed="data.columnsLineageOnly ? 'true' : 'false'"
+        @click="onToggleLineageOnly"
+      >
+        {{ t('lineage.columnsLineageOnly') }}
+      </button>
       <div
         v-for="column in visibleColumns"
         :key="column.fqn"
@@ -84,6 +182,26 @@ function columnClass(fqn: string): string {
         <Handle :id="column.fqn" type="source" :position="Position.Right" />
       </div>
     </div>
+    </div>
+    <div v-if="showExpandRow" class="lineage-node__expand">
+      <button
+        v-if="showExpandUpstream || showCollapseUpstream"
+        type="button"
+        class="lineage-node__expand-btn"
+        :data-testid="showCollapseUpstream ? 'lineage-node-collapse-upstream' : 'lineage-node-expand-upstream'"
+        @click="(event) => showCollapseUpstream ? onCollapse('upstream', event) : onExpand('upstream', event)"
+      >
+        {{ showCollapseUpstream ? t('lineage.collapseUpstream') : t('lineage.expandUpstream') }}
+      </button>
+      <button
+        v-if="showExpandDownstream || showCollapseDownstream"
+        type="button"
+        class="lineage-node__expand-btn"
+        :data-testid="showCollapseDownstream ? 'lineage-node-collapse-downstream' : 'lineage-node-expand-downstream'"
+        @click="(event) => showCollapseDownstream ? onCollapse('downstream', event) : onExpand('downstream', event)"
+      >
+        {{ showCollapseDownstream ? t('lineage.collapseDownstream') : t('lineage.expandDownstream') }}
+      </button>
     </div>
     <Handle type="source" :position="Position.Right" />
   </div>
@@ -106,6 +224,19 @@ function columnClass(fqn: string): string {
 .lineage-node--highlighted {
   border-color: var(--sm-color-warning);
   box-shadow: 0 0 0 1px var(--sm-color-warning) inset;
+}
+.lineage-node--dq {
+  border-color: var(--sm-color-warning);
+  box-shadow: 0 0 0 1px var(--sm-color-warning) inset;
+}
+.lineage-node__dq {
+  padding: 0 4px;
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-color-warning-bg);
+  color: var(--sm-color-warning);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
 }
 .lineage-node__head {
   display: flex;
@@ -167,6 +298,35 @@ function columnClass(fqn: string): string {
 .lineage-node__column--active {
   background: var(--sm-color-warning-highlight-bg);
   border-radius: 4px;
+}
+.lineage-node__filter {
+  display: block;
+  border: 0;
+  background: none;
+  padding: 0 4px 4px;
+  color: var(--sm-color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+.lineage-node__filter--active {
+  font-weight: 600;
+  text-decoration: underline;
+}
+.lineage-node__expand {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--sm-border-secondary);
+  background: var(--sm-table-header-bg);
+}
+.lineage-node__expand-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--sm-color-primary);
+  cursor: pointer;
+  font-size: 11px;
 }
 .lineage-node__column-name {
   overflow: hidden;

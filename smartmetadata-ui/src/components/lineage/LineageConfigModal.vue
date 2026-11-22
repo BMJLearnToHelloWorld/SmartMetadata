@@ -97,12 +97,6 @@ function onOk(): void {
           :options="layerOptions"
         />
       </Form.Item>
-      <Alert
-        type="info"
-        show-icon
-        data-testid="lineage-config-layer-residual"
-        :message="t('lineage.layerObservabilityResidual')"
-      />
       <Form.Item :label="t('lineage.pipelineViewMode')">
         <Select
           v-model:value="form.pipelineViewMode"
