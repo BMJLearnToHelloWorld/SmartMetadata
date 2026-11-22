@@ -1855,6 +1855,13 @@ const zhCN = {
   },
   lineage: {
     title: '血缘关系',
+    platformTitle: '{platformType}血缘',
+    lensServiceName: '服务',
+    lensDomainName: '域',
+    lensDataProductName: '数据产品',
+    exportAsPng: '导出为 PNG',
+    editForbidden: '您没有编辑此资产血缘的权限。',
+    permissionLoadFailed: '加载血缘权限失败',
     platformLead: '搜索目录资产以打开其血缘图。',
     searchPlaceholder: '搜索资产以打开血缘',
     searchEmpty: '没有匹配的资产',

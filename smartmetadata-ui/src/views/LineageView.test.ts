@@ -104,7 +104,10 @@ describe('LineageView', () => {
     expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="column-lineage-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('raw_orders.id');
-    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain('/api/v1/lineage/getLineage');
+    const lineageCall = vi
+      .mocked(fetch)
+      .mock.calls.find((call) => String(call[0]).includes('/api/v1/lineage/getLineage'));
+    expect(lineageCall?.[0]).toContain('/api/v1/lineage/getLineage');
   });
 
   it('shows an empty state when the API returns only the focus entity', async () => {
@@ -146,10 +149,15 @@ describe('LineageView', () => {
   });
 
   it('refetches when upstream depth changes', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(GRAPH),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountLineage();
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('upstreamDepth=1');
+    const firstLineageCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/v1/lineage/getLineage'),
+    );
+    expect(String(firstLineageCall?.[0])).toContain('upstreamDepth=1');
     await wrapper.get('[data-testid="upstream-depth-inc"]').trigger('click');
     await wrapper.get('[data-testid="upstream-depth-inc"]').trigger('click');
     await flushPromises();
@@ -159,6 +167,12 @@ describe('LineageView', () => {
 
   it('connect stub PUTs lineage edge then reloads GET', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/v1/permissions/')) {
+        return jsonResponse({
+          resource: 'table',
+          permissions: [{ operation: 'EditLineage', access: 'allow' }],
+        });
+      }
       const method = init?.method ?? 'GET';
       if (method === 'PUT' && String(input).includes('/api/v1/lineage/')) {
         return jsonResponse({ ok: true });
@@ -184,11 +198,38 @@ describe('LineageView', () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it('applies a custom date range through searchLineage start/end params', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+  it('does not PUT a lineage edge when EditLineage is denied', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      if (String(input).includes('/api/v1/permissions/')) {
+        return jsonResponse({
+          resource: 'table',
+          permissions: [{ operation: 'EditLineage', access: 'deny' }],
+        });
+      }
+      return jsonResponse(GRAPH);
+    });
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountLineage();
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('startTime=');
+    await wrapper.get('[data-testid="vue-flow-connect-stub"]').trigger('click');
+    await flushPromises();
+    expect(
+      fetchMock.mock.calls.some(
+        (call) => (call[1] as RequestInit | undefined)?.method === 'PUT',
+      ),
+    ).toBe(false);
+    expect(wrapper.text()).toContain('You do not have permission to edit lineage');
+  });
+
+  it('applies a custom date range through searchLineage start/end params', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(GRAPH),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountLineage();
+    const firstLineageCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/v1/lineage/getLineage'),
+    );
+    expect(String(firstLineageCall?.[0])).not.toContain('startTime=');
     const preset = wrapper.findAllComponents({ name: 'ASelect' })[0];
     preset.vm.$emit('update:value', 'customRange');
     await flushPromises();

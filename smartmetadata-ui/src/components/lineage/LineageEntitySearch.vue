@@ -9,7 +9,29 @@ import { Empty, Input, Spin, Tag } from 'ant-design-vue';
 import { searchAssets } from '@/api/search';
 import { entityTypeColor } from '@/catalog/searchHits';
 import { lineageTargetFromHit } from '@/lineage/entry';
+import {
+  LINEAGE_ENTITY_EXCLUSION_FILTER,
+  LINEAGE_SEARCH_INDEXES,
+  LINEAGE_SEARCH_RESULT_LIMIT,
+  mergeLineageSearchHits,
+} from '@/lineage/picker';
 import type { SearchHit } from '@/types/api';
+
+const props = withDefaults(
+  defineProps<{
+    /**
+     * Placeholder override. The lineage page passes the focus entity's
+     * FQN (pin shows the current entity name as the placeholder).
+     */
+    placeholder?: string;
+    /**
+     * Indexes searched in parallel, in order. Defaults to pin
+     * LINEAGE_SEARCH_INDEXES (dataAsset, domain, service).
+     */
+    indexes?: readonly string[];
+  }>(),
+  { placeholder: undefined, indexes: () => LINEAGE_SEARCH_INDEXES },
+);
 
 const emit = defineEmits<{
   select: [target: { entityType: string; fqn: string }];
@@ -32,11 +54,25 @@ async function runSearch(value: string): Promise<void> {
   const seq = ++requestSeq;
   loading.value = true;
   try {
-    const page = await searchAssets(value, 0, 8);
+    // One call per index (the search API takes a single index); a
+    // failing index contributes nothing instead of failing the picker.
+    const pages = await Promise.all(
+      props.indexes.map(async (index) => {
+        try {
+          const page = await searchAssets(value, 0, LINEAGE_SEARCH_RESULT_LIMIT, {
+            index,
+            query_filter: LINEAGE_ENTITY_EXCLUSION_FILTER,
+          });
+          return page.hits;
+        } catch {
+          return [] as SearchHit[];
+        }
+      }),
+    );
     if (seq !== requestSeq) {
       return;
     }
-    hits.value = page.hits;
+    hits.value = mergeLineageSearchHits(pages);
     searched.value = true;
   } catch {
     if (seq !== requestSeq) {
@@ -75,7 +111,7 @@ function pick(hit: SearchHit): void {
       :value="query"
       allow-clear
       data-testid="lineage-entity-search-input"
-      :placeholder="t('lineage.searchPlaceholder')"
+      :placeholder="placeholder ?? t('lineage.searchPlaceholder')"
       @update:value="onQuery"
       @search="runSearch"
     />

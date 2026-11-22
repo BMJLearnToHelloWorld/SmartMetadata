@@ -170,6 +170,19 @@ export const LINEAGE_PLATFORM_LENSES: LineagePlatformLensOption[] = [
   { value: 'dataProduct', labelKey: 'lineage.lensDataProduct', supported: false },
 ];
 
+/**
+ * Pin `getSceneRequestFromSearch` (LineageMap.utils.ts:219-227): the lens
+ * comes from `?lineageLens=` in the URL search and defaults to Service
+ * for anything unrecognised. The lens switcher itself is the L4 scene
+ * map; L1 only reads the value for the page title and the platform
+ * fetch's `view` param.
+ */
+export function resolveLineageLens(value: unknown): LineagePlatformLens {
+  return LINEAGE_PLATFORM_LENSES.some((item) => item.value === value)
+    ? (value as LineagePlatformLens)
+    : 'service';
+}
+
 export const LINEAGE_NODES_PER_LAYER_MIN = 5;
 export const LINEAGE_NODES_PER_LAYER_DEFAULT = 50;
 

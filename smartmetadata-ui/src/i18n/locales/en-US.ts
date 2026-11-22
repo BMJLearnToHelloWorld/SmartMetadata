@@ -1872,6 +1872,13 @@ const enUS = {
   },
   lineage: {
     title: 'Lineage',
+    platformTitle: '{platformType} Lineage',
+    lensServiceName: 'Service',
+    lensDomainName: 'Domain',
+    lensDataProductName: 'Data product',
+    exportAsPng: 'Export as PNG',
+    editForbidden: 'You do not have permission to edit lineage for this asset.',
+    permissionLoadFailed: 'Failed to load lineage permissions',
     platformLead: 'Search a catalog asset to open its lineage graph.',
     searchPlaceholder: 'Search for an asset to open lineage',
     searchEmpty: 'No matching assets',
