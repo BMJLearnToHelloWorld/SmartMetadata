@@ -533,7 +533,10 @@ describe('AssetDetailView non-table shells', () => {
     expect(wrapper.find('[data-testid="dashboard-chart-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('revenue');
     expect(wrapper.text()).toContain('sales_model');
-    expect(wrapper.text()).toContain('Finance');
+    // Batch 6 asset-overview: the `project` identity row retired with
+    // the details default pane — pin's Dashboard DETAILS layout has no
+    // project widget, so 'Finance' no longer renders on the tab.
+    expect(wrapper.text()).not.toContain('Finance');
   });
 
   it('draws a pipeline DAG only from returned tasks and shows Empty when tasks are missing', async () => {
@@ -741,9 +744,12 @@ describe('AssetDetailView non-table shells', () => {
     );
 
     const chart = await mountTypedView('chart', 'bi.sales.revenue');
-    expect(chart.wrapper.text()).toContain('Bar');
-    expect(chart.wrapper.text()).toContain('superset');
-    expect(chart.wrapper.text()).toContain('sales');
+    // Batch 6 asset-overview: the chart-type / service / dashboards
+    // identity rows retired with the overview default pane — pin's
+    // Chart DETAILS layout has no widget for them. ('sales' also
+    // appears in the header FQN, so it cannot pin the retirement.)
+    expect(chart.wrapper.text()).not.toContain('Bar');
+    expect(chart.wrapper.text()).not.toContain('superset');
     expect(chart.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
     expect(chart.wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
     expect(chart.wrapper.text()).not.toContain('No detail page is wired');
@@ -2642,6 +2648,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     // The mutual-exclusion gate returns null for an empty data model,
     // so the guarded #schema default pane renders even though the
     // tab is flipped — the same pane the customized-page test pins.
+    // Retargeted at r3: with BOTH Container tabs flipped, the empty
+    // model mounts the CHILDREN grid (one GenericTab), while the schema
+    // tab keeps its default pane (the schema-empty state).
     stubWithDoc(null, (url) =>
       url.includes('/api/v1/containers/name/')
         ? jsonResponse({
@@ -2657,7 +2666,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountView('container', 's3.landing');
     await settle(wrapper);
-    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Container');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Container', 'children', null));
     expect(wrapper.findAll('[data-testid="asset-schema-empty"]').length).toBe(1);
     wrapper.unmount();
   }, 20000);
@@ -2863,13 +2875,19 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('mounts no grid for the unflipped Chart overview tab when there is no persona document (Batch 6 asset-schema)', async () => {
+  it('mounts the Chart details grid now that the overview tab is flipped (Batch 6 asset-schema, Chart flipped by asset-overview)', async () => {
+    // Rewritten at r3: the schema lane originally asserted no grid for the
+    // unflipped Chart overview tab; the asset-overview lane flipped
+    // Chart/details, so this test now asserts the grid mounts (equal
+    // strength — same mount path, flipped expectation). The overview lane's
+    // own Chart flip test covers the same behavior via mountTypedView.
     stubWithDoc(null, (url) =>
       url.includes('/api/v1/charts/name/')
         ? jsonResponse({
             id: 'ch-1',
             name: 'revenue',
             fullyQualifiedName: 'bi.sales.revenue',
+            description: 'Revenue chart',
             chartType: 'Bar',
             service: { name: 'superset' },
             dashboards: [{ name: 'sales', type: 'dashboard' }],
@@ -2879,8 +2897,257 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountView('chart', 'bi.sales.revenue');
     await settle(wrapper);
-    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
-    expect(wrapper.text()).toContain('Bar');
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Chart');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Chart', 'details', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Revenue chart');
+    // The retired overview pane's chart-type identity row is gone
+    // (pin's DETAILS layout has no chart-type widget).
+    expect(wrapper.text()).not.toContain('Bar');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Dashboard details grid with the default layout and no default pane when there is no persona document (Batch 6 asset-overview)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/charts/chart-1')
+        ? jsonResponse({
+            id: 'chart-1',
+            name: 'revenue',
+            fullyQualifiedName: 'bi.sales.revenue',
+            chartType: 'Bar',
+            tags: [],
+          })
+        : url.includes('/api/v1/dashboards/name/')
+          ? jsonResponse({
+              id: 'dash-1',
+              name: 'sales',
+              fullyQualifiedName: 'bi.sales',
+              description: 'Sales dashboard',
+              project: 'Finance',
+              charts: [{ id: 'chart-1', name: 'revenue', type: 'chart' }],
+              dataModels: [{ name: 'sales_model', type: 'dashboardDataModel' }],
+              service: { name: 'superset' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('dashboard', 'bi.sales');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Dashboard');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Dashboard', 'details', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Sales dashboard');
+    // One charts table, inside the grid's ChartsTable cell: the
+    // retired default pane rendered the same piece.
+    expect(wrapper.findAll('[data-testid="dashboard-chart-table"]').length).toBe(1);
+    // The retired pane's project identity row is gone (pin's DETAILS
+    // layout has no project widget).
+    expect(wrapper.text()).not.toContain('Finance');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Chart details grid with the default layout and no default pane when there is no persona document (Batch 6 asset-overview)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/charts/name/')
+        ? jsonResponse({
+            id: 'ch-1',
+            name: 'revenue',
+            fullyQualifiedName: 'bi.sales.revenue',
+            description: 'Revenue chart',
+            chartType: 'Bar',
+            service: { name: 'superset' },
+            dashboards: [{ name: 'sales', type: 'dashboard' }],
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('chart', 'bi.sales.revenue');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Chart');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Chart', 'details', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Revenue chart');
+    // The retired overview pane's chart-type identity row is gone
+    // (pin's DETAILS layout has no chart-type widget).
+    expect(wrapper.text()).not.toContain('Bar');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Pipeline tasks grid with the default layout and no default pane when there is no persona document (Batch 6 asset-overview)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/pipelines/name/')
+        ? jsonResponse({
+            id: 'pipe-1',
+            name: 'daily_etl',
+            fullyQualifiedName: 'airflow.daily_etl',
+            description: 'Daily ETL',
+            tasks: [
+              { name: 'extract', displayName: 'Extract', downstreamTasks: ['load'] },
+              { name: 'load', downstreamTasks: [] },
+            ],
+            pipelineStatus: {
+              timestamp: 1700000000000,
+              executionStatus: 'Successful',
+              taskStatus: [{ name: 'extract', executionStatus: 'Successful' }],
+            },
+            service: { name: 'airflow' },
+          })
+        : url.includes('/api/v1/pipelines/') && url.includes('/status')
+          ? jsonResponse({
+              data: [{ timestamp: 1700000000000, executionStatus: 'Successful', executionId: 'run-1' }],
+              paging: { total: 1 },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Pipeline');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Pipeline', 'tasks', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Daily ETL');
+    // The full grid replaces the tasks-only pane: the tasks piece
+    // renders inside its PipelineTasks cell, and the description
+    // cell (absent from the retired pane) is present.
+    expect(cellFor(wrapper, DetailWidgetKeys.PIPELINE_TASKS).find('[data-testid="task-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the StoredProcedure code grid with the default layout and no default pane when there is no persona document (Batch 6 asset-overview)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/storedProcedures/name/')
+        ? jsonResponse({
+            id: 'sp-1',
+            name: 'nightly_cleanup',
+            fullyQualifiedName: 'svc.nightly_cleanup',
+            description: 'Nightly cleanup',
+            storedProcedureCode: { language: 'SQL', code: 'SELECT 1' },
+            service: { name: 'svc' },
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('storedProcedure', 'svc.nightly_cleanup');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('StoredProcedure');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('StoredProcedure', 'code', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Nightly cleanup');
+    // One code block, inside the grid's StoredProcedureCode cell:
+    // the retired default pane rendered the same piece.
+    expect(wrapper.findAll('[data-testid="asset-code-block"]').length).toBe(1);
+    expect(wrapper.text()).toContain('SELECT 1');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the APICollection apiEndpoint grid with the default layout and no default pane when there is no persona document (Batch 6 asset-overview)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/apiEndpoints')
+        ? jsonResponse({
+            data: [
+              { name: 'getPet', endpointURL: '/pets/{id}', requestMethod: 'GET', fullyQualifiedName: 'svc.petstore.getPet' },
+            ],
+            paging: { total: 1 },
+          })
+        : url.includes('/api/v1/apiCollections/name/')
+          ? jsonResponse({
+              id: 'ac-1',
+              name: 'petstore',
+              fullyQualifiedName: 'svc.petstore',
+              description: 'Petstore API',
+              service: { name: 'svc' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('apiCollection', 'svc.petstore');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('APICollection');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('APICollection', 'apiEndpoint', null));
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).text()).toContain('Petstore API');
+    // One endpoints table, inside the grid's APIEndpoints cell: the
+    // retired default pane rendered the same piece.
+    expect(wrapper.findAll('[data-testid="asset-api-endpoints-table"]').length).toBe(1);
+    expect(wrapper.text()).toContain('getPet');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Container children grid with the default layout and no default pane when there is no persona document and the data model is empty (Batch 6 asset-overview)', async () => {
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/containers/name/s3.landing/children')
+        ? jsonResponse({
+            data: [{ id: 'ct-2', name: 'child1', fullyQualifiedName: 's3.landing.child1', description: 'Child bucket' }],
+            paging: { total: 1 },
+          })
+        : url.includes('/api/v1/containers/name/')
+          ? jsonResponse({
+              id: 'ct-1',
+              name: 'landing',
+              fullyQualifiedName: 's3.landing',
+              description: 'Landing bucket',
+              children: [{ name: 'child1', type: 'container' }],
+              service: { name: 's3' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('container', 's3.landing');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Container');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Container', 'children', null));
+    const childrenCell = cellFor(wrapper, DetailWidgetKeys.CONTAINER_CHILDREN);
+    expect(childrenCell.find('[data-testid="container-list-table"]').exists()).toBe(true);
+    expect(childrenCell.text()).toContain('child1');
+    // The children grid replaces the related-panel pane: no related
+    // table outside the widget cell.
+    expect(wrapper.findAll('[data-testid="asset-related-table"]').length).toBe(0);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the Container children default pane when there is no persona document and the data model is non-empty (Batch 6 asset-overview)', async () => {
+    // The mutual-exclusion gate returns null for a non-empty data
+    // model, so the guarded #children default pane renders even
+    // though the tab is flipped (pin ContainerPage mounts the grid
+    // on SCHEMA then).
+    // Retargeted at r3: with BOTH Container tabs flipped, the non-empty
+    // model mounts the SCHEMA grid (one GenericTab), while the children
+    // tab keeps its default pane (the related table).
+    stubWithDoc(null, (url) =>
+      url.includes('/api/v1/containers/name/')
+        ? jsonResponse({
+            id: 'ct-1',
+            name: 'landing',
+            fullyQualifiedName: 's3.landing',
+            description: 'Landing bucket',
+            dataModel: { columns: [{ name: 'key', dataType: 'STRING' }] },
+            children: [{ name: 'child1', type: 'container' }],
+            service: { name: 's3' },
+          })
+        : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('container', 's3.landing');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Container');
+    expect(grids[0].props('layout')).toEqual(resolveWidgetLayout('Container', 'schema', null));
+    expect(wrapper.findAll('[data-testid="asset-related-table"]').length).toBe(1);
     wrapper.unmount();
   }, 20000);
 });

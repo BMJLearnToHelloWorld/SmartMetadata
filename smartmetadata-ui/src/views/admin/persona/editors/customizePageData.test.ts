@@ -221,13 +221,16 @@ describe('customizePageData dispatch', () => {
   });
 
   it('holds exactly the batch-6 flipped mount tabs in the registry (Batch 6)', () => {
-    // D-2 batch 6: governance r2 merged its 4 flipped tabs and
-    // asset-schema r2 merged its 8 flipped tabs into the registry.
-    // The overview tabs below stay false until the asset-overview
-    // lane flips them.
+    // D-2 batch 6: governance r2 merged its 4 flipped tabs, asset-schema
+    // r2 merged its 8 flipped tabs, and the asset-overview lane merged its
+    // 6 flipped tabs into the registry — 18 entries total (Container carries
+    // both 'children' and 'schema').
     expect(UNCONDITIONAL_MOUNT_TABS).toEqual({
+      APICollection: ['apiEndpoint'],
       APIEndpoint: ['schema'],
-      Container: ['schema'],
+      Chart: ['details'],
+      Container: ['children', 'schema'],
+      Dashboard: ['details'],
       DashboardDataModel: ['model'],
       Database: ['schemas'],
       DatabaseSchema: ['table'],
@@ -236,26 +239,35 @@ describe('customizePageData dispatch', () => {
       Glossary: ['terms'],
       GlossaryTerm: ['overview'],
       MlModel: ['features'],
+      Pipeline: ['tasks'],
       SearchIndex: ['fields'],
+      StoredProcedure: ['code'],
       Topic: ['schema'],
     });
+    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(true);
+    expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(true);
+    expect(isUnconditionalMountTab('Chart', 'details')).toBe(true);
+    expect(isUnconditionalMountTab('Container', 'children')).toBe(true);
+    expect(isUnconditionalMountTab('Container', 'schema')).toBe(true);
+    expect(isUnconditionalMountTab('Dashboard', 'details')).toBe(true);
+    expect(isUnconditionalMountTab('DashboardDataModel', 'model')).toBe(true);
+    expect(isUnconditionalMountTab('Database', 'schemas')).toBe(true);
+    expect(isUnconditionalMountTab('DatabaseSchema', 'table')).toBe(true);
     expect(isUnconditionalMountTab('DataProduct', 'documentation')).toBe(true);
     expect(isUnconditionalMountTab('Domain', 'documentation')).toBe(true);
     expect(isUnconditionalMountTab('Glossary', 'terms')).toBe(true);
     expect(isUnconditionalMountTab('GlossaryTerm', 'overview')).toBe(true);
-    expect(isUnconditionalMountTab('Topic', 'schema')).toBe(true);
-    expect(isUnconditionalMountTab('Container', 'schema')).toBe(true);
-    expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(true);
-    expect(isUnconditionalMountTab('SearchIndex', 'fields')).toBe(true);
-    expect(isUnconditionalMountTab('DashboardDataModel', 'model')).toBe(true);
     expect(isUnconditionalMountTab('MlModel', 'features')).toBe(true);
-    expect(isUnconditionalMountTab('DatabaseSchema', 'table')).toBe(true);
-    expect(isUnconditionalMountTab('Database', 'schemas')).toBe(true);
+    expect(isUnconditionalMountTab('Pipeline', 'tasks')).toBe(true);
+    expect(isUnconditionalMountTab('SearchIndex', 'fields')).toBe(true);
+    expect(isUnconditionalMountTab('StoredProcedure', 'code')).toBe(true);
+    expect(isUnconditionalMountTab('Topic', 'schema')).toBe(true);
     // Table/schema stays unflipped: pin's default layout carries a
     // TableSharding widget with no product cell or data path (§3.1).
+    // MlModel/details stays unflipped: MlModel mounts its grid on
+    // FEATURES, not DETAILS.
     expect(isUnconditionalMountTab('Table', 'schema')).toBe(false);
-    expect(isUnconditionalMountTab('Chart', 'details')).toBe(false);
-    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(false);
+    expect(isUnconditionalMountTab('MlModel', 'details')).toBe(false);
     expect(isUnconditionalMountTab('NoSuchPage', 'schema')).toBe(false);
   });
 
