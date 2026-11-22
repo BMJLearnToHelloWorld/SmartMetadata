@@ -220,12 +220,28 @@ describe('customizePageData dispatch', () => {
     expect(getWidgetHeight('StoredProcedure', 'KnowledgePanel.TableConstraints')).toBe(4);
   });
 
-  it('starts with an empty unconditional-mount registry (Batch 6)', () => {
-    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({});
+  it('lists the six flipped overview-family tabs in the unconditional-mount registry (Batch 6 asset-overview)', () => {
+    expect(UNCONDITIONAL_MOUNT_TABS).toEqual({
+      APICollection: ['apiEndpoint'],
+      Chart: ['details'],
+      Container: ['children'],
+      Dashboard: ['details'],
+      Pipeline: ['tasks'],
+      StoredProcedure: ['code'],
+    });
+    expect(isUnconditionalMountTab('Dashboard', 'details')).toBe(true);
+    expect(isUnconditionalMountTab('Chart', 'details')).toBe(true);
+    expect(isUnconditionalMountTab('Pipeline', 'tasks')).toBe(true);
+    expect(isUnconditionalMountTab('StoredProcedure', 'code')).toBe(true);
+    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(true);
+    expect(isUnconditionalMountTab('Container', 'children')).toBe(true);
+    // Table/schema stays unflipped: pin's default layout carries a
+    // TableSharding widget with no product cell or data path (§3.1).
+    // MlModel/details stays unflipped: MlModel mounts its grid on
+    // FEATURES, not DETAILS.
     expect(isUnconditionalMountTab('Table', 'schema')).toBe(false);
-    expect(isUnconditionalMountTab('Chart', 'details')).toBe(false);
+    expect(isUnconditionalMountTab('MlModel', 'details')).toBe(false);
     expect(isUnconditionalMountTab('APIEndpoint', 'schema')).toBe(false);
-    expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(false);
     expect(isUnconditionalMountTab('NoSuchPage', 'schema')).toBe(false);
   });
 

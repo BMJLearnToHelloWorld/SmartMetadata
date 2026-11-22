@@ -2029,7 +2029,15 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
+          <!-- D-2 batch 6: the overview default pane survives for every
+               unflipped overview tab (Pipeline, APICollection/APIEndpoint
+               overviews, and the fallback types); only Chart mounts the
+               grid here, through the `details` override in
+               `mountTabIdFor`. The metric-definition piece below renders
+               an empty-values card for non-metric assets — pin's Chart
+               DETAILS layout has no such widget, so its removal from
+               Chart is pin-correct. -->
+          <template v-else-if="pageType !== 'Chart'">
             <AssetOverviewFields
               :asset="asset"
               :entity-type="entityType"
@@ -2086,7 +2094,13 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
+          <!-- D-2 batch 6: the children default pane survives only for
+               a Container whose data model is non-empty — the
+               mutual-exclusion gate in `widgetLayoutFor` returns null
+               there by design (pin ContainerPage mounts the grid on
+               SCHEMA then), so the pane is the tab's only content.
+               Empty-data-model Containers mount the grid. -->
+          <template v-else-if="(asset?.schemaRows?.length ?? 0) > 0">
             <AssetRelatedPanel :asset="asset" />
           </template>
       </template>
@@ -2196,9 +2210,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetDetailPiece piece="tasks" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #executions>
           <GenericTab
@@ -2251,9 +2262,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetDetailPiece piece="code" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #lineage>
           <GenericTab
@@ -2330,7 +2338,10 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
+          <!-- D-2 batch 6: the details default pane survives only for
+               MlModel, which shares this slot but is not flipped
+               (MlModel mounts its grid on FEATURES, not DETAILS). -->
+          <template v-else-if="entityType === 'mlmodel'">
             <AssetOverviewFields
               :asset="asset"
               :entity-type="entityType"
@@ -2351,9 +2362,6 @@ onMounted(() => {
               <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
-          <template v-else>
-            <AssetDetailPiece piece="apiEndpoints" :context="pieceContext" />
-          </template>
       </template>
       <template v-if="asset" #endpoint>
           <GenericTab
