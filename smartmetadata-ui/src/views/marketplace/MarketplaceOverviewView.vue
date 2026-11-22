@@ -6,9 +6,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Empty, Form, Input, List, Select, Space, Switch, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Card, Form, Input, List, Select, Space, Switch, Typography, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import MarketplaceDataProductsWidget from '@/components/widgets/MarketplaceDataProductsWidget.vue';
+import MarketplaceDomainsWidget from '@/components/widgets/MarketplaceDomainsWidget.vue';
+import { permissionFlags } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import { listAnnouncements, parseAnnouncementEntityLink } from '@/api/announcements';
 import { createDataProduct, getDataProductByName } from '@/api/dataProducts';
 import { DOMAIN_TYPES } from '@/types/governance';
@@ -76,7 +80,48 @@ const widgetColumn = computed<{ entries: MarketplaceWidgetEntry[]; error: boolea
  * announcements stay fixed above the column — official renders them
  * outside the layout too.
  */
-const DISPLAY_COUNT = 3;
+const permissionStore = usePermissionStore();
+
+/**
+ * D-2 batch 5b: the two marketplace widgets own their lists now, so the
+ * view keeps only the Create gates (resource-level Create, OR the P1
+ * admin line; fail-closed on a fetch failure) and the widget refresh
+ * handles. The widgets fetch on mount and expose `refresh()`; the
+ * registry is keyed by layout entry because a repeated kind renders
+ * twice and every instance must re-fetch after a create.
+ */
+const canCreateDataProduct = ref(false);
+const canCreateDomain = ref(false);
+type MarketplaceWidgetHandle = { refresh: () => Promise<void> };
+const widgetHandles = new Map<string, MarketplaceWidgetHandle>();
+function setWidgetHandle(kind: string, index: number, el: unknown): void {
+  const key = `${kind}:${index}`;
+  if (el && typeof el === 'object' && 'refresh' in el && typeof (el as MarketplaceWidgetHandle).refresh === 'function') {
+    widgetHandles.set(key, el as MarketplaceWidgetHandle);
+  } else {
+    widgetHandles.delete(key);
+  }
+}
+async function refreshWidgets(kind: 'data-products' | 'domains'): Promise<void> {
+  await Promise.all(
+    [...widgetHandles.entries()]
+      .filter(([key]) => key.startsWith(`${kind}:`))
+      .map(([, handle]) => handle.refresh()),
+  );
+}
+void (async () => {
+  try {
+    const [dp, domain] = await Promise.all([
+      permissionStore.getResourcePermission('dataProduct'),
+      permissionStore.getResourcePermission('domain'),
+    ]);
+    canCreateDataProduct.value = permissionStore.isAdminUser || permissionFlags(dp).canCreate;
+    canCreateDomain.value = permissionStore.isAdminUser || permissionFlags(domain).canCreate;
+  } catch {
+    canCreateDataProduct.value = false;
+    canCreateDomain.value = false;
+  }
+})();
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -93,10 +138,6 @@ const hasSearchResults = computed(
 const nlqEnabled = ref(false);
 const nlqActive = ref(false);
 const announcements = ref<Announcement[]>([]);
-const dataProducts = ref<SearchHit[]>([]);
-const dataProductsTotal = ref(0);
-const domains = ref<SearchHit[]>([]);
-const domainsTotal = ref(0);
 const domainOptions = ref<Domain[]>([]);
 const userOptions = ref<AdminUser[]>([]);
 let userOptionsLoaded = false;
@@ -161,16 +202,10 @@ async function loadWidgets(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [productPage, domainPage, announcementPage, domainList] = await Promise.all([
-      searchAssets('', 0, DISPLAY_COUNT, { index: 'dataProduct', sortField: 'updatedAt', sortOrder: 'desc' }),
-      searchAssets('', 0, DISPLAY_COUNT, { index: 'domain', sortField: 'updatedAt', sortOrder: 'desc' }),
+    const [announcementPage, domainList] = await Promise.all([
       listAnnouncements({ active: true, limit: 50 }),
       listDomains({ limit: 100 }),
     ]);
-    dataProducts.value = productPage.hits;
-    dataProductsTotal.value = productPage.total;
-    domains.value = domainPage.hits;
-    domainsTotal.value = domainPage.total;
     // Official announcements widget keeps only domain / data-product items.
     announcements.value = announcementPage.data.filter((item) =>
       (item.entityLink ?? '').includes('::domain::') || (item.entityLink ?? '').includes('::dataProduct::'),
@@ -304,7 +339,7 @@ async function onCreateDataProduct(): Promise<void> {
     );
     showDataProductModal.value = false;
     message.success(t('governance.dataProducts.created', { name: created.name }));
-    void loadWidgets();
+    void refreshWidgets('data-products');
   } catch (error) {
     formError.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
@@ -337,7 +372,7 @@ async function onCreateDomain(): Promise<void> {
     );
     showDomainModal.value = false;
     message.success(t('governance.domains.created', { name: created.name }));
-    void loadWidgets();
+    void refreshWidgets('domains');
   } catch (error) {
     formError.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
@@ -458,77 +493,24 @@ onUnmounted(() => {
     />
     <div v-else class="marketplace-widget-column">
       <div v-for="(entry, index) in widgetColumn.entries" :key="`${entry.layoutKey}:${index}`">
-        <Card
+        <MarketplaceDataProductsWidget
           v-if="entry.key === 'data-products'"
-          :title="`${t('marketplace.dataProducts')} (${dataProductsTotal})`"
-          :loading="loading"
-          data-testid="marketplace-data-products"
-        >
-          <template #extra>
-            <Space>
-              <Button type="link" data-testid="marketplace-data-products-view-all" @click="router.push({ name: 'governance-data-products' })">
-                {{ t('marketplace.viewAll') }}
-              </Button>
-              <Button type="primary" data-testid="marketplace-add-data-product" @click="showDataProductModal = true">
-                {{ t('marketplace.addDataProduct') }}
-              </Button>
-            </Space>
-          </template>
-          <List :data-source="dataProducts" :locale="{ emptyText: t('marketplace.emptyDataProducts') }">
-            <template #renderItem="{ item }">
-              <List.Item>
-                <List.Item.Meta
-                  :title="hitLabel(item as SearchHit)"
-                  :description="(item as SearchHit).description"
-                />
-                <Button
-                  v-if="(item as SearchHit).id"
-                  type="link"
-                  @click="openHit(item as SearchHit)"
-                >
-                  {{ t('marketplace.open') }}
-                </Button>
-              </List.Item>
-            </template>
-          </List>
-        </Card>
-        <Card
+          :ref="(el) => setWidgetHandle('data-products', index, el)"
+          :can-create="canCreateDataProduct"
+          @add="showDataProductModal = true"
+          @view-all="router.push({ name: 'governance-data-products' })"
+          @open="openHit"
+        />
+        <MarketplaceDomainsWidget
           v-else
-          :title="`${t('marketplace.domains')} (${domainsTotal})`"
-          :loading="loading"
-          data-testid="marketplace-domains"
-        >
-          <template #extra>
-            <Space>
-              <Button type="link" data-testid="marketplace-domains-view-all" @click="router.push({ name: 'governance-domains' })">
-                {{ t('marketplace.viewAll') }}
-              </Button>
-              <Button type="primary" data-testid="marketplace-add-domain" @click="showDomainModal = true">
-                {{ t('marketplace.addDomain') }}
-              </Button>
-            </Space>
-          </template>
-          <List :data-source="domains" :locale="{ emptyText: t('marketplace.emptyDomains') }">
-            <template #renderItem="{ item }">
-              <List.Item>
-                <List.Item.Meta
-                  :title="hitLabel(item as SearchHit)"
-                  :description="(item as SearchHit).description"
-                />
-                <Button
-                  v-if="(item as SearchHit).id"
-                  type="link"
-                  @click="openHit(item as SearchHit)"
-                >
-                  {{ t('marketplace.open') }}
-                </Button>
-              </List.Item>
-            </template>
-          </List>
-        </Card>
+          :ref="(el) => setWidgetHandle('domains', index, el)"
+          :can-create="canCreateDomain"
+          @add="showDomainModal = true"
+          @view-all="router.push({ name: 'governance-domains' })"
+          @open="openHit"
+        />
       </div>
     </div>
-    <Empty v-if="!loading && dataProducts.length === 0 && domains.length === 0 && !errorMessage && !widgetColumn.error" :description="t('marketplace.empty')" style="margin-top: 16px" />
     <FormModal
       :get-container="false"
       :open="showDataProductModal"

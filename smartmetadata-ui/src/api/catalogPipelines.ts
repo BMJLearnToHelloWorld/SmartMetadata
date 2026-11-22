@@ -7,11 +7,54 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asNumber, asRecord, asString, parsePaged } from '@/api/json';
+import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import { encodeFqnForApi } from '@/catalog/entityRoutes';
-import type { CatalogPipelineStatus, PipelineTask, PipelineTaskStatus } from '@/types/api';
+import type { CatalogPipelineStatus, PipelineTask, PipelineTaskStatus, TagRef } from '@/types/api';
 import type { Paged } from '@/types/admin';
 import { apiRequest } from './client';
+
+/**
+ * Task-level tag mapping (official Task.tags). Local copy of the
+ * `api/entities.ts` `mapTags` whitelist — `catalogPipelines` must not
+ * import from `api/entities.ts` (it imports `mapPipelineTask` from here,
+ * so that would be a circular import). Non-object members and members
+ * without a FQN or name are dropped; `source` / `labelType` / `state`
+ * keep only official enum values.
+ */
+function mapTaskTags(value: unknown): TagRef[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    const tagFQN = asString(rec.tagFQN);
+    const name = asString(rec.name) || tagFQN;
+    const source = asString(rec.source);
+    const labelType = asString(rec.labelType);
+    const state = asString(rec.state);
+    return name || tagFQN
+      ? [
+          {
+            tagFQN: tagFQN || name,
+            name: name || tagFQN,
+            source: source === 'Glossary' || source === 'Classification' ? source : undefined,
+            labelType:
+              labelType === 'Automated' ||
+              labelType === 'Derived' ||
+              labelType === 'Generated' ||
+              labelType === 'Manual' ||
+              labelType === 'Propagated'
+                ? labelType
+                : undefined,
+            state: state === 'Confirmed' || state === 'Suggested' ? state : undefined,
+          },
+        ]
+      : [];
+  });
+}
 
 export function mapPipelineTask(value: unknown): PipelineTask | null {
   const rec = asRecord(value);
@@ -33,6 +76,8 @@ export function mapPipelineTask(value: unknown): PipelineTask | null {
     taskType: asString(rec.taskType) || undefined,
     sourceUrl: asString(rec.sourceUrl) || undefined,
     downstreamTasks: downstream,
+    tags: mapTaskTags(rec.tags),
+    owners: mapEntityRefs(rec.owners),
   };
 }
 

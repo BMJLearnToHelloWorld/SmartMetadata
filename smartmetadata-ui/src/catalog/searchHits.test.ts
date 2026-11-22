@@ -108,6 +108,40 @@ describe('mapSearchResponse', () => {
     expect(mapped.hits[0].entityType).toBe('topic');
   });
 
+  it('keeps only official Domain.domainType enum values on domain hits', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 2, relation: 'eq' },
+        hits: [
+          {
+            _id: 'd1',
+            _index: 'domain_search_index',
+            _source: {
+              id: 'd1',
+              name: 'sales',
+              fullyQualifiedName: 'sales',
+              entityType: 'domain',
+              domainType: 'Aggregate',
+            },
+          },
+          {
+            _id: 'd2',
+            _index: 'domain_search_index',
+            _source: {
+              id: 'd2',
+              name: 'bogus',
+              fullyQualifiedName: 'bogus',
+              entityType: 'domain',
+              domainType: 'NotAType',
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0].domainType).toBe('Aggregate');
+    expect(mapped.hits[1].domainType).toBeUndefined();
+  });
+
   it('joins service / database / schema for the card location line', () => {
     expect(
       hitLocation({

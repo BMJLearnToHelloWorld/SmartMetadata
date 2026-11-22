@@ -92,13 +92,13 @@ import {
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
 import { descriptionPatch, dataProductsPatch, domainsPatch, extensionPatch, ownersPatch, tableConstraintsPatch, tagsPatch, columnDescriptionPatch, columnTagsPatch, API_SCHEMA_FIELD_BASES, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
-import { setFieldPatch } from '@/admin/jsonPatch';
+import { setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
 import { schemaRowKeys, searchSchemaRows, updateNestedSchemaRows } from '@/utils/schemaColumns';
-import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
+import { mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import type { AssetDetail, CatalogPipelineStatus, EntityRef, SchemaRow, TableConstraint, TagRef } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus, EntityRef, PipelineTask, SchemaRow, TableConstraint, TagRef } from '@/types/api';
 import type { TagSource } from '@/types/governance';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
@@ -188,6 +188,24 @@ const canEditCustomProperties = computed(() => isAdminUser.value || assetFlags.v
 const canEditTableConstraints = computed(
   () => permissionStore.isAdminUser || assetFlags.value.canEditAll,
 );
+/**
+ * D-2 batch 5b metric definition + pipeline tasks: the pin call sites
+ * derive WITHOUT the `deleted` flag (`MetricDefinitionCard.tsx:391`,
+ * `PipelineTaskTab.tsx:148-162`) — the deleted gate is applied
+ * separately (the definition Edit button hides, the task cells go
+ * read-only). Each flag ORs the P1 admin line; fail-closed (all false)
+ * until the permission operations resolve.
+ */
+const ungatedFlags = computed(() => getDerivedPermissionFlags(assetOps.value ?? {}));
+const metricDefinitionCanEdit = computed(
+  () => permissionStore.isAdminUser || ungatedFlags.value.canEditAll,
+);
+const pipelineTaskAccess = computed(() => ({
+  canEditDescription: permissionStore.isAdminUser || ungatedFlags.value.canEditDescription,
+  canEditTags: permissionStore.isAdminUser || ungatedFlags.value.canEditTags,
+  canEditGlossaryTerms: permissionStore.isAdminUser || ungatedFlags.value.canEditGlossaryTerms,
+  readOnly: asset.value?.deleted === true,
+}));
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : assetOps.value ? assetFlags.value.canViewCustomFields : false,
@@ -247,6 +265,20 @@ async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
     return;
   }
   await patchAsset(props.entityType, asset.value.id, tagsPatch(asset.value.tags, tags));
+  message.success(t('asset.updated'));
+  await load();
+}
+
+/**
+ * D-2 batch 5b metric definition save: the widget hands over the
+ * JSON Patch ops it diffed from the pin save payload; a thrown failure
+ * keeps the edit dialog open with its error alert.
+ */
+async function onMetricDefinitionSave(ops: JsonPatchOp[]): Promise<void> {
+  if (!asset.value?.id) {
+    throw new Error(t('asset.patchNeedsId'));
+  }
+  await patchAsset(props.entityType, asset.value.id, ops);
   message.success(t('asset.updated'));
   await load();
 }
@@ -319,6 +351,78 @@ async function onCustomPropertySave(name: string, value: unknown): Promise<void>
 
 function onReferredTableClick(fqn: string): void {
   void router.push({ name: 'asset', params: { entityType: 'table', fqn } });
+}
+
+/**
+ * D-2 batch 5b task description save: one JSON Patch op on the task's
+ * description slot (D-4 note: pin writes the modal value verbatim, so
+ * an emptied description writes `''`, not a remove). Throws on failure
+ * so the description cell stays open and toasts.
+ */
+async function onTaskDescriptionUpdate(task: PipelineTask, index: number, description: string): Promise<void> {
+  if (!asset.value?.id) {
+    throw new Error(t('asset.patchNeedsId'));
+  }
+  await patchAsset(
+    props.entityType,
+    asset.value.id,
+    setFieldPatch(`/tasks/${index}/description`, task.description, description),
+  );
+  await load();
+}
+
+/**
+ * D-2 batch 5b task tag save: the same merge rule as
+ * `onSchemaTagChange` (official TagsContainerV2) — the write carries
+ * the task's full tag list, the edited source's new selection plus the
+ * other source's existing labels untouched, with the existing
+ * `labelType` / `state` overlaid onto catalog options so an edit never
+ * flips a Generated label to Manual.
+ */
+async function onTaskTagChange(task: PipelineTask, source: TagSource, tagFqns: string[]): Promise<void> {
+  if (!asset.value?.id) {
+    message.error(t('asset.patchNeedsId'));
+    return;
+  }
+  const index = (asset.value.tasks ?? []).findIndex((item) => item.name === task.name);
+  if (index < 0) {
+    message.error(t('asset.updateFailed'));
+    return;
+  }
+  const otherSource: TagSource = source === 'Classification' ? 'Glossary' : 'Classification';
+  const kept = (task.tags ?? []).filter(
+    (tag) => tag.source === otherSource || (otherSource === 'Classification' && !tag.source),
+  );
+  const toInput = (tag: TagRef): TagLabelInput => ({
+    tagFQN: tag.tagFQN,
+    name: tag.name,
+    source: tag.source || 'Classification',
+    labelType: tag.labelType,
+    state: tag.state,
+  });
+  const picked: TagLabelInput[] = tagFqns.flatMap((fqn) => {
+    const existing = (task.tags ?? []).find((tag) => tag.tagFQN === fqn);
+    const fromCatalog = catalog.value.tags.find((tag) => tag.tagFQN === fqn);
+    if (fromCatalog) {
+      return [{ ...fromCatalog, labelType: existing?.labelType, state: existing?.state }];
+    }
+    if (existing) {
+      return [toInput(existing)];
+    }
+    return [];
+  });
+  const nextInputs: TagLabelInput[] = [...kept.map(toInput), ...picked];
+  const nextLabels = nextInputs.map((input) => toTagLabel(input));
+  try {
+    await patchAsset(
+      props.entityType,
+      asset.value.id,
+      setFieldPatch(`/tasks/${index}/tags`, task.tags, nextLabels),
+    );
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
+  }
 }
 const tests = ref<TestCase[]>([]);
 const testsError = ref('');
@@ -620,7 +724,6 @@ const apiEndpointSchemaJson = (schema: Record<string, unknown> | undefined): str
 };
 
 const taskGraph = computed(() => mapPipelineTaskGraph(asset.value?.tasks, asset.value?.pipelineStatus));
-const taskGraphEmpty = computed(() => isPipelineTaskGraphEmpty(taskGraph.value));
 const executionRows = computed(() => {
   if (pipelineStatuses.value.length) {
     return pipelineStatuses.value;
@@ -1703,7 +1806,11 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   hyperColumns: hyperColumns.value,
   refColumns: refColumns.value,
   taskGraph: taskGraph.value,
-  taskGraphEmpty: taskGraphEmpty.value,
+  metricDefinitionCanEdit: metricDefinitionCanEdit.value,
+  onMetricDefinitionSave,
+  pipelineTaskAccess: pipelineTaskAccess.value,
+  onTaskDescriptionUpdate,
+  onTaskTagChange,
   customProperties: customProperties.value,
   customPropsError: customPropsError.value,
   apiEndpointSchemaJson,

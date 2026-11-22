@@ -183,6 +183,14 @@ const showRelated = computed(
           <Typography.Text v-if="!asset.domains.length" type="secondary">—</Typography.Text>
         </Space>
       </Descriptions.Item>
+      <Descriptions.Item :label="t('asset.fields.dataProducts')">
+        <Space wrap>
+          <span v-for="product in asset.dataProducts ?? []" :key="product.id || product.name">
+            {{ product.displayName || product.name }}
+          </span>
+          <Typography.Text v-if="!(asset.dataProducts ?? []).length" type="secondary">—</Typography.Text>
+        </Space>
+      </Descriptions.Item>
     </Descriptions>
     <template v-if="showRelated">
       <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.relatedTitle') }}</Typography.Title>

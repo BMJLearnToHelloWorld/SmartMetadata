@@ -74,7 +74,7 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
   },
   metric: {
     collection: 'metrics',
-    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers,votes,dataProducts,certification',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts,certification',
   },
   dashboardDataModel: {
     collection: 'dashboard/datamodels',

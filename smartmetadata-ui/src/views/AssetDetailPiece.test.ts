@@ -70,7 +70,6 @@ function baseContext(overrides: Partial<AssetDetailPieceContext> = {}): AssetDet
     hyperColumns: [],
     refColumns: [],
     taskGraph: { nodes: [], edges: [] },
-    taskGraphEmpty: true,
     customProperties: [],
     customPropsError: '',
     apiEndpointSchemaJson: (schema) => JSON.stringify(schema ?? {}),
@@ -158,6 +157,21 @@ function baseContext(overrides: Partial<AssetDetailPieceContext> = {}): AssetDet
     // save mock resolving so a modal save succeeds silently by default).
     tableConstraintsAccess: overrides.tableConstraintsAccess ?? false,
     onTableConstraintsUpdate: overrides.onTableConstraintsUpdate ?? vi.fn(async () => undefined),
+    // D-2 batch 5b: metricDefinitionCanEdit / onMetricDefinitionSave /
+    // pipelineTaskAccess / onTaskDescriptionUpdate / onTaskTagChange are
+    // required context fields; the Partial overrides spread above would leave
+    // them `... | undefined`, so pin them to defined values here.
+    // Fail-closed defaults; an explicit override is kept.
+    metricDefinitionCanEdit: overrides.metricDefinitionCanEdit ?? false,
+    onMetricDefinitionSave: overrides.onMetricDefinitionSave ?? (async () => {}),
+    pipelineTaskAccess: overrides.pipelineTaskAccess ?? {
+      canEditDescription: false,
+      canEditTags: false,
+      canEditGlossaryTerms: false,
+      readOnly: true,
+    },
+    onTaskDescriptionUpdate: overrides.onTaskDescriptionUpdate ?? (async () => {}),
+    onTaskTagChange: overrides.onTaskTagChange ?? (async () => {}),
   };
 }
 
