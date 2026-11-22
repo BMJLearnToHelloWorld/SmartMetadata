@@ -11,7 +11,10 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { defineComponent, h } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { useLineageStore } from '@/stores/lineage';
+import { CSV_JOBS_REFRESH_EVENT } from '@/api/csvJobs';
+import AddLineagePopover from './AddLineagePopover.vue';
 import LineageCanvas from './LineageCanvas.vue';
+import LineageNodeDeleteModal from './LineageNodeDeleteModal.vue';
 
 vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
 vi.mock('@vue-flow/background', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/background']());
@@ -94,7 +97,18 @@ const EXPAND_UP = {
 const LineageGraphStub = defineComponent({
   name: 'LineageGraphStub',
   props: { model: { type: Object, default: () => null } },
-  emits: ['expand-children', 'collapse-children'],
+  emits: [
+    'expand-children',
+    'collapse-children',
+    'connect',
+    'select-node',
+    'select-edge',
+    'edit-lineage',
+    'delete-node',
+    'delete-edge',
+    'change-active-layer',
+    'change-platform-view',
+  ],
   setup(props) {
     return () =>
       h('div', { 'data-testid': 'lineage-graph-stub' }, [
@@ -103,7 +117,10 @@ const LineageGraphStub = defineComponent({
   },
 });
 
-async function mountCanvas(query: Record<string, string> = {}) {
+async function mountCanvas(
+  query: Record<string, string> = {},
+  propsOverride: Record<string, unknown> = {},
+) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -115,7 +132,7 @@ async function mountCanvas(query: Record<string, string> = {}) {
   await router.push({ name: 'lineage', params: { entityType: 'table', fqn: 'svc.db.schema.orders' }, query });
   await router.isReady();
   const wrapper = mount(LineageCanvas, {
-    props: { entityType: 'table', fqn: 'svc.db.schema.orders', variant: 'page' },
+    props: { entityType: 'table', fqn: 'svc.db.schema.orders', variant: 'page', ...propsOverride },
     global: {
       plugins: [pinia, router, Antd, createTestI18n()],
       stubs: { LineageGraph: LineageGraphStub },
@@ -230,5 +247,251 @@ describe('LineageCanvas (L2)', () => {
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="stub-node-ids"]').text()).not.toContain('grand-id');
+  });
+});
+
+const UP_NODE = {
+  id: 'up-id',
+  entityType: 'table',
+  name: 'raw_orders',
+  displayName: 'raw_orders',
+  fullyQualifiedName: 'svc.db.schema.raw_orders',
+  isCenter: false,
+};
+const CENTER_NODE = {
+  id: 'center-id',
+  entityType: 'table',
+  name: 'orders',
+  displayName: 'orders',
+  fullyQualifiedName: 'svc.db.schema.orders',
+  isCenter: true,
+};
+
+/** The delete modal teleports to document.body; earlier tests' portals may linger, so read the last match. */
+function bodyEl(testId: string): HTMLElement {
+  const all = [...document.body.querySelectorAll(`[data-testid="${testId}"]`)];
+  const el = all.at(-1);
+  if (!el) {
+    throw new Error(`missing [data-testid="${testId}"]`);
+  }
+  return el as HTMLElement;
+}
+
+interface FetchCall {
+  url: string;
+  method: string;
+  body: string;
+}
+
+function fetchCalls(fetchMock: ReturnType<typeof vi.fn>): FetchCall[] {
+  return fetchMock.mock.calls.map((call) => ({
+    url: String(call[0]),
+    method: String((call[1] as { method?: string } | undefined)?.method ?? 'GET'),
+    body: String((call[1] as { body?: string } | undefined)?.body ?? ''),
+  }));
+}
+
+describe('LineageCanvas (L3)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('deletes a node via the delete-node intent: DELETEs every connected edge, then refetches', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('delete-node', UP_NODE);
+    await flushPromises();
+    expect(wrapper.findComponent(LineageNodeDeleteModal).exists()).toBe(true);
+    expect(document.body.innerHTML).toContain('Remove raw_orders from lineage');
+    const searchesBefore = fetchCalls(fetchMock).filter((call) => call.url.includes('/lineage/getLineage')).length;
+    bodyEl('delete-node-confirm').click();
+    await flushPromises();
+    const deletes = fetchCalls(fetchMock).filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.orders');
+    expect(fetchCalls(fetchMock).filter((call) => call.url.includes('/lineage/getLineage')).length).toBeGreaterThan(searchesBefore);
+    expect(wrapper.findComponent(LineageNodeDeleteModal).exists()).toBe(false);
+  });
+
+  it('deletes an entity edge via the delete-edge intent', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('delete-edge', { edge: { id: 'e1', source: 'up-id', target: 'center-id' }, isColumnEdge: false });
+    await flushPromises();
+    bodyEl('delete-node-confirm').click();
+    await flushPromises();
+    const deletes = fetchCalls(fetchMock).filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.orders');
+  });
+
+  it('removes a column mapping by re-PUTting the edge without the pair', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('getLineageEdge')) {
+        return jsonResponse({
+          edge: {
+            columnsLineage: [
+              { fromColumns: ['svc.db.schema.raw_orders.id'], toColumn: 'svc.db.schema.orders.id' },
+            ],
+          },
+        });
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('delete-edge', {
+      edge: { id: 'e1', source: 'up-id', target: 'center-id' },
+      isColumnEdge: true,
+      sourceHandle: 'svc.db.schema.raw_orders.id',
+      targetHandle: 'svc.db.schema.orders.id',
+    });
+    await flushPromises();
+    bodyEl('delete-node-confirm').click();
+    await flushPromises();
+    const puts = fetchCalls(fetchMock).filter((call) => call.method === 'PUT');
+    expect(puts).toHaveLength(1);
+    expect(puts[0].url).toContain('/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.orders');
+    expect(JSON.parse(puts[0].body)).not.toHaveProperty('columnsLineage');
+    expect(fetchCalls(fetchMock).some((call) => call.method === 'DELETE')).toBe(false);
+  });
+
+  it('opens the node delete modal on Delete for a selected non-center node, never for the center', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('select-node', CENTER_NODE);
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    await flushPromises();
+    expect(wrapper.findComponent(LineageNodeDeleteModal).exists()).toBe(false);
+    stub.vm.$emit('select-node', UP_NODE);
+    await flushPromises();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    await flushPromises();
+    expect(wrapper.findComponent(LineageNodeDeleteModal).exists()).toBe(true);
+  });
+
+  it('gates connect and delete on hasEditAccess=false: no PUT, no DELETE', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({}, { hasEditAccess: false });
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('connect', { from: UP_NODE, to: CENTER_NODE });
+    await flushPromises();
+    stub.vm.$emit('delete-node', UP_NODE);
+    await flushPromises();
+    bodyEl('delete-node-confirm').click();
+    await flushPromises();
+    expect(fetchCalls(fetchMock).some((call) => call.method === 'PUT')).toBe(false);
+    expect(fetchCalls(fetchMock).some((call) => call.method === 'DELETE')).toBe(false);
+  });
+
+  it('re-centers the fetch on the service for a Service platform view', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/tables/name/')) {
+        return jsonResponse({ service: { fullyQualifiedName: 'svc', type: 'databaseService' } });
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await mountCanvas();
+    useLineageStore().setPlatformView('Service');
+    await flushPromises();
+    const searches = fetchCalls(fetchMock).filter((call) => call.url.includes('/lineage/getLineage'));
+    expect(searches.at(-1)?.url).toContain('fqn=svc');
+    expect(searches.at(-1)?.url).toContain('type=databaseService');
+  });
+
+  it('reverts an unresolvable platform view to None instead of fetching the wrong entity', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    await mountCanvas();
+    const searchesBefore = fetchCalls(fetchMock).filter((call) => call.url.includes('/lineage/getLineage')).length;
+    useLineageStore().setPlatformView('Service');
+    await flushPromises();
+    expect(useLineageStore().platformView).toBe('None');
+    expect(fetchCalls(fetchMock).filter((call) => call.url.includes('/lineage/getLineage')).length).toBe(searchesBefore + 1);
+    expect(fetchCalls(fetchMock).every((call) => !call.url.includes('fqn=svc&'))).toBe(true);
+  });
+
+  it('drives the DataObservability overlay from the Layers panel change', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('getDataQualityLineage')) {
+        return jsonResponse({ nodes: [{ id: 'up-id', fullyQualifiedName: 'svc.db.schema.raw_orders' }], edges: [] });
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('change-active-layer', ['DataObservability']);
+    await flushPromises();
+    expect(useLineageStore().activeLayer).toContain('DataObservability');
+    expect(fetchCalls(fetchMock).some((call) => call.url.includes('getDataQualityLineage'))).toBe(true);
+  });
+
+  it('exports CSV asynchronously and notifies the CSV jobs tray', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('exportAsync')) {
+        return jsonResponse({ jobId: 'job-1', message: 'started' });
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const refreshed = vi.fn();
+    window.addEventListener(CSV_JOBS_REFRESH_EVENT, refreshed);
+    try {
+      await wrapper.find('[data-testid="lineage-export-csv"]').trigger('click');
+      await flushPromises();
+    } finally {
+      window.removeEventListener(CSV_JOBS_REFRESH_EVENT, refreshed);
+    }
+    const exports = fetchCalls(fetchMock).filter((call) => call.url.includes('exportAsync'));
+    expect(exports).toHaveLength(1);
+    expect(exports[0].url).toContain('fqn=svc.db.schema.orders');
+    expect(refreshed).toHaveBeenCalled();
+  });
+
+  it('saves a new edge from the add-lineage popover submit (404 probe → new PUT)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('getLineageEdge')) {
+        return jsonResponse({}, 404);
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('edit-lineage', { node: UP_NODE, direction: 'downstream' });
+    await flushPromises();
+    const popover = wrapper.findComponent(AddLineagePopover);
+    expect(popover.exists()).toBe(true);
+    popover.vm.$emit('submit', {
+      entity: { entityType: 'table', fqn: 'svc.db.schema.customers', id: 'cust-id' },
+    });
+    await flushPromises();
+    const puts = fetchCalls(fetchMock).filter((call) => call.method === 'PUT');
+    expect(puts).toHaveLength(1);
+    expect(puts[0].url).toContain('/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.customers');
+    expect(JSON.parse(puts[0].body)).toEqual({ source: 'Manual' });
+    expect(popover.exists()).toBe(false);
   });
 });

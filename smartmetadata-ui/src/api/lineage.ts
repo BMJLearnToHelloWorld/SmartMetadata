@@ -12,7 +12,8 @@ import {
   clampLineageDepth,
   LINEAGE_DEPTH_DEFAULT,
 } from '@/lineage/depth';
-import { apiRequest } from './client';
+import { ApiError, apiRequest } from './client';
+import { asRecord, asString } from './json';
 
 export interface FetchEntityLineageOptions {
   entityType: string;
@@ -208,6 +209,84 @@ export async function getPlatformLineage(options: GetPlatformLineageOptions): Pr
   });
 }
 
+export interface LineageExportAsyncOptions {
+  fqn: string;
+  entityType?: string;
+  upstreamDepth?: number;
+  downstreamDepth?: number;
+  /** JSON query filter (pin `query_filter`). */
+  queryFilter?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+/** Async CSV export job record (pin `CSVExportResponse`: `{ jobId, message }`). */
+export interface LineageCsvExportResponse {
+  jobId: string;
+  message: string;
+}
+
+/**
+ * GET /v1/lineage/exportAsync — the official async CSV export
+ * (openmetadata-ui rest/lineageAPI.ts exportLineageAsync :42-62; product
+ * LineageResource.java:688-760). Depths default to 1, like pin's config
+ * destructure. The server answers 202 with `{ jobId, message }`; the file
+ * itself is downloaded from the CSV jobs tray
+ * (`GET /v1/csvAsyncJobs/{jobId}/result`) — the caller marks the job owned
+ * and notifies the tray, it never downloads inline here.
+ */
+export async function exportLineageAsync(
+  options: LineageExportAsyncOptions,
+): Promise<LineageCsvExportResponse> {
+  const fqn = options.fqn.trim();
+  if (!fqn) {
+    throw new Error('Lineage requires an FQN');
+  }
+  const payload = await apiRequest<unknown>('/v1/lineage/exportAsync', {
+    query: {
+      fqn,
+      ...(options.entityType ? { type: options.entityType } : {}),
+      upstreamDepth: clampLineageDepth(options.upstreamDepth ?? LINEAGE_DEPTH_DEFAULT),
+      downstreamDepth: clampLineageDepth(options.downstreamDepth ?? LINEAGE_DEPTH_DEFAULT),
+      includeDeleted: false,
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
+      ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
+      ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
+  const rec = asRecord(payload) ?? {};
+  return { jobId: asString(rec.jobId), message: asString(rec.message) };
+}
+
+/**
+ * GET /v1/lineage/getLineageEdge/{fromId}/{toId} — the official edge-details
+ * fetch (openmetadata-ui rest/lineageAPI.ts getLineageEdgeDetails :167-177;
+ * product LineageResource.java:1129). Returns `response.edge`
+ * (LineageDetails: columnsLineage, pipeline, source, …). The server 404s
+ * when no edge exists; callers that probe for existing details
+ * (saveLineageEdge) treat a 404 as "no existing details", any other
+ * failure still rejects.
+ */
+export async function getLineageEdgeDetails(
+  fromId: string,
+  toId: string,
+): Promise<Record<string, unknown>> {
+  const from = fromId.trim();
+  const to = toId.trim();
+  if (!from || !to) {
+    throw new Error('Lineage edge details require from and to entity ids');
+  }
+  const payload = await apiRequest<unknown>(
+    `/v1/lineage/getLineageEdge/${encodeURIComponent(from)}/${encodeURIComponent(to)}`,
+  );
+  return asRecord(asRecord(payload)?.edge) ?? {};
+}
+
+/** True when an apiRequest failure is a 404 (no such edge/entity). */
+export function isLineageNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
 /**
  * PUT lineage edge by name. Body defaults to `{ source: 'Manual' }` (MCP create_lineage).
  */
@@ -222,7 +301,8 @@ export async function putEntityLineage(options: PutEntityLineageOptions): Promis
 
 /**
  * DELETE /v1/lineage/{from}/name/{fqn}/{to}/name/{fqn} — RestClient.delete_lineage_by_name.
- * Client helper only; canvas has no delete control yet (do not invent one).
+ * Wired by the canvas delete flows (node delete removes every connected
+ * edge; edge delete removes the one edge).
  */
 export async function deleteEntityLineageByName(options: LineageEdgeEndpoints): Promise<unknown> {
   return apiRequest<unknown>(lineageEdgePath(options), { method: 'DELETE' });

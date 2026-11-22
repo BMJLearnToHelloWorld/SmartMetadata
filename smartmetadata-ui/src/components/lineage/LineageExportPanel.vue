@@ -7,7 +7,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Space } from 'ant-design-vue';
 import type { LineageGraphModel } from '@/lineage/graphModel';
-import { impactEntityRows, impactRowsToCsv, type ImpactEntityRow } from '@/lineage/impact';
+import { impactEntityRows, type ImpactEntityRow } from '@/lineage/impact';
 
 const props = defineProps<{
   model: LineageGraphModel | null;
@@ -15,6 +15,13 @@ const props = defineProps<{
   fqn: string;
   pngAvailable: boolean;
   onExportPng: () => Promise<void>;
+  /**
+   * Async server CSV (pin `exportHandler` → `exportLineageAsync`); the
+   * file downloads from the CSV jobs tray. The canvas owns the call;
+   * this panel only renders the button state.
+   */
+  onExportCsv: () => Promise<void>;
+  exportingCsv?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -47,15 +54,11 @@ const rows = computed((): ImpactEntityRow[] => {
   ];
 });
 
-function downloadCsv(): void {
-  const csv = impactRowsToCsv(rows.value);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `lineage-${props.entityType}-${props.fqn.replace(/[^A-Za-z0-9_.-]/g, '_')}.csv`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+async function exportCsv(): Promise<void> {
+  if (props.exportingCsv) {
+    return;
+  }
+  await props.onExportCsv();
 }
 
 async function exportPng(): Promise<void> {
@@ -77,7 +80,8 @@ async function exportPng(): Promise<void> {
       <Button
         data-testid="lineage-export-csv"
         :disabled="rows.length === 0"
-        @click="downloadCsv"
+        :loading="exportingCsv"
+        @click="exportCsv"
       >
         {{ t('lineage.exportCsv') }}
       </Button>

@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0.
  */
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestI18n } from '@/test/i18n';
@@ -104,5 +104,56 @@ describe('LineageNode', () => {
     expect(wrapper.find('[data-testid="lineage-column-svc.db.schema.orders.amount"]').exists()).toBe(false);
     await wrapper.find('[data-testid="lineage-node-columns-lineage-only"]').trigger('click');
     expect(onToggle).toHaveBeenCalled();
+  });
+
+  it('shows no node menu when not editable, and the full menu when editable', async () => {
+    const locked = mount(LineageNode, {
+      props: { data: nodeData({ isNodeEditable: false }) },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(locked.find('[data-testid="lineage-node-menu"]').exists()).toBe(false);
+
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const wrapper = mount(LineageNode, {
+      props: {
+        data: nodeData({
+          isNodeEditable: true,
+          canDeleteNode: true,
+          onEditLineage: onEdit,
+          onDeleteNode: onDelete,
+        }),
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="lineage-node-menu"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="lineage-node-menu"]').trigger('click');
+    await flushPromises();
+    const deleteItem = document.body.querySelector('[data-testid="lineage-menu-delete"]') as HTMLElement;
+    expect(deleteItem).not.toBeNull();
+    deleteItem.click();
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+    locked.unmount();
+  });
+
+  it('column rows carry a column menu that edits with the column FQN', async () => {
+    const onEdit = vi.fn();
+    const wrapper = mount(LineageNode, {
+      props: {
+        data: nodeData({ expanded: true, isNodeEditable: true, onEditLineage: onEdit }),
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const menus = wrapper.findAll('[data-testid="lineage-column-menu"]');
+    expect(menus).toHaveLength(2);
+    await menus[0].trigger('click');
+    await flushPromises();
+    const upstream = document.body.querySelector(
+      '[data-testid="lineage-menu-edit-upstream"]',
+    ) as HTMLElement;
+    upstream.click();
+    expect(onEdit).toHaveBeenCalledWith('upstream', 'svc.db.schema.orders.id');
+    wrapper.unmount();
   });
 });
