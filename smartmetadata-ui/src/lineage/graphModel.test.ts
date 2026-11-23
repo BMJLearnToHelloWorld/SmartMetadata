@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { ELKLayout } from './elkLayout';
 import {
   collapseLineageModel,
   dqHighlight,
@@ -391,8 +392,8 @@ describe('dqHighlight / extractDqNodeIds', () => {
 });
 
 describe('layoutLineageGraph', () => {
-  it('places upstream nodes left of the center and downstream nodes to the right', () => {
-    const positioned = layoutLineageGraph(mapEntityLineage(PAYLOAD));
+  it('places upstream nodes left of the center and downstream nodes to the right', async () => {
+    const positioned = await layoutLineageGraph(mapEntityLineage(PAYLOAD));
     const byId = Object.fromEntries(positioned.nodes.map((node) => [node.id, node]));
     expect(byId['up-id'].position.x).toBeLessThan(byId['center-id'].position.x);
     expect(byId['down-id'].position.x).toBeGreaterThan(byId['center-id'].position.x);
@@ -407,7 +408,7 @@ describe('layoutLineageGraph', () => {
     expect(expanded.height).toBeGreaterThan(collapsed.height);
   });
 
-  it('lays a multi-hop chain out left-to-right without overlapping nodes (dagre/ELK parity)', () => {
+  it('lays a multi-hop chain out left-to-right without overlapping nodes', async () => {
     const model = mapEntityLineage({
       entity: { id: 'c0', type: 'table', name: 'c0', fullyQualifiedName: 't.c0' },
       nodes: [
@@ -422,7 +423,7 @@ describe('layoutLineageGraph', () => {
       ],
       downstreamEdges: [],
     });
-    const positioned = layoutLineageGraph(model);
+    const positioned = await layoutLineageGraph(model);
     const byId = Object.fromEntries(positioned.nodes.map((node) => [node.id, node]));
     const xs = ['c3', 'c2', 'c1', 'c0'].map((id) => byId[id].position.x);
     for (let i = 1; i < xs.length; i++) {
@@ -441,6 +442,17 @@ describe('layoutLineageGraph', () => {
           a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
         expect(overlaps).toBe(false);
       }
+    }
+  });
+
+  it('returns an empty graph when the ELK layout fails (pin getELKLayoutedElements)', async () => {
+    vi.spyOn(ELKLayout, 'layoutGraph').mockRejectedValueOnce(new Error('boom'));
+    try {
+      const positioned = await layoutLineageGraph(mapEntityLineage(PAYLOAD));
+      expect(positioned.nodes).toEqual([]);
+      expect(positioned.edges).toEqual([]);
+    } finally {
+      vi.restoreAllMocks();
     }
   });
 });
