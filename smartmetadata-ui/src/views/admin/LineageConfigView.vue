@@ -5,6 +5,8 @@
   ids root/<name>, focus tracking for the doc panel, Cancel + Save.
   The save payload spreads the stored config (D-TC1 option A, frozen);
   depth validation is official: required + min 0, no upper bound.
+  The form sits in ResizablePanels beside the ServiceDocPanel
+  (LineageConfiguration docs), as in the official page.
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -12,6 +14,8 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, InputNumber, Select, Space, message, Spin } from 'ant-design-vue';
 import { getTypedSetting, settingAsLineage, updateSetting } from '@/api/system';
+import ServiceDocPanel from '@/components/ingestion/ServiceDocPanel.vue';
+import ResizablePanels from '@/components/shared/ResizablePanels.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { buildSettingsBreadcrumbCatalog, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { lineageConfigurationChrome } from '@/settings/breadcrumbExceptions';
@@ -57,9 +61,7 @@ const form = reactive<LineageSettings>({});
 const storedConfig = ref<LineageSettings | null>(null);
 const saveAttempted = ref(false);
 const touched = reactive(new Set<string>());
-// Tracks the focused field for the doc panel. The ResizablePanels split
-// layout is a shared-component dependency; until it lands, the focus
-// handlers below keep the active-field state a drop-in.
+// Tracks the focused field for the doc panel beside the form.
 const activeField = ref('');
 
 type DepthField = 'upstreamDepth' | 'downstreamDepth';
@@ -155,6 +157,11 @@ onMounted(() => {
     <SmBreadcrumb :items="breadcrumbItems" />
     <h5 class="lineage-config__title" data-testid="lineage-config-heading">{{ header }}</h5>
     <Spin :spinning="loading">
+    <ResizablePanels
+      :first-panel="{ minWidth: 700, flex: 0.7, allowScroll: true, className: 'content-resizable-panel-container' }"
+      :second-panel="{ minWidth: 400, flex: 0.3, className: 'service-doc-panel content-resizable-panel-container' }"
+    >
+      <template #first>
     <Form layout="vertical">
       <Form.Item
         :label="t('settings.lineage.upstream')"
@@ -216,6 +223,15 @@ onMounted(() => {
         </Button>
       </Space>
     </Form>
+      </template>
+      <template #second>
+        <ServiceDocPanel
+          :active-field="activeField"
+          service-name="LineageConfiguration"
+          service-type="OpenMetadata"
+        />
+      </template>
+    </ResizablePanels>
     </Spin>
   </div>
 </template>

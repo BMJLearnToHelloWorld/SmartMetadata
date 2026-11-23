@@ -32,9 +32,9 @@ import { assetLocation, isDetailWired, lineageLocation, resolveDetailEndpoint } 
 import { highlightForColumn } from '@/lineage/columnPorts';
 import {
   clampLineageDepth,
-  LINEAGE_DEPTH_DEFAULT,
   LINEAGE_DEPTH_MAX,
   LINEAGE_DEPTH_MIN,
+  LINEAGE_SESSION_DEPTH_DEFAULT,
 } from '@/lineage/depth';
 import {
   collapseLineageModel,
@@ -118,8 +118,8 @@ const errorMessage = ref('');
  */
 const denialMessage = ref('');
 const graph = ref<LineageGraphModel | null>(null);
-const upstreamDepth = ref(LINEAGE_DEPTH_DEFAULT);
-const downstreamDepth = ref(LINEAGE_DEPTH_DEFAULT);
+const upstreamDepth = ref(LINEAGE_SESSION_DEPTH_DEFAULT);
+const downstreamDepth = ref(LINEAGE_SESSION_DEPTH_DEFAULT);
 const highlightedColumnFqns = ref<string[]>([]);
 const highlightedNodeIds = ref<string[]>([]);
 const highlightedEdgeIds = ref<string[]>([]);

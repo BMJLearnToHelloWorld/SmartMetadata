@@ -13,6 +13,14 @@ beforeEach(() => {
 });
 
 describe('lineage store', () => {
+  it('starts from the official store defaults: depths 3/3, 50 nodes per layer, Node mode', () => {
+    const store = useLineageStore();
+    expect(store.config.upstreamDepth).toBe(3);
+    expect(store.config.downstreamDepth).toBe(3);
+    expect(store.config.nodesPerLayer).toBe(50);
+    expect(store.config.pipelineViewMode).toBe('Node');
+  });
+
   it('persists session config and rehydrates it', () => {
     const store = useLineageStore();
     store.update({ upstreamDepth: 2, layer: 'ColumnLevelLineage', nodesPerLayer: 25 });

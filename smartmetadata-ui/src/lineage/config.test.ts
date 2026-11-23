@@ -6,9 +6,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampNodesPerLayer,
+  DEFAULT_LINEAGE_CANVAS_CONFIG,
   isLineageDateString,
   lineageDateToEndMillis,
   lineageDateToStartMillis,
+  LINEAGE_CONFIG_FIELDS,
   LINEAGE_PLATFORM_LENSES,
   LINEAGE_TIME_PRESETS,
   normalizeLineageCanvasConfig,
@@ -18,6 +20,18 @@ import {
 } from './config';
 
 describe('lineage config tables', () => {
+  it('uses the official store defaults: depths 3/3, 50 nodes per layer', () => {
+    expect(DEFAULT_LINEAGE_CANVAS_CONFIG.upstreamDepth).toBe(3);
+    expect(DEFAULT_LINEAGE_CANVAS_CONFIG.downstreamDepth).toBe(3);
+    expect(DEFAULT_LINEAGE_CANVAS_CONFIG.nodesPerLayer).toBe(50);
+    expect(DEFAULT_LINEAGE_CANVAS_CONFIG.pipelineViewMode).toBe('Node');
+    expect(LINEAGE_CONFIG_FIELDS).toEqual([
+      { key: 'upstreamDepth', labelKey: 'lineage.upstreamDepth', min: 0, defaultValue: 3 },
+      { key: 'downstreamDepth', labelKey: 'lineage.downstreamDepth', min: 0, defaultValue: 3 },
+      { key: 'nodesPerLayer', labelKey: 'lineage.nodesPerLayer', min: 5, defaultValue: 50 },
+    ]);
+  });
+
   it('resolves last-N-days presets to a window ending at now', () => {
     const now = 1_800_000_000_000;
     const range = timeRangeForPreset('last7Days', now);

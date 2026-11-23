@@ -5,13 +5,9 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Form, InputNumber, Select } from 'ant-design-vue';
+import { Alert, Form, InputNumber } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import {
-  LINEAGE_LAYERS,
-  LINEAGE_PIPELINE_MODES,
-  type LineageCanvasConfig,
-} from '@/lineage/config';
+import type { LineageCanvasConfig } from '@/lineage/config';
 
 const props = defineProps<{
   open: boolean;
@@ -24,6 +20,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+// Official LINEAGE_CONFIG_FIELDS (Lineage.constants.ts:219, pin
+// a3012259ca): the modal edits depths + nodes per layer only. Layer and
+// pipeline view mode live on the admin settings page; the form still
+// starts as a copy of the incoming config, so saving here preserves
+// them, mirroring the official onSave({ ...config, ...depths }).
 const form = reactive<LineageCanvasConfig>({ ...props.config });
 
 watch(
@@ -34,17 +35,6 @@ watch(
     }
   },
 );
-
-const layerOptions = LINEAGE_LAYERS.map((item) => ({
-  value: item.value,
-  label: t(item.labelKey),
-  disabled: !item.supported,
-}));
-
-const modeOptions = LINEAGE_PIPELINE_MODES.map((item) => ({
-  value: item.value,
-  label: t(item.labelKey),
-}));
 
 function onOk(): void {
   emit('ok', { ...form });
@@ -90,20 +80,6 @@ function onOk(): void {
         data-testid="lineage-config-nodes-residual"
         :message="t('lineage.nodesPerLayerResidual')"
       />
-      <Form.Item :label="t('lineage.layer')">
-        <Select
-          v-model:value="form.layer"
-          data-testid="lineage-config-layer"
-          :options="layerOptions"
-        />
-      </Form.Item>
-      <Form.Item :label="t('lineage.pipelineViewMode')">
-        <Select
-          v-model:value="form.pipelineViewMode"
-          data-testid="lineage-config-pipeline-mode"
-          :options="modeOptions"
-        />
-      </Form.Item>
       <p>{{ t('lineage.configHelp') }}</p>
     </Form>
   </FormModal>

@@ -186,8 +186,9 @@ describe('LineageTable', () => {
     const { wrapper } = await mountTable();
     const firstUrl = fetchUrls(fetchMock).find((url) => url.includes('getLineageByEntityCount')) ?? '';
     expect(firstUrl).toContain('direction=Downstream');
-    expect(firstUrl).toContain('nodeDepth=1');
-    expect(firstUrl).toContain('maxDepth=1');
+    // The table's default depth is the session depth — the official store default 3.
+    expect(firstUrl).toContain('nodeDepth=3');
+    expect(firstUrl).toContain('maxDepth=3');
     expect(firstUrl).toContain('from=0');
     expect(firstUrl).toContain('size=15');
     expect(firstUrl).toContain('include_pagination_info=true');
@@ -224,7 +225,8 @@ describe('LineageTable', () => {
     await wrapper.find('[data-testid="lineage-impact-upstream"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.query.dir).toBe('Upstream');
-    expect(router.currentRoute.value.query.depth).toBe('1');
+    // The depth written back is the session default — the official store default 3.
+    expect(router.currentRoute.value.query.depth).toBe('3');
     const lastUrl = fetchUrls(fetchMock).filter((url) => url.includes('getLineageByEntityCount')).at(-1) ?? '';
     expect(lastUrl).toContain('direction=Upstream');
     expect(wrapper.text()).toContain('raw_orders');
@@ -258,7 +260,8 @@ describe('LineageTable', () => {
     const columnUrl = fetchUrls(fetchMock).find((url) => url.includes('/getLineage/Upstream')) ?? '';
     expect(columnUrl).toContain('/getLineage/Upstream');
     // Column-level fetch is one-sided: upstream depth = nodeDepth, downstream 0.
-    expect(columnUrl).toContain('upstreamDepth=1');
+    // nodeDepth is the session default — the official store default 3.
+    expect(columnUrl).toContain('upstreamDepth=3');
     expect(columnUrl).toContain('downstreamDepth=0');
     const text = wrapper.text();
     expect(text).toContain('raw_orders');
@@ -324,8 +327,9 @@ describe('LineageTable', () => {
     await flushPromises();
     const exportUrl = fetchUrls(fetchMock).find((url) => url.includes('exportByEntityCountAsync')) ?? '';
     expect(exportUrl).toContain('direction=Downstream');
-    expect(exportUrl).toContain('nodeDepth=1');
-    expect(exportUrl).toContain('maxDepth=1');
+    // The export uses the session default depth — the official store default 3.
+    expect(exportUrl).toContain('nodeDepth=3');
+    expect(exportUrl).toContain('maxDepth=3');
   });
 
   it('shows an error and clears rows when the count fetch fails', async () => {
