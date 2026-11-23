@@ -1368,10 +1368,83 @@ def _difference(values_count: int | None, distinct_count: int | None) -> int | N
     return None
 
 
-# Column-profile field per metric name: the 31 computed fields the runner
-# writes back, keyed by the official metric name, valued by the stat-row
-# attribute. One table drives every connector's mapping, so a field can
-# never drift between dialects.
+# ColumnProfile schema keys (openmetadata-spec/.../entity/data/table.json,
+# ``columnProfile`` definition; ``additionalProperties: false``). The column
+# entry may carry ONLY these keys: the server converts the posted dict with
+# strict Jackson deserialization, so any extra key (``executionSource``,
+# ``countInSet``, ``likeCount``, ...) fails the conversion and the write dies
+# (C-7 live: every column post 500'd ``LinkedHashMap cannot be cast to
+# ColumnProfile``). The runner still computes the non-schema metrics
+# in-memory — the stat rows keep the attributes and ``metric_closure`` still
+# pulls them in — they are just never written to the column payload, and are
+# deliberately NOT mapped into ``customMetrics`` (that would invent a storage
+# convention).
+_COLUMN_PROFILE_SCHEMA_KEYS: frozenset[str] = frozenset(
+    {
+        "cardinalityDistribution",
+        "customMetrics",
+        "distinctCount",
+        "distinctProportion",
+        "duplicateCount",
+        "firstQuartile",
+        "histogram",
+        "interQuartileRange",
+        "max",
+        "maxLength",
+        "mean",
+        "median",
+        "min",
+        "minLength",
+        "missingCount",
+        "missingPercentage",
+        "name",
+        "nonParametricSkew",
+        "nullCount",
+        "nullProportion",
+        "stddev",
+        "sum",
+        "thirdQuartile",
+        "timestamp",
+        "uniqueCount",
+        "uniqueProportion",
+        "validCount",
+        "valuesCount",
+        "valuesPercentage",
+        "variance",
+    }
+)
+
+
+def _conforming_custom_metrics(
+    custom_metrics: Any,
+) -> list[dict[str, Any]] | None:
+    """Keep only ``customMetricProfile``-conforming entries.
+
+    The schema requires exactly ``{name: string, value: number}``; an entry
+    whose query returned no row carries ``value: None`` and cannot be stored,
+    so it is dropped rather than written.
+    """
+    if not custom_metrics:
+        return None
+    kept: list[dict[str, Any]] = []
+    for metric in custom_metrics:
+        if not isinstance(metric, dict):
+            continue
+        name = metric.get("name")
+        value = metric.get("value")
+        if not isinstance(name, str):
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        kept.append({"name": name, "value": value})
+    return kept or None
+
+
+# Column-profile field per metric name: the 31 computed fields, keyed by the
+# official metric name, valued by the stat-row attribute. One table drives
+# every connector's mapping, so a field can never drift between dialects.
+# Only the schema-keyed subset is written to the column entry (see
+# ``_COLUMN_PROFILE_SCHEMA_KEYS``); the rest are computed in-memory only.
 _COLUMN_FIELD_BY_METRIC: dict[str, str] = {
     "nullCount": "null_count",
     "distinctCount": "distinct_count",
@@ -1426,15 +1499,20 @@ def build_profile_record(
     to PERCENTAGE when nothing was sampled, as the pin's does), sizeInByte,
     createDateTime, and customMetrics; rowCount/columnCount appear only
     when computed (table metrics on and the metric selected). Column
-    profiles carry name, timestamp, executionSource, and the effective
-    metric set — the selected names plus the derivation prerequisites the
-    closure pulled in, so selecting distinctProportion also writes
-    distinctCount and valuesCount (the pin writes every computed result
-    without filtering back to the requested names). Names outside the
-    effective set are omitted, never written as ``None`` — plus
-    customMetrics when the column has any. ``columnNames``
-    is deliberately not written: no TableProfile field exists for it in
-    either schema copy and the pin's write-back never maps it.
+    profiles carry name, timestamp, and the effective metric set — the
+    selected names plus the derivation prerequisites the closure pulled
+    in, so selecting distinctProportion also writes distinctCount and
+    valuesCount (the pin writes every computed result without filtering
+    back to the requested names) — restricted to ColumnProfile-schema keys
+    (``_COLUMN_PROFILE_SCHEMA_KEYS``): ``executionSource`` and the
+    non-schema metrics (``countInSet``, ``likeCount``, ...) are computed
+    in-memory but never written to the column payload, because the server
+    strictly deserializes the posted dict and any extra key fails the
+    write. Names outside the effective set are omitted, never written as
+    ``None`` — plus customMetrics when the column has any conforming ones.
+    ``columnNames`` is deliberately not written: no TableProfile field
+    exists for it in either schema copy and the pin's write-back never
+    maps it.
     """
     opts = options or ProfileOptions()
     table_stat = next((s for s in stats if s.column_name is None), None)
@@ -1471,14 +1549,17 @@ def build_profile_record(
         entry: dict[str, Any] = {
             "name": stat.column_name,
             "timestamp": timestamp,
-            "executionSource": execution_source,
         }
         for metric, attr in _COLUMN_FIELD_BY_METRIC.items():
-            if selected is None or metric in selected:
+            if metric in _COLUMN_PROFILE_SCHEMA_KEYS and (
+                selected is None or metric in selected
+            ):
                 entry[metric] = getattr(stat, attr)
-        custom_metrics = getattr(stat, "custom_metrics", None)
-        if custom_metrics:
-            entry["customMetrics"] = list(custom_metrics)
+        conforming_custom_metrics = _conforming_custom_metrics(
+            getattr(stat, "custom_metrics", None)
+        )
+        if conforming_custom_metrics:
+            entry["customMetrics"] = conforming_custom_metrics
         column_profile.append(entry)
     fqn = build_fqn(service, database, schema, table)
     return ProfileRecord(

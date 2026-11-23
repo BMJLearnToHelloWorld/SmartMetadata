@@ -19,6 +19,7 @@ import org.openmetadata.schema.type.TableProfile;
 import org.openmetadata.schema.utils.JsonUtils;
 import org.openmetadata.schema.utils.ResultList;
 import org.openmetadata.service.Entity;
+import org.openmetadata.service.exception.BadRequestException;
 import org.openmetadata.service.resources.entityProfiles.EntityProfileMapper;
 import org.openmetadata.service.resources.entityProfiles.EntityProfileResource;
 import org.openmetadata.service.security.mask.PIIMasker;
@@ -72,8 +73,11 @@ public class EntityProfileRepository extends EntityTimeSeriesRepository<EntityPr
       String fqn;
       if (entityProfile.getProfileType().equals(CreateEntityProfile.ProfileTypeEnum.COLUMN)) {
         // we need to store column profile against the column FQN
-        ColumnProfile columnProfile =
-            (ColumnProfile) deserializeProfileData(entityProfile).getProfileData();
+        EntityProfile converted = deserializeProfileDataOrThrow(entityProfile);
+        if (!(converted.getProfileData() instanceof ColumnProfile columnProfile)) {
+          throw new BadRequestException(
+              "Column profileData could not be converted to ColumnProfile");
+        }
         Column column = EntityUtil.getColumn((Table) entity, columnProfile.getName());
         fqn = column.getFullyQualifiedName();
       } else {
@@ -95,8 +99,10 @@ public class EntityProfileRepository extends EntityTimeSeriesRepository<EntityPr
     // We need to first check if there is an existing system profile at the same timestamp
     // If yes, we update the existing record
     // If no, we insert a new record
-    SystemProfile systemProfile =
-        (SystemProfile) deserializeProfileData(entityProfile).getProfileData();
+    EntityProfile converted = deserializeProfileDataOrThrow(entityProfile);
+    if (!(converted.getProfileData() instanceof SystemProfile systemProfile)) {
+      throw new BadRequestException("System profileData could not be converted to SystemProfile");
+    }
     String storedSystemProfile =
         timeSeriesDao.getExtensionAtTimestampWithOperation(
             entity.getFullyQualifiedName(),
@@ -137,12 +143,84 @@ public class EntityProfileRepository extends EntityTimeSeriesRepository<EntityPr
     return switch (entityProfile.getProfileType()) {
       case COLUMN -> {
         String entityFqn = entityProfile.getEntityReference().getFullyQualifiedName();
-        ColumnProfile columnProfile =
-            PIIMasker.maskColumnProfile(entityFqn, (ColumnProfile) entityProfile.getProfileData());
-        yield entityProfile.withProfileData(columnProfile);
+        // The list pass converts with the lenient deserializer first, so a
+        // conformant payload is already a ColumnProfile here; a Map only
+        // survives when that conversion failed. Convert authoritatively —
+        // never blind-cast — so an unconvertible stored profile fails the
+        // list with a clear 400 instead of a 500 ClassCastException.
+        EntityProfile converted = deserializeProfileDataOrThrow(entityProfile);
+        if (!(converted.getProfileData() instanceof ColumnProfile columnProfile)) {
+          throw new BadRequestException(
+              "Column profileData could not be converted to ColumnProfile");
+        }
+        ColumnProfile maskedColumnProfile = PIIMasker.maskColumnProfile(entityFqn, columnProfile);
+        yield entityProfile.withProfileData(maskedColumnProfile);
       }
       case TABLE, SYSTEM -> entityProfile;
     };
+  }
+
+  /**
+   * Authoritative conversion of a profile payload to its typed form.
+   *
+   * <p>Unlike {@link #deserializeProfileData}, which swallows conversion failures and returns the
+   * original entity (leaving a {@code Map} that the next unchecked cast turns into a 500 {@code
+   * ClassCastException}), this fails the request with a clear 400 when the payload cannot be
+   * converted — an unknown key, a wrong-typed value, a missing {@code profileData} or {@code
+   * profileType}. The strict mapper is kept: switching to the lenient mapper would silently drop
+   * unknown keys and mask malformed payloads. Named deviation from pin (error surfacing only):
+   * pin 500s on malformed payloads, this 400s with a clear message; conformant payloads behave
+   * identically.
+   */
+  static EntityProfile deserializeProfileDataOrThrow(EntityProfile entityProfile) {
+    Object profileData = entityProfile.getProfileData();
+    if (entityProfile.getProfileType() == null) {
+      throw new BadRequestException("profileType is required to convert profileData");
+    }
+    Class<?> expected =
+        switch (entityProfile.getProfileType()) {
+          case TABLE -> TableProfile.class;
+          case COLUMN -> ColumnProfile.class;
+          case SYSTEM -> SystemProfile.class;
+        };
+    if (profileData == null) {
+      throw new BadRequestException(
+          String.format("%s profileData is required", entityProfile.getProfileType().value()));
+    }
+    if (expected.isInstance(profileData)) {
+      return entityProfile;
+    }
+    if (profileData instanceof Map<?, ?> map) {
+      try {
+        String jsonString = JsonUtils.pojoToJson(map);
+        Object convertedProfileData =
+            switch (entityProfile.getProfileType()) {
+              case TABLE -> JsonUtils.readValue(jsonString, TableProfile.class);
+              case COLUMN -> JsonUtils.readValue(jsonString, ColumnProfile.class);
+              case SYSTEM -> JsonUtils.readValue(jsonString, SystemProfile.class);
+            };
+        return entityProfile.withProfileData(convertedProfileData);
+      } catch (Exception e) {
+        // JsonUtils wraps the Jackson failure in a JsonParsingException whose
+        // own message is a constant; the offending-key detail lives on the
+        // cause, so surface that instead of a bare "Failed to process JSON".
+        String detail = e.getMessage();
+        if (e.getCause() != null && e.getCause().getMessage() != null) {
+          detail = e.getCause().getMessage();
+        }
+        throw new BadRequestException(
+            String.format(
+                "%s profileData could not be converted to %s: %s",
+                entityProfile.getProfileType().value(), expected.getSimpleName(), detail),
+            e);
+      }
+    }
+    throw new BadRequestException(
+        String.format(
+            "%s profileData could not be converted to %s: expected an object, found %s",
+            entityProfile.getProfileType().value(),
+            expected.getSimpleName(),
+            profileData.getClass().getSimpleName()));
   }
 
   public static EntityProfile deserializeProfileData(EntityProfile entityProfile) {

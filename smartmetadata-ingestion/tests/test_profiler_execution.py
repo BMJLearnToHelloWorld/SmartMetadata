@@ -163,7 +163,7 @@ def test_metrics_selection_limits_output_keys_and_queries() -> None:
     cursor = FakeCursor(script)
     _, record = _profile(cursor, ProfileOptions(metrics=frozenset({"mean"})))
     for entry in record.column_profile:
-        assert set(entry) == {"name", "timestamp", "executionSource", "mean"}
+        assert set(entry) == {"name", "timestamp", "mean"}
     assert not _sql_for(cursor, "GROUP BY")
 
 
@@ -173,7 +173,7 @@ def test_per_column_metrics_filter_one_column_only() -> None:
     options = ProfileOptions(per_column_metrics={"id": frozenset({"mean"})})
     _, record = _profile(cursor, options)
     by_name = {entry["name"]: entry for entry in record.column_profile}
-    assert set(by_name["id"]) == {"name", "timestamp", "executionSource", "mean"}
+    assert set(by_name["id"]) == {"name", "timestamp", "mean"}
     assert "nullCount" in by_name["name"]
 
 
@@ -209,7 +209,6 @@ def test_composed_selection_writes_prerequisites_through_plan_path() -> None:
         assert set(entry) == {
             "name",
             "timestamp",
-            "executionSource",
             "distinctCount",
             "valuesCount",
             "distinctProportion",
@@ -273,7 +272,7 @@ def test_unique_count_only_selection_skips_empty_aggregate_select() -> None:
     cursor = FakeCursor(script)
     _, record = _profile(cursor, ProfileOptions(metrics=frozenset({"uniqueCount"})))
     by_name = {entry["name"]: entry for entry in record.column_profile}
-    assert set(by_name["id"]) == {"name", "timestamp", "executionSource", "uniqueCount"}
+    assert set(by_name["id"]) == {"name", "timestamp", "uniqueCount"}
     assert by_name["id"]["uniqueCount"] == 3
     assert by_name["name"]["uniqueCount"] == 7
     assert all("SELECT  FROM" not in sql for sql, _ in cursor.executed)
@@ -427,7 +426,9 @@ def test_profile_query_defines_dataset_and_nulls_execution_source() -> None:
     assert set(by_name) == {"id", "name", "mystery"}
     # The unknown column keeps no type, so its type-gated metrics are None.
     assert by_name["mystery"]["mean"] is None
-    assert by_name["mystery"]["executionSource"] is None
+    # The column entry never carries executionSource (C-7: the server
+    # strictly deserializes the posted dict; only the table profile does).
+    assert "executionSource" not in by_name["mystery"]
 
 
 def test_profile_query_with_no_columns_fails_loud() -> None:
@@ -481,7 +482,139 @@ def test_full_shape_carries_stats_and_execution_source() -> None:
         "tableName": "orders",
     }
     assert record.profile_data == record.table_profile
-    assert record.column_profile[0]["executionSource"] == {
+    # The column entry never carries executionSource (C-7: the server
+    # strictly deserializes the posted dict); the table profile keeps it.
+    assert "executionSource" not in record.column_profile[0]
+
+
+# --- C-7: column entries emit only ColumnProfile-schema keys ---------------
+
+
+def test_column_entry_emits_only_column_profile_schema_keys() -> None:
+    # Independent oracle: the 30 ``columnProfile`` properties of
+    # openmetadata-spec/.../entity/data/table.json (additionalProperties
+    # false). The live icrm run 500'd every column post because the entry
+    # carried ``executionSource`` plus non-schema metrics; the server's
+    # strict Jackson conversion rejects any extra key.
+    schema_keys = {
+        "cardinalityDistribution",
+        "customMetrics",
+        "distinctCount",
+        "distinctProportion",
+        "duplicateCount",
+        "firstQuartile",
+        "histogram",
+        "interQuartileRange",
+        "max",
+        "maxLength",
+        "mean",
+        "median",
+        "min",
+        "minLength",
+        "missingCount",
+        "missingPercentage",
+        "name",
+        "nonParametricSkew",
+        "nullCount",
+        "nullProportion",
+        "stddev",
+        "sum",
+        "thirdQuartile",
+        "timestamp",
+        "uniqueCount",
+        "uniqueProportion",
+        "validCount",
+        "valuesCount",
+        "valuesPercentage",
+        "variance",
+    }
+    column_stat = ProfileStatRow(
+        "id",
+        null_count=0,
+        distinct_count=10,
+        min_value=1,
+        max_value=10,
+        mean=5.5,
+        values_count=10,
+        count_in_set=2,
+        like_count=1,
+        ilike_count=1,
+        not_like_count=0,
+        regex_count=1,
+        not_regex_count=0,
+        max_length=8,
+        min_length=1,
+        stddev=2.87,
+        sum_value=55,
+        unique_count=1,
+        null_missing_count=0,
+        distinct_proportion=1.0,
+        unique_proportion=0.1,
+        null_proportion=0.0,
+        duplicate_count=0,
+        like_ratio=0.1,
+        ilike_ratio=0.1,
+        median=5.0,
+        first_quartile=3.0,
+        third_quartile=8.0,
+        inter_quartile_range=5.0,
+        non_parametric_skew=0.0,
+        histogram={"boundaries": ["a", "b"], "frequencies": [3, 7]},
+        cardinality_distribution={
+            "categories": ["a", "b"],
+            "counts": [3, 7],
+            "percentages": [0.3, 0.7],
+        },
+        custom_metrics=[
+            {"name": "ok", "value": 1.5},
+            {"name": "no_row", "value": None},
+            {"name": 7, "value": 2},
+            {"name": "flag", "value": True},
+            {"name": "extra", "value": 3, "unit": "ms"},
+        ],
+    )
+    record = build_profile_record(
+        [ProfileStatRow(None, row_count=10, column_count=2), column_stat],
+        service="warehouse",
+        database="analytics",
+        schema="public",
+        table="orders",
+        timestamp=1_700_000_000_000,
+    )
+    entry = record.column_profile[0]
+    assert set(entry) <= schema_keys
+    assert "executionSource" not in entry
+    for non_schema in (
+        "countInSet",
+        "likeCount",
+        "iLikeCount",
+        "notLikeCount",
+        "regexCount",
+        "notRegexCount",
+        "nullMissingCount",
+        "likeRatio",
+        "iLikeRatio",
+    ):
+        assert non_schema not in entry
+    # Schema values still land, including the nested shapes.
+    assert entry["distinctCount"] == 10
+    assert entry["histogram"] == {"boundaries": ["a", "b"], "frequencies": [3, 7]}
+    assert entry["cardinalityDistribution"] == {
+        "categories": ["a", "b"],
+        "counts": [3, 7],
+        "percentages": [0.3, 0.7],
+    }
+    # Only conforming custom metrics survive: a null value, a non-string
+    # name and a boolean value are dropped; an extra key is stripped.
+    assert entry["customMetrics"] == [
+        {"name": "ok", "value": 1.5},
+        {"name": "extra", "value": 3},
+    ]
+    # The non-schema metrics are still computed in-memory on the stat row.
+    assert column_stat.count_in_set == 2
+    assert column_stat.like_count == 1
+    # The table profile keeps its executionSource.
+    assert record.table_profile["executionSource"] == {
         "databaseName": "analytics",
         "schemaName": "public",
         "tableName": "orders",
