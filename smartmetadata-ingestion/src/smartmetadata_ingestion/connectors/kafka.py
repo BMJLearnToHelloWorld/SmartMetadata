@@ -732,11 +732,13 @@ class KafkaSource:
             config["schemaRegistryURL"] = registry
         if raw.get("saslUsername"):
             config["saslUsername"] = raw["saslUsername"]
-        if self._config.store_connection_secrets:
-            if raw.get("saslPassword"):
-                config["saslPassword"] = raw["saslPassword"]
-            if raw.get("basicAuthUserInfo"):
-                config["basicAuthUserInfo"] = raw["basicAuthUserInfo"]
+        # Always carried: pin sends the full connection on every service upsert,
+        # and the server's PUT unmask restores only secrets present in the
+        # incoming config — omitting them strips the stored secrets (§8.3).
+        if raw.get("saslPassword"):
+            config["saslPassword"] = raw["saslPassword"]
+        if raw.get("basicAuthUserInfo"):
+            config["basicAuthUserInfo"] = raw["basicAuthUserInfo"]
         suffix = raw.get("schemaRegistryTopicSuffixName")
         if suffix is not None and str(suffix) != "":
             config["schemaRegistryTopicSuffixName"] = str(suffix)

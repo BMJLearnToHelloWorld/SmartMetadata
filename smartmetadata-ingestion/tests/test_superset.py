@@ -72,7 +72,7 @@ def test_superset_source_emits_service_charts_dashboards() -> None:
     assert service.connection["config"]["hostPort"] == "http://superset:8088"
     assert service.connection["config"]["connection"]["provider"] == "db"
     assert service.connection["config"]["connection"]["username"] == "admin"
-    assert "password" not in service.connection["config"]["connection"]
+    assert service.connection["config"]["connection"]["password"] == "secret"
     charts = [r for r in records if isinstance(r, ChartRecord)]
     dashboards = [r for r in records if isinstance(r, DashboardRecord)]
     assert [c.name for c in charts] == ["1"]

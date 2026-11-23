@@ -323,18 +323,24 @@ class SupersetSource:
 
 
 def _public_superset_connection(raw: dict[str, Any]) -> dict[str, Any]:
-    """Emit official connection shape; omit secrets unless store_connection_secrets."""
+    """Emit official connection shape; the password is always carried.
+
+    Pin sends the full connection on every service upsert — omitting it
+    strips the stored secret (§8.3).
+    """
     host = raw.get("hostPort") or raw.get("host_port")
     nested = raw.get("connection") if isinstance(raw.get("connection"), dict) else {}
     provider = nested.get("provider") or raw.get("provider") or "db"
     username = nested.get("username") or raw.get("username")
+    password = nested.get("password") or raw.get("password")
     out: dict[str, Any] = {"type": "Superset"}
     if host:
         out["hostPort"] = str(host)
     api: dict[str, Any] = {"provider": str(provider)}
     if username:
         api["username"] = str(username)
-    # password intentionally omitted from stored catalog connection by default
+    if password:
+        api["password"] = str(password)
     out["connection"] = api
     return out
 

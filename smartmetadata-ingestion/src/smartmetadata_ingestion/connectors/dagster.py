@@ -214,7 +214,6 @@ class DagsterSource:
     def _service_record(self) -> PipelineServiceRecord:
         connection_config = _public_dagster_connection(
             dict(self._config.connection or {}),
-            store_secrets=self._config.store_connection_secrets,
         )
         return PipelineServiceRecord(
             name=self._config.service_name,
@@ -254,13 +253,17 @@ class DagsterSource:
         return selected
 
 
-def _public_dagster_connection(raw: dict[str, Any], *, store_secrets: bool = False) -> dict[str, Any]:
-    """Emit official dagsterConnection shape; omit token unless store_connection_secrets."""
+def _public_dagster_connection(raw: dict[str, Any]) -> dict[str, Any]:
+    """Emit official dagsterConnection shape; the token is always carried.
+
+    Pin sends the full connection on every service upsert — omitting the
+    token strips the stored secret (§8.3).
+    """
     out: dict[str, Any] = {"type": "Dagster"}
     host = raw.get("host") or raw.get("hostPort") or raw.get("host_port")
     if host:
         out["host"] = str(host)
-    if store_secrets and raw.get("token") is not None:
+    if raw.get("token") is not None:
         out["token"] = str(raw["token"])
     timeout = raw.get("timeout")
     if timeout is not None:

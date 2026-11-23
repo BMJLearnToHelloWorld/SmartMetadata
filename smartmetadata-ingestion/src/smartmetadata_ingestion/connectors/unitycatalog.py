@@ -166,7 +166,6 @@ class UnityCatalogSource:
         connection = dbx.build_service_connection_config(
             service_type=self.SERVICE_TYPE,
             raw=self._config.connection or {},
-            store_secrets=self._config.store_connection_secrets,
         )
         return DatabaseServiceRecord(
             name=self._config.service_name,

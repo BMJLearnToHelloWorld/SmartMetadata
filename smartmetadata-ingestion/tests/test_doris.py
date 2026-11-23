@@ -226,7 +226,7 @@ def test_doris_service_connection_builder_carries_schema_keys() -> None:
         "connectionArguments": {"arg": "2"},
         "password": "secret",
     }
-    built = build_service_connection_config(raw=raw, store_secrets=True)
+    built = build_service_connection_config(raw=raw)
     assert built is not None
     config = built["config"]
     assert config["type"] == "Doris"
@@ -252,18 +252,18 @@ def test_doris_service_connection_builder_carries_schema_keys() -> None:
     assert config["password"] == "secret"
     assert "authType" not in config
 
-    unstored = build_service_connection_config(raw=raw, store_secrets=False)
-    assert unstored is not None
-    assert "password" not in unstored["config"]
-    assert unstored["config"]["sslConfig"] == {"caCertificate": "---CERT---"}
+    # The secret is always carried: pin sends the full connection on every
+    # service upsert, and omitting it strips the stored secret (§8.3).
+    rebuilt = build_service_connection_config(raw=raw)
+    assert rebuilt is not None
+    assert rebuilt["config"]["password"] == "secret"
+    assert rebuilt["config"]["sslConfig"] == {"caCertificate": "---CERT---"}
 
     # Empty dicts are dropped, like the MySQL builder's dict loop.
-    sparse = build_service_connection_config(
-        raw={"hostPort": "fe.example:9030", "sslConfig": {}}, store_secrets=False
-    )
+    sparse = build_service_connection_config(raw={"hostPort": "fe.example:9030", "sslConfig": {}})
     assert sparse is not None
     assert "sslConfig" not in sparse["config"]
-    assert build_service_connection_config(raw={}, store_secrets=True) is None
+    assert build_service_connection_config(raw={}) is None
 
 
 def test_doris_engine_table_types() -> None:

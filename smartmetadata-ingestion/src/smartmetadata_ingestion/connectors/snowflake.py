@@ -482,7 +482,6 @@ class SnowflakeSource:
     def _service_record(self) -> DatabaseServiceRecord:
         connection = snowflake_common.build_service_connection_config(
             raw=self._config.connection or {},
-            store_secrets=self._config.store_connection_secrets,
         )
         return DatabaseServiceRecord(
             name=self._config.service_name,

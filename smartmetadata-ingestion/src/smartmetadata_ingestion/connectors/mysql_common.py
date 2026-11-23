@@ -236,7 +236,6 @@ def test_live_connection(connection: dict[str, Any], *, connect=None) -> None:
 def build_service_connection_config(
     *,
     raw: dict[str, Any],
-    store_secrets: bool,
 ) -> dict[str, Any] | None:
     if not raw:
         return None
@@ -273,14 +272,17 @@ def build_service_connection_config(
     ):
         if isinstance(raw.get(key), dict) and raw.get(key):
             config[key] = dict(raw[key])
-    if store_secrets:
-        pwd = password_of(raw)
-        if pwd:
-            # Prefer authType password shape when present; else top-level password.
-            if isinstance(config.get("authType"), dict):
-                config["authType"] = {**config["authType"], "password": pwd}
-            else:
-                config["authType"] = {"password": pwd}
+    # Always carried: pin sends the full connection on every service upsert,
+    # and the server's PUT unmask restores only secrets present in the
+    # incoming config — a top-level password left out here strips the stored
+    # secret (§8.3). (authType itself is copied in the dict loop above.)
+    pwd = password_of(raw)
+    if pwd:
+        # Prefer authType password shape when present; else top-level password.
+        if isinstance(config.get("authType"), dict):
+            config["authType"] = {**config["authType"], "password": pwd}
+        else:
+            config["authType"] = {"password": pwd}
     return {"config": config}
 
 

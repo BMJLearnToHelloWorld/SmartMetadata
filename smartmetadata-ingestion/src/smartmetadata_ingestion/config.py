@@ -373,6 +373,11 @@ class SourceConfig(CamelModel):
     exclude_tables: list[str] = Field(default_factory=list)
     include_views: bool = True
     include_view_lineage: bool = False
+    # Retained for backward compatibility only: CamelModel forbids unknown
+    # fields (extra="forbid"), so stored pipeline configs that set this knob
+    # must still validate. It no longer affects service records — pin sends
+    # the full connection on every service upsert, and omitting the secret
+    # strips the stored secret on PUT (§8.3), so the secret is always carried.
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)
 

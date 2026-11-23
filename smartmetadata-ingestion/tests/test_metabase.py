@@ -69,7 +69,7 @@ def test_metabase_source_emits_service_charts_dashboards() -> None:
     assert service.service_type == "Metabase"
     assert service.connection["config"]["hostPort"] == "http://metabase:3000"
     assert service.connection["config"]["username"] == "admin@x"
-    assert "password" not in service.connection["config"]
+    assert service.connection["config"]["password"] == "secret"
     charts = [r for r in records if isinstance(r, ChartRecord)]
     dashboards = [r for r in records if isinstance(r, DashboardRecord)]
     assert [c.name for c in charts] == ["101", "102"]

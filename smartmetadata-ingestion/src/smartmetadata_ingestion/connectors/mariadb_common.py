@@ -243,7 +243,6 @@ def run_connection_test(connection: dict[str, Any]) -> list[str]:
 def build_service_connection_config(
     *,
     raw: dict[str, Any],
-    store_secrets: bool,
 ) -> dict[str, Any] | None:
     if not raw:
         return None
@@ -254,10 +253,12 @@ def build_service_connection_config(
     for key in ("hostPort", "username", "databaseName", "databaseSchema"):
         if raw.get(key) is not None and raw.get(key) != "":
             config[key] = raw[key]
-    if store_secrets:
-        pwd = password_of(raw)
-        if pwd:
-            config["password"] = pwd
+    # Always carried: pin sends the full connection on every service upsert,
+    # and the server's PUT unmask restores only secrets present in the
+    # incoming config — omitting the password strips the stored secret (§8.3).
+    pwd = password_of(raw)
+    if pwd:
+        config["password"] = pwd
     return {"config": config}
 
 

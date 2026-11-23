@@ -192,7 +192,6 @@ class RedpandaSource:
     def _service_record(self) -> MessagingServiceRecord:
         connection_config = _public_redpanda_connection(
             dict(self._config.connection or {}),
-            store_secrets=self._config.store_connection_secrets,
         )
         return MessagingServiceRecord(
             name=self._config.service_name,
@@ -243,8 +242,12 @@ class RedpandaSource:
         return selected
 
 
-def _public_redpanda_connection(raw: dict[str, Any], *, store_secrets: bool = False) -> dict[str, Any]:
-    """Emit official redpandaConnection shape; omit secrets unless store_connection_secrets."""
+def _public_redpanda_connection(raw: dict[str, Any]) -> dict[str, Any]:
+    """Emit official redpandaConnection shape; secrets are always carried.
+
+    Pin sends the full connection on every service upsert — omitting them
+    strips the stored secrets (§8.3).
+    """
     out: dict[str, Any] = {"type": "Redpanda"}
     bootstrap = raw.get("bootstrapServers") or raw.get("bootstrap_servers")
     if bootstrap:
@@ -258,11 +261,10 @@ def _public_redpanda_connection(raw: dict[str, Any], *, store_secrets: bool = Fa
         out["schemaRegistryURL"] = str(registry)
     if raw.get("saslUsername"):
         out["saslUsername"] = str(raw["saslUsername"])
-    if store_secrets:
-        if raw.get("saslPassword"):
-            out["saslPassword"] = str(raw["saslPassword"])
-        if raw.get("basicAuthUserInfo"):
-            out["basicAuthUserInfo"] = str(raw["basicAuthUserInfo"])
+    if raw.get("saslPassword"):
+        out["saslPassword"] = str(raw["saslPassword"])
+    if raw.get("basicAuthUserInfo"):
+        out["basicAuthUserInfo"] = str(raw["basicAuthUserInfo"])
     suffix = raw.get("schemaRegistryTopicSuffixName")
     if suffix is not None and str(suffix) != "":
         out["schemaRegistryTopicSuffixName"] = str(suffix)
