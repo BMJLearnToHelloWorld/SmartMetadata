@@ -1,0 +1,432 @@
+# DEMO / FAKE DATA — NOT REAL DATA.
+#
+# Lineage demo seed for the SmartMetadata lineage batch (lane L8).
+# Every entity lives under the `lineage-demo` namespace and every name says
+# "demo" (or is an obviously fabricated jaffle/shopify-style fixture), so this
+# graph can never be mistaken for production catalog content.
+#
+# Graph (all tables under database service `lineage-demo`, database `demo`,
+# schema `public`, plus the Doris mirror under service
+# `lineage-demo-doris`, database `demo`, schema `public`):
+#
+#   jaffle-style 2-hop chains (raw -> staging -> mart):
+#     raw_customers  -> stg_customers -> dim_customers
+#     raw_orders     -> stg_orders    -> fact_orders
+#     raw_payments   -> stg_payments  -> fact_orders
+#   shopify-style 3-hop chain (raw -> dim -> fact -> feature):
+#     shop_raw_customer -> shop_dim_customer -> fact_orders -> customer_features
+#   cross-type endpoint (table -> dashboard):
+#     fact_orders -> demo_orders_dashboard
+#   Doris mirror (MySQL mart -> Doris -> view -> mart):
+#     dim_customers -> doris_dim_customers -> doris_v_customer_orders
+#     fact_orders -> doris_fact_orders -> doris_v_customer_orders
+#     doris_v_customer_orders -> customer_features
+#
+# That gives multi-hop traversal in both directions (e.g. downstream from
+# shop_raw_customer reaches customer_features in 3 hops; upstream of
+# customer_features fans in to 8 MySQL tables + 3 Doris tables at depth 3),
+# 10 column-lineage edges, 2 pipeline-attributed edges, 1 dashboard endpoint,
+# and a Doris service + Doris view to exercise the Doris view-lineage path.
+# Deliberately NO cycle: unlike the upstream sample data (dim_customer <->
+# fact_orders), no edge points back, so depth-3 traversal terminates cleanly.
+#
+# Application (opt-in; NOT part of boot seeding — the boot seed stays
+# scripts/rebuild/static-smoke.yaml):
+#   docker compose -f docker/rebuild/docker-compose.yml exec ingest \
+#     smartmetadata-ingest run --config /config/lineage-demo.yaml
+# The file is mounted read-only into the ingest container at
+# /config/lineage-demo.yaml (see docker/rebuild/docker-compose.yml).
+# All creates are PUT upserts, so re-running is idempotent.
+#
+# Verification (no live stack needed for the parse half):
+#   python -m pytest smartmetadata-ingestion/tests/test_lineage_demo_yaml.py
+# Against a live stack, after applying:
+#   python scripts/rebuild/verify-lineage-demo.py
+# which asserts the traversal GET /v1/lineage/{type}/name/{fqn} at depths 0-3.
+# Do NOT assert the search-backed GET /v1/lineage/getLineage immediately after
+# seeding — it needs Elasticsearch indexing to catch up.
+workflow:
+  name: lineage-demo-static
+  type: metadata
+  failFast: true
+
+server:
+  hostPort: ${OM_API_URL:-http://localhost:8585/api}
+  auth:
+    type: login
+    email: ${OM_LOGIN_EMAIL:-admin@open-metadata.org}
+    password: ${OM_LOGIN_PASSWORD:-admin}
+
+source:
+  type: static
+  serviceName: lineage-demo
+  storeConnectionSecrets: false
+  records:
+    # --- Services for the non-table endpoints (must precede their entities) ---
+    - kind: pipelineService
+      name: lineage-demo-airflow
+      serviceType: Airflow
+      displayName: Lineage Demo Airflow (fake)
+      description: Fake pipeline service for the lineage demo graph. Demo data only.
+    - kind: dashboardService
+      name: lineage-demo-superset
+      serviceType: Superset
+      displayName: Lineage Demo Superset (fake)
+      description: Fake dashboard service for the lineage demo graph. Demo data only.
+    # Fake Doris database service. Doris is a supported product service type
+    # (no new connector); the connection is a placeholder — host does not
+    # exist, no password is stored. The service exists so the demo graph has
+    # a second database service with Doris tables and a Doris view.
+    - kind: databaseService
+      name: lineage-demo-doris
+      serviceType: Doris
+      displayName: Lineage Demo Doris (fake)
+      description: Fake Doris service for the lineage demo graph. Demo data only.
+      connection:
+        config:
+          type: Doris
+          scheme: doris
+          hostPort: lineage-demo-doris:9030
+          username: demo
+          supportsViewLineageExtraction: true
+
+    # --- Database / schema ---
+    - kind: database
+      name: demo
+    - kind: schema
+      name: public
+      database: lineage-demo.demo
+    - kind: database
+      name: demo
+      service: lineage-demo-doris
+    - kind: schema
+      name: public
+      database: lineage-demo-doris.demo
+
+    # --- Tables: jaffle-style raw -> staging -> mart ---
+    - kind: table
+      name: raw_customers
+      databaseSchema: lineage-demo.demo.public
+      description: Fake raw customers extract (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: customer_name
+          dataType: STRING
+        - name: email
+          dataType: STRING
+    - kind: table
+      name: stg_customers
+      databaseSchema: lineage-demo.demo.public
+      description: Fake staged customers (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: customer_name
+          dataType: STRING
+    - kind: table
+      name: dim_customers
+      databaseSchema: lineage-demo.demo.public
+      description: Fake customer dimension (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: customer_name
+          dataType: STRING
+        - name: email
+          dataType: STRING
+    - kind: table
+      name: raw_orders
+      databaseSchema: lineage-demo.demo.public
+      description: Fake raw orders extract (demo data).
+      columns:
+        - name: order_id
+          dataType: INT
+        - name: customer_id
+          dataType: INT
+        - name: order_date
+          dataType: STRING
+        - name: amount
+          dataType: DOUBLE
+    - kind: table
+      name: stg_orders
+      databaseSchema: lineage-demo.demo.public
+      description: Fake staged orders (demo data).
+      columns:
+        - name: order_id
+          dataType: INT
+        - name: customer_id
+          dataType: INT
+        - name: amount
+          dataType: DOUBLE
+    - kind: table
+      name: raw_payments
+      databaseSchema: lineage-demo.demo.public
+      description: Fake raw payments extract (demo data).
+      columns:
+        - name: payment_id
+          dataType: INT
+        - name: order_id
+          dataType: INT
+        - name: amount
+          dataType: DOUBLE
+        - name: payment_method
+          dataType: STRING
+    - kind: table
+      name: stg_payments
+      databaseSchema: lineage-demo.demo.public
+      description: Fake staged payments (demo data).
+      columns:
+        - name: payment_id
+          dataType: INT
+        - name: order_id
+          dataType: INT
+        - name: amount
+          dataType: DOUBLE
+    - kind: table
+      name: fact_orders
+      databaseSchema: lineage-demo.demo.public
+      description: Fake orders fact — the fan-in/fan-out hub of the demo graph (demo data).
+      columns:
+        - name: order_id
+          dataType: INT
+        - name: customer_id
+          dataType: INT
+        - name: amount
+          dataType: DOUBLE
+    # --- Tables: shopify-style 3-hop chain (raw -> dim -> fact -> feature) ---
+    - kind: table
+      name: shop_raw_customer
+      databaseSchema: lineage-demo.demo.public
+      description: Fake raw shop customer extract (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: first_name
+          dataType: STRING
+        - name: last_name
+          dataType: STRING
+    - kind: table
+      name: shop_dim_customer
+      databaseSchema: lineage-demo.demo.public
+      description: Fake shop customer dimension (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: full_name
+          dataType: STRING
+    - kind: table
+      name: customer_features
+      databaseSchema: lineage-demo.demo.public
+      description: Fake per-customer order features (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: order_count
+          dataType: INT
+        - name: total_amount
+          dataType: DOUBLE
+
+    # --- Tables: Doris mirror (MySQL mart -> Doris -> view -> mart) ---
+    - kind: table
+      name: doris_dim_customers
+      databaseSchema: lineage-demo-doris.demo.public
+      description: Fake Doris customer dimension, mirrored from dim_customers (demo data).
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: customer_name
+          dataType: STRING
+        - name: email
+          dataType: STRING
+    - kind: table
+      name: doris_fact_orders
+      databaseSchema: lineage-demo-doris.demo.public
+      description: Fake Doris orders fact, mirrored from fact_orders (demo data).
+      columns:
+        - name: order_id
+          dataType: INT
+        - name: customer_id
+          dataType: INT
+        - name: amount
+          dataType: DOUBLE
+    - kind: table
+      name: doris_v_customer_orders
+      databaseSchema: lineage-demo-doris.demo.public
+      tableType: View
+      description: Fake Doris view joining the Doris dimension and fact (demo data).
+      schemaDefinition: CREATE VIEW doris_v_customer_orders AS SELECT c.customer_id, COUNT(*) AS order_count, SUM(o.amount) AS total_amount FROM doris_dim_customers c JOIN doris_fact_orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id
+      columns:
+        - name: customer_id
+          dataType: INT
+        - name: order_count
+          dataType: INT
+        - name: total_amount
+          dataType: DOUBLE
+
+    # --- Pipelines (attributed on two edges below) ---
+    - kind: pipeline
+      name: demo_orders_etl
+      service: lineage-demo-airflow
+      description: Fake orders ETL pipeline for the lineage demo (demo data).
+    - kind: pipeline
+      name: demo_customer_etl
+      service: lineage-demo-airflow
+      description: Fake customer ETL pipeline for the lineage demo (demo data).
+
+    # --- Dashboard endpoint (+ one chart it embeds) ---
+    - kind: chart
+      name: demo_orders_by_day
+      service: lineage-demo-superset
+      chartType: Line
+      description: Fake orders-by-day chart for the lineage demo (demo data).
+    - kind: dashboard
+      name: demo_orders_dashboard
+      service: lineage-demo-superset
+      displayName: Demo Orders Dashboard (fake)
+      description: Fake dashboard fed by fact_orders (demo data).
+      charts:
+        - lineage-demo-superset.demo_orders_by_day
+
+    # --- Lineage edges ---
+    # Chain A: raw_customers -> stg_customers -> dim_customers (column lineage)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.raw_customers}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.stg_customers}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id, customer_name FROM raw_customers
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.raw_customers.customer_id]
+          toColumn: lineage-demo.demo.public.stg_customers.customer_id
+        - fromColumns: [lineage-demo.demo.public.raw_customers.customer_name]
+          toColumn: lineage-demo.demo.public.stg_customers.customer_name
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.stg_customers}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.dim_customers}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id, customer_name FROM stg_customers
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.stg_customers.customer_id]
+          toColumn: lineage-demo.demo.public.dim_customers.customer_id
+    # Chain B: raw_orders -> stg_orders -> fact_orders (pipeline-attributed)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.raw_orders}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.stg_orders}
+      source: QueryLineage
+      sqlQuery: SELECT order_id, customer_id, amount FROM raw_orders
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.stg_orders}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.fact_orders}
+      source: PipelineLineage
+      sqlQuery: SELECT order_id, customer_id, amount FROM stg_orders
+      pipeline: {type: pipeline, fullyQualifiedName: lineage-demo-airflow.demo_orders_etl}
+    # Chain C: raw_payments -> stg_payments -> fact_orders (manual edge)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.raw_payments}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.stg_payments}
+      source: QueryLineage
+      sqlQuery: SELECT payment_id, order_id, amount FROM raw_payments
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.stg_payments}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.fact_orders}
+      source: Manual
+      description: Demo manual edge — payments feed the orders fact (demo data).
+    # Chain D: shop_raw_customer -> shop_dim_customer -> fact_orders -> customer_features (3 hops)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.shop_raw_customer}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.shop_dim_customer}
+      source: DbtLineage
+      sqlQuery: SELECT customer_id, first_name || ' ' || last_name AS full_name FROM shop_raw_customer
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.shop_raw_customer.customer_id]
+          toColumn: lineage-demo.demo.public.shop_dim_customer.customer_id
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.shop_dim_customer}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.fact_orders}
+      source: PipelineLineage
+      pipeline: {type: pipeline, fullyQualifiedName: lineage-demo-airflow.demo_customer_etl}
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.shop_dim_customer.customer_id]
+          toColumn: lineage-demo.demo.public.fact_orders.customer_id
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.fact_orders}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.customer_features}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id, COUNT(*) AS order_count, SUM(amount) AS total_amount FROM fact_orders GROUP BY customer_id
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.fact_orders.customer_id]
+          toColumn: lineage-demo.demo.public.customer_features.customer_id
+        - fromColumns: [lineage-demo.demo.public.fact_orders.amount]
+          toColumn: lineage-demo.demo.public.customer_features.total_amount
+          function: SUM
+    # Cross-type endpoint: fact_orders -> dashboard
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.fact_orders}
+      toEntity: {type: dashboard, fqn: lineage-demo-superset.demo_orders_dashboard}
+      source: DashboardLineage
+      description: Demo dashboard lineage — the orders dashboard reads fact_orders (demo data).
+
+    # --- Doris subgraph: MySQL mart -> Doris -> view -> mart ---
+    # dim_customers -> doris_dim_customers (column lineage)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.dim_customers}
+      toEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_dim_customers}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id, customer_name, email FROM dim_customers
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.dim_customers.customer_id]
+          toColumn: lineage-demo-doris.demo.public.doris_dim_customers.customer_id
+        - fromColumns: [lineage-demo.demo.public.dim_customers.customer_name]
+          toColumn: lineage-demo-doris.demo.public.doris_dim_customers.customer_name
+        - fromColumns: [lineage-demo.demo.public.dim_customers.email]
+          toColumn: lineage-demo-doris.demo.public.doris_dim_customers.email
+    # fact_orders -> doris_fact_orders (column lineage)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo.demo.public.fact_orders}
+      toEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_fact_orders}
+      source: QueryLineage
+      sqlQuery: SELECT order_id, customer_id, amount FROM fact_orders
+      columnsLineage:
+        - fromColumns: [lineage-demo.demo.public.fact_orders.order_id]
+          toColumn: lineage-demo-doris.demo.public.doris_fact_orders.order_id
+        - fromColumns: [lineage-demo.demo.public.fact_orders.customer_id]
+          toColumn: lineage-demo-doris.demo.public.doris_fact_orders.customer_id
+        - fromColumns: [lineage-demo.demo.public.fact_orders.amount]
+          toColumn: lineage-demo-doris.demo.public.doris_fact_orders.amount
+    # doris_dim_customers -> doris_v_customer_orders (column lineage)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_dim_customers}
+      toEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_v_customer_orders}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id FROM doris_dim_customers
+      columnsLineage:
+        - fromColumns: [lineage-demo-doris.demo.public.doris_dim_customers.customer_id]
+          toColumn: lineage-demo-doris.demo.public.doris_v_customer_orders.customer_id
+    # doris_fact_orders -> doris_v_customer_orders (column lineage, SUM)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_fact_orders}
+      toEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_v_customer_orders}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id, COUNT(*) AS order_count, SUM(amount) AS total_amount FROM doris_fact_orders GROUP BY customer_id
+      columnsLineage:
+        - fromColumns: [lineage-demo-doris.demo.public.doris_fact_orders.customer_id]
+          toColumn: lineage-demo-doris.demo.public.doris_v_customer_orders.customer_id
+        - fromColumns: [lineage-demo-doris.demo.public.doris_fact_orders.amount]
+          toColumn: lineage-demo-doris.demo.public.doris_v_customer_orders.total_amount
+          function: SUM
+    # doris_v_customer_orders -> customer_features (Doris view feeds the MySQL mart)
+    - kind: lineage
+      fromEntity: {type: table, fqn: lineage-demo-doris.demo.public.doris_v_customer_orders}
+      toEntity: {type: table, fqn: lineage-demo.demo.public.customer_features}
+      source: QueryLineage
+      sqlQuery: SELECT customer_id, order_count, total_amount FROM doris_v_customer_orders
+      columnsLineage:
+        - fromColumns: [lineage-demo-doris.demo.public.doris_v_customer_orders.customer_id]
+          toColumn: lineage-demo.demo.public.customer_features.customer_id
+        - fromColumns: [lineage-demo-doris.demo.public.doris_v_customer_orders.order_count]
+          toColumn: lineage-demo.demo.public.customer_features.order_count
+        - fromColumns: [lineage-demo-doris.demo.public.doris_v_customer_orders.total_amount]
+          toColumn: lineage-demo.demo.public.customer_features.total_amount
+
+sink:
+  type: metadata-rest

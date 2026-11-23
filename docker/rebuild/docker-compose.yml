@@ -158,6 +158,11 @@ services:
     volumes:
       - ./ingest-entrypoint.sh:/ingest-entrypoint.sh:ro
       - ../../scripts/rebuild/static-smoke.yaml:/config/static-smoke.yaml:ro
+      # Lineage demo seed (opt-in only — boot seeding stays static-smoke.yaml).
+      # Apply after deploy: docker compose exec ingest
+      #   smartmetadata-ingest run --config /config/lineage-demo.yaml
+      # then verify: python scripts/rebuild/verify-lineage-demo.py
+      - ../../scripts/rebuild/lineage-demo.yaml:/config/lineage-demo.yaml:ro
     depends_on:
       openmetadata-server:
         condition: service_healthy
