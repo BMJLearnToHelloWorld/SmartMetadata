@@ -269,13 +269,21 @@ class MetabaseSource:
 
 
 def _public_metabase_connection(raw: dict[str, Any]) -> dict[str, Any]:
+    """Emit official metabaseConnection shape; secrets are always carried.
+
+    Pin sends the full connection on every service upsert — omitting them
+    strips the stored secrets (§8.3).
+    """
     out: dict[str, Any] = {"type": "Metabase"}
     host = raw.get("hostPort") or raw.get("host_port")
     if host:
         out["hostPort"] = str(host)
     if raw.get("username"):
         out["username"] = str(raw["username"])
-    # password / apiKey omitted from catalog connection by default
+    if raw.get("password"):
+        out["password"] = str(raw["password"])
+    if raw.get("apiKey") or raw.get("api_key"):
+        out["apiKey"] = str(raw.get("apiKey") or raw.get("api_key"))
     return out
 
 

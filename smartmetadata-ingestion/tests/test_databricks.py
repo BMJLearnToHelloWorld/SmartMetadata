@@ -110,7 +110,7 @@ def test_databricks_metadata_tree_and_view_lineage() -> None:
     assert service.service_type == "Databricks"
     assert service.connection["config"]["hostPort"].startswith("https://")
     assert service.connection["config"]["httpPath"].startswith("/sql/")
-    assert "token" not in service.connection["config"].get("authType", {})
+    assert service.connection["config"]["authType"]["token"] == "dapi-secret"
     tables = [r for r in records if isinstance(r, TableRecord)]
     assert [t.name for t in tables] == ["ORDERS", "ORDERS_V"]
     assert tables[0].columns[0].data_type == "BIGINT"

@@ -51,7 +51,7 @@ def test_dagster_source_emits_service_and_pipelines() -> None:
     assert service.service_type == "Dagster"
     assert service.connection["config"]["host"] == "http://dagster:3000"
     assert service.connection["config"]["timeout"] == 30
-    assert "token" not in service.connection["config"]
+    assert service.connection["config"]["token"] == "secret"
     pipelines = [r for r in records if isinstance(r, PipelineRecord)]
     assert [p.name for p in pipelines] == ["loc.job_a"]
 

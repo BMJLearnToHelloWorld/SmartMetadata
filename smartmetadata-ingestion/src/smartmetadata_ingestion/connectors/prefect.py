@@ -188,7 +188,6 @@ class PrefectSource:
     def _service_record(self) -> PipelineServiceRecord:
         connection_config = _public_prefect_connection(
             dict(self._config.connection or {}),
-            store_secrets=self._config.store_connection_secrets,
         )
         return PipelineServiceRecord(
             name=self._config.service_name,
@@ -241,8 +240,12 @@ class PrefectSource:
         return selected
 
 
-def _public_prefect_connection(raw: dict[str, Any], *, store_secrets: bool = False) -> dict[str, Any]:
-    """Emit official prefectConnection shape; omit secrets unless store_connection_secrets."""
+def _public_prefect_connection(raw: dict[str, Any]) -> dict[str, Any]:
+    """Emit official prefectConnection shape; secrets are always carried.
+
+    Pin sends the full connection on every service upsert — omitting them
+    strips the stored secrets (§8.3).
+    """
     out: dict[str, Any] = {"type": "Prefect"}
     host = raw.get("hostPort") or raw.get("host_port")
     if host:
@@ -259,15 +262,12 @@ def _public_prefect_connection(raw: dict[str, Any], *, store_secrets: bool = Fal
                 auth_out["accountId"] = str(account_id)
             if workspace_id is not None:
                 auth_out["workspaceId"] = str(workspace_id)
-            if store_secrets and api_key is not None:
+            if api_key is not None:
                 auth_out["apiKey"] = str(api_key)
         else:
             # serverAuth — authString may be empty
-            if store_secrets and auth_string is not None:
+            if auth_string is not None:
                 auth_out["authString"] = str(auth_string)
-            elif auth_string is not None and not store_secrets:
-                # still emit key presence? omit secret; empty object marks server mode
-                pass
             else:
                 auth_out = {}
             # Distinguish server vs cloud: if only authString key family, keep empty authType {}
@@ -278,10 +278,10 @@ def _public_prefect_connection(raw: dict[str, Any], *, store_secrets: bool = Fal
             auth_out["accountId"] = str(raw["accountId"])
         if raw.get("workspaceId") is not None:
             auth_out["workspaceId"] = str(raw["workspaceId"])
-        if store_secrets and raw.get("apiKey") is not None:
+        if raw.get("apiKey") is not None:
             auth_out["apiKey"] = str(raw["apiKey"])
     elif "authString" in raw or "auth_type" in raw:
-        if store_secrets and raw.get("authString") is not None:
+        if raw.get("authString") is not None:
             auth_out["authString"] = str(raw["authString"])
     if auth_raw is not None or auth_out or raw.get("accountId") or "authString" in raw:
         out["authType"] = auth_out

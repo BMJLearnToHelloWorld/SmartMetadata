@@ -103,7 +103,7 @@ def test_s3_source_emits_service_and_nested_containers() -> None:
     assert service.service_type == "S3"
     assert service.connection["config"]["awsConfig"]["awsRegion"] == "us-east-1"
     assert service.connection["config"]["awsConfig"]["awsAccessKeyId"] == "AKIA"
-    assert "awsSecretAccessKey" not in service.connection["config"]["awsConfig"]
+    assert service.connection["config"]["awsConfig"]["awsSecretAccessKey"] == "secret"
     assert service.connection["config"]["bucketNames"] == ["departments", "transactions"]
     containers = [r for r in records if isinstance(r, ContainerRecord)]
     assert [c.name for c in containers] == ["departments", "engineering", "transactions"]

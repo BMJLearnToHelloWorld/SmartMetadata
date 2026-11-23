@@ -287,7 +287,6 @@ def build_service_connection_config(
     *,
     service_type: str,
     raw: dict[str, Any],
-    store_secrets: bool,
 ) -> dict[str, Any] | None:
     if not raw:
         return None
@@ -304,16 +303,12 @@ def build_service_connection_config(
     ):
         if raw.get(key) is not None and raw.get(key) != "":
             config[key] = raw[key]
+    # Always carried whole: pin sends the full connection on every service
+    # upsert, and the server's PUT unmask restores only secrets present in
+    # the incoming config — redacting the token strips the stored secret (§8.3).
     auth = raw.get("authType")
-    if isinstance(auth, dict):
-        redacted = dict(auth)
-        if not store_secrets:
-            for secret_key in ("token", "clientSecret", "azureClientSecret"):
-                redacted.pop(secret_key, None)
-        if redacted:
-            config["authType"] = redacted
-        elif store_secrets and auth:
-            config["authType"] = auth
+    if isinstance(auth, dict) and auth:
+        config["authType"] = dict(auth)
     return {"config": config}
 
 

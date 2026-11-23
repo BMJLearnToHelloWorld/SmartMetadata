@@ -363,7 +363,7 @@ class S3Source:
 
     def _service_record(self) -> StorageServiceRecord:
         raw = dict(self._config.connection or {})
-        connection_config = _public_s3_connection(raw, store_secrets=self._config.store_connection_secrets)
+        connection_config = _public_s3_connection(raw)
         return StorageServiceRecord(
             name=self._config.service_name,
             service_type="S3",
@@ -401,8 +401,12 @@ class S3Source:
         return selected
 
 
-def _public_s3_connection(raw: dict[str, Any], *, store_secrets: bool = False) -> dict[str, Any]:
-    """Emit official s3Connection shape; omit secrets unless store_connection_secrets."""
+def _public_s3_connection(raw: dict[str, Any]) -> dict[str, Any]:
+    """Emit official s3Connection shape; secrets are always carried.
+
+    Pin sends the full connection on every service upsert — omitting them
+    strips the stored secrets (§8.3).
+    """
     out: dict[str, Any] = {"type": "S3"}
     aws_raw = raw.get("awsConfig") if isinstance(raw.get("awsConfig"), dict) else None
     if aws_raw is None and (raw.get("awsRegion") or raw.get("awsAccessKeyId")):
@@ -415,13 +419,12 @@ def _public_s3_connection(raw: dict[str, Any], *, store_secrets: bool = False) -
         key = aws_raw.get("awsAccessKeyId") or aws_raw.get("aws_access_key_id")
         if key:
             aws["awsAccessKeyId"] = str(key)
-        if store_secrets:
-            secret = aws_raw.get("awsSecretAccessKey") or aws_raw.get("aws_secret_access_key")
-            if secret:
-                aws["awsSecretAccessKey"] = str(secret)
-            token = aws_raw.get("awsSessionToken") or aws_raw.get("aws_session_token")
-            if token:
-                aws["awsSessionToken"] = str(token)
+        secret = aws_raw.get("awsSecretAccessKey") or aws_raw.get("aws_secret_access_key")
+        if secret:
+            aws["awsSecretAccessKey"] = str(secret)
+        token = aws_raw.get("awsSessionToken") or aws_raw.get("aws_session_token")
+        if token:
+            aws["awsSessionToken"] = str(token)
         for src, dest in (
             ("endPointURL", "endPointURL"),
             ("endpoint_url", "endPointURL"),

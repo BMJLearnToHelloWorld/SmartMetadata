@@ -209,7 +209,6 @@ def test_redshift_connection_config_includes_system_profile_flag() -> None:
             "supportsSystemProfile": True,
             "supportsProfiler": True,
         },
-        store_secrets=False,
     )
     assert conn is not None
     assert conn["config"]["supportsSystemProfile"] is True

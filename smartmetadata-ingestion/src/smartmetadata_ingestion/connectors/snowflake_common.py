@@ -257,7 +257,6 @@ def run_connection_test(connection: dict[str, Any]) -> list[str]:
 def build_service_connection_config(
     *,
     raw: dict[str, Any],
-    store_secrets: bool,
 ) -> dict[str, Any] | None:
     if not raw:
         return None
@@ -307,13 +306,15 @@ def build_service_connection_config(
     ):
         if isinstance(raw.get(key), dict) and raw.get(key):
             config[key] = dict(raw[key])
-    if store_secrets:
-        if raw.get("password"):
-            config["password"] = str(raw["password"])
-        if raw.get("privateKey"):
-            config["privateKey"] = str(raw["privateKey"])
-        if raw.get("snowflakePrivatekeyPassphrase"):
-            config["snowflakePrivatekeyPassphrase"] = str(raw["snowflakePrivatekeyPassphrase"])
+    # Always carried: pin sends the full connection on every service upsert,
+    # and the server's PUT unmask restores only secrets present in the
+    # incoming config — omitting them strips the stored secrets (§8.3).
+    if raw.get("password"):
+        config["password"] = str(raw["password"])
+    if raw.get("privateKey"):
+        config["privateKey"] = str(raw["privateKey"])
+    if raw.get("snowflakePrivatekeyPassphrase"):
+        config["snowflakePrivatekeyPassphrase"] = str(raw["snowflakePrivatekeyPassphrase"])
     return {"config": config}
 
 

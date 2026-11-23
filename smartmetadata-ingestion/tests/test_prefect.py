@@ -69,7 +69,7 @@ def test_prefect_source_emits_service_and_pipelines() -> None:
     auth = service.connection["config"]["authType"]
     assert auth["accountId"] == "acct-1"
     assert auth["workspaceId"] == "ws-1"
-    assert "apiKey" not in auth
+    assert auth["apiKey"] == "secret-key"
     pipelines = [r for r in records if isinstance(r, PipelineRecord)]
     assert [p.name for p in pipelines] == ["etl_daily"]
     assert pipelines[0].display_name == "ETL Daily"
