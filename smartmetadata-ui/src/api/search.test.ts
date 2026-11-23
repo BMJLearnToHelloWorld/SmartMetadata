@@ -9,6 +9,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  SEARCH_EXCLUDE_SOURCE_FIELDS,
+  entityTypeCountsFromPage,
   escapeESReservedCharacters,
   getNLPEnabledStatus,
   getReindexFailures,
@@ -18,6 +20,7 @@ import {
   postAggregateFieldOptions,
   postExactAggregateFieldOptions,
   searchAssets,
+  searchEntityTypeCounts,
   searchQueries,
 } from './search';
 
@@ -63,6 +66,15 @@ describe('searchAssets', () => {
     expect(url).toContain('sort_order=desc');
   });
 
+  it('sends explain through as given (pin: ExploreUtils passes showRankingDetails; axios serializes false)', async () => {
+    await searchAssets('orders', 0, 15, { explain: true });
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('explain=true');
+    await searchAssets('orders', 0, 15, { explain: false });
+    expect(String(vi.mocked(fetch).mock.calls[1][0])).toContain('explain=false');
+    await searchAssets('orders', 0, 15);
+    expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('explain=');
+  });
+
   it('sends deleted only when showDeleted opts in', async () => {
     await searchAssets('orders', 0, 15, { deleted: true });
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('deleted=true');
@@ -94,6 +106,47 @@ describe('searchAssets', () => {
     expect(page.hits[0]?.name).toBe('orders');
   });
 
+  it('nlqSearch forwards query_filter like pin (D11)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [{ _source: { name: 'orders', fullyQualifiedName: 'svc.db.schema.orders', entityType: 'table' } }],
+          },
+        }),
+      ),
+    );
+    const filter = JSON.stringify({ query: { bool: { must: [] } } });
+    await nlqSearch('top selling products', 0, 10, { index: 'dataAsset', query_filter: filter });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.searchParams.get('query_filter')).toBe(filter);
+    await nlqSearch('top selling products', 0, 10, { index: 'dataAsset' });
+    const bareUrl = new URL(String(vi.mocked(fetch).mock.calls[1][0]));
+    expect(bareUrl.searchParams.has('query_filter')).toBe(false);
+  });
+
+  it('nlqSearch forwards explain as given (pin: showRankingDetails serialized; false becomes explain=false)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [{ _source: { name: 'orders', fullyQualifiedName: 'svc.db.schema.orders', entityType: 'table' } }],
+          },
+        }),
+      ),
+    );
+    await nlqSearch('top selling products', 0, 10, { explain: true });
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('explain=true');
+    await nlqSearch('top selling products', 0, 10, { explain: false });
+    expect(String(vi.mocked(fetch).mock.calls[1][0])).toContain('explain=false');
+    await nlqSearch('top selling products', 0, 10);
+    expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('explain=');
+  });
+
   it('getNLPEnabledStatus returns true only for a true payload', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(true)));
     expect(await getNLPEnabledStatus()).toBe(true);
@@ -121,6 +174,122 @@ describe('searchAssets', () => {
     await searchAssets('orders', 0, 20);
     const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
     expect(url.searchParams.has('query_filter')).toBe(false);
+  });
+
+  it('omits the Explore request parameters unless the caller opts in (D32)', async () => {
+    await searchAssets('orders', 0, 20);
+    const plain = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(plain.searchParams.has('track_total_hits')).toBe(false);
+    expect(plain.searchParams.has('explain')).toBe(false);
+    expect(plain.searchParams.has('exclude_source_fields')).toBe(false);
+  });
+
+  it('sends track_total_hits, explain and repeated exclude_source_fields when Explore opts in (D32)', async () => {
+    await searchAssets('orders', 0, 20, {
+      trackTotalHits: true,
+      explain: false,
+      excludeSourceFields: [...SEARCH_EXCLUDE_SOURCE_FIELDS],
+    });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.searchParams.get('track_total_hits')).toBe('true');
+    expect(url.searchParams.get('explain')).toBe('false');
+    expect(url.searchParams.getAll('exclude_source_fields')).toEqual([
+      'columns',
+      'queries',
+      'columnNames',
+      'dataModel',
+    ]);
+  });
+});
+
+describe('searchEntityTypeCounts (D4)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: { total: { value: 0 }, hits: [] },
+          aggregations: {
+            'sterms#entityType': {
+              buckets: [
+                { key: 'table', doc_count: 4 },
+                { key: 'topic', doc_count: 2 },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('calls GET /v1/search/entityTypeCounts with the pin parameters', async () => {
+    const page = await searchEntityTypeCounts({
+      query: 'orders',
+      index: ['table', 'topic', 'dashboard'],
+      queryFilter: JSON.stringify({ query: { bool: { must: [] } } }),
+      deleted: true,
+      includeTopHit: true,
+    });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.pathname).toContain('/v1/search/entityTypeCounts');
+    expect(url.searchParams.get('q')).toBe('orders');
+    expect(url.searchParams.get('index')).toBe('table,topic,dashboard');
+    expect(JSON.parse(url.searchParams.get('query_filter') ?? '')).toEqual({
+      query: { bool: { must: [] } },
+    });
+    expect(url.searchParams.get('deleted')).toBe('true');
+    expect(url.searchParams.get('include_top_hit')).toBe('true');
+    expect(entityTypeCountsFromPage(page)).toEqual(
+      new Map([
+        ['table', 4],
+        ['topic', 2],
+      ]),
+    );
+  });
+
+  it('omits deleted and include_top_hit unless opted in, and reads an empty counts page as no counts', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ hits: { total: { value: 0 }, hits: [] }, aggregations: {} })),
+    );
+    const page = await searchEntityTypeCounts({ query: 'orders', index: ['table'] });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.searchParams.has('deleted')).toBe(false);
+    expect(url.searchParams.has('include_top_hit')).toBe(false);
+    expect(entityTypeCountsFromPage(page)).toEqual(new Map());
+  });
+
+  it('reads the plain entityType aggregation the server actually sends (no sterms# prefix)', async () => {
+    // SearchEntityTypeCounts.java:231-238 builds
+    // aggregations.entityType.buckets[] = { key, doc_count } with no
+    // engine prefix, unlike a raw /v1/search/query aggregation.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: { total: { value: 0 }, hits: [] },
+          aggregations: {
+            entityType: {
+              buckets: [
+                { key: 'table', doc_count: 4 },
+                { key: 'dashboard', doc_count: 1 },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    const page = await searchEntityTypeCounts({ query: 'orders', index: ['table', 'dashboard'] });
+    expect(entityTypeCountsFromPage(page)).toEqual(
+      new Map([
+        ['table', 4],
+        ['dashboard', 1],
+      ]),
+    );
   });
 });
 

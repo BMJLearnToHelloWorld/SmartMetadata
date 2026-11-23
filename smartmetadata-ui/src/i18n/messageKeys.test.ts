@@ -49,8 +49,12 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('explore.facets.certification');
     expect(keys).toContain('explore.facets.dataProduct');
     expect(keys).toContain('explore.sortPopularity');
-    expect(keys).toContain('explore.openContextCenter');
+    // B2-E5b: explore.openContextCenter went away with the residual
+    // Context Center empty state (D16) — the home.openContextCenter key
+    // for the home widget is a different key and stays.
     expect(keys).toContain('explore.glossaryTerms');
+    expect(keys).toContain('explore.rankingDetails');
+    expect(keys).toContain('explore.nlqAppliedFilters');
     expect(keys).toContain('asset.tabs.overview');
     expect(keys).toContain('asset.tabs.schema');
     expect(keys).toContain('asset.tabs.lineage');

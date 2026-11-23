@@ -12,11 +12,22 @@ import { computed } from 'vue';
  * wrapped in `<span data-highlight="true" class="text-highlighter">`.
  * Segments are rendered as elements rather than HTML, so entity
  * names never pass through `v-html`.
+ *
+ * `searchTerms` is the multi-term form (B2-E6, D19): the matched terms
+ * pulled out of the ES `highlight` fragments for the card
+ * (`catalog/exploreCard.ts` `highlightNeedles`), which follow ES
+ * tokenisation instead of the raw query string. Terms are tried
+ * longest-first so a short term never swallows a longer one that
+ * contains it.
  */
-const props = defineProps<{
-  text: string;
-  searchText?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    text: string;
+    searchText?: string;
+    searchTerms?: string[];
+  }>(),
+  { searchTerms: () => [] },
+);
 
 interface Segment {
   text: string;
@@ -28,16 +39,20 @@ function escapeRegExp(value: string): string {
 }
 
 const segments = computed<Segment[]>(() => {
-  if (!props.searchText) {
+  const terms = [...new Set([...(props.searchTerms ?? []), ...(props.searchText ? [props.searchText] : [])]
+    .map((term) => term.trim())
+    .filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!terms.length) {
     return [{ text: props.text, highlighted: false }];
   }
-  const regex = new RegExp(`(${escapeRegExp(props.searchText)})`, 'gi');
+  const regex = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
   const parts = props.text.split(regex);
+  const lowered = new Set(terms.map((term) => term.toLowerCase()));
   return parts
     .filter((part) => part !== '')
     .map((part) => ({
       text: part,
-      highlighted: part.toLowerCase() === props.searchText?.toLowerCase(),
+      highlighted: lowered.has(part.toLowerCase()),
     }));
 });
 </script>

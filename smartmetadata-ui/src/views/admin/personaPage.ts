@@ -239,7 +239,7 @@ export const LANDING_PAGE_SECTIONS: LandingPageSection[] = [
     titleKey: 'persona.landingSections.general',
     options: [
       { path: '/my-data', labelKey: 'persona.landingHome' },
-      { path: '/search', labelKey: 'persona.landingExplore' },
+      { path: '/explore', labelKey: 'persona.landingExplore' },
       { path: '/lineage', labelKey: 'persona.landingLineage' },
     ],
   },

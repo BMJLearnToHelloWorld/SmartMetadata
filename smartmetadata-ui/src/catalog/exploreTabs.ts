@@ -58,6 +58,16 @@ export interface ExploreTab {
   sortGroup: ExploreSortGroup;
   /** i18n key under explore.entity.* (tab labels reuse entity labels). */
   labelKey: string;
+  /**
+   * Override for the tab default sort id. Only the API tabs set it:
+   * official `getTabsInfo` gives API_COLLECTION/API_ENDPOINT
+   * `sortField: INITIAL_SORT_FIELD` (`totalVotes`) although their
+   * `sortingFields` are the tag group, which has no totalVotes —
+   * the pin quirk (SearchClassBase.ts:610-627). `defaultSortForTab`
+   * resolves such an id against every group when the tab's own group
+   * lacks it.
+   */
+  defaultSortId?: string;
 }
 
 export const EXPLORE_TABS: ExploreTab[] = [
@@ -77,8 +87,8 @@ export const EXPLORE_TABS: ExploreTab[] = [
   { index: 'glossaryTerm', slug: 'glossaryTerms', entityType: 'glossaryTerm', sortGroup: 'entity', labelKey: 'glossaryTerm' },
   { index: 'tag', slug: 'tags', entityType: 'tag', sortGroup: 'tag', labelKey: 'tag' },
   { index: 'dataProduct', slug: 'dataProducts', entityType: 'dataProduct', sortGroup: 'tag', labelKey: 'dataProduct' },
-  { index: 'apiCollection', slug: 'apiCollections', entityType: 'apiCollection', sortGroup: 'tag', labelKey: 'apiCollection' },
-  { index: 'apiEndpoint', slug: 'apiEndpoints', entityType: 'apiEndpoint', sortGroup: 'tag', labelKey: 'apiEndpoint' },
+  { index: 'apiCollection', slug: 'apiCollections', entityType: 'apiCollection', sortGroup: 'tag', labelKey: 'apiCollection', defaultSortId: 'popularity' },
+  { index: 'apiEndpoint', slug: 'apiEndpoints', entityType: 'apiEndpoint', sortGroup: 'tag', labelKey: 'apiEndpoint', defaultSortId: 'popularity' },
   { index: 'metric', slug: 'metrics', entityType: 'metric', sortGroup: 'tag', labelKey: 'metric' },
   { index: 'directory', slug: 'directories', entityType: 'directory', sortGroup: 'tag', labelKey: 'directory' },
   { index: 'file', slug: 'files', entityType: 'file', sortGroup: 'tag', labelKey: 'file' },
@@ -111,10 +121,25 @@ export function sortOptionsForTab(tab: ExploreTab | null): ExploreSortOption[] {
 /**
  * Official defaults: totalVotes for table/entity groups, displayName for
  * tag/column groups (TAGS_INITIAL_SORT_FIELD; column default is name,
- * not the first sorting field, which is dataType).
+ * not the first sorting field, which is dataType). A tab with a
+ * `defaultSortId` override (the API tabs) resolves it against its own
+ * group first, then against every group, so the pin quirk default of
+ * totalVotes survives although the tag group has no popularity option.
  */
 export function defaultSortForTab(tab: ExploreTab | null): ExploreSortOption {
   const options = sortOptionsForTab(tab);
+  if (tab?.defaultSortId) {
+    const inGroup = options.find((option) => option.id === tab.defaultSortId);
+    if (inGroup) {
+      return inGroup;
+    }
+    const known = Object.values(EXPLORE_SORT_GROUPS)
+      .flat()
+      .find((option) => option.id === tab.defaultSortId);
+    if (known) {
+      return known;
+    }
+  }
   const group = tab?.sortGroup ?? 'entity';
   const defaultId = group === 'tag' || group === 'column' ? 'name' : 'popularity';
   return options.find((option) => option.id === defaultId) ?? options[0];

@@ -24,7 +24,7 @@ import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTagVersionPath } from '@/catalog/versionPaths';
-import { openSearchHit } from '@/catalog/entityRoutes';
+import { lineageLocation, openSearchHit } from '@/catalog/entityRoutes';
 import {
   CERTIFICATION_CLASSIFICATION_NAME,
   getQueryFilterToExcludeTermsAndEntities,
@@ -207,6 +207,13 @@ function handleAssetSave(): void {
 function handlePreviewOpen(hit: SearchHit): void {
   if (!openSearchHit((to) => router.push(to), hit)) {
     previewAsset.value = hit;
+  }
+}
+
+// D25: the preview lineage entry navigates to the lineage page for the hit.
+function handlePreviewLineage(hit: SearchHit): void {
+  if (hit.fullyQualifiedName) {
+    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
   }
 }
 
@@ -642,7 +649,7 @@ onMounted(() => {
               {{ t('crud.close') }}
             </Button>
           </div>
-          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" />
+          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" @open-lineage="handlePreviewLineage" />
         </aside>
       </div>
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.tagAssets')" />
