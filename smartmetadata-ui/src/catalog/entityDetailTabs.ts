@@ -144,6 +144,10 @@ const API_ENDPOINT_TABS: EntityDetailTabDef[] = [
   { key: 'overview', labelKey: 'overview', slot: 'overview' },
   { key: 'endpoint', labelKey: 'endpoint', slot: 'endpoint' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  // L6: pin APIEndpointUtils mounts the lineage tab after activity
+  // (SCHEMA → ACTIVITY_FEED → LINEAGE → CONTRACT → CUSTOM_PROPERTIES);
+  // the product has no schema/contract tabs, so lineage sits here.
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 

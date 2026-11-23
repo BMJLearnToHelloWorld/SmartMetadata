@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
 import MetricDetailView from './MetricDetailView.vue';
 
 const confirmDelete = vi.fn();
@@ -24,7 +25,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountView() {
+async function mountView(extraPermissions: Array<{ operation: string; access: string }> = []) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
@@ -52,7 +53,7 @@ async function mountView() {
         // D-4 header gate: the delete flow under test needs Delete.
         return jsonResponse({
           resource: 'metric',
-          permissions: [{ operation: 'Delete', access: 'allow' }],
+          permissions: [{ operation: 'Delete', access: 'allow' }, ...extraPermissions],
         });
       }
       return new Response('not found', { status: 404 });
@@ -322,6 +323,25 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     // the graph itself is the canvas component's own concern).
     expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('passes the fetched EditLineage flag into the lineage tab canvas (L6)', async () => {
+    const { wrapper } = await mountView();
+    await flushPromises();
+    const canvas = wrapper.findComponent(LineageCanvas);
+    expect(canvas.exists()).toBe(true);
+    // The default stub grants Delete only, so the tab canvas is read-only.
+    expect(canvas.props('hasEditAccess')).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('passes hasEditAccess=true to the lineage tab canvas when EditLineage is allowed (L6)', async () => {
+    const { wrapper } = await mountView([{ operation: 'EditLineage', access: 'allow' }]);
+    await flushPromises();
+    const canvas = wrapper.findComponent(LineageCanvas);
+    expect(canvas.exists()).toBe(true);
+    expect(canvas.props('hasEditAccess')).toBe(true);
     wrapper.unmount();
   });
 
