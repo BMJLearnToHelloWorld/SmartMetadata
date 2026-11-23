@@ -50,6 +50,12 @@ describe('entityDetailTabs', () => {
     expect(tab?.residual).toBeUndefined();
   });
 
+  it('wires metric assets to its real slot now that getMetricAssets is served (B2-G1)', () => {
+    const tab = entityDetailTabDef('metric', 'assets');
+    expect(tab?.slot).toBe('assets');
+    expect(tab?.residual).toBeUndefined();
+  });
+
   it('matches the official tab ids for the R2 entities', () => {
     expect(entityDetailTabDefs('database')?.map((tab) => tab.key)).toEqual([
       'schemas',

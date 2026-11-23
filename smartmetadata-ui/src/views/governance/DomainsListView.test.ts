@@ -121,6 +121,62 @@ describe('DomainsListView', () => {
     expect(wrapper.text()).toContain('Sales');
   });
 
+  describe('create permission gate (pin DomainListPage.tsx:153)', () => {
+    async function mountWithDomainOps(operations: Array<{ operation: string; access: string }>) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('/v1/permissions/domain')) {
+            return jsonResponse({ resource: 'domain', permissions: operations });
+          }
+          if (url.includes('/api/v1/domains')) {
+            return jsonResponse({
+              data: [
+                {
+                  id: 'd1',
+                  name: 'Marketing',
+                  fullyQualifiedName: 'Marketing',
+                  description: 'Growth',
+                  domainType: 'Consumer-aligned',
+                },
+              ],
+              paging: { total: 1 },
+            });
+          }
+          return new Response('not found', { status: 404 });
+        }),
+      );
+      const pinia = createPinia();
+      setActivePinia(pinia);
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          { path: '/governance/domains', name: 'governance-domains', component: DomainsListView },
+          { path: '/governance/domains/:fqn', name: 'governance-domain', component: { template: '<div>d</div>' } },
+        ],
+      });
+      await router.push('/governance/domains');
+      await router.isReady();
+      const wrapper = mount(DomainsListView, {
+        global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      });
+      await flushPromises();
+      await flushPromises();
+      return wrapper;
+    }
+
+    it('shows the create button with a domain Create grant', async () => {
+      const wrapper = await mountWithDomainOps([{ operation: 'Create', access: 'allow' }]);
+      expect(wrapper.find('[data-testid="create-domain"]').exists()).toBe(true);
+    });
+
+    it('hides the create button without a domain Create grant', async () => {
+      const wrapper = await mountWithDomainOps([]);
+      expect(wrapper.find('[data-testid="create-domain"]').exists()).toBe(false);
+    });
+  });
+
   describe('view toggle (B-10)', () => {
     async function mountView() {
       const pinia = createPinia();
