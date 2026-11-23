@@ -19,6 +19,7 @@ import {
   defaultSortForTab,
   exploreSortFromQuery,
   exploreTabFromQuery,
+  facetsForTab,
   sortOptionsForTab,
   type ExploreSort,
   type ExploreTab,
@@ -36,7 +37,7 @@ import {
   type EstateNode,
 } from '@/catalog/browseEstate';
 import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
-import { CHIP_FACET_IDS, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { NULL_OPTION_KEY, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
@@ -49,6 +50,8 @@ import {
   filtersToQuery,
   hasActiveFilters,
   isIndexNotFoundError,
+  mergeQueryFilters,
+  nullExistsQueryFilter,
   pageFromQuery,
   pageSizeFromQuery,
   sortField,
@@ -99,6 +102,16 @@ const filters = computed(() => filtersFromQuery(route.query));
 const queryFilter = computed(() =>
   typeof route.query.query_filter === 'string' ? route.query.query_filter : undefined,
 );
+/**
+ * The filter sent to the server: the saved `query_filter` from the URL
+ * plus the "No X" (must_not.exists) clauses for the active filters (pin
+ * ExplorePureUtils.getExploreQueryFilterMust). The URL keeps only the
+ * facet params and the saved filter; the null clauses are derived, never
+ * written back to the URL.
+ */
+const effectiveQueryFilter = computed(() =>
+  mergeQueryFilters(queryFilter.value, nullExistsQueryFilter(filters.value)),
+);
 const page = computed(() => pageFromQuery(route.query.page));
 const showDeleted = computed(() => route.query.showDeleted === 'true');
 const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, readGlobalPageSize(window.localStorage, authStore.user?.name)));
@@ -140,6 +153,58 @@ const chipFacets = computed<SearchFacet[]>(() => {
   return [...byId.values()];
 });
 watch(facets, (next) => facetOptions.rememberFacets(next));
+
+/**
+ * Per-tab filter sets (pin SearchClassBase.getDropDownItems): the chips
+ * change with the tab instead of the fixed 9 for every tab. The glossary
+ * Status chip only earns its place once some entity has left Unprocessed
+ * (pin ExploreQuickFilters hasReviewedStatus) — or while it holds a
+ * selection, so an active Status filter never hides itself.
+ */
+const chipFacetIds = computed<FacetId[]>(() => {
+  const ids = facetsForTab(activeTab.value);
+  if (!ids.includes('entityStatus')) {
+    return ids;
+  }
+  const hasStatusValue = (filters.value.entityStatus?.length ?? 0) > 0;
+  if (facetOptions.hasReviewedEntityStatus.value || hasStatusValue) {
+    return ids;
+  }
+  return ids.filter((id) => id !== 'entityStatus');
+});
+
+/**
+ * Active-filter tags cover the current tab's chips plus any filter that
+ * is active but belongs to another tab: tab switches keep filters (D30
+ * is a separate lane), so an off-tab filter must stay visible and
+ * removable instead of silently applied.
+ */
+const activeFilterIds = computed<FacetId[]>(() => {
+  const active = (Object.keys(filters.value) as FacetId[]).filter(
+    (id) => (filters.value[id]?.length ?? 0) > 0,
+  );
+  const inChips = chipFacetIds.value.filter((id) => active.includes(id));
+  const offTab = active.filter((id) => !chipFacetIds.value.includes(id));
+  return [...inChips, ...offTab];
+});
+
+// Pin ExploreQuickFilters hasReviewedStatus effect: re-check whether any
+// glossary entity has left Unprocessed whenever the glossary context
+// (tab, saved filter, deleted flag) changes.
+watch(
+  () =>
+    JSON.stringify({
+      tab: activeTab.value?.index ?? null,
+      queryFilter: queryFilter.value,
+      deleted: showDeleted.value,
+    }),
+  () => {
+    if (activeTab.value?.index === 'glossaryTerm') {
+      void facetOptions.checkEntityStatus();
+    }
+  },
+  { immediate: true },
+);
 const tabCounts = computed(() => {
   const facet = facets.value.find((item) => item.id === 'entityType');
   const counts = new Map<string, number>();
@@ -223,6 +288,14 @@ function facetTitle(id: FacetId): string {
   return t(`explore.facets.${id}`);
 }
 
+function activeFilterLabel(id: FacetId, value: string): string {
+  if (value === NULL_OPTION_KEY) {
+    return t('explore.noEntity', { entity: facetTitle(id) });
+  }
+  const display = id === 'entityType' ? entityLabel(value) : value;
+  return `${facetTitle(id)}: ${display}`;
+}
+
 function crumbLabel(label: string): string {
   return label.startsWith('explore.') ? t(label) : label;
 }
@@ -283,7 +356,16 @@ function onChipChange(id: FacetId, values: string[]): void {
 function onChipOpen(id: FacetId, open: boolean): void {
   if (open) {
     void facetOptions.loadOptions(id);
+  } else {
+    // A keystroke still pending when its dropdown closes would start a
+    // newer request than the next dropdown's initial fetch (pin
+    // ExploreQuickFilters onOpenChange).
+    facetOptions.cancelSearch();
   }
+}
+
+function onChipSearch(id: FacetId, text: string): void {
+  facetOptions.searchOptions(id, text);
 }
 
 function onToggleFacet(id: FacetId, value: string): void {
@@ -490,7 +572,7 @@ async function runSearch(): Promise<void> {
       sortField: currentSort.value.field,
       sortOrder: currentSort.value.order,
       deleted: showDeleted.value,
-      query_filter: queryFilter.value,
+      query_filter: effectiveQueryFilter.value,
     });
     hits.value = pageResult.hits;
     total.value = pageResult.total;
@@ -549,7 +631,15 @@ watch(expandedKeys, (keys) => {
       @change="onTabChange"
     />
     <div class="explore__toolbar">
-      <ExploreFilterChips :facets="chipFacets" :filters="filters" @change="onChipChange" @open="onChipOpen" />
+      <ExploreFilterChips
+        :facets="chipFacets"
+        :filters="filters"
+        :facet-ids="chipFacetIds"
+        :searching-facet-ids="facetOptions.searchingFacets.value"
+        @change="onChipChange"
+        @open="onChipOpen"
+        @search="onChipSearch"
+      />
       <div class="explore__toolbar-end">
         <Select
           data-testid="explore-sort"
@@ -602,7 +692,7 @@ watch(expandedKeys, (keys) => {
       </div>
     </div>
     <Space v-if="hasActiveFilters(filters)" wrap class="explore__active">
-      <template v-for="id in CHIP_FACET_IDS" :key="id">
+      <template v-for="id in activeFilterIds" :key="id">
         <Tag
           v-for="value in filters[id] ?? []"
           :key="`${id}:${value}`"
@@ -610,7 +700,7 @@ watch(expandedKeys, (keys) => {
           :data-testid="`search-active-${id}-${value}`"
           @close="onToggleFacet(id, value)"
         >
-          {{ facetTitle(id) }}: {{ id === 'entityType' ? entityLabel(value) : value }}
+          {{ activeFilterLabel(id, value) }}
         </Tag>
       </template>
     </Space>

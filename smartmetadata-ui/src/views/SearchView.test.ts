@@ -521,7 +521,118 @@ describe('SearchView explore tabs (Stage 2)', () => {
   });
 });
 
-describe('SearchView chip options exclude the chip own filter (ADR:2026-11-11-explore-facet-self-exclusion)', () => {
+describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubSearch(statusBuckets: Array<{ key: string; doc_count: number }> = []) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/v1/search/aggregate' && init?.method === 'POST') {
+          return jsonResponse({
+            aggregations: { 'sterms#entityStatus': { buckets: statusBuckets } },
+          });
+        }
+        return jsonResponse(SEARCH_BODY);
+      }),
+    );
+  }
+
+  function chipTestIds(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
+    return wrapper
+      .findAllComponents(Select)
+      .map((select) => String(select.attributes('data-testid') ?? ''))
+      .filter((testId) => testId.startsWith('explore-chip-'));
+  }
+
+  it('shows the table-tab set without entityType or certification', async () => {
+    stubSearch();
+    const { wrapper } = await mountView({ tab: 'table' });
+    const ids = chipTestIds(wrapper);
+    expect(ids).toEqual([
+      'explore-chip-domain',
+      'explore-chip-dataProduct',
+      'explore-chip-owner',
+      'explore-chip-tagFqn',
+      'explore-chip-tier',
+      'explore-chip-service',
+      'explore-chip-serviceType',
+      'explore-chip-database',
+      'explore-chip-schema',
+      'explore-chip-column',
+      'explore-chip-tableType',
+      'explore-chip-columnDescriptionStatus',
+    ]);
+  });
+
+  it('shows only the four column-tab chips on the column tab', async () => {
+    stubSearch();
+    const { wrapper } = await mountView({ tab: 'tableColumn' });
+    expect(chipTestIds(wrapper)).toEqual([
+      'explore-chip-dataType',
+      'explore-chip-tableName',
+      'explore-chip-database',
+      'explore-chip-schema',
+    ]);
+  });
+
+  it('shows domains/classification on the tag tab', async () => {
+    stubSearch();
+    const { wrapper } = await mountView({ tab: 'tag' });
+    expect(chipTestIds(wrapper)).toEqual(['explore-chip-domain', 'explore-chip-classification']);
+  });
+
+  it('hides the glossary Status chip while every entity is Unprocessed', async () => {
+    stubSearch([{ key: 'Unprocessed', doc_count: 9 }]);
+    const { wrapper } = await mountView({ tab: 'glossaryTerm' });
+    expect(chipTestIds(wrapper)).toEqual([
+      'explore-chip-domain',
+      'explore-chip-owner',
+      'explore-chip-tagFqn',
+      'explore-chip-glossary',
+    ]);
+  });
+
+  it('shows the glossary Status chip once an entity left Unprocessed', async () => {
+    stubSearch([
+      { key: 'Unprocessed', doc_count: 9 },
+      { key: 'Approved', doc_count: 1 },
+    ]);
+    const { wrapper } = await mountView({ tab: 'glossaryTerm' });
+    expect(chipTestIds(wrapper)).toContain('explore-chip-entityStatus');
+  });
+
+  it('sends a "No owners" selection as must_not.exists in query_filter, never in q', async () => {
+    stubSearch();
+    const { wrapper } = await mountView({ q: 'orders' });
+    emitSelect(wrapper, 'explore-chip-owner', ['OM_NULL_FIELD']);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="search-active-owner-OM_NULL_FIELD"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="search-active-owner-OM_NULL_FIELD"]').text()).toBe('No Owners');
+    const urls = vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => new URL(String(input), 'http://localhost'));
+    const withNull = urls.find((url) =>
+      (url.searchParams.get('query_filter') ?? '').includes('ownerDisplayName'),
+    );
+    expect(withNull).toBeDefined();
+    expect(withNull?.searchParams.get('query_filter')).toContain('must_not');
+    expect(withNull?.searchParams.get('q')).not.toContain('ownerDisplayName');
+  });
+
+  it('keeps an off-tab filter visible as a removable tag', async () => {
+    stubSearch();
+    const { wrapper } = await mountView({ tableType: 'Regular' });
+    // The all-tab has no tableType chip, but the active filter must
+    // stay visible and removable instead of silently applied.
+    expect(chipTestIds(wrapper)).not.toContain('explore-chip-tableType');
+    const tag = wrapper.find('[data-testid="search-active-tableType-Regular"]');
+    expect(tag.exists()).toBe(true);
+    expect(tag.text()).toBe('Table Type: Regular');
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });
