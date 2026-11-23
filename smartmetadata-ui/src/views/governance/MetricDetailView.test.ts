@@ -139,6 +139,15 @@ describe('MetricDetailView', () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes('/api/v1/metrics/name/')) {
+          // L3: the embedded LineageCanvas fetches the same detail
+          // endpoint once per entity for its Layers-panel context
+          // (fields=domains,dataProducts,service). That call is not one
+          // of the page's loads, so it is answered separately and never
+          // counted; the count below still pins load() to exactly two
+          // runs (mount + retry).
+          if (url.includes('fields=domains%2CdataProducts%2Cservice')) {
+            return jsonResponse({ id: 'm1', fullyQualifiedName: 'kpi.mau', domains: [] });
+          }
           metricCalls += 1;
           if (metricCalls === 1) {
             return new Response('boom', { status: 500 });

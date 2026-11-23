@@ -5,12 +5,17 @@
  */
 
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import {
   DEFAULT_LINEAGE_CANVAS_CONFIG,
   normalizeLineageCanvasConfig,
   type LineageCanvasConfig,
+  type LineageLayer,
 } from '@/lineage/config';
+import {
+  LINEAGE_PLATFORM_VIEW_NONE,
+  type LineagePlatformView,
+} from '@/lineage/layers';
 import {
   EMPTY_LINEAGE_QUICK_FILTERS,
   normalizeLineageQuickFilters,
@@ -37,6 +42,18 @@ export const useLineageStore = defineStore('lineage', () => {
    * filter is a fetch-time selection, not a persisted preference.
    */
   const quickFilters = ref<LineageQuickFilterSelection[]>([...EMPTY_LINEAGE_QUICK_FILTERS]);
+  /**
+   * Layers-panel state, mirroring pin `useLineageStore` (`activeLayer`,
+   * `platformView`, `isColumnLevelLineage`, `isDQEnabled`): overlays are
+   * multi-select, platform views are one at a time and re-center the
+   * graph on the container entity. The settings `lineageLayer` seeds
+   * `activeLayer` (see the canvas `applyShellDefaults`); the panel is
+   * the only writer after that. In-memory only, like pin.
+   */
+  const activeLayer = ref<LineageLayer[]>([]);
+  const platformView = ref<LineagePlatformView>(LINEAGE_PLATFORM_VIEW_NONE);
+  const isColumnLevelLineage = computed(() => activeLayer.value.includes('ColumnLevelLineage'));
+  const isDQEnabled = computed(() => activeLayer.value.includes('DataObservability'));
 
   function hydrate(): void {
     if (hydrated.value) {
@@ -82,5 +99,51 @@ export const useLineageStore = defineStore('lineage', () => {
     quickFilters.value = normalizeLineageQuickFilters(next);
   }
 
-  return { config, hydrated, hydrate, applyDefaults, update, quickFilters, setQuickFilters };
+  /**
+   * Pin `useLineageStore.setActiveLayer`: selecting an overlay clears any
+   * platform view (the graph goes back to the asset view). Pin also clears
+   * traced columns when the column layer leaves; the product keeps no
+   * traced-columns store, so there is nothing to clear here.
+   */
+  function setActiveLayer(next: LineageLayer[]): void {
+    const deduped = [...new Set(next)];
+    if (
+      deduped.includes('ColumnLevelLineage') ||
+      deduped.includes('DataObservability')
+    ) {
+      platformView.value = LINEAGE_PLATFORM_VIEW_NONE;
+    }
+    activeLayer.value = deduped;
+  }
+
+  /** Pin `useLineageStore.updateActiveLayer`: union layers in, never out. */
+  function updateActiveLayer(layer: LineageLayer | LineageLayer[]): void {
+    // Unlike setActiveLayer, pin's update path does NOT reset the platform
+    // view — it only unions the layers in.
+    activeLayer.value = [
+      ...new Set([...activeLayer.value, ...(Array.isArray(layer) ? layer : [layer])]),
+    ];
+  }
+
+  /** Pin `useLineageStore.setPlatformView`. */
+  function setPlatformView(next: LineagePlatformView): void {
+    platformView.value = next;
+  }
+
+  return {
+    config,
+    hydrated,
+    hydrate,
+    applyDefaults,
+    update,
+    quickFilters,
+    setQuickFilters,
+    activeLayer,
+    platformView,
+    isColumnLevelLineage,
+    isDQEnabled,
+    setActiveLayer,
+    updateActiveLayer,
+    setPlatformView,
+  };
 });

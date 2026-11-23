@@ -11,9 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
   deleteEntityLineageByName,
+  exportLineageAsync,
   fetchEntityLineage,
   getDataQualityLineage,
   getPlatformLineage,
+  getLineageEdgeDetails,
+  isLineageNotFound,
   putEntityLineage,
   searchLineage,
 } from './lineage';
@@ -63,7 +66,7 @@ describe('lineage API', () => {
       downstreamDepth: 1,
     });
 
-    expect(body.entity?.id).toBe('center-id');
+    expect((body as { entity?: { id?: unknown } }).entity?.id).toBe('center-id');
     const { url, init } = lastFetch();
     expect(url).toContain('/api/v1/lineage/table/name/');
     expect(url).toContain(encodeURIComponent('svc.db."Sales Schema".orders'));
@@ -257,5 +260,60 @@ describe('lineage API', () => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(getDataQualityLineage({ fqn: '  ' })).rejects.toThrow(/fqn/i);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('GETs /v1/lineage/exportAsync with pin defaults (depths 1) and returns the job record', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ jobId: 'job-1', message: 'Export initiated successfully.' }), { status: 202 })),
+    );
+    const job = await exportLineageAsync({
+      fqn: 'svc.db.schema.orders',
+      entityType: 'table',
+      queryFilter: '{"query":{"bool":{"must":[]}}}',
+      startTime: 1000,
+      endTime: 2000,
+    });
+    expect(job).toEqual({ jobId: 'job-1', message: 'Export initiated successfully.' });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/exportAsync');
+    expect(url).toContain('fqn=svc.db.schema.orders');
+    expect(url).toContain('type=table');
+    expect(url).toContain('upstreamDepth=1');
+    expect(url).toContain('downstreamDepth=1');
+    expect(url).toContain('includeDeleted=false');
+    expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{"bool":{"must":[]}}}')}`);
+    expect(url).toContain('startTime=1000');
+    expect(url).toContain('endTime=2000');
+  });
+
+  it('rejects an empty FQN for async export without calling fetch', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(exportLineageAsync({ fqn: '  ' })).rejects.toThrow(/fqn/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('GETs /v1/lineage/getLineageEdge/{from}/{to} and returns response.edge', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ edge: { source: 'Manual', columnsLineage: [] } }), { status: 200 }),
+      ),
+    );
+    const edge = await getLineageEdgeDetails('from-id', 'to-id');
+    expect(edge).toEqual({ source: 'Manual', columnsLineage: [] });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/getLineageEdge/from-id/to-id');
+  });
+
+  it('rejects empty edge ids without calling fetch, and recognises a 404 ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(getLineageEdgeDetails('', 'to-id')).rejects.toThrow(/ids/i);
+    await expect(getLineageEdgeDetails('from-id', '')).rejects.toThrow(/ids/i);
+    expect(fetch).not.toHaveBeenCalled();
+    const { ApiError } = await import('./client');
+    expect(isLineageNotFound(new ApiError(404, '', 'Not found'))).toBe(true);
+    expect(isLineageNotFound(new ApiError(500, '', 'Server error'))).toBe(false);
+    expect(isLineageNotFound(new Error('boom'))).toBe(false);
   });
 });

@@ -11,16 +11,23 @@ import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
-import type { Connection, Edge, Node } from '@vue-flow/core';
+import type { Connection, Edge, Node, NodeComponent, NodeTypesObject } from '@vue-flow/core';
 import { columnBelongsToNode, columnLineageEdges } from '@/lineage/columnPorts';
+import type { LineageLayer } from '@/lineage/config';
+import {
+  type LineageEntityContext,
+  type LineagePlatformView,
+} from '@/lineage/layers';
 import { filterCanvasNodes } from '@/lineage/nodeChrome';
 import {
   layoutLineageGraph,
   lineageNodeNeighbors,
   lineageNodeSide,
+  type LineageGraphEdge,
   type LineageGraphModel,
   type LineageGraphNode,
 } from '@/lineage/graphModel';
+import LineageLayers from './LineageLayers.vue';
 import LineageNode, { type LineageNodeData } from './LineageNode.vue';
 import { captureLineagePng, lineagePngFileName } from '@/lineage/exportPng';
 import '@vue-flow/core/dist/style.css';
@@ -45,6 +52,20 @@ const props = withDefaults(
     /** Nodes whose children were loaded in a direction (pin expandPerformed). */
     expandedUpstreamIds?: string[];
     expandedDownstreamIds?: string[];
+    /**
+     * Pin `canEdit` (`EntityLineageCanvas`): editing (drag-connect, node
+     * menus, delete) is off without edit access, on a platform view, or
+     * for a service entity. The canvas computes it; the graph only
+     * renders it.
+     */
+    canEdit?: boolean;
+    /** Focus entity type (Layers panel gating). */
+    entityType?: string;
+    /** Focus entity context (Layers panel gating + platform views). */
+    entityContext?: LineageEntityContext;
+    /** Layers-panel state, from the lineage store. */
+    activeLayer?: LineageLayer[];
+    platformView?: LineagePlatformView;
   }>(),
   {
     variant: 'page',
@@ -57,6 +78,11 @@ const props = withDefaults(
     dqEdgeIds: () => [],
     expandedUpstreamIds: () => [],
     expandedDownstreamIds: () => [],
+    canEdit: true,
+    entityType: '',
+    entityContext: undefined,
+    activeLayer: () => [],
+    platformView: 'None',
   },
 );
 
@@ -66,18 +92,40 @@ const emit = defineEmits<{
   connect: [payload: { from: LineageGraphNode; to: LineageGraphNode }];
   'expand-children': [payload: { node: LineageGraphNode; direction: 'upstream' | 'downstream' }];
   'collapse-children': [payload: { node: LineageGraphNode; direction: 'upstream' | 'downstream' }];
+  'select-edge': [selection: LineageEdgeSelection];
+  'edit-lineage': [payload: { node: LineageGraphNode; direction: 'upstream' | 'downstream'; columnFqn?: string }];
+  'delete-node': [node: LineageGraphNode];
+  'delete-edge': [selection: LineageEdgeSelection];
+  'change-active-layer': [layers: LineageLayer[]];
+  'change-platform-view': [view: LineagePlatformView];
 }>();
+
+/** A selected edge: an entity edge, or one column mapping of an entity edge. */
+export interface LineageEdgeSelection {
+  edge: LineageGraphEdge;
+  isColumnEdge: boolean;
+  /** Column endpoints (column edges only). */
+  sourceHandle?: string;
+  targetHandle?: string;
+}
 
 const { t } = useI18n();
 const expandedIds = ref<string[]>([]);
 const selectedNodeId = ref<string | undefined>();
+const selectedEdge = ref<LineageEdgeSelection | undefined>();
 const fullscreen = ref(false);
 const layoutNonce = ref(0);
 /** Per-node "columns with lineage only" filter (pin nodeFilterState). */
 const columnsLineageOnlyIds = ref<string[]>([]);
 
-const nodeTypes = {
-  asset: markRaw(LineageNode),
+/**
+ * Custom node type registration. LineageNode takes LineageNodeData props,
+ * not Vue Flow's NodeProps, so the cast asserts it satisfies the node
+ * contract Vue Flow calls at runtime (verified by LineageGraph tests,
+ * which render the stubbed flow with these node types).
+ */
+const nodeTypes: NodeTypesObject = {
+  asset: markRaw(LineageNode) as unknown as NodeComponent,
 };
 
 const expandedSet = computed(() => new Set(expandedIds.value));
@@ -118,6 +166,11 @@ const nodes = computed<Node<LineageNodeData>[]>(() =>
         onExpandChildren: (direction) => emit('expand-children', { node, direction }),
         onCollapseChildren: (direction) => emit('collapse-children', { node, direction }),
         onToggleColumnsLineageOnly: () => toggleColumnsLineageOnly(node.id),
+        isNodeEditable: props.canEdit,
+        canDeleteNode: props.canEdit && !node.isCenter,
+        onEditLineage: (direction, columnFqn) =>
+          emit('edit-lineage', { node, direction, ...(columnFqn ? { columnFqn } : {}) }),
+        onDeleteNode: () => emit('delete-node', node),
       },
     };
   }),
@@ -170,7 +223,9 @@ const visibleColumnEdges = computed(() =>
 const edges = computed<Edge[]>(() => {
   const entityEdges = props.model.edges.map((edge) => {
     const highlighted =
-      props.highlightedEdgeIds.includes(edge.id) || props.dqEdgeIds.includes(edge.id);
+      props.highlightedEdgeIds.includes(edge.id) ||
+      props.dqEdgeIds.includes(edge.id) ||
+      selectedEdge.value?.edge.id === edge.id;
     return {
       id: edge.id,
       source: edge.source,
@@ -182,6 +237,7 @@ const edges = computed<Edge[]>(() => {
       type: 'smoothstep',
       markerEnd: MarkerType.ArrowClosed,
       class: highlighted ? 'lineage-edge--active' : undefined,
+      data: { isColumnEdge: false },
       style: {
         stroke: highlighted ? SM_COLOR_WARNING : SM_SURFACES.textQuaternary,
         strokeWidth: highlighted ? 2.5 : 2,
@@ -198,6 +254,7 @@ const edges = computed<Edge[]>(() => {
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     class: 'lineage-edge--column',
+    data: { isColumnEdge: true, sourceHandle: edge.sourceHandle, targetHandle: edge.targetHandle },
     style: {
       // Q-TH-4: read the managed CSS variable so a custom theme
       // primary color reaches column edges (Vue Flow applies this
@@ -222,6 +279,57 @@ function onNodeClick(payload: { node: Node<LineageNodeData> }): void {
     selectedNodeId.value = payload.node.data.id;
     emit('select-node', payload.node.data);
     emit('navigate', payload.node.data);
+  }
+}
+
+/**
+ * Edge click selects (never navigates): pin `onEdgeClick` opens the edge
+ * drawer; the product has no drawer, so the click only selects — the
+ * selection drives Delete/Backspace and the toolbar delete button. A
+ * column edge selects its parent entity edge plus the column pair.
+ */
+function onEdgeClick(payload: { edge: Edge }): void {
+  const edge = payload.edge;
+  const data = (edge.data ?? {}) as { isColumnEdge?: boolean; sourceHandle?: string; targetHandle?: string };
+  if (data.isColumnEdge) {
+    const parent = props.model.edges.find(
+      (item) => item.source === edge.source && item.target === edge.target,
+    );
+    if (!parent) {
+      return;
+    }
+    selectedEdge.value = {
+      edge: parent,
+      isColumnEdge: true,
+      ...(data.sourceHandle ? { sourceHandle: data.sourceHandle } : {}),
+      ...(data.targetHandle ? { targetHandle: data.targetHandle } : {}),
+    };
+  } else {
+    const found = props.model.edges.find((item) => item.id === edge.id);
+    if (!found) {
+      return;
+    }
+    selectedEdge.value = { edge: found, isColumnEdge: false };
+  }
+  emit('select-edge', selectedEdge.value);
+}
+
+/** Selected edge endpoints, for the toolbar delete button. */
+const selectedEdgeLabel = computed(() => {
+  const selection = selectedEdge.value;
+  if (!selection) {
+    return '';
+  }
+  const from = props.model.nodes.find((node) => node.id === selection.edge.source);
+  const to = props.model.nodes.find((node) => node.id === selection.edge.target);
+  const fromName = from?.displayName || from?.name || selection.edge.source;
+  const toName = to?.displayName || to?.name || selection.edge.target;
+  return t('lineage.selectedEdge', { from: fromName, to: toName });
+});
+
+function onDeleteSelectedEdge(): void {
+  if (selectedEdge.value) {
+    emit('delete-edge', selectedEdge.value);
   }
 }
 
@@ -312,7 +420,24 @@ watch(
     expandedIds.value = [];
     columnsLineageOnlyIds.value = [];
     selectedNodeId.value = undefined;
+    selectedEdge.value = undefined;
     layoutNonce.value += 1;
+  },
+);
+
+/**
+ * A deleted edge leaves the model on refetch; drop a selection that no
+ * longer names an edge, so the toolbar delete button cannot fire twice.
+ */
+watch(
+  () => props.model.edges,
+  (edges) => {
+    if (
+      selectedEdge.value &&
+      !edges.some((edge) => edge.id === selectedEdge.value?.edge.id)
+    ) {
+      selectedEdge.value = undefined;
+    }
   },
 );
 </script>
@@ -329,7 +454,7 @@ watch(
   >
     <div class="lineage-graph__toolbar">
       <Space wrap align="center">
-        <span class="lineage-graph__hint" data-testid="lineage-connect-hint">{{ t('lineage.connectHelp') }}</span>
+        <span v-if="canEdit" class="lineage-graph__hint" data-testid="lineage-connect-hint">{{ t('lineage.connectHelp') }}</span>
         <Select
           :value="selectedNodeId"
           allow-clear
@@ -355,6 +480,16 @@ watch(
             {{ fullscreen ? t('lineage.exitFullscreen') : t('lineage.fullscreen') }}
           </Button>
         </Tooltip>
+        <template v-if="selectedEdge && canEdit">
+          <span class="lineage-graph__hint" data-testid="lineage-selected-edge">{{ selectedEdgeLabel }}</span>
+          <Button
+            danger
+            data-testid="lineage-delete-selected-edge"
+            @click="onDeleteSelectedEdge"
+          >
+            {{ t('lineage.deleteSelectedEdge') }}
+          </Button>
+        </template>
       </Space>
     </div>
     <VueFlow
@@ -363,16 +498,27 @@ watch(
       :edges="edges"
       :node-types="nodeTypes"
       :nodes-draggable="true"
-      :nodes-connectable="true"
+      :nodes-connectable="canEdit"
       fit-view-on-init
       :min-zoom="0.3"
       :max-zoom="2"
       @node-click="onNodeClick"
+      @edge-click="onEdgeClick"
       @connect="onConnect"
     >
       <Background :color="SM_SURFACES.borderSecondary" :gap="18" :size="1" />
-      <Controls />
+      <Controls position="top-right" />
       <MiniMap pannable zoomable />
+      <div class="lineage-graph__layers">
+        <LineageLayers
+          :entity-type="entityType"
+          :entity-context="entityContext"
+          :active-layer="activeLayer"
+          :platform-view="platformView"
+          @change-active-layer="(layers) => emit('change-active-layer', layers)"
+          @change-platform-view="(view) => emit('change-platform-view', view)"
+        />
+      </div>
     </VueFlow>
   </div>
 </template>
@@ -411,6 +557,15 @@ watch(
   padding: 8px 10px;
   border-bottom: 1px solid var(--sm-border-secondary);
   background: var(--sm-bg-container);
+}
+/* Pin's Layers panel sits bottom-left on the canvas; the zoom controls
+ * moved to top-right so the two never overlap (minimap stays
+ * bottom-right). */
+.lineage-graph__layers {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 5;
 }
 .lineage-graph__find {
   min-width: 220px;

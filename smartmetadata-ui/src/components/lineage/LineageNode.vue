@@ -9,6 +9,7 @@ import { Tag } from 'ant-design-vue';
 import { Handle, Position } from '@vue-flow/core';
 import { entityTypeColor } from '@/catalog/searchHits';
 import type { LineageColumnPort, LineageGraphNode } from '@/lineage/graphModel';
+import LineageNodeMenu from './LineageNodeMenu.vue';
 
 export interface LineageNodeData extends LineageGraphNode {
   expanded?: boolean;
@@ -29,9 +30,17 @@ export interface LineageNodeData extends LineageGraphNode {
   lineageColumnFqns?: string[];
   /** Pin showDqTracing: this node is in the DQ lineage walk. */
   dqTraced?: boolean;
+  /** Pin `isNodeEditable`: the canvas can edit this node (canEdit gate). */
+  isNodeEditable?: boolean;
+  /** Pin LineageNodeMenu `canDelete`: deletable when editable and not the center node. */
+  canDeleteNode?: boolean;
   onExpandChildren?: (direction: 'upstream' | 'downstream') => void;
   onCollapseChildren?: (direction: 'upstream' | 'downstream') => void;
   onToggleColumnsLineageOnly?: () => void;
+  /** Pin `onSceneLineageEdit`: open the add-lineage popover for this node (and column). */
+  onEditLineage?: (direction: 'upstream' | 'downstream', columnFqn?: string) => void;
+  /** Pin `onSceneNodeRemove`: ask to delete this node. */
+  onDeleteNode?: () => void;
 }
 
 const props = defineProps<{
@@ -115,6 +124,14 @@ function onCollapse(direction: 'upstream' | 'downstream', event: Event): void {
   props.data.onCollapseChildren?.(direction);
 }
 
+function onEditLineage(direction: 'upstream' | 'downstream', columnFqn?: string): void {
+  props.data.onEditLineage?.(direction, columnFqn);
+}
+
+function onDeleteNode(): void {
+  props.data.onDeleteNode?.();
+}
+
 function columnClass(fqn: string): string {
   return props.data.highlightedColumns?.includes(fqn) ? 'lineage-node__column--active' : '';
 }
@@ -154,6 +171,12 @@ function columnClass(fqn: string): string {
       >
         {{ t('lineage.mappedColumns', { count: data.columns.length }) }}
       </button>
+      <LineageNodeMenu
+        v-if="data.isNodeEditable"
+        :can-delete="data.canDeleteNode"
+        @edit="(direction) => onEditLineage(direction)"
+        @delete="onDeleteNode"
+      />
     </div>
     <div class="lineage-node__body">
     <div class="lineage-node__name">{{ data.displayName || data.name }}</div>
@@ -179,6 +202,11 @@ function columnClass(fqn: string): string {
       >
         <Handle :id="column.fqn" type="target" :position="Position.Left" />
         <span class="lineage-node__column-name">{{ column.name }}</span>
+        <LineageNodeMenu
+          v-if="data.isNodeEditable"
+          :column-fqn="column.fqn"
+          @edit="(direction) => onEditLineage(direction, column.fqn)"
+        />
         <Handle :id="column.fqn" type="source" :position="Position.Right" />
       </div>
     </div>

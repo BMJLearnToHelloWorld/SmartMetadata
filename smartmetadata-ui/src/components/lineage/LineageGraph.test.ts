@@ -78,4 +78,62 @@ describe('LineageGraph', () => {
     await wrapper.get('[data-testid="lineage-fullscreen"]').trigger('click');
     expect(wrapper.get('[data-testid="lineage-graph"]').classes()).toContain('lineage-graph--fullscreen');
   });
+
+  it('renders the Layers panel bottom-left and hides the connect hint when editing is off', () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL, entityType: 'table', canEdit: false },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="lineage-layer-btn"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-connect-hint"]').exists()).toBe(false);
+    const editable = mount(LineageGraph, {
+      props: { model: MODEL, canEdit: true },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(editable.find('[data-testid="lineage-connect-hint"]').exists()).toBe(true);
+  });
+
+  it('selects an edge on edge-click and offers its delete, emitting select-edge/delete-edge', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="lineage-delete-selected-edge"]').exists()).toBe(false);
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const edge = MODEL.edges[0];
+    await flow.vm.$emit('edge-click', {
+      edge: { id: edge.id, source: edge.source, target: edge.target, data: { isColumnEdge: false } },
+    });
+    expect(wrapper.emitted('select-edge')?.[0]?.[0]).toEqual({ edge, isColumnEdge: false });
+    expect(wrapper.find('[data-testid="lineage-selected-edge"]').text()).toContain('Selected edge');
+    await wrapper.find('[data-testid="lineage-delete-selected-edge"]').trigger('click');
+    expect(wrapper.emitted('delete-edge')?.[0]?.[0]).toEqual({ edge, isColumnEdge: false });
+  });
+
+  it('selects a column edge as its parent edge plus the column pair', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const edge = MODEL.edges[0];
+    await flow.vm.$emit('edge-click', {
+      edge: {
+        id: `col:${edge.id}:0:0`,
+        source: edge.source,
+        target: edge.target,
+        data: {
+          isColumnEdge: true,
+          sourceHandle: 'svc.db.schema.raw_orders.id',
+          targetHandle: 'svc.db.schema.orders.id',
+        },
+      },
+    });
+    expect(wrapper.emitted('select-edge')?.[0]?.[0]).toEqual({
+      edge,
+      isColumnEdge: true,
+      sourceHandle: 'svc.db.schema.raw_orders.id',
+      targetHandle: 'svc.db.schema.orders.id',
+    });
+  });
 });
