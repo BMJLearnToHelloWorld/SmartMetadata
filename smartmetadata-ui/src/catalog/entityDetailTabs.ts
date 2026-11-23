@@ -151,6 +151,51 @@ const API_ENDPOINT_TABS: EntityDetailTabDef[] = [
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
+// D-TAB-2 (host lane + tab-mount lane): DriveService detail tabs. Pin tab
+// order per type (DirectoryDetailsUtils.tsx / FileDetailsUtils.tsx /
+// SpreadsheetDetailsUtils.tsx / WorksheetDetailsUtils.tsx, a3012259ca):
+// first tab → activity_feed → LINEAGE → contract → custom_properties.
+// The lineage entry is mounted here (L3d); the `#lineage` slot in
+// AssetDetailView renders `<LineageCanvas variant="tab">` for any tab with
+// slot `lineage`, and drive types are unflipped so the slot's fallback pane
+// renders it (PIN-MEMO.md §1.2). Contract is residual, as for every other
+// split type (no contract API is wired). File's schema tab is unconditional
+// in the product — pin adds it only when the file has columns; the schema
+// piece renders its own empty state for column-less files (bounded
+// divergence, PIN-MEMO.md §4 of the host lane).
+const DIRECTORY_TABS: EntityDetailTabDef[] = [
+  { key: 'children', labelKey: 'children', slot: 'children' },
+  { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
+  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
+];
+
+const FILE_TABS: EntityDetailTabDef[] = [
+  { key: 'overview', labelKey: 'overview', slot: 'overview' },
+  { key: 'schema', labelKey: 'schema', slot: 'schema' },
+  { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
+  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
+];
+
+const SPREADSHEET_TABS: EntityDetailTabDef[] = [
+  { key: 'worksheets', labelKey: 'worksheets', slot: 'worksheets' },
+  { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
+  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
+];
+
+const WORKSHEET_TABS: EntityDetailTabDef[] = [
+  { key: 'schema', labelKey: 'schema', slot: 'schema' },
+  { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
+  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
+];
+
 const OFFICIAL_TABS: Record<string, EntityDetailTabDef[]> = {
   table: TABLE_TABS,
   topic: TOPIC_TABS,
@@ -165,6 +210,10 @@ const OFFICIAL_TABS: Record<string, EntityDetailTabDef[]> = {
   metric: METRIC_TABS,
   apiCollection: API_COLLECTION_TABS,
   apiEndpoint: API_ENDPOINT_TABS,
+  directory: DIRECTORY_TABS,
+  file: FILE_TABS,
+  spreadsheet: SPREADSHEET_TABS,
+  worksheet: WORKSHEET_TABS,
 };
 
 /** True when the entity's tabs follow the official tab ids in this stage. */
@@ -189,11 +238,11 @@ export function isOfficiallySplit(entityType: string): boolean {
  * File's matches the official OVERVIEW id, so neither is preserved.
  * `hasSplitDefs` is whether the entity has split tab definitions
  * (`entityDetailTabDefs(...) !== null`), decided by the caller. The
- * directory/file/spreadsheet/worksheet branches are unreachable
- * while those types have no detail view (residual R-C4-DRIVE, which
- * is why no view-level test can execute them); the policy lives here
- * as a pure function so every branch is still locked by test rather
- * than trusted.
+ * directory/file/spreadsheet/worksheet branches below are the fallback
+ * policy for unsplit states: since the D-TAB-2 host lane split those
+ * types, they no longer fire through the view (which passes
+ * `hasSplitDefs: true` for them) and are kept — locked by direct-call
+ * tests — so a future unsplit state still preserves the right keys.
  */
 export function preservedTabKeys(entityType: string, hasSplitDefs: boolean): string[] {
   if (hasSplitDefs) {

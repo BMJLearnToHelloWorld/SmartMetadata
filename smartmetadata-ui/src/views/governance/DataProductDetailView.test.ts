@@ -27,6 +27,17 @@ function stubFetch(grantEditAll: boolean): void {
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes('/api/v1/dataProducts/name/marketing.churn/inputPorts')) {
+        return jsonResponse({
+          data: [
+            { id: 't1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+          ],
+          paging: { total: 1 },
+        });
+      }
+      if (url.includes('/api/v1/dataProducts/name/marketing.churn/outputPorts')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
       if (url.includes('/api/v1/dataProducts/dp1/assets/remove') && init?.method === 'PUT') {
         return jsonResponse({ status: 'success', numberOfRowsPassed: 1, successRequest: [] });
       }
@@ -158,6 +169,24 @@ describe('DataProductDetailView assets + tabs', () => {
     expect(removeCall).toBeDefined();
     wrapper.unmount();
   });
+
+  // Q-TAB-4 item 3 (host lane): the input/output ports tab renders after
+  // activity, with the pin port lists and counts.
+  it('renders the Input/Output Ports tab with the pin port lists', async () => {
+    stubFetch(true);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Input/Output Ports');
+    expect(wrapper.find('[data-testid="data-product-ports-panel"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="input-ports-heading"]').text()).toContain('Input ports (1)');
+    expect(wrapper.find('[data-testid="output-ports-heading"]').text()).toContain('Output ports (0)');
+    expect(wrapper.text()).toContain('orders');
+    const inputCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).includes('/dataProducts/name/marketing.churn/inputPorts'));
+    expect(inputCall).toBeDefined();
+    wrapper.unmount();
+  });
 });
 
 describe('DataProductDetailView persona tab customization (C-4)', () => {
@@ -245,7 +274,15 @@ describe('DataProductDetailView persona tab customization (C-4)', () => {
     await flushPromises();
     await flushPromises();
     await wrapper.vm.$nextTick();
-    expect(tabLabels(wrapper)).toEqual(['Overview', 'Assets', 'Activity', 'Custom Properties']);
+    // Q-TAB-4 (host lane): the default order gains Input/Output Ports
+    // after Activity (pin DataProductClassBase.ts:78-90).
+    expect(tabLabels(wrapper)).toEqual([
+      'Overview',
+      'Assets',
+      'Activity',
+      'Input/Output Ports',
+      'Custom Properties',
+    ]);
     wrapper.unmount();
   });
 

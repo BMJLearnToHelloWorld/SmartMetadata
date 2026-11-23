@@ -435,6 +435,88 @@ describe('asset entity writes', () => {
       'application/json-patch+json',
     );
   });
+
+  // D-TAB-2 (host lane): DriveService GETs go to the pin driveAPI
+  // segments; directory children and spreadsheet worksheets land in
+  // `children`, file/worksheet columns land in `schemaRows`.
+  it('maps DriveService GETs onto the drive segments with children and columns', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/drives/directories/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'dir-1',
+              name: 'docs',
+              fullyQualifiedName: 'drive.shared.docs',
+              service: { name: 'drive' },
+              children: [
+                { name: 'report.csv', type: 'file', fullyQualifiedName: 'drive.shared.docs.report.csv' },
+                { name: 'sub', type: 'directory', fullyQualifiedName: 'drive.shared.docs.sub' },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/drives/files/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'f-1',
+              name: 'report.csv',
+              fullyQualifiedName: 'drive.shared.docs.report.csv',
+              service: { name: 'drive' },
+              columns: [{ name: 'id', dataType: 'BIGINT' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/drives/spreadsheets/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 's-1',
+              name: 'budget',
+              fullyQualifiedName: 'drive.shared.budget',
+              service: { name: 'drive' },
+              worksheets: [{ name: 'Sheet1', type: 'worksheet', fullyQualifiedName: 'drive.shared.budget.Sheet1' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'w-1',
+            name: 'Sheet1',
+            fullyQualifiedName: 'drive.shared.budget.Sheet1',
+            service: { name: 'drive' },
+            columns: [{ name: 'amount', dataType: 'DECIMAL' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const directory = await fetchAssetDetail('directory', 'drive.shared.docs');
+    expect(directory.children?.map((child) => child.name)).toEqual(['report.csv', 'sub']);
+    expect(lastFetch().url).toContain('/api/v1/drives/directories/name/');
+    expect(lastFetch().url).toContain('children');
+
+    const file = await fetchAssetDetail('file', 'drive.shared.docs.report.csv');
+    expect(file.schemaRows).toEqual([{ key: 'id', name: 'id', dataType: 'BIGINT', indexPath: [0] }]);
+    expect(file.schemaLabel).toBe('Columns');
+    expect(lastFetch().url).toContain('/api/v1/drives/files/name/');
+    expect(lastFetch().url).toContain('columns');
+
+    const spreadsheet = await fetchAssetDetail('spreadsheet', 'drive.shared.budget');
+    expect(spreadsheet.children?.[0]).toMatchObject({ name: 'Sheet1', type: 'worksheet' });
+    expect(lastFetch().url).toContain('/api/v1/drives/spreadsheets/name/');
+    expect(lastFetch().url).toContain('worksheets');
+
+    const worksheet = await fetchAssetDetail('worksheet', 'drive.shared.budget.Sheet1');
+    expect(worksheet.schemaRows).toEqual([{ key: 'amount', name: 'amount', dataType: 'DECIMAL', indexPath: [0] }]);
+    expect(lastFetch().url).toContain('/api/v1/drives/worksheets/name/');
+    expect(lastFetch().url).toContain('rowCount');
+  });
 });
 
 describe('mapTags labelType', () => {
