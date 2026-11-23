@@ -9,9 +9,10 @@
  */
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
-import type { EntityRef } from '@/types/api';
+import type { EntityRef, SearchHit } from '@/types/api';
 import type { CreateDomainRequest, Domain } from '@/types/governance';
 import { apiRequest } from './client';
+import { searchAssets } from './search';
 import { addBulkAssets, removeBulkAssets, type BulkAssetResult } from './bulkAssets';
 import { mapCertification, mapTags } from './entities';
 
@@ -67,6 +68,79 @@ export function listDomains(query: ListDomainsQuery = {}): Promise<Paged<Domain>
       after: query.after,
     },
   }).then((payload) => parsePaged(payload, mapDomain));
+}
+
+/**
+ * G2 search (pin domainAPI.searchDomains, rest/domainAPI.ts:165): the ES
+ * domain index, same shape as G3's searchDataProducts — `searchAssets`
+ * with `index: 'domain'`, hits mapped back to Domain. Pin wraps the term
+ * in wildcards (`q=*<term>*`); the product's searchAssets already defaults
+ * an empty query to `*` and the ES query_string handles the term, so the
+ * term is passed as-is.
+ */
+export async function searchDomains(
+  query: string,
+  from = 0,
+  size = 25,
+): Promise<Paged<Domain>> {
+  const page = await searchAssets(query, from, size, { index: 'domain' });
+  return {
+    data: page.hits.flatMap((hit: SearchHit) => {
+      const domain = hitToDomain(hit);
+      return domain ? [domain] : [];
+    }),
+    total: page.total,
+  };
+}
+
+function hitToDomain(hit: SearchHit): Domain | null {
+  if (!hit.id && !hit.name) {
+    return null;
+  }
+  return {
+    id: hit.id ?? hit.fullyQualifiedName,
+    name: hit.name,
+    displayName: hit.displayName,
+    description: hit.description,
+    fullyQualifiedName: hit.fullyQualifiedName || hit.name,
+    domainType: hit.domainType || 'Source-aligned',
+    parent: hit.parent,
+    owners: hit.owners ?? [],
+    experts: [],
+    tags: hit.tags ?? [],
+    childrenCount: hit.childrenCount,
+  };
+}
+
+export interface DomainChildrenPage {
+  data: Domain[];
+  total?: number;
+}
+
+/**
+ * G2 tree (pin domainAPI.getDomainChildrenPaginated,
+ * rest/domainAPI.ts:140): GET /v1/domains/hierarchy — roots when no parent
+ * is given, otherwise the direct children of that fqn. Offset-paged;
+ * pin's page size is 15. The endpoint exists in the product server
+ * (deploy checkout DomainResource.java:666 `@Path("/hierarchy")`,
+ * `:698 directChildrenOf`), so no Java port is needed.
+ */
+export function listDomainChildren(
+  parentFqn?: string,
+  offset = 0,
+  limit = 15,
+): Promise<DomainChildrenPage> {
+  return apiRequest<unknown>('/v1/domains/hierarchy', {
+    query: {
+      fields: 'parent,childrenCount',
+      limit,
+      offset,
+      directChildrenOf: parentFqn,
+    },
+  }).then((payload) => {
+    const page = parsePaged(payload, mapDomain);
+    return { data: page.data, total: page.total };
+  });
 }
 
 export async function getDomain(id: string): Promise<Domain> {
