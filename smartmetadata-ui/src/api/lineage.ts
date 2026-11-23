@@ -13,6 +13,7 @@ import {
   LINEAGE_DEPTH_DEFAULT,
 } from '@/lineage/depth';
 import { ApiError, apiRequest } from './client';
+import { notifyCsvJobsRefresh } from './csvJobs';
 import { asRecord, asString } from './json';
 
 export interface FetchEntityLineageOptions {
@@ -306,4 +307,183 @@ export async function putEntityLineage(options: PutEntityLineageOptions): Promis
  */
 export async function deleteEntityLineageByName(options: LineageEdgeEndpoints): Promise<unknown> {
   return apiRequest<unknown>(lineageEdgePath(options), { method: 'DELETE' });
+}
+
+/** Pin `LineageDirection` (generated/api/lineage/lineageDirection): the count/export APIs take it as a path/query value, not the product's lowercase graph direction. */
+export type LineageTableDirection = 'Upstream' | 'Downstream';
+
+function requireLineageTableTarget(options: { fqn: string }): string {
+  const fqn = options.fqn.trim();
+  if (!fqn) {
+    throw new Error('Lineage requires an FQN');
+  }
+  return fqn;
+}
+
+function requireLineageTableDirection(direction: unknown): LineageTableDirection {
+  if (direction !== 'Upstream' && direction !== 'Downstream') {
+    throw new Error("Lineage impact requires direction 'Upstream' or 'Downstream'");
+  }
+  return direction;
+}
+
+function requireLineageTableDepth(nodeDepth: unknown): number {
+  if (typeof nodeDepth !== 'number' || !Number.isFinite(nodeDepth) || nodeDepth < 0) {
+    throw new Error('Lineage impact requires a node depth of 0 or more');
+  }
+  return Math.trunc(nodeDepth);
+}
+
+export interface LineageEntityCountOptions {
+  fqn: string;
+  entityType: string;
+  direction: LineageTableDirection;
+  nodeDepth: number;
+  /** Defaults to nodeDepth (pin getLineageByEntityCount: `maxDepth ?? nodeDepth`). */
+  maxDepth?: number;
+  upstreamDepth?: number;
+  downstreamDepth?: number;
+  from?: number;
+  size?: number;
+  queryFilter?: string;
+  columnFilter?: string;
+  includePaginationInfo?: boolean;
+  startTime?: number;
+  endTime?: number;
+}
+
+/**
+ * GET /v1/lineage/getLineageByEntityCount — the official impact-table fetch
+ * (openmetadata-ui rest/lineageAPI.ts getLineageByEntityCount; product
+ * LineageResource.java:913). Returns a SearchLineageResult: nodes as a map
+ * keyed by FQN (NodeInformation: ES entity map + nodeDepth + paging) plus
+ * upstreamEdges/downstreamEdges maps, and — only when
+ * `include_pagination_info` is true — a `paginationInfo` object with
+ * per-depth entity counts. Unlike the graph's searchLineage, the depth
+ * here is the impact depth (pin passes it straight through; the
+ * 0–3 graph clamp does not apply) and `type` is never sent (pin sends
+ * `type: undefined`, `entityType` carries the type).
+ */
+export async function getLineageByEntityCount(options: LineageEntityCountOptions): Promise<unknown> {
+  const fqn = requireLineageTableTarget(options);
+  const direction = requireLineageTableDirection(options.direction);
+  const nodeDepth = requireLineageTableDepth(options.nodeDepth);
+  const entityType = options.entityType.trim();
+  if (!entityType) {
+    throw new Error('Lineage requires an entity type');
+  }
+  return apiRequest<unknown>('/v1/lineage/getLineageByEntityCount', {
+    query: {
+      fqn,
+      entityType,
+      direction,
+      nodeDepth,
+      maxDepth: options.maxDepth ?? nodeDepth,
+      ...(options.upstreamDepth !== undefined ? { upstreamDepth: options.upstreamDepth } : {}),
+      ...(options.downstreamDepth !== undefined ? { downstreamDepth: options.downstreamDepth } : {}),
+      ...(options.from !== undefined ? { from: options.from } : {}),
+      ...(options.size !== undefined ? { size: options.size } : {}),
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
+      ...(options.columnFilter !== undefined ? { column_filter: options.columnFilter } : {}),
+      ...(options.includePaginationInfo !== undefined
+        ? { include_pagination_info: options.includePaginationInfo }
+        : {}),
+      ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
+      ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
+}
+
+export interface LineageEntityCountExportOptions {
+  fqn: string;
+  entityType: string;
+  direction: LineageTableDirection;
+  nodeDepth: number;
+  /** Defaults to nodeDepth (pin exportLineageByEntityCountAsync: `maxDepth ?? nodeDepth`). */
+  maxDepth?: number;
+  from?: number;
+  size?: number;
+  queryFilter?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+/**
+ * GET /v1/lineage/exportByEntityCountAsync — the official impact-table CSV
+ * export (openmetadata-ui rest/lineageAPI.ts exportLineageByEntityCountAsync;
+ * product LineageResource.java:821). The server answers 202 with the async
+ * job record; only its `jobId` is read here, so the export wiring can claim
+ * the job for the CSV jobs tray (markCsvJobOwned, as in TeamDetailView) —
+ * the same shape as metrics.ts exportMetricsCsvAsync. On success the CSV
+ * jobs tray is told to refresh, so the job appears even if the tray has not
+ * polled yet. When the response carries no jobId the caller only gets the
+ * refresh event — a jobId is never invented
+ * (ADR:2026-11-08-csv-job-owned-memory-set).
+ */
+export interface LineageCsvExportJob {
+  jobId?: string;
+}
+
+export async function exportLineageByEntityCountAsync(
+  options: LineageEntityCountExportOptions,
+): Promise<LineageCsvExportJob> {
+  const fqn = requireLineageTableTarget(options);
+  const direction = requireLineageTableDirection(options.direction);
+  const nodeDepth = requireLineageTableDepth(options.nodeDepth);
+  const entityType = options.entityType.trim();
+  if (!entityType) {
+    throw new Error('Lineage requires an entity type');
+  }
+  const payload = await apiRequest<unknown>('/v1/lineage/exportByEntityCountAsync', {
+    query: {
+      fqn,
+      entityType,
+      direction,
+      nodeDepth,
+      maxDepth: options.maxDepth ?? nodeDepth,
+      ...(options.from !== undefined ? { from: options.from } : {}),
+      ...(options.size !== undefined ? { size: options.size } : {}),
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
+      ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
+      ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
+  notifyCsvJobsRefresh();
+  const jobId = asString(asRecord(payload)?.jobId);
+  return jobId ? { jobId } : {};
+}
+
+export interface LineagePagingDataOptions {
+  fqn: string;
+  upstreamDepth?: number;
+  downstreamDepth?: number;
+  entityType?: string;
+  queryFilter?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+/**
+ * GET /v1/lineage/getPaginationInfo — the official pagination-info fetch
+ * (openmetadata-ui rest/lineageAPI.ts getLineagePagingData; product
+ * LineageResource.java:761). Returns `LineagePaginationInfo`: per-depth
+ * entity counts (`downstreamDepthInfo` / `upstreamDepthInfo`) plus max
+ * depths and totals. The impact table normally gets this from
+ * getLineageByEntityCount with `include_pagination_info`; this call is
+ * the fallback when a count response omits it, so the depth options and
+ * direction counts still resolve instead of rendering empty.
+ */
+export async function getLineagePagingData(options: LineagePagingDataOptions): Promise<unknown> {
+  const fqn = requireLineageTableTarget(options);
+  return apiRequest<unknown>('/v1/lineage/getPaginationInfo', {
+    query: {
+      fqn,
+      ...(options.upstreamDepth !== undefined ? { upstreamDepth: options.upstreamDepth } : {}),
+      ...(options.downstreamDepth !== undefined ? { downstreamDepth: options.downstreamDepth } : {}),
+      ...(options.entityType !== undefined ? { entityType: options.entityType } : {}),
+      ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
+      ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
+      ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
 }
