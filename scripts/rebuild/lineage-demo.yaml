@@ -45,6 +45,14 @@
 # which asserts the traversal GET /v1/lineage/{type}/name/{fqn} at depths 0-3.
 # Do NOT assert the search-backed GET /v1/lineage/getLineage immediately after
 # seeding — it needs Elasticsearch indexing to catch up.
+#
+# Removal (deletes exactly the `lineage-demo` namespace, nothing else —
+# the script refuses to proceed if any record falls outside it):
+#   python scripts/rebuild/remove-lineage-demo.py            # plan only
+#   python scripts/rebuild/remove-lineage-demo.py --delete   # delete
+# To remove the demo from the repo as well, revert the L8 squash commit —
+# it carries the whole demo delta (this file, the verify + removal scripts,
+# the tests, the parser kind, the compose mount) in one commit.
 workflow:
   name: lineage-demo-static
   type: metadata
