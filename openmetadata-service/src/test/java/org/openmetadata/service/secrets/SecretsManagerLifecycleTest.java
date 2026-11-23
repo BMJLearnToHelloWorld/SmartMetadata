@@ -11,6 +11,7 @@ import static org.openmetadata.schema.api.services.CreateDatabaseService.Databas
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,7 +24,10 @@ import org.openmetadata.schema.entity.automations.TestServiceConnectionRequest;
 import org.openmetadata.schema.entity.automations.Workflow;
 import org.openmetadata.schema.entity.automations.WorkflowType;
 import org.openmetadata.schema.entity.services.ServiceType;
+import org.openmetadata.schema.entity.services.ingestionPipelines.IngestionPipeline;
+import org.openmetadata.schema.entity.services.ingestionPipelines.PipelineType;
 import org.openmetadata.schema.entity.teams.AuthenticationMechanism;
+import org.openmetadata.schema.metadataIngestion.SourceConfig;
 import org.openmetadata.schema.services.connections.database.MicrosoftFabricConnection;
 import org.openmetadata.schema.services.connections.database.MysqlConnection;
 import org.openmetadata.schema.services.connections.database.common.basicAuth;
@@ -303,6 +307,63 @@ public class SecretsManagerLifecycleTest {
         ServiceType.DATABASE);
 
     assertTrue(secretsManager.getSecretsMap().containsKey(sharedSecretId));
+  }
+
+  @Test
+  void testIngestionPipelineSecretsAreKeyedByPipelineId() {
+    // A pipeline name is unique only within its service, so two pipelines in different
+    // services may share a name; their vault entries must not collide.
+    UUID firstId = UUID.randomUUID();
+    UUID secondId = UUID.randomUUID();
+    String sharedName = "shared-pipeline-name";
+
+    secretsManager.encryptIngestionPipeline(dbtPipeline(firstId, sharedName, "token-one"));
+    secretsManager.encryptIngestionPipeline(dbtPipeline(secondId, sharedName, "token-two"));
+
+    String firstPrefix = secretsManager.buildSecretId(true, "pipeline", firstId.toString()) + "/";
+    String secondPrefix = secretsManager.buildSecretId(true, "pipeline", secondId.toString()) + "/";
+    String namePrefix = secretsManager.buildSecretId(true, "pipeline", sharedName) + "/";
+
+    List<String> firstKeys = pipelineSecretKeys(firstPrefix);
+    List<String> secondKeys = pipelineSecretKeys(secondPrefix);
+
+    assertEquals(1, firstKeys.size(), "the first pipeline's token must sit under its id");
+    assertEquals(1, secondKeys.size(), "the second pipeline's token must sit under its id");
+    assertEquals(DECRYPTED_VALUE, secretsManager.getSecretsMap().get(firstKeys.get(0)));
+    assertEquals(DECRYPTED_VALUE, secretsManager.getSecretsMap().get(secondKeys.get(0)));
+    assertTrue(
+        pipelineSecretKeys(namePrefix).isEmpty(),
+        "no vault entry may be keyed by the shared pipeline name");
+  }
+
+  private List<String> pipelineSecretKeys(String prefix) {
+    return secretsManager.getSecretsMap().keySet().stream()
+        .filter(key -> key.startsWith(prefix))
+        .sorted()
+        .toList();
+  }
+
+  private IngestionPipeline dbtPipeline(UUID id, String name, String token) {
+    return new IngestionPipeline()
+        .withId(id)
+        .withName(name)
+        .withPipelineType(PipelineType.DBT)
+        .withSourceConfig(
+            new SourceConfig()
+                .withConfig(
+                    Map.of(
+                        "type",
+                        "DBT",
+                        "dbtConfigSource",
+                        Map.of(
+                            "dbtConfigType",
+                            "cloud",
+                            "dbtCloudAuthToken",
+                            token,
+                            "dbtCloudAccountId",
+                            "1",
+                            "dbtCloudUrl",
+                            "https://cloud.getdbt.com"))));
   }
 
   private Map<String, Object> fabricConfig(Map<String, String> authType) {
