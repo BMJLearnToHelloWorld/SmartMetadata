@@ -554,12 +554,15 @@ def test_interface_maps_extended_keys() -> None:
     assert "columnNames" not in profile.table_profile
     column = profile.column_profile[0]
     assert column["valuesCount"] == 10
-    assert column["countInSet"] == 2
-    assert column["likeCount"] is None
+    # Non-schema metrics are computed in-memory (the stat row keeps them)
+    # but never written to the column payload: the server strictly
+    # deserializes the posted dict and any extra key fails the write (C-7).
+    assert "countInSet" not in column
+    assert "likeCount" not in column
     assert column["stddev"] == 2.87
     assert column["sum"] == 55
     assert column["uniqueCount"] == 1
-    assert column["nullMissingCount"] == 0
+    assert "nullMissingCount" not in column
     assert column["distinctProportion"] == 1.0
     assert column["uniqueProportion"] == 0.1
     assert column["nullProportion"] == 0.0
