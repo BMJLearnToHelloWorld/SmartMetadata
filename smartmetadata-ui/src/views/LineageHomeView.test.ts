@@ -11,7 +11,14 @@ import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defineComponent, h } from 'vue';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
+import LineageMap from '@/components/lineage/LineageMap.vue';
+import {
+  LINEAGE_MAP_ONBOARDING_COOKIE,
+  type LineageScene,
+} from '@/lineage/scene';
+import { LINEAGE_CONFIG_STORAGE_KEY } from '@/stores/lineage';
 import { createTestI18n } from '@/test/i18n';
 import type { SearchHit } from '@/types/api';
 import LineageHomeView from './LineageHomeView.vue';
@@ -80,8 +87,55 @@ const PERMISSION_GRANT = {
   permissions: [{ operation: 'EditLineage', access: 'allow' }],
 };
 
+// Minimal layer scene: the map renders these service nodes via the
+// vueFlowStub (`lineage-node-{id}`).
+const LAYER_SCENE: LineageScene = {
+  band: 'LAYER',
+  lens: 'service',
+  breadcrumb: [{ band: 'LAYER', id: 'root', label: 'All services', levelKind: 'service' }],
+  edges: [],
+  nodes: [
+    {
+      band: 'LAYER',
+      id: 'svc1',
+      label: 'svc1',
+      displayName: 'Svc One',
+      levelKind: 'service',
+      entityType: 'databaseService',
+      fullyQualifiedName: 'svc1',
+      isExpandable: true,
+      childrenCount: 3,
+      counts: { table: 3 },
+      serviceType: 'Postgres',
+      sourceEntity: { id: 'svc1-id', type: 'databaseService', fullyQualifiedName: 'svc1' },
+    },
+    {
+      band: 'LAYER',
+      id: 'svc2',
+      label: 'svc2',
+      levelKind: 'service',
+      entityType: 'databaseService',
+      fullyQualifiedName: 'svc2',
+      isExpandable: true,
+      childrenCount: 1,
+      counts: { table: 1 },
+      sourceEntity: { id: 'svc2-id', type: 'databaseService', fullyQualifiedName: 'svc2' },
+    },
+  ],
+};
+
+// The map's onboarding dialog is covered by LineageMap.test.ts; hide it here.
+const AssetStub = defineComponent({ render: () => h('div') });
+
+function clearOnboardingCookie(): void {
+  document.cookie = `${LINEAGE_MAP_ONBOARDING_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+}
+
 function routeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = String(input);
+  if (url.includes('/api/v1/lineage/scene')) {
+    return Promise.resolve(jsonResponse(LAYER_SCENE));
+  }
   if (url.includes('/api/v1/lineage/getPlatformLineage')) {
     return Promise.resolve(jsonResponse(GRAPH));
   }
@@ -110,6 +164,7 @@ async function mountPage(options: {
         component: LineageHomeView,
         props: true,
       },
+      { path: '/asset/:entityType/:fqn', name: 'asset', component: AssetStub },
     ],
   });
   if (options.props) {
@@ -135,28 +190,46 @@ describe('LineageHomeView (platform lineage page)', () => {
     localStorage.clear();
     searchAssets.mockReset();
     searchAssets.mockResolvedValue({ total: 1, hits: [HIT], facets: [] });
+    document.cookie = `${LINEAGE_MAP_ONBOARDING_COOKIE}=true; path=/`;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
     localStorage.clear();
+    clearOnboardingCookie();
   });
 
-  it('renders the platform-wide graph from getPlatformLineage, not an empty canvas', async () => {
+  it('renders the platform scene map from lineage/scene, not the platform canvas', async () => {
     const fetchMock = vi.fn(routeFetch);
     vi.stubGlobal('fetch', fetchMock);
+    // A distinctive saved session config proves the page hydrates the
+    // store and passes its depths to the map (the map's own default is
+    // 1/1, so 2/2 can only come from the store).
+    localStorage.setItem(
+      LINEAGE_CONFIG_STORAGE_KEY,
+      JSON.stringify({ upstreamDepth: 2, downstreamDepth: 2 }),
+    );
     const { wrapper } = await mountPage();
     expect(wrapper.text()).toContain('Service Lineage');
-    expect(wrapper.text()).toContain('raw_orders');
-    expect(wrapper.text()).toContain('orders');
-    expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(true);
-    const platformCall = fetchMock.mock.calls.find((call) =>
-      String(call[0]).includes('/api/v1/lineage/getPlatformLineage'),
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-svc1"]').exists()).toBe(true));
+    expect(wrapper.find('[data-testid="lineage-map"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(false);
+    const sceneCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/v1/lineage/scene'),
     );
-    expect(platformCall).toBeTruthy();
-    expect(String(platformCall?.[0])).toContain('view=service');
-    expect(String(platformCall?.[0])).toContain('includeDeleted=false');
+    expect(sceneCall).toBeTruthy();
+    expect(String(sceneCall?.[0])).toContain('lens=service');
+    expect(String(sceneCall?.[0])).toContain('band=LAYER');
+    expect(String(sceneCall?.[0])).toContain('upstreamDepth=2');
+    expect(String(sceneCall?.[0])).toContain('downstreamDepth=2');
+    expect(String(sceneCall?.[0])).toContain('size=200');
+    expect(String(sceneCall?.[0])).toContain('includeDeleted=false');
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        String(call[0]).includes('/api/v1/lineage/getPlatformLineage'),
+      ),
+    ).toBe(false);
     expect(wrapper.find('[data-testid="lineage-home-fqn-panel"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="lineage-home-canvas"]').exists()).toBe(false);
   });
@@ -170,15 +243,15 @@ describe('LineageHomeView (platform lineage page)', () => {
     ).toBe(false);
   });
 
-  it('reads the lens from ?lineageLens= for the title and the platform view', async () => {
+  it('reads the lens from ?lineageLens= for the title and the scene fetch', async () => {
     const fetchMock = vi.fn(routeFetch);
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountPage({ query: { lineageLens: 'domain' } });
     expect(wrapper.text()).toContain('Domain Lineage');
-    const platformCall = fetchMock.mock.calls.find((call) =>
-      String(call[0]).includes('/api/v1/lineage/getPlatformLineage'),
+    const sceneCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/v1/lineage/scene'),
     );
-    expect(String(platformCall?.[0])).toContain('view=domain');
+    expect(String(sceneCall?.[0])).toContain('lens=domain');
   });
 
   it('falls back to the service lens for an unknown ?lineageLens= value', async () => {
@@ -186,10 +259,10 @@ describe('LineageHomeView (platform lineage page)', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountPage({ query: { lineageLens: 'all' } });
     expect(wrapper.text()).toContain('Service Lineage');
-    const platformCall = fetchMock.mock.calls.find((call) =>
-      String(call[0]).includes('/api/v1/lineage/getPlatformLineage'),
+    const sceneCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes('/api/v1/lineage/scene'),
     );
-    expect(String(platformCall?.[0])).toContain('view=service');
+    expect(String(sceneCall?.[0])).toContain('lens=service');
   });
 
   it('shows export and config actions and opens the config modal', async () => {
@@ -245,13 +318,50 @@ describe('LineageHomeView (platform lineage page)', () => {
     expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(true);
   });
 
-  it('surfaces a platform fetch failure as an error, never an empty canvas', async () => {
+  it('writes a scene request change into the URL and updates the title', async () => {
+    vi.stubGlobal('fetch', vi.fn(routeFetch));
+    const { wrapper, router } = await mountPage();
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-svc1"]').exists()).toBe(true));
+    wrapper
+      .findComponent(LineageMap)
+      .vm.$emit('request-change', { lens: 'domain', band: 'LAYER' });
+    await flushPromises();
+    expect(router.currentRoute.value.query.lineageLens).toBe('domain');
+    expect(router.currentRoute.value.query.lineageBand).toBe('LAYER');
+    expect(wrapper.text()).toContain('Domain Lineage');
+  });
+
+  it('opens the asset detail page from a scene node', async () => {
+    vi.stubGlobal('fetch', vi.fn(routeFetch));
+    const { wrapper, router } = await mountPage();
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-svc1"]').exists()).toBe(true));
+    wrapper.findComponent(LineageMap).vm.$emit('navigate', {
+      band: 'LAYER',
+      id: 'svc1',
+      label: 'svc1',
+      levelKind: 'service',
+      entityType: 'table',
+      fullyQualifiedName: 'svc.db.schema.orders',
+    });
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('asset');
+    expect(router.currentRoute.value.params).toEqual({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+    });
+  });
+
+  it('surfaces a scene fetch failure as an error, never an empty canvas', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse({ message: 'platform lineage forbidden' }, 403)),
+      vi.fn(async () => jsonResponse({ message: 'scene forbidden' }, 403)),
     );
     const { wrapper } = await mountPage();
-    expect(wrapper.text()).toContain('platform lineage forbidden');
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-map-state"]').exists()).toBe(true),
+    );
+    // The map shows its generic load-failed state, not the server's message.
+    expect(wrapper.text()).toContain('Failed to load');
     expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(false);
   });
 });
