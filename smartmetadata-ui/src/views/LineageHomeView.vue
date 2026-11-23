@@ -8,12 +8,22 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, message, Spin, Tooltip } from 'ant-design-vue';
 import { getDerivedPermissionFlags } from '@/api/permissions';
-import { lineageLocation } from '@/catalog/entityRoutes';
+import { assetLocation, lineageLocation } from '@/catalog/entityRoutes';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
+import LineageConfigModal from '@/components/lineage/LineageConfigModal.vue';
 import LineageEntitySearch from '@/components/lineage/LineageEntitySearch.vue';
+import LineageMap from '@/components/lineage/LineageMap.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
-import { resolveLineageLens, type LineagePlatformLens } from '@/lineage/config';
+import type { LineageCanvasConfig } from '@/lineage/config';
+import {
+  getLensLabelKey,
+  getSceneRequestFromSearch,
+  getSceneSearch,
+  type LineageSceneNode,
+  type LineageSceneRequest,
+} from '@/lineage/scene';
+import { useLineageStore } from '@/stores/lineage';
 import { usePermissionStore } from '@/stores/permissions';
 
 /**
@@ -23,10 +33,11 @@ import { usePermissionStore } from '@/stores/permissions';
  * FQN form: pin has none, the search picker is the only entry point.
  *
  * The page owns the search picker, the export + config actions and the
- * per-entity permission check; the graph itself stays in LineageCanvas
- * (the seam L4's scene map plugs into later). Config save writes the
- * Pinia lineage store, which the canvas watches — the same store-write
- * → refetch shape as pin's Zustand store.
+ * per-entity permission check; the platform view is the scene map (pin
+ * LineageMap, fed by GET lineage/scene) and the focused view keeps the
+ * entity canvas. Config save writes the Pinia lineage store, which the
+ * canvas watches and the map reads as props — the same store-write →
+ * refetch shape as pin's Zustand store.
  */
 const props = withDefaults(
   defineProps<{
@@ -43,21 +54,42 @@ const permissionStore = usePermissionStore();
 
 const focused = computed(() => Boolean(props.entityType && props.fqn));
 
-// Pin getSceneRequestFromSearch: the lens comes from ?lineageLens= in
-// the URL search and defaults to Service. The lens switcher UI is the
-// L4 scene map; L1 only reads the value for the title and the platform
-// fetch's `view` param.
-const lens = computed<LineagePlatformLens>(() => resolveLineageLens(route.query.lineageLens));
+// The scene request is the platform view's source of truth (pin
+// PlatformLineage + LineageMap): it round-trips through
+// ?lineageLens=/lineageBand=/lineageFocus=/lineageEntityType=, the
+// platform root defaults to the Layer band, and the map owns its fetch
+// from these props. The title uses pin's getLensLabelKey, exactly like
+// pin's `t('label.platform-type-lineage', { platformType:
+// t(getLensLabelKey(lens)) })`.
+const lineageStore = useLineageStore();
+lineageStore.hydrate();
 
-const LENS_LABEL_KEYS: Record<LineagePlatformLens, string> = {
-  service: 'lineage.lensServiceName',
-  domain: 'lineage.lensDomainName',
-  dataProduct: 'lineage.lensDataProductName',
-};
+function currentSearch(): string {
+  const index = route.fullPath.indexOf('?');
+  return index >= 0 ? route.fullPath.slice(index) : '';
+}
+
+const sceneRequest = ref<LineageSceneRequest>(
+  getSceneRequestFromSearch(currentSearch(), {}, true),
+);
+
+const lens = computed(() => sceneRequest.value.lens);
 
 const title = computed(() =>
-  t('lineage.platformTitle', { platformType: t(LENS_LABEL_KEYS[lens.value]) }),
+  t('lineage.platformTitle', { platformType: t(getLensLabelKey(lens.value)) }),
 );
+
+function onSceneRequestChange(request: LineageSceneRequest): void {
+  sceneRequest.value = request;
+  void router.replace(`${route.path}${getSceneSearch(currentSearch(), request)}`);
+}
+
+function openSceneAsset(node: LineageSceneNode): void {
+  if (!node.entityType || !node.fullyQualifiedName) {
+    return;
+  }
+  void router.push(assetLocation(node.entityType, node.fullyQualifiedName));
+}
 
 // Pin pageTitle: the focused variant names the entity it is centred on
 // (the FQN when no entity name was fetched); the platform variant is
@@ -122,23 +154,43 @@ watch(permissionsError, (value) => {
   }
 });
 
-// The canvas owns the modal and the graph the export captures; the page
-// buttons delegate to it, mirroring pin's page-level actions.
+// The page buttons delegate to whichever graph is mounted, mirroring
+// pin's page-level actions (pin's LineageExportButton is a PNG export
+// of the drawn graph; the map has its own Export PNG button too). The
+// focused view keeps the canvas's modal; the platform view renders the
+// same modal at page level because the canvas is not mounted there.
 const canvasRef = ref<{
   exportPng: () => Promise<void>;
   openConfig: () => void;
 } | null>(null);
+const mapRef = ref<{ exportPng: () => Promise<void> } | null>(null);
+const configModalOpen = ref(false);
 
 async function onExportPng(): Promise<void> {
   try {
-    await canvasRef.value?.exportPng();
+    if (focused.value) {
+      await canvasRef.value?.exportPng();
+    } else {
+      await mapRef.value?.exportPng();
+    }
   } catch {
     message.error(t('lineage.exportPngFailed'));
   }
 }
 
 function onOpenConfig(): void {
-  canvasRef.value?.openConfig();
+  if (focused.value) {
+    canvasRef.value?.openConfig();
+  } else {
+    configModalOpen.value = true;
+  }
+}
+
+function onConfigSave(next: LineageCanvasConfig): void {
+  configModalOpen.value = false;
+  // The map reads depths from the store via props; it has no layer
+  // overlays to re-seed, unlike the canvas.
+  lineageStore.update(next);
 }
 
 function openTarget(target: { entityType: string; fqn: string }): void {
@@ -167,7 +219,20 @@ function openTarget(target: { entityType: string; fqn: string }): void {
       </div>
     </div>
     <Spin :spinning="permissionsLoading">
+      <LineageMap
+        v-if="!focused"
+        ref="mapRef"
+        :lens="sceneRequest.lens"
+        :band="sceneRequest.band"
+        :focus-fqn="sceneRequest.focusFqn"
+        :entity-type="sceneRequest.entityType"
+        :upstream-depth="lineageStore.config.upstreamDepth"
+        :downstream-depth="lineageStore.config.downstreamDepth"
+        @request-change="onSceneRequestChange"
+        @navigate="openSceneAsset"
+      />
       <LineageCanvas
+        v-else
         ref="canvasRef"
         :entity-type="entityType"
         :fqn="fqn"
@@ -178,6 +243,13 @@ function openTarget(target: { entityType: string; fqn: string }): void {
         variant="page"
       />
     </Spin>
+    <LineageConfigModal
+      v-if="!focused"
+      :open="configModalOpen"
+      :config="lineageStore.config"
+      @ok="onConfigSave"
+      @cancel="configModalOpen = false"
+    />
   </PageLayout>
 </template>
 
