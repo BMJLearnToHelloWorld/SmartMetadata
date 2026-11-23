@@ -6,8 +6,10 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Empty, Input, Pagination, Select, Space, Switch, Tag, Typography } from 'ant-design-vue';
-import { searchAssets } from '@/api/search';
+import { Alert, Button, Dropdown, Empty, Input, Pagination, Select, Space, Switch, Tag, Typography, message } from 'ant-design-vue';
+import { ApiError, readErrorMessage } from '@/api/client';
+import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
+import { EXPORT_ALL_ASSETS_LIMIT, exportSearchResultsAsync, searchAssets } from '@/api/search';
 import {
   ADVANCED_SEARCH_FIELDS,
   composeAdvancedQuery,
@@ -60,6 +62,7 @@ import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import { useAuthStore } from '@/stores/auth';
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
+import ExploreExportScopeModal, { type ExportScope } from '@/features/explore/ExploreExportScopeModal.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import { useFacetOptions } from '@/features/explore/useFacetOptions';
@@ -77,6 +80,17 @@ const indexNotFound = ref(false);
 const advancedOpen = ref(false);
 const advancedRows = ref<AdvancedSearchRow[]>([]);
 const advancedFreeText = ref('');
+// Official Explore export (ExploreV1.component.tsx:697-708): scope modal
+// state. exportScope resets to 'all' on every open (pin
+// handleOpenExportScopeModal).
+const showExportScopeModal = ref(false);
+const toolsOpen = ref(false);
+const exportScope = ref<ExportScope>('all');
+const isExporting = ref(false);
+const isCountLoading = ref(false);
+const allAssetsCount = ref<number | undefined>(undefined);
+const tabAssetsCount = ref<number | undefined>(undefined);
+const exportError = ref('');
 const hits = ref<SearchHit[]>([]);
 const total = ref(0);
 const facets = ref<SearchFacet[]>([]);
@@ -205,6 +219,29 @@ const recordRange = computed(() => {
   const from = page.value * pageSize.value + 1;
   return { from, to: Math.min(total.value, from + hits.value.length - 1) };
 });
+
+/** Official ExploreV1.component.tsx:709-744, export derived values. */
+const isSearchMode = computed(() => query.value.trim().length > 0);
+const pageResultCount = computed(() => hits.value.length);
+const visibleResultCount = computed(() =>
+  isSearchMode.value ? (tabAssetsCount.value ?? 0) : pageResultCount.value,
+);
+const isAllAssetsLimitExceeded = computed(
+  () =>
+    exportScope.value === 'all' &&
+    allAssetsCount.value !== undefined &&
+    allAssetsCount.value > EXPORT_ALL_ASSETS_LIMIT,
+);
+const isTabScopeDisabled = computed(
+  () =>
+    isSearchMode.value &&
+    exportScope.value === 'visible' &&
+    !isCountLoading.value &&
+    !tabAssetsCount.value,
+);
+const activeTabLabel = computed(() =>
+  activeTab.value ? t(`explore.entity.${activeTab.value.labelKey}`) : t('explore.exportVisibleResults'),
+);
 
 function entityLabel(entityType: string): string {
   const key = `explore.entity.${entityType}`;
@@ -371,6 +408,99 @@ function applyAdvancedSearch(): void {
   const composed = composeAdvancedQuery(advancedFreeText.value, advancedRows.value);
   advancedOpen.value = false;
   pushSearch(composed, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value);
+}
+
+function handleExportScopeChange(scope: ExportScope): void {
+  exportScope.value = scope;
+  exportError.value = '';
+}
+
+function closeExportScopeModal(): void {
+  showExportScopeModal.value = false;
+  exportError.value = '';
+}
+
+/**
+ * Official ExploreV1.component.tsx:746-795 (handleOpenExportScopeModal):
+ * counts come from ONE size-0 query over the dataAsset index with
+ * trackTotalHits (so the 200000 limit check sees the true total, not
+ * the 10000 ES cap); the tab count is the entityType-aggregation bucket
+ * for the active tab. Pin has no all-tab, so its lookup has no all-tab
+ * case — the product all-tab IS the dataAsset index, so its visible
+ * count is the all-assets count. A failed count leaves the modal usable
+ * without counts, exactly as pin's swallowed catch does.
+ */
+async function handleOpenExportScopeModal(): Promise<void> {
+  toolsOpen.value = false;
+  exportScope.value = 'all';
+  allAssetsCount.value = undefined;
+  tabAssetsCount.value = undefined;
+  exportError.value = '';
+  showExportScopeModal.value = true;
+  isCountLoading.value = true;
+  try {
+    const countResult = await searchAssets(composeSearchQuery(query.value, filters.value), 0, 0, {
+      deleted: showDeleted.value,
+      trackTotalHits: true,
+      query_filter: queryFilter.value,
+    });
+    allAssetsCount.value = countResult.total;
+    if (isSearchMode.value) {
+      tabAssetsCount.value = activeTab.value
+        ? (countResult.facets
+            .find((facet) => facet.id === 'entityType')
+            ?.buckets.find((bucket) => bucket.key === activeTab.value?.entityType)?.count ?? 0)
+        : countResult.total;
+    }
+  } catch {
+    // Count fetch failed — modal still usable without count.
+  } finally {
+    isCountLoading.value = false;
+  }
+}
+
+/**
+ * Official ExploreV1.component.tsx:797-870 (handleExportScopeConfirm):
+ * `from` is sent only for the visible scope in browse mode (no search
+ * query); in search mode the visible scope exports the tab's first N.
+ * On success the job is claimed into the CSV jobs tray
+ * (markCsvJobOwned + refresh event, the product equivalents of pin's
+ * window event dispatch) and a success toast shows; on failure the
+ * modal stays open with the inline error.
+ */
+async function handleExportScopeConfirm(): Promise<void> {
+  if (isAllAssetsLimitExceeded.value) {
+    return;
+  }
+  const isVisibleScope = exportScope.value === 'visible';
+  const exportSize = isVisibleScope
+    ? visibleResultCount.value
+    : (allAssetsCount.value ?? EXPORT_ALL_ASSETS_LIMIT);
+  const exportFrom =
+    isVisibleScope && !isSearchMode.value ? page.value * pageSize.value : undefined;
+  exportError.value = '';
+  isExporting.value = true;
+  try {
+    const job = await exportSearchResultsAsync({
+      q: composeSearchQuery(query.value, filters.value),
+      index: isVisibleScope ? (activeTab.value?.index ?? 'dataAsset') : 'dataAsset',
+      sort_field: currentSort.value.field,
+      sort_order: currentSort.value.order,
+      size: exportSize,
+      ...(exportFrom !== undefined ? { from: exportFrom } : {}),
+      deleted: showDeleted.value,
+      ...(queryFilter.value ? { query_filter: queryFilter.value } : {}),
+    });
+    markCsvJobOwned(job.jobId);
+    notifyCsvJobsRefresh();
+    message.success(t('explore.exportJobStarted'));
+    showExportScopeModal.value = false;
+  } catch (error) {
+    exportError.value =
+      error instanceof ApiError ? readErrorMessage(error.body, error.status) : t('explore.failed');
+  } finally {
+    isExporting.value = false;
+  }
 }
 
 function onEstateSelect(node: EstateNode): void {
@@ -589,6 +719,23 @@ watch(expandedKeys, (keys) => {
         >
           {{ t('explore.advancedSearch') }}
         </Button>
+        <Dropdown v-model:open="toolsOpen" trigger="click">
+          <Button size="small" data-testid="explore-tools" :aria-label="t('explore.tools')" @click.prevent>
+            {{ t('explore.tools') }}
+          </Button>
+          <template #overlay>
+            <div class="explore__tools-menu">
+              <button
+                type="button"
+                data-testid="explore-export"
+                class="explore__tools-item"
+                @click="handleOpenExportScopeModal"
+              >
+                {{ t('explore.export') }}
+              </button>
+            </div>
+          </template>
+        </Dropdown>
         <Button
           v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
           type="link"
@@ -763,6 +910,23 @@ watch(expandedKeys, (keys) => {
         <ExplorePreview :hit="residual ? null : selectedHit" @open="openHit" />
       </aside>
     </div>
+    <ExploreExportScopeModal
+      :open="showExportScopeModal"
+      :export-scope="exportScope"
+      :is-search-mode="isSearchMode"
+      :is-count-loading="isCountLoading"
+      :tab-assets-count="tabAssetsCount"
+      :page-result-count="pageResultCount"
+      :all-assets-count="allAssetsCount"
+      :active-tab-label="activeTabLabel"
+      :is-exporting="isExporting"
+      :is-all-assets-limit-exceeded="isAllAssetsLimitExceeded"
+      :is-tab-scope-disabled="isTabScopeDisabled"
+      :export-error="exportError || undefined"
+      @update:export-scope="handleExportScopeChange"
+      @cancel="closeExportScopeModal"
+      @ok="handleExportScopeConfirm"
+    />
     <FormModal
       :open="advancedOpen"
       :title="t('explore.advancedSearch')"
@@ -848,6 +1012,29 @@ watch(expandedKeys, (keys) => {
   gap: 6px;
   font-size: 12px;
   white-space: nowrap;
+}
+.explore__tools-menu {
+  padding: 4px;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
+  box-shadow: var(--sm-shadow-overlay);
+}
+.explore__tools-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--sm-border-radius);
+  background: transparent;
+  color: var(--sm-text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.explore__tools-item:hover {
+  background: var(--sm-color-primary-bg);
+  color: var(--sm-color-primary);
 }
 .explore__advanced-row {
   display: grid;

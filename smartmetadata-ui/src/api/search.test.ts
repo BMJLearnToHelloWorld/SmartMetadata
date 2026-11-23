@@ -9,7 +9,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  EXPORT_ALL_ASSETS_LIMIT,
   escapeESReservedCharacters,
+  exportSearchResultsAsync,
+  exportSearchResultsCsvStream,
   getNLPEnabledStatus,
   getReindexFailures,
   getSearchEntityTypes,
@@ -361,5 +364,77 @@ describe('getSearchEntityTypes', () => {
   it('returns an empty list for a non-array payload', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
     await expect(getSearchEntityTypes()).resolves.toEqual([]);
+  });
+});
+
+describe('search export (D10)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('exports the 200000 all-assets cap from the pin', () => {
+    expect(EXPORT_ALL_ASSETS_LIMIT).toBe(200000);
+  });
+
+  it('queues the async export with the pin params and returns the job id', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ jobId: 'job-1', message: 'Export initiated' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const job = await exportSearchResultsAsync({
+      q: 'orders',
+      index: 'dataAsset',
+      sort_field: 'totalVotes',
+      sort_order: 'desc',
+      size: 200000,
+      deleted: true,
+      query_filter: '{"query":{"bool":{}}}',
+    });
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.pathname).toBe('/api/v1/search/export/async');
+    expect(url.searchParams.get('q')).toBe('orders');
+    expect(url.searchParams.get('index')).toBe('dataAsset');
+    expect(url.searchParams.get('sort_field')).toBe('totalVotes');
+    expect(url.searchParams.get('sort_order')).toBe('desc');
+    expect(url.searchParams.get('size')).toBe('200000');
+    expect(url.searchParams.get('deleted')).toBe('true');
+    expect(url.searchParams.get('query_filter')).toBe('{"query":{"bool":{}}}');
+    expect(job).toEqual({ jobId: 'job-1', message: 'Export initiated' });
+  });
+
+  it('omits deleted and from when the export does not opt in', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ jobId: 'job-2', message: '' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await exportSearchResultsAsync({ q: '*', index: 'table', size: 15 });
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.has('deleted')).toBe(false);
+    expect(url.searchParams.has('from')).toBe(false);
+    expect(url.searchParams.get('size')).toBe('15');
+  });
+
+  it('streams the sync export as a Blob from GET /v1/search/export', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      new Response('name,fqn\norders,svc.db.orders', { status: 200, headers: { 'Content-Type': 'text/csv' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const blob = await exportSearchResultsCsvStream({ q: 'orders', index: 'dataAsset', size: 10, from: 0 });
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.pathname).toBe('/api/v1/search/export');
+    expect(url.searchParams.get('from')).toBe('0');
+    expect(blob).toBeInstanceOf(Blob);
+    expect(await blob.text()).toContain('svc.db.orders');
+  });
+
+  it('sends track_total_hits only when the count query opts in', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ hits: { total: { value: 0 }, hits: [] }, aggregations: {} }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await searchAssets('*', 0, 0, { trackTotalHits: true });
+    expect(String(fetchMock.mock.calls[0][0])).toContain('track_total_hits=true');
+    await searchAssets('*', 0, 0);
+    expect(String(fetchMock.mock.calls[1][0])).not.toContain('track_total_hits=');
   });
 });

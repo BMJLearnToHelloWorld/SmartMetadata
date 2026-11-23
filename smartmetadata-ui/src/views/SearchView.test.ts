@@ -8,9 +8,10 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { Select } from 'ant-design-vue';
+import Antd, { Select, message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defineComponent, h } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import { useAuthStore } from '@/stores/auth';
@@ -609,5 +610,210 @@ describe('SearchView chip options exclude the chip own filter (ADR:2026-11-11-ex
     expect(facetCalls[0].searchParams.get('q')).not.toContain('service.displayName.keyword:mysql');
     const options = select?.props('options') as { value: string; label: string }[] | undefined;
     expect(options?.map((option) => option.value)).toEqual(['mysql', 'postgres']);
+  });
+});
+
+/**
+ * Explore export (D10): Tools → Export scope modal, async CSV job claim,
+ * and the failure-keeps-modal-open rule (pin ExploreV1.test.tsx:648).
+ * The antd Dropdown is stubbed the same way AccessManageButton.test.ts
+ * stubs it (overlay rendered when open), so the Export item is clickable.
+ */
+const ExportDropdownStub = defineComponent({
+  props: { open: Boolean },
+  emits: ['update:open'],
+  setup(props, { slots, emit }) {
+    return () =>
+      h('div', { 'data-testid': 'dropdown-stub' }, [
+        h(
+          'div',
+          {
+            'data-testid': 'dropdown-trigger',
+            onClick: () => emit('update:open', true),
+          },
+          slots.default?.(),
+        ),
+        props.open ? slots.overlay?.() : null,
+      ]);
+  },
+});
+
+describe('SearchView export (D10)', () => {
+  let fetchUrls: string[] = [];
+  let exportShouldFail = false;
+  let countTotal = 3;
+
+  beforeEach(() => {
+    fetchUrls = [];
+    exportShouldFail = false;
+    countTotal = 3;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        fetchUrls.push(url.toString());
+        if (url.pathname === '/api/v1/search/export/async') {
+          if (exportShouldFail) {
+            return jsonResponse({ message: 'Export failed due to a server error.' }, 500);
+          }
+          return jsonResponse({ jobId: 'job-1', message: 'Export initiated' });
+        }
+        if (url.searchParams.get('size') === '0') {
+          return jsonResponse({
+            hits: { total: { value: countTotal }, hits: [] },
+            aggregations: {
+              'sterms#entityType': {
+                buckets: [
+                  { key: 'table', doc_count: 1 },
+                  { key: 'topic', doc_count: 1 },
+                ],
+              },
+            },
+          });
+        }
+        return jsonResponse(SEARCH_BODY);
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  async function mountExportView(query: Record<string, string> = {}) {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/search', name: 'search', component: SearchView },
+        { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+        { path: '/context-center', name: 'context-center-overview', component: { template: '<div>context</div>' } },
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>domains</div>' } },
+        {
+          path: '/admin/settings/preferences/search',
+          name: 'settings-preferences-search',
+          component: { template: '<div>search settings</div>' },
+        },
+      ],
+    });
+    await router.push({ name: 'search', query });
+    await router.isReady();
+    const wrapper = mount(SearchView, {
+      global: {
+        plugins: [router, pinia, Antd, createTestI18n()],
+        stubs: { ADropdown: ExportDropdownStub },
+      },
+    });
+    await flushPromises();
+    return { wrapper, router };
+  }
+
+  async function openExportModal(wrapper: Awaited<ReturnType<typeof mountExportView>>['wrapper']) {
+    await wrapper.get('[data-testid="explore-tools"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-testid="explore-export"]').trigger('click');
+    await flushPromises();
+  }
+
+  function exportModal(wrapper: Awaited<ReturnType<typeof mountExportView>>['wrapper']) {
+    return wrapper.findComponent({ name: 'ExploreExportScopeModal' });
+  }
+
+  function clickModalOk() {
+    (document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement).click();
+  }
+
+  it('opens the scope modal from Tools → Export and counts with a size-0 trackTotalHits query', async () => {
+    const { wrapper } = await mountExportView();
+    await openExportModal(wrapper);
+    expect(exportModal(wrapper).props('open')).toBe(true);
+    expect(document.body.textContent).toContain('Export Scope');
+    expect(document.body.textContent).toContain('(3 Results)');
+    const countCall = fetchUrls
+      .map((raw) => new URL(raw))
+      .find(
+        (url) =>
+          url.pathname === '/api/v1/search/query' &&
+          url.searchParams.get('size') === '0' &&
+          url.searchParams.get('track_total_hits') === 'true',
+      );
+    expect(countCall).toBeDefined();
+    expect(countCall?.searchParams.get('index')).toBe('dataAsset');
+    wrapper.unmount();
+  });
+
+  it('exports the visible tab scope as an async job, claims it, and toasts', async () => {
+    const successSpy = vi.spyOn(message, 'success');
+    const refreshEvents: Event[] = [];
+    const onRefresh = (event: Event) => refreshEvents.push(event);
+    window.addEventListener('csv-jobs-refresh', onRefresh);
+    try {
+      const { wrapper } = await mountExportView({ q: 'orders', tab: 'table' });
+      await openExportModal(wrapper);
+      expect(document.body.textContent).toContain('(1 Results)');
+      (document.body.querySelector('[data-testid="export-scope-visible-card"]') as HTMLElement).click();
+      await flushPromises();
+      clickModalOk();
+      await flushPromises();
+      const exportCall = fetchUrls
+        .map((raw) => new URL(raw))
+        .find((url) => url.pathname === '/api/v1/search/export/async');
+      expect(exportCall).toBeDefined();
+      expect(exportCall?.searchParams.get('q')).toBe('orders');
+      expect(exportCall?.searchParams.get('index')).toBe('table');
+      expect(exportCall?.searchParams.get('size')).toBe('1');
+      expect(exportCall?.searchParams.get('sort_field')).toBe('totalVotes');
+      expect(exportCall?.searchParams.get('sort_order')).toBe('desc');
+      expect(exportCall?.searchParams.has('from')).toBe(false);
+      expect(exportModal(wrapper).props('open')).toBe(false);
+      expect(successSpy).toHaveBeenCalledWith(expect.stringContaining('Export started'));
+      expect(refreshEvents).toHaveLength(1);
+      wrapper.unmount();
+    } finally {
+      window.removeEventListener('csv-jobs-refresh', onRefresh);
+    }
+  });
+
+  // URL `page` is 0-based in this codebase (Pagination shows `page + 1`,
+  // onPageChange writes `next - 1`): page '1' is the second displayed page,
+  // so the visible-page offset is 1 * 15 = 15.
+  it('exports the visible page in browse mode with from set to the page offset', async () => {
+    const { wrapper } = await mountExportView({ page: '1' });
+    await openExportModal(wrapper);
+    (document.body.querySelector('[data-testid="export-scope-visible-card"]') as HTMLElement).click();
+    await flushPromises();
+    clickModalOk();
+    await flushPromises();
+    const exportCall = fetchUrls
+      .map((raw) => new URL(raw))
+      .find((url) => url.pathname === '/api/v1/search/export/async');
+    expect(exportCall?.searchParams.get('index')).toBe('dataAsset');
+    expect(exportCall?.searchParams.get('size')).toBe('3');
+    expect(exportCall?.searchParams.get('from')).toBe('15');
+    wrapper.unmount();
+  });
+
+  it('keeps the modal open with the inline error when the export fails', async () => {
+    exportShouldFail = true;
+    const { wrapper } = await mountExportView({ q: 'orders' });
+    await openExportModal(wrapper);
+    clickModalOk();
+    await flushPromises();
+    expect(exportModal(wrapper).props('open')).toBe(true);
+    expect(document.body.textContent).toContain('Export failed due to a server error.');
+    wrapper.unmount();
+  });
+
+  it('shows the limit alert and disables export when all assets exceed 200000', async () => {
+    countTotal = 200001;
+    const { wrapper } = await mountExportView({ q: 'orders' });
+    await openExportModal(wrapper);
+    expect(document.body.textContent).toContain('Export is limited to 200000 assets');
+    const okButton = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLButtonElement;
+    expect(okButton.disabled).toBe(true);
+    wrapper.unmount();
   });
 });

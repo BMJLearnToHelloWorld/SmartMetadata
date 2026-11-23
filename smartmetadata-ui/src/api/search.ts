@@ -26,6 +26,12 @@ export interface SearchAssetsOptions {
    */
   deleted?: boolean;
   /**
+   * Official searchQuery trackTotalHits: without it the ES total caps at
+   * 10000 (pin ExploreUtils comment). Only the export count query opts
+   * in; every other caller keeps the existing behaviour.
+   */
+  trackTotalHits?: boolean;
+  /**
    * ADR:2026-11-07-context-center-search-query-filter-is-a-json-string —
    * the server's `query_filter` is a String, and apiRequest only carries
    * string | number | boolean query values, so callers pass the already
@@ -197,10 +203,85 @@ export async function searchAssets(
       sort_field: options.sortField,
       sort_order: options.sortOrder,
       deleted: options.deleted === true ? true : undefined,
+      track_total_hits: options.trackTotalHits === true ? true : undefined,
       query_filter: options.query_filter,
     },
   });
   return mapSearchResponse(payload);
+}
+
+/**
+ * Official rest/searchAPI.ts exportSearchResultsAsync (:395) and
+ * exportSearchResultsCsvStream (:414): the Explore export params, shared
+ * by both. The server endpoints already exist (B2-S1: SearchResource
+ * :365 sync / :471 async, byte-identical to pin); only the UI clients
+ * were missing.
+ */
+/** Official ExploreV1.component.tsx:111 — the all-assets export cap. */
+export const EXPORT_ALL_ASSETS_LIMIT = 200000;
+
+export interface SearchExportParams {
+  q?: string;
+  index?: string;
+  deleted?: boolean;
+  query_filter?: string;
+  post_filter?: string;
+  sort_field?: string;
+  sort_order?: string;
+  size?: number;
+  from?: number;
+}
+
+export interface SearchExportAsyncResponse {
+  jobId: string;
+  message: string;
+}
+
+/**
+ * Queues the export as a background job; the CSV is downloaded from
+ * /v1/csvAsyncJobs/{jobId}/result via the Background jobs tray when it
+ * completes (pin searchAPI.ts comment, verbatim in meaning).
+ */
+export async function exportSearchResultsAsync(
+  params: SearchExportParams,
+): Promise<SearchExportAsyncResponse> {
+  const payload = await apiRequest<unknown>('/v1/search/export/async', {
+    query: {
+      q: params.q,
+      index: params.index,
+      deleted: params.deleted === true ? true : undefined,
+      query_filter: params.query_filter,
+      post_filter: params.post_filter,
+      sort_field: params.sort_field,
+      sort_order: params.sort_order,
+      size: params.size,
+      from: params.from,
+    },
+  });
+  const rec = asRecord(payload) ?? {};
+  return { jobId: asString(rec.jobId) ?? '', message: asString(rec.message) ?? '' };
+}
+
+/** Sync export: the whole CSV comes back as a Blob (pin :414). Pin UI
+ * never calls this — it only ever uses the async job — so this client
+ * is the API-layer parity piece, with no UI wiring in this lane. */
+export async function exportSearchResultsCsvStream(
+  params: SearchExportParams,
+): Promise<Blob> {
+  return apiRequest<Blob>('/v1/search/export', {
+    query: {
+      q: params.q,
+      index: params.index,
+      deleted: params.deleted === true ? true : undefined,
+      query_filter: params.query_filter,
+      post_filter: params.post_filter,
+      sort_field: params.sort_field,
+      sort_order: params.sort_order,
+      size: params.size,
+      from: params.from,
+    },
+    response: 'blob',
+  });
 }
 
 /**
