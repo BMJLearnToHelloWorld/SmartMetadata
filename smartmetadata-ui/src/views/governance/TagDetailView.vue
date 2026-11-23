@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Empty, Form, Input, Switch, message } from 'ant-design-vue';
+import { Button, Descriptions, Empty, Form, Input, message } from 'ant-design-vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
@@ -35,7 +35,8 @@ import GenericTab from '@/components/customize/GenericTab.vue';
 import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, useCustomPages } from '@/composables/useCustomPages';
-import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { isUnconditionalMountTab, isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetsTabs from '@/features/governance/AssetsTabs.vue';
 import AssetSelectionModal from '@/features/governance/AssetSelectionModal.vue';
@@ -44,7 +45,6 @@ import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { entityLabel } from '@/features/crud/paging';
 import { toEntityLink } from '@/quality/entityLink';
-import { setFieldPatch } from '@/admin/jsonPatch';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { DqDashboardChartFilters, DqHiddenFilter } from '@/quality/dashboard';
 import type { ActivityEvent, Conversation } from '@/types/collaboration';
@@ -273,22 +273,41 @@ const tagDqInitialFilters = computed<DqDashboardChartFilters | undefined>(() => 
   return { tags: [fqn] };
 });
 
-// Widget layer (B-8): the widget grid mounts ONLY on this page type's
-// widget-layout tab (Tag: overview), and only when the customized
-// page has a tab entry resolving to the rendered tab key whose
-// official id is that mount tab (`isWidgetLayoutTab`, reading
-// layoutAppliesTo — the official GenericTab mount set, one tab per
-// page type). The editor saves ALL tabs with layout: [] on the
-// non-mount ones, so entry resolution alone would blank every other
-// tab; non-mount tabs always keep their existing panels. The grid
-// renders the entry's resolved layout, including empty when the entry
-// carries no layout. The entry's own id — never the rendered key —
-// is passed to the layout resolver, because the official lookup
-// matches tab entries by id only (`customizeWidgetLayout.ts`). Tag
-// has no customization editor (official CustomizablePage has no Tag
+// Widget layer (B-8, flipped batch 6 pattern — see GlossaryDetailView):
+// the widget grid mounts on this page type's widget-layout tab (Tag:
+// overview) with the default layout when no customized page exists
+// (official getLayoutFromCustomizedPage default branch, via
+// UNCONDITIONAL_MOUNT_TABS). The editor saves ALL tabs with layout: []
+// on the non-mount ones, so entry resolution alone would blank every
+// other tab; non-mount tabs always keep their existing panels. The
+// grid renders the entry's resolved layout, including empty when the
+// entry carries no layout. The entry's own id — never the rendered
+// key — is passed to the layout resolver, because the official lookup
+// matches tab entries by id only (`customizeWidgetLayout.ts`). Tag has
+// no customization editor (official CustomizablePage has no Tag
 // renderer), so a customized Tag page can only arrive as stored
 // history data; the read path carries it verbatim.
 const { customizedPage } = useCustomPages('Tag');
+
+function widgetLayoutFor(tabKey: string): WidgetConfig[] | null {
+  const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
+  // Batch 6 mount-gate convergence: the official tab id for this slot
+  // (the entry's id when customized, the mount tab id otherwise).
+  const tabId = entry?.id ?? 'overview';
+  // A flipped mount tab mounts the grid with the default layout when
+  // no customized entry exists; an unflipped tab keeps the legacy
+  // default pane. Only the mount slot may take the unconditional
+  // branch — this function also gates the non-mount tabs, and without
+  // the slot check every tab would mount the mount tab's default grid
+  // when no entry exists.
+  if (!entry && (tabKey !== 'overview' || !isUnconditionalMountTab('Tag', tabId))) {
+    return null;
+  }
+  if (entry && (!entry.id || !isWidgetLayoutTab('Tag', entry.id))) {
+    return null;
+  }
+  return resolveWidgetLayout('Tag', tabId, customizedPage.value);
+}
 
 // Dispatch-resolvable keys with no branch in this view's widget chains,
 // absent on purpose, so their cells stay empty (same disclosure format
@@ -303,18 +322,6 @@ const { customizedPage } = useCustomPages('Tag');
 // knowledge-article data source exists in the product. LEFT_PANEL is
 // structural, not a missing branch: GenericTab renders the panel's
 // children and never offers the panel itself to the slot.
-function customizedEntryFor(tabKey: string) {
-  const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
-  if (!entry?.id || !isWidgetLayoutTab('Tag', entry.id)) {
-    return undefined;
-  }
-  return entry;
-}
-
-function widgetLayoutFor(tabKey: string) {
-  const entry = customizedEntryFor(tabKey);
-  return entry ? resolveWidgetLayout('Tag', entry.id, customizedPage.value) : [];
-}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -390,21 +397,6 @@ async function onDeleteTag(): Promise<void> {
     }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
-  }
-}
-
-async function onToggleTagDisabled(disabled: boolean): Promise<void> {
-  if (!tag.value) {
-    return;
-  }
-  const previous = tag.value.disabled === true;
-  tag.value = { ...tag.value, disabled };
-  try {
-    await patchTag(tag.value.id, setFieldPatch('/disabled', previous, disabled));
-    message.success(t('crud.updated'));
-  } catch (error) {
-    tag.value = { ...tag.value, disabled: previous };
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
 }
 
@@ -556,7 +548,7 @@ onMounted(() => {
       </Button>
     </template>
     <template #overview>
-      <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Tag">
+      <GenericTab v-if="widgetLayoutFor('overview') !== null" :layout="widgetLayoutFor('overview') ?? []" page-type="Tag">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
             <EntityDescriptionCell
@@ -606,13 +598,6 @@ onMounted(() => {
                 :on-description-update="onDescriptionUpdate"
               />
             </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.disabled')">
-          <Switch
-            :checked="tag.disabled === true"
-            data-testid="tag-disabled"
-            @change="(value: boolean | string | number) => onToggleTagDisabled(value === true)"
-          />
-        </Descriptions.Item>
         <Descriptions.Item :label="t('tags.usage')">{{ tag.usageCount ?? '—' }}</Descriptions.Item>
       </Descriptions>
     </template>
@@ -657,7 +642,7 @@ onMounted(() => {
       />
     </template>
     <template #data_observability>
-      <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="Tag">
+      <GenericTab v-if="widgetLayoutFor('data_observability') !== null" :layout="widgetLayoutFor('data_observability') ?? []" page-type="Tag">
         <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
             <EntityDescriptionCell

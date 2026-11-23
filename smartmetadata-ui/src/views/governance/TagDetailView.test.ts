@@ -299,8 +299,22 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
       'Activity feed',
       'Data Observability',
     ]);
-    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
-    expect(widgetTestIds(wrapper)).toEqual([]);
+    // Flipped (Tag/overview, batch-6 pattern): with no customized page
+    // the overview mounts the default grid (DESCRIPTION + DOMAIN +
+    // OWNERS), and the legacy pane — including its disable toggle, now
+    // relocated to the classification tags table — is gone. The
+    // widgetTestIds helper also collects the cells' own nested
+    // testids (widget-domain-cell, widget-owners-cell).
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
+    expect(widgetTestIds(wrapper)).toEqual([
+      'widget-description',
+      'widget-domain',
+      'widget-domain-cell',
+      'widget-owners',
+      'widget-owners-cell',
+    ]);
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Sensitive data');
+    expect(wrapper.find('[data-testid="widget-owners"]').text()).toContain('Alice');
     // Merged (r2): the assets tab mounts AssetsTabs and
     // data-observability mounts the shared DQ dashboard, so no tab
     // keeps a residual.
@@ -410,10 +424,15 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     const wrapper = await mountTagView();
     // Merged (r2): neither assets nor data-observability is the
     // widget-layout tab, and both now have real content (AssetsTabs,
-    // DQ dashboard), so no tab keeps a residual; overview keeps its pane.
+    // DQ dashboard), so no tab keeps a residual; overview mounts the
+    // grid (flipped), not the legacy pane — and with a stored page
+    // that carries no overview entry, pin's
+    // getLayoutFromCustomizedPage returns undefined for the missing
+    // entry, so the grid is empty (only a missing page falls back to
+    // the default layout).
     expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(0);
     expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
   });

@@ -251,6 +251,7 @@ export const UNCONDITIONAL_MOUNT_TABS: Record<string, readonly string[]> = {
   Pipeline: ['tasks'],
   SearchIndex: ['fields'],
   StoredProcedure: ['code'],
+  Tag: ['overview'],
   Topic: ['schema'],
 };
 

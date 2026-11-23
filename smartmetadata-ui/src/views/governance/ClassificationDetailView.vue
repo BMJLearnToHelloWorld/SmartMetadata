@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, message} from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, Tooltip, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import { deleteClassification, getClassification, patchClassification, updateClassification } from '@/api/classifications';
@@ -14,7 +14,8 @@ import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getClassificationVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { setFieldPatch } from '@/admin/jsonPatch';
-import { createTag, listTags } from '@/api/tags';
+import { createTag, listTags, patchTag } from '@/api/tags';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
@@ -29,6 +30,30 @@ const classification = ref<Classification | null>(null);
 // Same upstream isEditable rule as the tag view (see TagDetailView): disabled
 // revokes Edit; Delete is not an Edit* operation and keeps its own gate.
 const isEditable = computed(() => !!classification.value && classification.value.disabled !== true);
+
+/**
+ * Pin ClassificationDetails getTagsTableColumn
+ * (ClassificationUtils.tsx:45-58): the per-tag disable toggle is gated
+ * by the classification's EditAll, and never renders enabled on a
+ * disabled classification. The composable fails closed (flags
+ * all-false until the fetch resolves); no `deleted` input — pin's gate
+ * does not include deleted.
+ */
+const classificationPermissions = useEntityPermissions(
+  'classification',
+  () => classification.value?.fullyQualifiedName || classification.value?.name || '',
+);
+const canToggleDisable = computed(
+  () => classificationPermissions.canEditAll.value && classification.value?.disabled !== true,
+);
+watch(
+  () => classificationPermissions.error.value,
+  (error) => {
+    if (error) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  },
+);
 const tags = ref<ClassificationTag[]>([]);
 const activeTab = ref('overview');
 const editOpen = ref(false);
@@ -59,18 +84,29 @@ const tabs = computed<EntityDetailTab[]>(() => [
 ]);
 
 const tagColumns = computed(() => [
+  // Pin ClassificationUtils getTagsTableColumn: the disabled column is
+  // first (before the tag name), title label.enabled, width 100.
+  { title: t('label.enabled'), dataIndex: 'disabled', key: 'disabled', width: 100 },
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
   { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
   { title: t('governance.classifications.usage'), key: 'usageCount', width: 90 },
 ]);
+
+async function loadTags(): Promise<void> {
+  if (!classification.value) {
+    tags.value = [];
+    return;
+  }
+  const parent = classification.value.fullyQualifiedName || classification.value.name;
+  tags.value = (await listTags({ parent, limit: 100 })).data;
+}
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
     classification.value = await getClassification(props.id);
-    const parent = classification.value.fullyQualifiedName || classification.value.name;
-    tags.value = (await listTags({ parent, limit: 100 })).data;
+    await loadTags();
   } catch (error) {
     classification.value = null;
     tags.value = [];
@@ -118,6 +154,31 @@ async function onToggleDisabled(disabled: boolean): Promise<void> {
     classification.value = { ...classification.value, disabled: previous };
     message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
+}
+
+/**
+ * Pin TagsPage handleToggleDisable (TagsPage.tsx:476): flip the tag's
+ * disabled flag via JSON Patch, then refresh the classification's tag
+ * list. No optimistic update — the refresh is the source of truth.
+ * On failure pin toasts server.entity-updating-error for the tag.
+ */
+async function onToggleTagDisabled(tag: ClassificationTag): Promise<void> {
+  const previous = tag.disabled === true;
+  try {
+    await patchTag(tag.id, setFieldPatch('/disabled', previous, !previous));
+    await loadTags();
+  } catch {
+    message.error(t('server.entity-updating-error', { entity: t('label.tag-lowercase') }));
+  }
+}
+
+function toggleTooltipTitle(tag: ClassificationTag): string {
+  if (canToggleDisable.value) {
+    return tag.disabled === true ? t('label.enable') : t('label.disable');
+  }
+  return classification.value?.disabled === true
+    ? t('message.disabled-classification-actions-message')
+    : t('message.no-permission-for-action');
 }
 
 async function onOpenVersions(): Promise<void> {
@@ -254,7 +315,17 @@ onMounted(() => {
         size="small"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
+          <template v-if="column.key === 'disabled'">
+            <Tooltip :title="toggleTooltipTitle(record as ClassificationTag)" placement="top">
+              <Switch
+                :checked="(record as ClassificationTag).disabled !== true"
+                :disabled="!canToggleDisable"
+                :data-testid="`tag-disable-toggle-${(record as ClassificationTag).name}`"
+                @change="() => onToggleTagDisabled(record as ClassificationTag)"
+              />
+            </Tooltip>
+          </template>
+          <template v-else-if="column.key === 'name'">
             <a
               href="#"
               @click.prevent="router.push({ name: 'governance-tag', params: { id: (record as ClassificationTag).id } })"
