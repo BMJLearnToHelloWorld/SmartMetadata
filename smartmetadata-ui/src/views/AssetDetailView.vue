@@ -190,6 +190,17 @@ const canEditTableConstraints = computed(
   () => permissionStore.isAdminUser || assetFlags.value.canEditAll,
 );
 /**
+ * D-TAB-3 (lineage batch L6): pin EntityLineageTab receives hasEditAccess
+ * per entity (TableDetailsPageV1:437 — getDerivedPermissionFlags(
+ * tablePermissions, deleted).canEditLineage); the tab canvas gates
+ * drag-connect on it. The P1 admin line ORs in on top, like every other
+ * D-2 gate in this view; fail-closed until the permission fetch resolves
+ * (assetOps null → all flags false).
+ */
+const lineageHasEditAccess = computed(
+  () => permissionStore.isAdminUser || assetFlags.value.canEditLineage,
+);
+/**
  * D-2 batch 5b metric definition + pipeline tasks: the pin call sites
  * derive WITHOUT the `deleted` flag (`MetricDefinitionCard.tsx:391`,
  * `PipelineTaskTab.tsx:148-162`) — the deleted gate is applied
@@ -2240,7 +2251,7 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" />
+            <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" :has-edit-access="lineageHasEditAccess" />
           </template>
       </template>
       <template v-if="asset" #quality>

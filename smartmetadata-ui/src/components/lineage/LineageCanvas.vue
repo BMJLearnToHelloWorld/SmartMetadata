@@ -95,8 +95,8 @@ const props = withDefaults(
     showHeader?: boolean;
     /**
      * Pin `hasEditAccess` (useEntityPermissions → canEditLineage), passed
-     * down by the page. Defaults to true: the tab variant has no page
-     * passing a permission in yet (L6), so no-information keeps the
+     * down by the lineage page and by the detail views (tab variant).
+     * Defaults to true: a caller that passes no permission keeps the
      * current behaviour instead of silently disabling editing there.
      */
     hasEditAccess?: boolean;
@@ -209,20 +209,53 @@ const currentFocus = computed((): { entityType: string; fqn: string } => {
 
 
 const configModalOpen = ref(false);
-// Pin EntityLineageTab: `?mode=impact_analysis` renders the table, anything
-// else the diagram. URL → tab only; the tab click stays local until L6
-// wires tab → URL (its scope), so a click never fights this watcher.
 const activeView = ref(isImpactAnalysisMode(route.query) ? 'impact' : 'diagram');
+
+/**
+ * D-TAB-1 (lineage batch L6): pin reads and writes the view mode in its
+ * SHARED lineage surface, with no page/tab split — the Lineage provider
+ * reads `?mode` from the URL (Lineage.tsx:687 `searchData.mode`,
+ * :930 skips the graph fetch in impact mode) and the shared controls
+ * render the lineage/impact tabs and write the param back
+ * (CustomControls.component.tsx:233-236 read, :259-270 handleTabChange
+ * writes `params['mode'] = key`). Both variants mirror that round-trip
+ * here. The `table` view is a product-only extra pin's tab does not
+ * offer; selecting it strips the mode param like the diagram does.
+ */
+const LINEAGE_MODE_PARAM = 'mode';
+const LINEAGE_IMPACT_MODE = 'impact_analysis';
+
+function modeViewFromRoute(): 'impact' | 'diagram' {
+  return route.query[LINEAGE_MODE_PARAM] === LINEAGE_IMPACT_MODE ? 'impact' : 'diagram';
+}
+
 watch(
-  () => route.query.mode,
-  (mode) => {
-    if (mode === 'impact_analysis') {
-      activeView.value = 'impact';
-    } else if (mode === 'lineage') {
-      activeView.value = 'diagram';
+  () => route.query[LINEAGE_MODE_PARAM],
+  () => {
+    const next = modeViewFromRoute();
+    // Only URL-driven moves touch the view: a navigation into impact mode,
+    // or out of it while the impact view is showing. A user-picked `table`
+    // view must not be forced back to diagram when the change handler
+    // below strips the mode param.
+    if (next === 'impact' || activeView.value === 'impact') {
+      activeView.value = next;
     }
   },
 );
+
+function onViewChange(key: string): void {
+  activeView.value = key;
+  const query = { ...route.query };
+  if (key === 'impact') {
+    if (query[LINEAGE_MODE_PARAM] !== LINEAGE_IMPACT_MODE) {
+      query[LINEAGE_MODE_PARAM] = LINEAGE_IMPACT_MODE;
+      void router.replace({ query }).catch(() => undefined);
+    }
+  } else if (query[LINEAGE_MODE_PARAM] !== undefined) {
+    delete query[LINEAGE_MODE_PARAM];
+    void router.replace({ query }).catch(() => undefined);
+  }
+}
 
 /** Mirrors the export panel's png-available rule so the page button agrees with it. */
 const canExportPng = computed(
@@ -1033,7 +1066,7 @@ watch(
         :tabs="viewTabs"
         :active-key="activeView"
         test-id="lineage-view-tabs"
-        @change="(key) => { activeView = key; }"
+        @change="onViewChange"
       />
       <LineageExportPanel
         :model="graph"
@@ -1130,6 +1163,9 @@ watch(
           row-key="key"
         />
       </template>
+      <!-- Impact view (pin EntityLineageTab ?mode=impact_analysis): the
+           server-backed LineageTable (L5); the mode wiring above selects
+           this branch from the URL. -->
       <LineageTable v-else :entity-type="entityType" :fqn="fqn" />
       <LineageConfigModal
         :open="configModalOpen"

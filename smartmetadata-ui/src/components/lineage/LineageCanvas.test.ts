@@ -12,6 +12,7 @@ import { defineComponent, h } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { useLineageStore } from '@/stores/lineage';
 import { CSV_JOBS_REFRESH_EVENT } from '@/api/csvJobs';
+import DetailTabs from '@/components/shared/DetailTabs.vue';
 import AddLineagePopover from './AddLineagePopover.vue';
 import LineageCanvas from './LineageCanvas.vue';
 import LineageNodeDeleteModal from './LineageNodeDeleteModal.vue';
@@ -109,10 +110,22 @@ const LineageGraphStub = defineComponent({
     'change-active-layer',
     'change-platform-view',
   ],
-  setup(props) {
+  setup(props, { emit }) {
     return () =>
       h('div', { 'data-testid': 'lineage-graph-stub' }, [
         h('span', { 'data-testid': 'stub-node-ids' }, (props.model?.nodes ?? []).map((n: { id: string }) => n.id).join(',')),
+        h(
+          'button',
+          {
+            'data-testid': 'stub-connect',
+            onClick: () =>
+              emit('connect', {
+                from: { id: 'up-id', entityType: 'table', fullyQualifiedName: 'svc.db.schema.raw_orders' },
+                to: { id: 'center-id', entityType: 'table', fullyQualifiedName: 'svc.db.schema.orders' },
+              }),
+          },
+          'connect',
+        ),
       ]);
   },
 });
@@ -514,5 +527,108 @@ describe('LineageCanvas (L3)', () => {
     expect(puts[0].url).toContain('/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.customers');
     expect(JSON.parse(puts[0].body)).toEqual({ source: 'Manual' });
     expect(popover.exists()).toBe(false);
+  });
+});
+
+describe('LineageCanvas (L6)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('tab variant opens the impact view from ?mode=impact_analysis', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({ mode: 'impact_analysis' }, { variant: 'tab' });
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(false);
+  });
+
+  it('tab variant opens the diagram without the mode param', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({}, { variant: 'tab' });
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(false);
+  });
+
+  it('tab variant writes ?mode=impact_analysis when the impact view is picked, and strips it on diagram', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper, router } = await mountCanvas({}, { variant: 'tab' });
+    expect(router.currentRoute.value.query.mode).toBeUndefined();
+    wrapper.findComponent(DetailTabs).vm.$emit('change', 'impact');
+    await flushPromises();
+    expect(router.currentRoute.value.query.mode).toBe('impact_analysis');
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(true);
+    wrapper.findComponent(DetailTabs).vm.$emit('change', 'diagram');
+    await flushPromises();
+    expect(router.currentRoute.value.query.mode).toBeUndefined();
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(true);
+  });
+
+  it('tab variant follows an external navigation out of impact mode', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper, router } = await mountCanvas({ mode: 'impact_analysis' }, { variant: 'tab' });
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(true);
+    await router.replace({ query: {} });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(true);
+  });
+
+  it('page variant reads the mode param and writes it back like the tab', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    // Pin reads ?mode in the shared Lineage provider (Lineage.tsx:687,930)
+    // with no page/tab split, so the page opens the impact table too.
+    const { wrapper, router } = await mountCanvas({ mode: 'impact_analysis' });
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(false);
+    // And the shared controls write it back (CustomControls:259-270), so
+    // picking the impact view in the page writes the param as well.
+    await router.replace({ query: {} });
+    await flushPromises();
+    wrapper.findComponent(DetailTabs).vm.$emit('change', 'impact');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(true);
+    expect(router.currentRoute.value.query.mode).toBe('impact_analysis');
+  });
+
+  it('does not PUT a lineage edge when hasEditAccess is false', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({}, { variant: 'tab', hasEditAccess: false });
+    await wrapper.get('[data-testid="stub-connect"]').trigger('click');
+    await flushPromises();
+    expect(
+      fetchMock.mock.calls.some((call) => (call[1] as RequestInit | undefined)?.method === 'PUT'),
+    ).toBe(false);
+    expect(wrapper.text()).toContain('You do not have permission to edit lineage');
+  });
+
+  it('PUTs a lineage edge then reloads when hasEditAccess is true', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'PUT') {
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({}, { variant: 'tab', hasEditAccess: true });
+    await wrapper.get('[data-testid="stub-connect"]').trigger('click');
+    await flushPromises();
+    const putCall = fetchMock.mock.calls.find(
+      (call) => (call[1] as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(putCall).toBeTruthy();
+    expect(String(putCall?.[0])).toContain(
+      '/api/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.orders',
+    );
+    expect(JSON.parse(String((putCall?.[1] as RequestInit).body))).toEqual({ source: 'Manual' });
   });
 });

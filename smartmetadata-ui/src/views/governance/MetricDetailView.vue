@@ -235,6 +235,16 @@ const metricDefinitionCanEdit = computed(
 );
 
 /**
+ * D-TAB-3 (lineage batch L6): pin EntityLineageTab receives hasEditAccess
+ * per entity; the metric page derives it from the same composable as
+ * every other gate here (deleted-gated, fail-closed), with the P1 admin
+ * line on top.
+ */
+const lineageHasEditAccess = computed(
+  () => permissionStore.isAdminUser || metricPermissions.can('EditLineage'),
+);
+
+/**
  * D-2 batch 5b metric definition save: the widget hands over the JSON
  * Patch ops it diffed from the pin save payload; a thrown failure keeps
  * the edit dialog open with its error alert.
@@ -699,6 +709,7 @@ onMounted(() => {
         entity-type="metric"
         :fqn="metric?.fullyQualifiedName || props.fqn"
         variant="tab"
+        :has-edit-access="lineageHasEditAccess"
       />
     </template>
     <template #assets>

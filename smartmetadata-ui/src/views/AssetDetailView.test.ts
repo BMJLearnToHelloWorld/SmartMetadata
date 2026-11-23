@@ -16,6 +16,7 @@ import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
+import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
 import { compactWidgetLayoutVertical, resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -327,6 +328,15 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Schema');
     expect(wrapper.text()).toContain('Lineage');
     expect(wrapper.text()).toContain('Profiler');
+  });
+
+  it('passes the fetched EditLineage flag into the lineage tab canvas (L6)', async () => {
+    const { wrapper } = await mountView();
+    const canvas = wrapper.findComponent(LineageCanvas);
+    expect(canvas.exists()).toBe(true);
+    // The governance stub grants ViewBasic/EditDescription/EditCustomFields
+    // but not EditLineage, so the tab canvas is read-only (D-TAB-3).
+    expect(canvas.props('hasEditAccess')).toBe(false);
   });
 
   it('plots profiler history, usage, and latest test status from real GET payloads', async () => {

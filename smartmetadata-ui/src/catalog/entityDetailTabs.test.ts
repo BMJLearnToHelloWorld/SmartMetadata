@@ -142,6 +142,8 @@ describe('entityDetailTabs', () => {
       'overview',
       'endpoint',
       'activity_feed',
+      // L6: pin APIEndpointUtils mounts the lineage tab after activity.
+      'lineage',
       'custom_properties',
     ]);
   });
