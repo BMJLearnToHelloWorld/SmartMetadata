@@ -99,6 +99,36 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
     collection: 'apiEndpoints',
     fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers,votes,dataProducts,certification',
   },
+  // D-TAB-2 (host lane): DriveService detail pages. Pin `rest/driveAPI.ts`
+  // (a3012259ca): BASE_URL '/drives', APIByEntityType
+  // {file:'/files', directory:'/directories', spreadsheet:'/spreadsheets',
+  // worksheet:'/worksheets'}; `getDriveAssetByFqn` is
+  // GET /v1/drives/{segment}/name/{fqn}. The collections below carry the
+  // same segments, so the generic fetch/patch/vote/followers/versions
+  // resolvers all build the pin paths. Field sets are pin's
+  // `defaultFields` per type (DirectoryDetailsUtils.tsx:60-73,
+  // FileDetailsUtils.tsx:63-76, SpreadsheetDetailsUtils.tsx:61-74,
+  // WorksheetDetailsUtils.tsx:60-71; worksheet's duplicated rowCount
+  // kept once).
+  directory: {
+    collection: 'drives/directories',
+    fields:
+      'owners,children,followers,tags,domains,dataProducts,votes,extension,directoryType,numberOfFiles,numberOfSubDirectories',
+  },
+  file: {
+    collection: 'drives/files',
+    fields:
+      'owners,followers,tags,domains,dataProducts,votes,extension,fileType,fileExtension,fileVersion,columns,sampleData',
+  },
+  spreadsheet: {
+    collection: 'drives/spreadsheets',
+    fields:
+      'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,createdTime,modifiedTime',
+  },
+  worksheet: {
+    collection: 'drives/worksheets',
+    fields: 'owners,followers,tags,domains,dataProducts,votes,extension,rowCount,columns',
+  },
   // C-14: queries are wired for vote/patch (PUT /v1/queries/{id}/vote,
   // PATCH /v1/queries/{id}) and for GET /v1/queries/name/{fqn}, all
   // verified on QueryResource. The field set is the pin vote-refetch set

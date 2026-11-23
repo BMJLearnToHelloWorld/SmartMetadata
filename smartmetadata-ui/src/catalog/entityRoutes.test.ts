@@ -15,6 +15,7 @@ import {
   openSearchHit,
   parentTableLocation,
   resolveDetailEndpoint,
+  resolveFollowersPath,
   resolvePatchPath,
   resolveVersionsPath,
   resolveVotePath,
@@ -136,6 +137,37 @@ describe('entityRoutes', () => {
       path: `/v1/apiEndpoints/name/${encodeURIComponent('svc.coll.getPet')}`,
       fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers,votes,dataProducts,certification',
     });
+  });
+
+  // D-TAB-2 (host lane): DriveService types map onto the pin driveAPI
+  // segments (a3012259ca rest/driveAPI.ts:34-41, getDriveAssetByFqn
+  // :68-89): GET /v1/drives/{segment}/name/{fqn} with pin's
+  // defaultFields, and the generic write resolvers build the pin
+  // vote/followers/versions/patch paths under the same segments.
+  it('maps DriveService types onto /v1/drives/{segment}/name/{fqn} with pin defaultFields', () => {
+    expect(resolveDetailEndpoint('directory', 'drive.shared.docs')).toEqual({
+      path: `/v1/drives/directories/name/${encodeURIComponent('drive.shared.docs')}`,
+      fields:
+        'owners,children,followers,tags,domains,dataProducts,votes,extension,directoryType,numberOfFiles,numberOfSubDirectories',
+    });
+    expect(resolveDetailEndpoint('file', 'drive.shared.report.csv')).toEqual({
+      path: `/v1/drives/files/name/${encodeURIComponent('drive.shared.report.csv')}`,
+      fields:
+        'owners,followers,tags,domains,dataProducts,votes,extension,fileType,fileExtension,fileVersion,columns,sampleData',
+    });
+    expect(resolveDetailEndpoint('spreadsheet', 'drive.shared.budget')).toEqual({
+      path: `/v1/drives/spreadsheets/name/${encodeURIComponent('drive.shared.budget')}`,
+      fields:
+        'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,createdTime,modifiedTime',
+    });
+    expect(resolveDetailEndpoint('worksheet', 'drive.shared.budget.Sheet1')).toEqual({
+      path: `/v1/drives/worksheets/name/${encodeURIComponent('drive.shared.budget.Sheet1')}`,
+      fields: 'owners,followers,tags,domains,dataProducts,votes,extension,rowCount,columns',
+    });
+    expect(resolvePatchPath('file', 'f-1')).toBe('/v1/drives/files/f-1');
+    expect(resolveVotePath('spreadsheet', 's-1')).toBe('/v1/drives/spreadsheets/s-1/vote');
+    expect(resolveVersionsPath('worksheet', 'w-1')).toBe('/v1/drives/worksheets/w-1/versions');
+    expect(resolveFollowersPath('directory', 'd-1')).toBe('/v1/drives/directories/d-1/followers');
   });
 
   it('routes tableColumn hits to the parent table only when a table FQN exists (Fix3)', () => {
