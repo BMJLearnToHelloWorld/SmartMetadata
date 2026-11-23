@@ -115,10 +115,10 @@ export interface DeleteEntityOptions {
  * CSVExportResponse), never a file. Same contract as
  * exportMetricsCsvAsync: the call dispatches the CSV-jobs tray refresh
  * so the job appears even if the tray has not polled yet, and a jobId
- * is never invented when the response carries none (ADR:2026-11-08-
- * csv-job-owned-memory-set). The caller claims the job for the tray
- * (markCsvJobOwned). Server endpoint verified present in the product
- * server (B2-S1: GlossaryResource.java:568 exportAsync).
+ * is never invented when the response carries none
+ * (ADR:2026-11-08-csv-job-owned-memory-set). The caller claims the job
+ * for the tray (markCsvJobOwned). Server endpoint verified present in
+ * the product server (B2-S1: GlossaryResource.java:568 exportAsync).
  */
 export interface GlossaryCsvExportJob {
   jobId?: string;
