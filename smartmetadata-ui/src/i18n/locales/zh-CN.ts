@@ -1990,6 +1990,8 @@ const zhCN = {
     selectedEdge: '已选边：{from} → {to}',
     addLineageUpstream: '添加上游血缘',
     addLineageDownstream: '添加下游血缘',
+    addLineageUpstreamDescription: '选择为 {entity} 提供数据的资产。选择“添加”后即保存该连接。',
+    addLineageDownstreamDescription: '选择接收 {entity} 数据的资产。选择“添加”后即保存该连接。',
     addLineageSelectEntity: '选择资产',
     addLineageSelectColumn: '选择列',
     addLineagePickFromCanvas: '从画布上选择资产',

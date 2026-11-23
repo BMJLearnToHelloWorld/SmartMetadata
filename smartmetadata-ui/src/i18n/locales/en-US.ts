@@ -2008,6 +2008,8 @@ const enUS = {
     selectedEdge: 'Selected edge: {from} → {to}',
     addLineageUpstream: 'Add upstream lineage',
     addLineageDownstream: 'Add downstream lineage',
+    addLineageUpstreamDescription: 'Pick the asset that feeds data into {entity}. The connection is saved when you select Add.',
+    addLineageDownstreamDescription: 'Pick the asset that receives data from {entity}. The connection is saved when you select Add.',
     addLineageSelectEntity: 'Select an asset',
     addLineageSelectColumn: 'Select a column',
     addLineagePickFromCanvas: 'Pick an asset already on the canvas',

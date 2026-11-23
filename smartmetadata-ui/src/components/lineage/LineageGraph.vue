@@ -11,7 +11,7 @@ import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
-import type { Connection, Edge, Node, NodeComponent, NodeTypesObject } from '@vue-flow/core';
+import type { Connection, Edge, Node, NodeComponent, NodeMouseEvent, NodeTypesObject } from '@vue-flow/core';
 import { columnBelongsToNode, columnLineageEdges } from '@/lineage/columnPorts';
 import type { LineageLayer } from '@/lineage/config';
 import {
@@ -283,6 +283,17 @@ function onNodeClick(payload: { node: Node<LineageNodeData> }): void {
 }
 
 /**
+ * Pin `onNodeContextMenu` (EntityLineagePureUtils.ts:77-82): right-click on
+ * a node only suppresses the browser menu — pin opens no menu there (the
+ * node options live in the ⋮ dropdown, LineageNodeMenu). Wired on the
+ * classic canvas only, as in pin (EntityLineageCanvas.tsx:324); the scene
+ * map does not wire it.
+ */
+function onNodeContextMenu(payload: NodeMouseEvent): void {
+  payload.event.preventDefault();
+}
+
+/**
  * Edge click selects (never navigates): pin `onEdgeClick` opens the edge
  * drawer; the product has no drawer, so the click only selects — the
  * selection drives Delete/Backspace and the toolbar delete button. A
@@ -503,6 +514,7 @@ watch(
       :min-zoom="0.3"
       :max-zoom="2"
       @node-click="onNodeClick"
+      @node-context-menu="onNodeContextMenu"
       @edge-click="onEdgeClick"
       @connect="onConnect"
     >
