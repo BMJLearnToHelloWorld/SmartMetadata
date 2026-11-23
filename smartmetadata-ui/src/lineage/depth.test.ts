@@ -8,9 +8,14 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { LINEAGE_DEPTH_DEFAULT, clampLineageDepth } from './depth';
+import { LINEAGE_DEPTH_DEFAULT, LINEAGE_SESSION_DEPTH_DEFAULT, clampLineageDepth } from './depth';
 
 describe('lineage depth', () => {
+  it('keeps the REST default at 1 and the session/store default at the official 3', () => {
+    expect(LINEAGE_DEPTH_DEFAULT).toBe(1);
+    expect(LINEAGE_SESSION_DEPTH_DEFAULT).toBe(3);
+  });
+
   it('keeps the fetch clamp at 0–3', () => {
     expect(clampLineageDepth(9)).toBe(3);
     expect(clampLineageDepth(-1)).toBe(0);

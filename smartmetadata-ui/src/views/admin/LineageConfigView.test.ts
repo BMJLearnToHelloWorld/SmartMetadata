@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from 'vue-i18n';
 import { useShellConfigStore } from '@/stores/shellConfig';
+import ServiceDocPanel from '@/components/ingestion/ServiceDocPanel.vue';
 import LineageConfigView from './LineageConfigView.vue';
 
 const backMock = vi.hoisted(() => vi.fn());
@@ -185,6 +186,37 @@ describe('LineageConfigView', () => {
     );
     expect(wrapper.find('[data-testid="field-lineage-layer"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="field-pipeline-view-mode"]').exists()).toBe(true);
+  });
+
+  it('renders the resizable doc panel beside the form', async () => {
+    getMock.mockResolvedValue({
+      upstreamDepth: 2,
+      downstreamDepth: 2,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="resizable-panels"]').exists()).toBe(true);
+    const docPanel = wrapper.findComponent(ServiceDocPanel);
+    expect(docPanel.exists()).toBe(true);
+    expect(docPanel.props('serviceName')).toBe('LineageConfiguration');
+    expect(docPanel.props('serviceType')).toBe('OpenMetadata');
+  });
+
+  it('passes the focused field id to the doc panel', async () => {
+    getMock.mockResolvedValue({
+      upstreamDepth: 2,
+      downstreamDepth: 2,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find('input[data-testid="field-upstream"]').trigger('focus');
+    expect(wrapper.findComponent(ServiceDocPanel).props('activeField')).toBe(
+      'root/upstreamDepth',
+    );
   });
 
   it('navigates back on cancel', async () => {

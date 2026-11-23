@@ -154,15 +154,18 @@ describe('LineageView', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountLineage();
+    // The session default is the official store default 3, not the REST
+    // default 1 — so the first lineage fetch already asks for depth 3, and
+    // a decrement refetches at 2. (The permissions call precedes the
+    // lineage fetch on this main, so locate the first lineage call.)
     const firstLineageCall = fetchMock.mock.calls.find((call) =>
       String(call[0]).includes('/api/v1/lineage/getLineage'),
     );
-    expect(String(firstLineageCall?.[0])).toContain('upstreamDepth=1');
-    await wrapper.get('[data-testid="upstream-depth-inc"]').trigger('click');
-    await wrapper.get('[data-testid="upstream-depth-inc"]').trigger('click');
+    expect(String(firstLineageCall?.[0])).toContain('upstreamDepth=3');
+    await wrapper.get('[data-testid="upstream-depth-dec"]').trigger('click');
     await flushPromises();
     const lastUrl = String(fetchMock.mock.calls.at(-1)?.[0]);
-    expect(lastUrl).toContain('upstreamDepth=3');
+    expect(lastUrl).toContain('upstreamDepth=2');
   });
 
   it('connect stub PUTs lineage edge then reloads GET', async () => {

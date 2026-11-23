@@ -230,7 +230,8 @@ describe('LineageCanvas (L2)', () => {
     await flushPromises();
     const dqUrl = fetchUrls(fetchMock).find((url) => url.includes('getDataQualityLineage'));
     expect(dqUrl).toContain('fqn=svc.db.schema.orders');
-    expect(dqUrl).toContain('upstreamDepth=1');
+    // The DQ fetch uses the session depths — the official store default 3.
+    expect(dqUrl).toContain('upstreamDepth=3');
     expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(true);
   });
 

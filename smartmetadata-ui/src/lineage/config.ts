@@ -12,7 +12,7 @@
  * options without a product API surface stay visible-but-disabled
  * instead of silently vanishing or pretending to work.
  */
-import { clampLineageDepth, LINEAGE_DEPTH_DEFAULT } from './depth';
+import { clampLineageDepth, LINEAGE_SESSION_DEPTH_DEFAULT } from './depth';
 
 export type LineageLayer = 'EntityLineage' | 'ColumnLevelLineage' | 'DataObservability';
 export type LineagePipelineMode = 'Node' | 'Edge';
@@ -27,10 +27,11 @@ export interface LineageConfigField {
   defaultValue: number;
 }
 
-/** Official LINEAGE_CONFIG_FIELDS, in modal order. */
+/** Official LINEAGE_CONFIG_FIELDS, in modal order. Defaults are the
+ * official store defaults (depths 3), not the REST default (1). */
 export const LINEAGE_CONFIG_FIELDS: LineageConfigField[] = [
-  { key: 'upstreamDepth', labelKey: 'lineage.upstreamDepth', min: 0, defaultValue: LINEAGE_DEPTH_DEFAULT },
-  { key: 'downstreamDepth', labelKey: 'lineage.downstreamDepth', min: 0, defaultValue: LINEAGE_DEPTH_DEFAULT },
+  { key: 'upstreamDepth', labelKey: 'lineage.upstreamDepth', min: 0, defaultValue: LINEAGE_SESSION_DEPTH_DEFAULT },
+  { key: 'downstreamDepth', labelKey: 'lineage.downstreamDepth', min: 0, defaultValue: LINEAGE_SESSION_DEPTH_DEFAULT },
   { key: 'nodesPerLayer', labelKey: 'lineage.nodesPerLayer', min: 5, defaultValue: 50 },
 ];
 
@@ -213,8 +214,8 @@ export interface LineageCanvasConfig {
 }
 
 export const DEFAULT_LINEAGE_CANVAS_CONFIG: LineageCanvasConfig = {
-  upstreamDepth: LINEAGE_DEPTH_DEFAULT,
-  downstreamDepth: LINEAGE_DEPTH_DEFAULT,
+  upstreamDepth: LINEAGE_SESSION_DEPTH_DEFAULT,
+  downstreamDepth: LINEAGE_SESSION_DEPTH_DEFAULT,
   nodesPerLayer: LINEAGE_NODES_PER_LAYER_DEFAULT,
   layer: 'EntityLineage',
   pipelineViewMode: 'Node',
