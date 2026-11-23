@@ -455,4 +455,33 @@ describe('TestCasesListView dashboard drill-down', () => {
     expect(wrapper.text()).toContain('Failed');
     wrapper.unmount();
   });
+
+  it('applies a two-status health drill as repeated params (pin BINARY_STATUS_PIE_SEGMENT_ORDER)', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/quality/test-cases', name: 'quality-test-cases', component: TestCasesListView },
+        { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
+      ],
+    });
+    await router.push('/quality/test-cases');
+    await router.isReady();
+    const wrapper = mount(TestCasesListView, {
+      props: { preferSearch: true, status: ['Success', 'Queued'] },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const searchUrl = requestedUrls.find((url) => url.includes('/testCases/search/list'));
+    expect(searchUrl).toBeDefined();
+    const params = new URL(String(searchUrl)).searchParams;
+    expect(params.getAll('testCaseStatus')).toEqual(['Success', 'Queued']);
+    // The single-select cannot display two active statuses: it shows
+    // the placeholder until the viewer picks one, while the list stays
+    // filtered by both.
+    const select = wrapper.findAllComponents({ name: 'ASelect' })[0];
+    expect(select.props('value')).toBeUndefined();
+    wrapper.unmount();
+  });
 });

@@ -139,5 +139,16 @@ describe('apiRequest', () => {
       contentType: 'application/json-patch+json',
     });
   });
+
+  it('serializes array query values as repeated params (pin multi-status form)', async () => {
+    const mock = vi.fn(async (_input: RequestInfo | URL) => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', mock);
+    await apiRequest('/v1/dataQuality/testCases', {
+      query: { testCaseStatus: ['Success', 'Queued'], limit: 50 },
+    });
+    const url = new URL(String(mock.mock.calls[0][0]));
+    expect(url.searchParams.getAll('testCaseStatus')).toEqual(['Success', 'Queued']);
+    expect(url.searchParams.get('limit')).toBe('50');
+  });
 });
 

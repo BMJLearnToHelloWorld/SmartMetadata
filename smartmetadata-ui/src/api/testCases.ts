@@ -29,14 +29,16 @@ export interface ListTestCasesQuery {
   entityLink?: string;
   testSuiteId?: string;
   includeAllTests?: boolean;
-  testCaseStatus?: string;
+  /** Pin TestCaseResource: a list — several statuses at once via repeated params. */
+  testCaseStatus?: string | string[];
 }
 
 export interface SearchTestCasesQuery {
   q?: string;
   limit?: number;
   offset?: number;
-  testCaseStatus?: string;
+  /** Pin TestCaseResource search list: repeated params, same as the plain list. */
+  testCaseStatus?: string | string[];
   owner?: string;
   followedBy?: string;
   testCaseType?: string;

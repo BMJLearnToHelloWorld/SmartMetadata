@@ -107,6 +107,26 @@ export interface DqDashboardChartFilters {
 export const DQ_TEST_CASE_STATUSES = ['Success', 'Aborted', 'Failed'] as const;
 export type DqTestCaseStatus = (typeof DQ_TEST_CASE_STATUSES)[number];
 
+/**
+ * Pin pie-segment orders (components/DataQuality/ChartWidgets/
+ * ChartWidgets.constants.ts:22-36). The health pie's segments map to
+ * status *arrays* — healthy is Success + Queued, unhealthy is Failed +
+ * Aborted — so the drill type admits 'Queued' although the area charts
+ * never carry it (DQ_TEST_CASE_STATUSES above has no Queued).
+ */
+export const DQ_TEST_CASE_PIE_SEGMENT_ORDER: readonly DqTestCaseStatus[] = [
+  'Success',
+  'Failed',
+  'Aborted',
+];
+export const DQ_HEALTH_PIE_SEGMENT_ORDER: ReadonlyArray<
+  ReadonlyArray<DqTestCaseStatus | 'Queued'>
+> = [
+  ['Success', 'Queued'],
+  ['Failed', 'Aborted'],
+];
+export type DqTestCaseDrillStatus = DqTestCaseStatus | 'Queued';
+
 /** Incident status types of the two incident-count area charts (pin TestCaseResolutionStatusTypes). */
 export const DQ_INCIDENT_STATUSES = ['New', 'Resolved'] as const;
 export type DqIncidentStatus = (typeof DQ_INCIDENT_STATUSES)[number];
@@ -201,7 +221,15 @@ export function buildDqDashboardNoDimensionQuery(
  * path carries no owner either.
  */
 export interface DqTestCaseListDrill {
-  testCaseStatus?: DqTestCaseStatus;
+  /**
+   * Pin getTestCaseTabPath (DataQualityPureUtils.ts:1004-1009): a single
+   * status, or the health pie's status array ([Success, Queued] /
+   * [Failed, Aborted], BINARY_STATUS_PIE_SEGMENT_ORDER). An array rides
+   * the router query as repeated `testCaseStatus=` params — the server's
+   * own documented multi-status form (TestCaseResource.java:408) — not
+   * pin's qs bracket form.
+   */
+  testCaseStatus?: DqTestCaseDrillStatus | DqTestCaseDrillStatus[];
   dataQualityDimension?: string;
 }
 

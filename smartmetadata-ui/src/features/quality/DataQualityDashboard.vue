@@ -13,6 +13,8 @@ import { formatChartTs, namedSeries } from '@/features/charts/series';
 import { seriesWindow } from '@/features/charts/types';
 import {
   buildDqTestCaseListQuery,
+  DQ_HEALTH_PIE_SEGMENT_ORDER,
+  DQ_TEST_CASE_PIE_SEGMENT_ORDER,
   fetchDqDashboardAggregations,
   fetchDqDashboardFilterOptions,
   fetchDqDashboardTimeSeries,
@@ -41,19 +43,21 @@ import { convertMillisecondsToHumanReadableFormat } from '@/utils/workflowDateTi
  *
  * Product deltas, all named: the owner dropdown is multi-select but
  * the query carries only the first pick (pin handleOwnerChange takes
- * owners[0] into the singular ownerFqn). Drill-down: the three donuts
- * and the dimension cards are buttons (landing-view precedent) and the
- * status / incident-count area charts are clickable; SmChart exposes no segment click, so pin's
- * per-segment routing (coverage covered→suites / not-covered→explore;
- * health/results segments→per-status lists) collapses to a whole-card
- * target — suites for coverage, the test-case list with the current
- * slice for health/results — while dimension cards and area charts
- * carry their exact slice (dimension / status / incident status +
- * range) in the query. The two incident-time charts stay display-only,
- * pin parity (no redirectPath). Area charts use the shared SmChart
- * 'area' kind (pin CustomAreaChart). Governance view keeps the card
- * border and drops the shadow, pin parity (`tw:shadow-none` on the
- * section card).
+ * owners[0] into the singular ownerFqn). Drill-down, pin
+ * DqDashboardSectionContent + the three pie widgets: each donut routes
+ * per slice (SmChart `segment-click`, pin CustomPieChart onSegmentClick)
+ * — coverage covered→suites / not-covered→explore; health
+ * healthy→[Success, Queued] / unhealthy→[Failed, Aborted]
+ * (BINARY_STATUS_PIE_SEGMENT_ORDER); results success/failed/aborted→the
+ * matching status list (TEST_CASE_STATUS_PIE_SEGMENT_ORDER). The
+ * dimension cards and the status / incident-count area charts carry
+ * their exact slice (dimension / status / incident status + range) in
+ * the query. The two incident-time charts stay display-only, pin
+ * parity (no redirectPath). Area charts use the shared SmChart 'area'
+ * kind (pin CustomAreaChart). Governance view keeps the card border
+ * and drops the shadow, pin parity (`tw:shadow-none` on the section
+ * card). The legend line under each donut is plain text, like pin's
+ * non-clickable legend tiles.
  */
 const props = withDefaults(
   defineProps<{
@@ -223,6 +227,38 @@ function openTestCases(drill?: DqTestCaseListDrill): void {
 
 function openTestSuites(): void {
   void router.push({ name: 'quality-test-suites' });
+}
+
+/** Pin DataAssetsCoveragePieChartWidget: not-covered → explore. */
+function openExplore(): void {
+  void router.push({ name: 'search' });
+}
+
+/**
+ * Per-segment donut routing (pin DqDashboardSectionContent + the three
+ * pie widgets; SmChart `segment-click` carries the slice index in
+ * series order, pin CustomPieChart onSegmentClick).
+ */
+function openCoverageSegment(index: number): void {
+  if (index === 0) {
+    openTestSuites();
+  } else if (index === 1) {
+    openExplore();
+  }
+}
+
+function openHealthSegment(index: number): void {
+  const statuses = DQ_HEALTH_PIE_SEGMENT_ORDER[index];
+  if (statuses) {
+    openTestCases({ testCaseStatus: [...statuses] });
+  }
+}
+
+function openResultsSegment(index: number): void {
+  const status = DQ_TEST_CASE_PIE_SEGMENT_ORDER[index];
+  if (status) {
+    openTestCases({ testCaseStatus: status });
+  }
 }
 
 function openIncidents(status: DqIncidentStatus): void {
@@ -461,7 +497,7 @@ onMounted(async () => {
           />
           <Row v-else :gutter="[16, 16]">
             <Col :xs="24" :lg="8">
-              <button type="button" class="dq-donut" data-testid="dq-dashboard-coverage-card" @click="openTestSuites">
+              <div class="dq-donut" data-testid="dq-dashboard-coverage-card">
                 <div class="dq-donut__title">{{ t('quality.landing.coverage') }}</div>
                 <div class="dq-donut__center">{{ t('quality.landing.tables', { count: aggregations?.coverage?.total ?? 0 }) }}</div>
                 <SmChart
@@ -470,15 +506,17 @@ onMounted(async () => {
                   :series="coverageSeries"
                   :empty="t('quality.dashboard.chartEmpty')"
                   :height="200"
+                  segment-clickable
+                  @segment-click="openCoverageSegment"
                 />
                 <div class="dq-donut__legend">
                   {{ t('quality.landing.covered') }} {{ aggregations?.coverage?.covered ?? 0 }} ·
                   {{ t('quality.landing.notCovered') }} {{ aggregations?.coverage?.notCovered ?? 0 }}
                 </div>
-              </button>
+              </div>
             </Col>
             <Col :xs="24" :lg="8">
-              <button type="button" class="dq-donut" data-testid="dq-dashboard-healthy-card" @click="openTestCases()">
+              <div class="dq-donut" data-testid="dq-dashboard-healthy-card">
                 <div class="dq-donut__title">{{ t('quality.landing.healthyAssets') }}</div>
                 <div class="dq-donut__center">{{ t('quality.landing.entities', { count: aggregations?.health?.total ?? 0 }) }}</div>
                 <SmChart
@@ -487,15 +525,17 @@ onMounted(async () => {
                   :series="healthSeries"
                   :empty="t('quality.dashboard.chartEmpty')"
                   :height="200"
+                  segment-clickable
+                  @segment-click="openHealthSegment"
                 />
                 <div class="dq-donut__legend">
                   {{ t('quality.landing.healthy') }} {{ aggregations?.health?.healthy ?? 0 }} ·
                   {{ t('quality.landing.unhealthy') }} {{ aggregations?.health?.unhealthy ?? 0 }}
                 </div>
-              </button>
+              </div>
             </Col>
             <Col :xs="24" :lg="8">
-              <button type="button" class="dq-donut" data-testid="dq-dashboard-results-card" @click="openTestCases()">
+              <div class="dq-donut" data-testid="dq-dashboard-results-card">
                 <div class="dq-donut__title">{{ t('quality.landing.testResults') }}</div>
                 <div class="dq-donut__center">{{ t('quality.landing.tests', { count: aggregations?.results?.total ?? 0 }) }}</div>
                 <SmChart
@@ -504,13 +544,15 @@ onMounted(async () => {
                   :series="resultsSeries"
                   :empty="t('quality.dashboard.chartEmpty')"
                   :height="200"
+                  segment-clickable
+                  @segment-click="openResultsSegment"
                 />
                 <div class="dq-donut__legend">
                   {{ t('quality.landing.success') }} {{ aggregations?.results?.success ?? 0 }} ·
                   {{ t('quality.landing.failed') }} {{ aggregations?.results?.failed ?? 0 }} ·
                   {{ t('quality.landing.aborted') }} {{ aggregations?.results?.aborted ?? 0 }}
                 </div>
-              </button>
+              </div>
             </Col>
           </Row>
         </Card>
@@ -686,6 +728,9 @@ onMounted(async () => {
 .dq-dashboard--governance .dq-dashboard__card {
   box-shadow: none;
 }
+/* The donut is a plain div now, not a button: only the chart slices
+   navigate (pin pie widgets are Cards), so the pointer cursor lives
+   on the clickable chart canvas, not on the whole card. */
 .dq-donut {
   display: block;
   width: 100%;
@@ -694,7 +739,6 @@ onMounted(async () => {
   background: transparent;
   text-align: center;
   color: inherit;
-  cursor: pointer;
 }
 .dq-donut__title {
   font-weight: 600;
