@@ -17,24 +17,34 @@ export const vueFlowStubs = {
         nodes: { type: Array, default: () => [] },
         edges: { type: Array, default: () => [] },
       },
-      emits: ['node-click', 'connect'],
-      setup(props, { emit, slots }) {
-        const nodes = props.nodes as {
-          id: string;
-          data: {
-            name: string;
-            entityType?: string;
-            fullyQualifiedName?: string;
-            displayName?: string;
-            pathLabel?: string;
-            truncatedFqn?: string;
-            columns?: { fqn: string; name: string }[];
-            expanded?: boolean;
-            testId?: string;
-          };
-        }[];
-        return () =>
-          h('div', { 'data-testid': 'vue-flow-stub' }, [
+      emits: ['node-click', 'connect', 'edge-click'],
+      setup(props, { emit, slots, expose }) {
+        // Flow API subset LineageGraph/LineageMap use (fitView/getViewport/
+        // setViewport); exposed so export flows can be exercised in tests.
+        expose({
+          getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+          setViewport: () => undefined,
+          fitView: async () => true,
+        });
+        // Read props inside the render function, not once in setup: the
+        // parent replaces the nodes/edges arrays when the scene changes,
+        // and a setup-time capture would keep rendering the first array.
+        return () => {
+          const nodes = props.nodes as {
+            id: string;
+            data: {
+              name: string;
+              entityType?: string;
+              fullyQualifiedName?: string;
+              displayName?: string;
+              pathLabel?: string;
+              truncatedFqn?: string;
+              columns?: { fqn: string; name: string }[];
+              expanded?: boolean;
+              testId?: string;
+            };
+          }[];
+          return h('div', { 'data-testid': 'vue-flow-stub' }, [
             ...nodes.map((node) =>
               h(
                 'button',
@@ -71,8 +81,20 @@ export const vueFlowStubs = {
                   'connect',
                 )
               : null,
+            (props.edges as { id: string }[]).length >= 1
+              ? h(
+                  'button',
+                  {
+                    'data-testid': 'vue-flow-edge-stub',
+                    type: 'button',
+                    onClick: () => emit('edge-click', { edge: (props.edges as { id: string }[])[0] }),
+                  },
+                  'edge',
+                )
+              : null,
             slots.default?.(),
           ]);
+        };
       },
     }),
     Handle: defineComponent({ name: 'Handle', setup: () => () => h('div') }),

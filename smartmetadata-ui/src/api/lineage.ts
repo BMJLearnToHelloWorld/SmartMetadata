@@ -12,6 +12,13 @@ import {
   clampLineageDepth,
   LINEAGE_DEPTH_DEFAULT,
 } from '@/lineage/depth';
+import {
+  LINEAGE_SCENE_DEPTH_MAX,
+  LINEAGE_SCENE_NODES_PER_LAYER_DEFAULT,
+  type LineageBand,
+  type LineageLens,
+  type LineageScene,
+} from '@/lineage/scene';
 import { ApiError, apiRequest } from './client';
 import { notifyCsvJobsRefresh } from './csvJobs';
 import { asRecord, asString } from './json';
@@ -484,6 +491,49 @@ export async function getLineagePagingData(options: LineagePagingDataOptions): P
       ...(options.queryFilter !== undefined ? { query_filter: options.queryFilter } : {}),
       ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
       ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
+}
+
+export interface GetLineageSceneOptions {
+  lens: LineageLens;
+  band: LineageBand;
+  focusFqn?: string;
+  entityType?: string;
+  upstreamDepth?: number;
+  downstreamDepth?: number;
+  /** Nodes per layer; the official scene default is 200. */
+  nodesPerLayer?: number;
+  queryFilter?: string;
+}
+
+function clampSceneDepth(value: number | undefined): number {
+  return Math.min(LINEAGE_SCENE_DEPTH_MAX, clampLineageDepth(value ?? LINEAGE_DEPTH_DEFAULT));
+}
+
+/**
+ * GET /v1/lineage/scene — the platform scene map endpoint (official
+ * rest/lineageAPI.ts getLineageScene). Depths default to 1/1 and are
+ * capped at 3 (official MAX_SCENE_DEPTH); size defaults to 200 nodes
+ * per layer; deleted entities are never included.
+ */
+export async function getLineageScene(options: GetLineageSceneOptions): Promise<LineageScene> {
+  const focusFqn = options.focusFqn?.trim() || undefined;
+  const entityType = options.entityType?.trim() || undefined;
+  if ((focusFqn && !entityType) || (!focusFqn && entityType)) {
+    throw new Error('Lineage scene focus requires both an FQN and an entity type');
+  }
+  return apiRequest<LineageScene>('/v1/lineage/scene', {
+    query: {
+      focusFqn,
+      entityType,
+      lens: options.lens,
+      band: options.band,
+      upstreamDepth: clampSceneDepth(options.upstreamDepth),
+      downstreamDepth: clampSceneDepth(options.downstreamDepth),
+      query_filter: options.queryFilter?.trim() || undefined,
+      includeDeleted: false,
+      size: options.nodesPerLayer ?? LINEAGE_SCENE_NODES_PER_LAYER_DEFAULT,
     },
   });
 }

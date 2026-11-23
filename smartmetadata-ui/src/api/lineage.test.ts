@@ -18,6 +18,7 @@ import {
   getLineageByEntityCount,
   getLineageEdgeDetails,
   getLineagePagingData,
+  getLineageScene,
   getPlatformLineage,
   isLineageNotFound,
   putEntityLineage,
@@ -62,12 +63,12 @@ describe('lineage API', () => {
       vi.fn(async () => new Response(JSON.stringify(SAMPLE), { status: 200 })),
     );
 
-    const body = await fetchEntityLineage({
+    const body = (await fetchEntityLineage({
       entityType: 'table',
       fqn: 'svc.db."Sales Schema".orders',
       upstreamDepth: 2,
       downstreamDepth: 1,
-    });
+    })) as { entity?: { id?: string } };
 
     expect((body as { entity?: { id?: unknown } }).entity?.id).toBe('center-id');
     const { url, init } = lastFetch();
@@ -435,5 +436,79 @@ describe('lineage API', () => {
     expect(url).toContain('downstreamDepth=3');
     expect(url).toContain('entityType=table');
     expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{"bool":{"must":[]}}}')}`);
+  });
+
+  it('GETs /v1/lineage/scene with lens, band and the official defaults', async () => {
+    const scenePayload = { band: 'LAYER', lens: 'service', breadcrumb: [], edges: [], nodes: [] };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(scenePayload), { status: 200 })),
+    );
+
+    const body = await getLineageScene({ lens: 'service', band: 'LAYER' });
+
+    expect(body).toEqual(scenePayload);
+    const { url } = lastFetch();
+    expect(url).toContain('/api/v1/lineage/scene');
+    expect(url).toContain('lens=service');
+    expect(url).toContain('band=LAYER');
+    expect(url).toContain('upstreamDepth=1');
+    expect(url).toContain('downstreamDepth=1');
+    expect(url).toContain('size=200');
+    expect(url).toContain('includeDeleted=false');
+    expect(url).not.toContain('focusFqn=');
+  });
+
+  it('sends focus, depths and query filter to the scene endpoint, capping depths at 3', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ band: 'ASSET' }), { status: 200 })),
+    );
+
+    await getLineageScene({
+      lens: 'domain',
+      band: 'ASSET',
+      focusFqn: 'sales',
+      entityType: 'domain',
+      upstreamDepth: 9,
+      downstreamDepth: 2,
+      nodesPerLayer: 50,
+      queryFilter: '{"query":{}}',
+    });
+
+    const { url } = lastFetch();
+    expect(url).toContain('lens=domain');
+    expect(url).toContain('focusFqn=sales');
+    expect(url).toContain('entityType=domain');
+    expect(url).toContain('upstreamDepth=3');
+    expect(url).toContain('downstreamDepth=2');
+    expect(url).toContain('size=50');
+    expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{}}')}`);
+  });
+
+  it('rejects a half-formed scene focus without fetching', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(
+      getLineageScene({ lens: 'service', band: 'ASSET', focusFqn: 'svc' }),
+    ).rejects.toThrow(/both an FQN and an entity type/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('GETs edge details by encoded ids and unwraps the { edge } response', async () => {
+    const details = { source: 'PipelineLineage', sqlQuery: 'select 1' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ edge: details }), { status: 200 })),
+    );
+
+    await expect(getLineageEdgeDetails('from/id', 'to id')).resolves.toEqual(details);
+    const { url } = lastFetch();
+    expect(url).toContain('/api/v1/lineage/getLineageEdge/from%2Fid/to%20id');
+  });
+
+  it('rejects empty edge ids without fetching', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(getLineageEdgeDetails('', 'b')).rejects.toThrow(/from and to entity ids/i);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
