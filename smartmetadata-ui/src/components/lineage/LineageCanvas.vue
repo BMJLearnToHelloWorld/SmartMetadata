@@ -62,6 +62,7 @@ import {
   type LineagePlatformView,
 } from '@/lineage/layers';
 import { buildLineageQueryFilter } from '@/lineage/quickFilters';
+import { isImpactAnalysisMode } from '@/lineage/lineageTable';
 import { useLineageStore } from '@/stores/lineage';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
@@ -71,9 +72,9 @@ import AddLineagePopover, { type AddLineageSubmission } from './AddLineagePopove
 import LineageConfigModal from './LineageConfigModal.vue';
 import LineageExportPanel from './LineageExportPanel.vue';
 import LineageGraph, { type LineageEdgeSelection } from './LineageGraph.vue';
-import LineageImpactPanel from './LineageImpactPanel.vue';
 import LineageNodeDeleteModal from './LineageNodeDeleteModal.vue';
 import LineageQuickFilters from './LineageQuickFilters.vue';
+import LineageTable from './LineageTable.vue';
 import LineageTimeFilter from './LineageTimeFilter.vue';
 
 const props = withDefaults(
@@ -208,7 +209,20 @@ const currentFocus = computed((): { entityType: string; fqn: string } => {
 
 
 const configModalOpen = ref(false);
-const activeView = ref('diagram');
+// Pin EntityLineageTab: `?mode=impact_analysis` renders the table, anything
+// else the diagram. URL → tab only; the tab click stays local until L6
+// wires tab → URL (its scope), so a click never fights this watcher.
+const activeView = ref(isImpactAnalysisMode(route.query) ? 'impact' : 'diagram');
+watch(
+  () => route.query.mode,
+  (mode) => {
+    if (mode === 'impact_analysis') {
+      activeView.value = 'impact';
+    } else if (mode === 'lineage') {
+      activeView.value = 'diagram';
+    }
+  },
+);
 
 /** Mirrors the export panel's png-available rule so the page button agrees with it. */
 const canExportPng = computed(
@@ -1116,7 +1130,7 @@ watch(
           row-key="key"
         />
       </template>
-      <LineageImpactPanel v-else :model="graph" />
+      <LineageTable v-else :entity-type="entityType" :fqn="fqn" />
       <LineageConfigModal
         :open="configModalOpen"
         :config="lineageStore.config"

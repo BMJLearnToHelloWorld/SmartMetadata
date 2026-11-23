@@ -127,6 +127,8 @@ async function mountCanvas(
     history: createMemoryHistory(),
     routes: [
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div/>' } },
+      // The impact table's name cells link to the asset detail page.
+      { path: '/asset/:entityType/:fqn', name: 'asset', component: { template: '<div/>' } },
     ],
   });
   await router.push({ name: 'lineage', params: { entityType: 'table', fqn: 'svc.db.schema.orders' }, query });
@@ -247,6 +249,25 @@ describe('LineageCanvas (L2)', () => {
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="stub-node-ids"]').text()).not.toContain('grand-id');
+  });
+
+  it('renders the server-backed impact table for ?mode=impact_analysis', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({ mode: 'impact_analysis' });
+    // The diagram is hidden; the impact tab mounts the LineageTable,
+    // which fetches the count endpoint for its own rows.
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(true);
+    expect(fetchUrls(fetchMock).some((url) => url.includes('getLineageByEntityCount'))).toBe(true);
+  });
+
+  it('renders the diagram by default when no mode is given', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    expect(wrapper.find('[data-testid="lineage-graph-stub"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(false);
   });
 });
 

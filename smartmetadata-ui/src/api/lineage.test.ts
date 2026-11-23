@@ -12,10 +12,13 @@ import { persistSession } from '@/auth/token';
 import {
   deleteEntityLineageByName,
   exportLineageAsync,
+  exportLineageByEntityCountAsync,
   fetchEntityLineage,
   getDataQualityLineage,
-  getPlatformLineage,
+  getLineageByEntityCount,
   getLineageEdgeDetails,
+  getLineagePagingData,
+  getPlatformLineage,
   isLineageNotFound,
   putEntityLineage,
   searchLineage,
@@ -287,6 +290,102 @@ describe('lineage API', () => {
     expect(url).toContain('endTime=2000');
   });
 
+  it('GETs /v1/lineage/getLineageByEntityCount with the pin count params', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ nodes: {}, paginationInfo: null }), { status: 200 })),
+    );
+    const body = (await getLineageByEntityCount({
+      fqn: 'svc.db.schema.orders',
+      entityType: 'table',
+      direction: 'Downstream',
+      nodeDepth: 2,
+      upstreamDepth: 3,
+      downstreamDepth: 3,
+      from: 15,
+      size: 15,
+      queryFilter: '{"query":{"bool":{"must":[]}}}',
+      columnFilter: 'columnName:customer_id',
+      includePaginationInfo: true,
+    })) as { nodes?: unknown };
+    expect(body.nodes).toEqual({});
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/getLineageByEntityCount');
+    expect(url).toContain('fqn=svc.db.schema.orders');
+    expect(url).toContain('entityType=table');
+    expect(url).toContain('direction=Downstream');
+    expect(url).toContain('nodeDepth=2');
+    expect(url).toContain('maxDepth=2');
+    expect(url).toContain('upstreamDepth=3');
+    expect(url).toContain('downstreamDepth=3');
+    expect(url).toContain('from=15');
+    expect(url).toContain('size=15');
+    expect(url).toContain('include_pagination_info=true');
+    expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{"bool":{"must":[]}}}')}`);
+    expect(url).toContain(`column_filter=${encodeURIComponent('columnName:customer_id')}`);
+    // Pin sends `type: undefined`; the product never sends `type` on this endpoint.
+    expect(url).not.toContain('type=');
+  });
+
+  it('defaults maxDepth to nodeDepth on the count call', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ nodes: {} }), { status: 200 })),
+    );
+    await getLineageByEntityCount({
+      fqn: 'svc.db.schema.orders',
+      entityType: 'table',
+      direction: 'Upstream',
+      nodeDepth: 1,
+    });
+    expect(lastFetch().url).toContain('maxDepth=1');
+  });
+
+  it('rejects a missing direction or node depth for the count call without fetching', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(
+      getLineageByEntityCount({
+        fqn: 'svc.db.schema.orders',
+        entityType: 'table',
+        direction: 'Sideways' as 'Downstream',
+        nodeDepth: 1,
+      }),
+    ).rejects.toThrow(/direction/i);
+    await expect(
+      getLineageByEntityCount({
+        fqn: 'svc.db.schema.orders',
+        entityType: 'table',
+        direction: 'Downstream',
+        nodeDepth: -1,
+      }),
+    ).rejects.toThrow(/depth/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('GETs /v1/lineage/exportByEntityCountAsync and returns the job id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ jobId: 'job-1', message: 'ok' }), { status: 200 })),
+    );
+    const job = await exportLineageByEntityCountAsync({
+      fqn: 'svc.db.schema.orders',
+      entityType: 'table',
+      direction: 'Downstream',
+      nodeDepth: 2,
+      queryFilter: '{"query":{"bool":{"must":[]}}}',
+      startTime: 1000,
+      endTime: 2000,
+    });
+    expect(job).toEqual({ jobId: 'job-1' });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/exportByEntityCountAsync');
+    expect(url).toContain('direction=Downstream');
+    expect(url).toContain('nodeDepth=2');
+    expect(url).toContain('maxDepth=2');
+    expect(url).toContain('startTime=1000');
+    expect(url).toContain('endTime=2000');
+  });
+
   it('rejects an empty FQN for async export without calling fetch', async () => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(exportLineageAsync({ fqn: '  ' })).rejects.toThrow(/fqn/i);
@@ -315,5 +414,26 @@ describe('lineage API', () => {
     expect(isLineageNotFound(new ApiError(404, '', 'Not found'))).toBe(true);
     expect(isLineageNotFound(new ApiError(500, '', 'Server error'))).toBe(false);
     expect(isLineageNotFound(new Error('boom'))).toBe(false);
+  });
+
+  it('GETs /v1/lineage/getPaginationInfo with depths and the query filter', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ totalDownstreamEntities: 5 }), { status: 200 })),
+    );
+    await getLineagePagingData({
+      fqn: 'svc.db.schema.orders',
+      upstreamDepth: 3,
+      downstreamDepth: 3,
+      entityType: 'table',
+      queryFilter: '{"query":{"bool":{"must":[]}}}',
+    });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/getPaginationInfo');
+    expect(url).toContain('fqn=svc.db.schema.orders');
+    expect(url).toContain('upstreamDepth=3');
+    expect(url).toContain('downstreamDepth=3');
+    expect(url).toContain('entityType=table');
+    expect(url).toContain(`query_filter=${encodeURIComponent('{"query":{"bool":{"must":[]}}}')}`);
   });
 });
