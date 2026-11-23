@@ -48,8 +48,104 @@ def test_static_source_parses_fixture_records() -> None:
 
 
 def test_parse_static_record_rejects_unknown_kind() -> None:
+    # "dashboard" used to be rejected here; since the lineage-demo lane it is
+    # a supported kind (see test_parse_static_record_pipeline_dashboard_kinds),
+    # so the rejection is pinned on a kind that is still unknown.
     with pytest.raises(WorkflowError, match="unsupported static record"):
-        parse_static_record({"kind": "dashboard"}, default_service="demo")
+        parse_static_record({"kind": "widget"}, default_service="demo")
+
+
+def test_parse_static_record_database_service_kind() -> None:
+    service = parse_static_record(
+        {
+            "kind": "databaseService",
+            "name": "demo-doris",
+            "serviceType": "Doris",
+            "displayName": "Demo Doris (fake)",
+            "description": "Fake Doris service for the lineage demo graph.",
+            "connection": {
+                "config": {
+                    "type": "Doris",
+                    "scheme": "doris",
+                    "hostPort": "demo-doris:9030",
+                    "username": "demo",
+                    "supportsViewLineageExtraction": True,
+                }
+            },
+        },
+        default_service="demo",
+    )
+    assert service.kind == "databaseService"
+    assert service.service_type == "Doris"
+    assert service.display_name == "Demo Doris (fake)"
+    assert service.connection == {
+        "config": {
+            "type": "Doris",
+            "scheme": "doris",
+            "hostPort": "demo-doris:9030",
+            "username": "demo",
+            "supportsViewLineageExtraction": True,
+        }
+    }
+
+
+def test_parse_static_record_pipeline_dashboard_kinds() -> None:
+    pipeline_service = parse_static_record(
+        {"kind": "pipelineService", "name": "demo-airflow", "serviceType": "Airflow"},
+        default_service="demo",
+    )
+    assert pipeline_service.kind == "pipelineService"
+    assert pipeline_service.service_type == "Airflow"
+
+    pipeline = parse_static_record(
+        {
+            "kind": "pipeline",
+            "name": "demo_etl",
+            "service": "demo-airflow",
+            "scheduleInterval": "0 0 * * *",
+        },
+        default_service="demo",
+    )
+    assert pipeline.kind == "pipeline"
+    assert pipeline.service == "demo-airflow"
+    assert pipeline.schedule_interval == "0 0 * * *"
+
+    dashboard_service = parse_static_record(
+        {
+            "kind": "dashboardService",
+            "name": "demo-superset",
+            "serviceType": "Superset",
+        },
+        default_service="demo",
+    )
+    assert dashboard_service.kind == "dashboardService"
+    assert dashboard_service.service_type == "Superset"
+
+    chart = parse_static_record(
+        {
+            "kind": "chart",
+            "name": "demo_chart",
+            "service": "demo-superset",
+            "chartType": "Line",
+        },
+        default_service="demo",
+    )
+    assert chart.kind == "chart"
+    assert chart.service == "demo-superset"
+    assert chart.chart_type == "Line"
+
+    dashboard = parse_static_record(
+        {
+            "kind": "dashboard",
+            "name": "demo_dashboard",
+            "service": "demo-superset",
+            "charts": ["demo-superset.demo_chart"],
+        },
+        default_service="demo",
+    )
+    assert dashboard.kind == "dashboard"
+    assert dashboard.service == "demo-superset"
+    assert dashboard.charts == ["demo-superset.demo_chart"]
 
 
 def test_build_source_and_identity_processor(workflow_config) -> None:

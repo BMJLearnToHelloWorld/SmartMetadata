@@ -15,15 +15,20 @@ from smartmetadata_ingestion.config import SourceConfig, WorkflowConfig
 from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import (
+    ChartRecord,
     ColumnLineage,
     ColumnRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
+    DashboardRecord,
+    DashboardServiceRecord,
     EntityRef,
     LifeCycleAccessRecord,
     LifeCycleRecord,
     LineageEndpoint,
     LineageRecord,
+    PipelineRecord,
+    PipelineServiceRecord,
     SchemaRecord,
     StoredProcedureRecord,
     TableConstraintRecord,
@@ -305,6 +310,62 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
             allow_bot_impersonation=raw.get(
                 "allowBotImpersonation", raw.get("allow_bot_impersonation")
             ),
+        )
+    if kind == "databaseService":
+        return DatabaseServiceRecord(
+            name=raw["name"],
+            service_type=raw.get("serviceType", raw.get("service_type")),
+            description=raw.get("description"),
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            connection=raw.get("connection"),
+        )
+    if kind == "pipelineService":
+        return PipelineServiceRecord(
+            name=raw["name"],
+            service_type=raw.get("serviceType", raw.get("service_type")),
+            description=raw.get("description"),
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            connection=raw.get("connection"),
+        )
+    if kind == "pipeline":
+        return PipelineRecord(
+            name=raw["name"],
+            service=raw["service"],
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            description=raw.get("description"),
+            source_url=raw.get("sourceUrl") or raw.get("source_url"),
+            concurrency=raw.get("concurrency"),
+            pipeline_location=raw.get("pipelineLocation") or raw.get("pipeline_location"),
+            schedule_interval=raw.get("scheduleInterval") or raw.get("schedule_interval"),
+            tasks=raw.get("tasks"),
+            state=raw.get("state"),
+        )
+    if kind == "dashboardService":
+        return DashboardServiceRecord(
+            name=raw["name"],
+            service_type=raw.get("serviceType", raw.get("service_type")),
+            description=raw.get("description"),
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            connection=raw.get("connection"),
+        )
+    if kind == "dashboard":
+        return DashboardRecord(
+            name=raw["name"],
+            service=raw["service"],
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            description=raw.get("description"),
+            source_url=raw.get("sourceUrl") or raw.get("source_url"),
+            project=raw.get("project"),
+            charts=raw.get("charts"),
+        )
+    if kind == "chart":
+        return ChartRecord(
+            name=raw["name"],
+            service=raw["service"],
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            description=raw.get("description"),
+            chart_type=raw.get("chartType") or raw.get("chart_type"),
+            source_url=raw.get("sourceUrl") or raw.get("source_url"),
         )
     raise WorkflowError(f"unsupported static record kind {kind!r}")
 
