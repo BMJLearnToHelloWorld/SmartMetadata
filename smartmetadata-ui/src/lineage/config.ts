@@ -165,14 +165,14 @@ export function resolveLineageTimeRange(
 export interface LineagePlatformLensOption {
   value: LineagePlatformLens;
   labelKey: string;
-  /** No scene endpoint exists on the product lineage API. */
+  /** L4 wires the lenses to GET /v1/lineage/scene (getLineageScene). */
   supported: boolean;
 }
 
 export const LINEAGE_PLATFORM_LENSES: LineagePlatformLensOption[] = [
-  { value: 'service', labelKey: 'lineage.lensService', supported: false },
-  { value: 'domain', labelKey: 'lineage.lensDomain', supported: false },
-  { value: 'dataProduct', labelKey: 'lineage.lensDataProduct', supported: false },
+  { value: 'service', labelKey: 'lineage.lensService', supported: true },
+  { value: 'domain', labelKey: 'lineage.lensDomain', supported: true },
+  { value: 'dataProduct', labelKey: 'lineage.lensDataProduct', supported: true },
 ];
 
 /**

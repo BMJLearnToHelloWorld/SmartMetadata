@@ -9,6 +9,7 @@ import {
   isLineageDateString,
   lineageDateToEndMillis,
   lineageDateToStartMillis,
+  LINEAGE_PLATFORM_LENSES,
   LINEAGE_TIME_PRESETS,
   normalizeLineageCanvasConfig,
   resolveLineageLens,
@@ -34,6 +35,17 @@ describe('lineage config tables', () => {
       'last28Days',
       'customRange',
       'pointInTime',
+    ]);
+  });
+
+  it('lists all three platform lenses as supported now that the scene endpoint exists', () => {
+    // L4 (D-GRAPH-4): getLineageScene backs every lens; the supported:false
+    // rows were the placeholder for the missing scene endpoint.
+    expect(LINEAGE_PLATFORM_LENSES.filter((item) => !item.supported)).toEqual([]);
+    expect(LINEAGE_PLATFORM_LENSES.map((item) => item.value)).toEqual([
+      'service',
+      'domain',
+      'dataProduct',
     ]);
   });
 
