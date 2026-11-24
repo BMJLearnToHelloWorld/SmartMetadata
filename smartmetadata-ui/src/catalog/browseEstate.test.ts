@@ -17,7 +17,6 @@ import {
   estateFromQuery,
   filtersForEstateNode,
   findEstateNode,
-  isResidualEstate,
   selectedEstateFromFilters,
   type EstateNode,
 } from './browseEstate';
@@ -51,7 +50,7 @@ describe('browseEstate', () => {
     expect(countForTypes(FACETS, ['topic'])).toBe(0);
   });
 
-  it('always renders residual Context Center and attaches service children on the selected root', () => {
+  it('renders the 12 pin roots in order and attaches service children on the selected root', () => {
     const tree = buildEstateTree(FACETS, {
       databases: estateChildNodes(
         { key: 'databases', categoryId: 'databases', titleKey: '', count: 0 },
@@ -66,6 +65,8 @@ describe('browseEstate', () => {
       'mlmodels',
       'containers',
       'searchIndexes',
+      'apis',
+      'drive',
       'governance',
       'domains',
       'contextCenter',
@@ -95,13 +96,52 @@ describe('browseEstate', () => {
     // categories are leaves.
     expect(tree[1].isLeaf).toBe(false);
     expect(tree[1].children).toBeUndefined();
-    expect(tree.find((node) => node.key === 'governance')?.isLeaf).toBe(true);
-    expect(tree.find((node) => node.key === 'contextCenter')).toMatchObject({
-      count: 0,
-      residualRoute: 'context-center-overview',
-    });
-    expect(isResidualEstate('contextCenter')).toBe(true);
-    expect(isResidualEstate('databases')).toBe(false);
+    // B2-E5b (D15/D16): Governance/Domains/Context Center are expandable
+    // now, with the pin's static leaf children — no residual routes left.
+    expect(tree.find((node) => node.key === 'governance')?.isLeaf).toBe(false);
+    expect(tree.find((node) => node.key === 'governance')?.children?.map((child) => child.key)).toEqual([
+      'governance:static:glossaryTerm',
+      'governance:static:tag',
+      'governance:static:metric',
+    ]);
+    expect(tree.find((node) => node.key === 'domains')?.children?.map((child) => child.key)).toEqual([
+      'domains:static:dataProduct',
+    ]);
+    expect(tree.find((node) => node.key === 'contextCenter')?.children?.map((child) => child.key)).toEqual([
+      'contextCenter:static:page',
+    ]);
+    expect(tree.find((node) => node.key === 'contextCenter')).not.toHaveProperty('residualRoute');
+  });
+
+  it('does not drill static-children roots and narrows a static leaf to its single type', () => {
+    const tree = buildEstateTree(FACETS);
+    const governance = tree.find((node) => node.key === 'governance')!;
+    expect(estateDrill(governance)).toBeNull();
+    const glossaries = governance.children!.find((child) => child.entityType === 'glossaryTerm')!;
+    expect(glossaries.isLeaf).toBe(true);
+    expect(estateDrill(glossaries)).toBeNull();
+    expect(filtersForEstateNode(glossaries, {})).toEqual({ entityType: ['glossaryTerm'] });
+    const dataProduct = tree
+      .find((node) => node.key === 'domains')!
+      .children!.find((child) => child.entityType === 'dataProduct')!;
+    expect(filtersForEstateNode(dataProduct, {})).toEqual({ entityType: ['dataProduct'] });
+    const articles = tree
+      .find((node) => node.key === 'contextCenter')!
+      .children!.find((child) => child.entityType === 'page')!;
+    expect(filtersForEstateNode(articles, {})).toEqual({ entityType: ['page'] });
+  });
+
+  it('derives the highlighted category for the new APIs and Drive roots', () => {
+    expect(selectedEstateFromFilters({ entityType: ['apiEndpoint'] })).toBe('apis');
+    expect(selectedEstateFromFilters({ entityType: ['apiEndpoint', 'apiCollection'] })).toBe('apis');
+    expect(selectedEstateFromFilters({ entityType: ['file'] })).toBe('drive');
+    expect(selectedEstateFromFilters({ entityType: ['directory', 'file', 'spreadsheet', 'worksheet'] })).toBe(
+      'drive',
+    );
+    // Domains narrowed to dataProduct only (pin childEntities); a bare
+    // domain filter no longer resolves to the Domains root.
+    expect(selectedEstateFromFilters({ entityType: ['dataProduct'] })).toBe('domains');
+    expect(selectedEstateFromFilters({ entityType: ['domain'] })).toBe('');
   });
 
   it('maps a category click onto Lucene entityType filters and a service child onto service=', () => {

@@ -96,6 +96,18 @@ describe('searchQuery', () => {
     });
   });
 
+  it('carries the global-search scope as tab and omits it for All (D13)', () => {
+    expect(searchRouteQuery('orders', {}, 0, { tab: 'table' })).toEqual({
+      q: 'orders',
+      tab: 'table',
+    });
+    expect(searchRouteQuery('orders', {}, 0, { tab: '' })).toEqual({ q: 'orders' });
+    expect(searchRouteQuery('orders', {}, 0)).toEqual({ q: 'orders' });
+    expect(
+      searchRouteFromLocation('orders', { q: 'old', tab: 'topic' }, 0, { tab: 'table' }),
+    ).toEqual({ q: 'orders', tab: 'table' });
+  });
+
   it('composes certification and data-product Lucene terms when those chips are set', () => {
     expect(composeSearchQuery('', { certification: ['Certification.Gold'] })).toBe(
       'certification.tagLabel.tagFQN:Certification.Gold',
@@ -237,6 +249,12 @@ describe('searchQuery', () => {
     expect(parsed.query.bool.must[0]).toEqual({ term: { 'tags.tagFQN': 'PII.Sensitive' } });
     expect(mergeQueryFilters(undefined, undefined)).toBeUndefined();
     expect(mergeQueryFilters(saved)).toBe(saved);
+    // A single filter that parses but has no bool.must to decompose
+    // (D28: an unparseable saved filter) is returned verbatim, not
+    // re-wrapped into a bool.must — the server must receive it unchanged.
+    const matchAll = JSON.stringify({ query: { match_all: {} } });
+    expect(mergeQueryFilters(matchAll)).toBe(matchAll);
+    expect(mergeQueryFilters(matchAll, undefined)).toBe(matchAll);
     // An unparseable saved filter is returned verbatim rather than
     // silently dropped to make room for a null selection.
     expect(mergeQueryFilters('not-json', nulls)).toBe('not-json');

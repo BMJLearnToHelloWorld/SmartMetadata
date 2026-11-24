@@ -202,15 +202,20 @@ function mustClausesOf(filterJson: string): Array<Record<string, unknown>> | nul
  * Combine serialized `query_filter` JSON strings into one filter whose
  * `must` is the concatenation of every input's must clauses (pin
  * getCombinedQueryFilterObject shape). Inputs that are undefined or empty
- * are skipped; with no clauses at all the result is undefined. An
- * unparseable input is returned verbatim instead of merged — the saved
- * filter it carries must not be silently dropped to make room for a null
- * selection.
+ * are skipped; with no clauses at all the result is undefined. A single
+ * input is returned verbatim — there is nothing to combine, and
+ * re-serializing it would change its exact string (D28: an unparseable
+ * saved filter must still reach the server unchanged). An unparseable
+ * input is returned verbatim instead of merged — the saved filter it
+ * carries must not be silently dropped to make room for a null selection.
  */
 export function mergeQueryFilters(...filters: Array<string | undefined>): string | undefined {
   const present = filters.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
   if (!present.length) {
     return undefined;
+  }
+  if (present.length === 1) {
+    return present[0];
   }
   if (present.some((item) => mustClausesOf(item) === null)) {
     return present[0];
@@ -338,6 +343,13 @@ export function sortField(sort: SearchSort): string {
 export interface SearchRouteOptions {
   sort?: SearchSort;
   estate?: string;
+  /**
+   * Explore tab index (D13): the global search bar submits with the
+   * scope the user picked (`tab=<index>`), and pin always forces
+   * `sort=_score` on that submit. Empty means the all-tab — no `tab`
+   * param, exactly as pin navigates with an empty tab for All.
+   */
+  tab?: string;
 }
 
 export function searchRouteQuery(
@@ -367,6 +379,10 @@ export function searchRouteQuery(
   if (estate) {
     next.estate = estate;
   }
+  const tab = options.tab ?? '';
+  if (tab) {
+    next.tab = tab;
+  }
   return next;
 }
 
@@ -383,6 +399,7 @@ export function searchRouteFromLocation(
     {
       sort: overrides.sort ?? sortFromQuery(query),
       estate: overrides.estate ?? estateFromQuery(query),
+      tab: overrides.tab,
     },
   );
 }

@@ -11,10 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
   addDataProductAssets,
+  addInputPortsToDataProduct,
   createDataProduct,
   getDataProductByName,
+  getDataProductInputPorts,
+  getDataProductOutputPorts,
+  getDataProductPortsView,
   listDataProducts,
   removeDataProductAssets,
+  removeOutputPortsFromDataProduct,
 } from './dataProducts';
 
 function lastFetch(): { url: string; init?: RequestInit } {
@@ -184,5 +189,105 @@ describe('dataProducts API', () => {
     ]);
     expect(lastFetch().url).toContain('/api/v1/dataProducts/marketing.churn/assets/remove');
     expect(result.passed).toBe(1);
+  });
+
+  // Q-TAB-4 item 3 (host lane): pin rest/dataProductAPI.ts port clients.
+  it('lists input ports from GET /v1/dataProducts/name/{fqn}/inputPorts with the port field set', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: 't1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' }],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await getDataProductInputPorts('marketing.churn');
+    expect(page.data[0]?.name).toBe('orders');
+    expect(page.total).toBe(1);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/name/marketing.churn/inputPorts');
+    expect(lastFetch().url).toContain('fields=owners%2Ctags%2Cdomains%2Cextension');
+  });
+
+  it('lists output ports from GET /v1/dataProducts/name/{fqn}/outputPorts', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const page = await getDataProductOutputPorts('marketing.churn');
+    expect(page.data).toEqual([]);
+    expect(page.total).toBe(0);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/name/marketing.churn/outputPorts');
+  });
+
+  it('fetches the combined ports view from GET /v1/dataProducts/name/{fqn}/portsView', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            entity: { id: 'p1', name: 'churn', type: 'dataProduct' },
+            inputPorts: {
+              data: [{ id: 't1', name: 'orders', type: 'table' }],
+              paging: { total: 1 },
+            },
+            outputPorts: { data: [], paging: { total: 0 } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const view = await getDataProductPortsView('marketing.churn', { inputLimit: 10, outputLimit: 10 });
+    expect(view.inputPorts.data[0]?.name).toBe('orders');
+    expect(view.outputPorts.total).toBe(0);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/name/marketing.churn/portsView');
+    expect(lastFetch().url).toContain('inputLimit=10');
+    expect(lastFetch().url).toContain('outputLimit=10');
+  });
+
+  it('adds input ports with PUT /v1/dataProducts/{fqn}/inputPorts/add and returns the updated product', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'p1', name: 'churn', fullyQualifiedName: 'marketing.churn' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const product = await addInputPortsToDataProduct('marketing.churn', [
+      { id: 't1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/marketing.churn/inputPorts/add');
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(JSON.parse(String(lastFetch().init?.body)).assets).toEqual([
+      { id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(product.id).toBe('p1');
+  });
+
+  it('removes output ports with PUT /v1/dataProducts/{fqn}/outputPorts/remove', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'p1', name: 'churn', fullyQualifiedName: 'marketing.churn' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await removeOutputPortsFromDataProduct('marketing.churn', [
+      { id: 't1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/marketing.churn/outputPorts/remove');
+    expect(lastFetch().init?.method).toBe('PUT');
   });
 });

@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { addAssetsToGlossaryTerm, createGlossaryTerm, getGlossaryTerm, getGlossaryTermByFqn, getGlossaryTermsByIds, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms, removeAssetsFromGlossaryTerm } from './glossaryTerms';
+import { addAssetsToGlossaryTerm, createGlossaryTerm, exportGlossaryTermsInCSVFormat, getGlossaryTerm, getGlossaryTermByFqn, getGlossaryTermsByIds, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms, removeAssetsFromGlossaryTerm } from './glossaryTerms';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -348,5 +348,44 @@ describe('glossaryTerms API', () => {
     expect(lastFetch().url).toContain('reviewers');
     expect(lastFetch().url).toContain('domains');
     expect(lastFetch().url).toContain('extension');
+  });
+
+  it('exports a term subtree through GET /v1/glossaryTerms/name/{fqn}/exportAsync and dispatches the CSV jobs refresh event (B2-G6)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ jobId: 'job-2', message: 'started' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const seen: Event[] = [];
+    const listener = (event: Event): void => {
+      seen.push(event);
+    };
+    window.addEventListener('csv-jobs-refresh', listener);
+    try {
+      const payload = await exportGlossaryTermsInCSVFormat('Business.Term');
+      expect(payload).toMatchObject({ jobId: 'job-2' });
+      expect(lastFetch().url).toContain('/api/v1/glossaryTerms/name/Business.Term/exportAsync');
+      expect(seen).toHaveLength(1);
+    } finally {
+      window.removeEventListener('csv-jobs-refresh', listener);
+    }
+  });
+
+  it('returns an empty job when the term export response carries no jobId (B2-G6)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ message: 'started' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const payload = await exportGlossaryTermsInCSVFormat('Business.Term');
+    expect(payload).toEqual({});
   });
 });

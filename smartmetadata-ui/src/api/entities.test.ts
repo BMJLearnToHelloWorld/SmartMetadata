@@ -7,11 +7,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { tagsPatch } from '@/governance/assetPatch';
 import type { SchemaRow } from '@/types/api';
-import { fetchAssetDetail, mapColumns, mapTags, patchAsset, updateSchemaRowField, updateSchemaRowTags } from './entities';
+import { fetchAssetDetail, mapColumns, mapTags, patchAsset, prefetchAssetDetail, updateSchemaRowField, updateSchemaRowTags } from './entities';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -435,6 +436,88 @@ describe('asset entity writes', () => {
       'application/json-patch+json',
     );
   });
+
+  // D-TAB-2 (host lane): DriveService GETs go to the pin driveAPI
+  // segments; directory children and spreadsheet worksheets land in
+  // `children`, file/worksheet columns land in `schemaRows`.
+  it('maps DriveService GETs onto the drive segments with children and columns', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/drives/directories/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'dir-1',
+              name: 'docs',
+              fullyQualifiedName: 'drive.shared.docs',
+              service: { name: 'drive' },
+              children: [
+                { name: 'report.csv', type: 'file', fullyQualifiedName: 'drive.shared.docs.report.csv' },
+                { name: 'sub', type: 'directory', fullyQualifiedName: 'drive.shared.docs.sub' },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/drives/files/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'f-1',
+              name: 'report.csv',
+              fullyQualifiedName: 'drive.shared.docs.report.csv',
+              service: { name: 'drive' },
+              columns: [{ name: 'id', dataType: 'BIGINT' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/drives/spreadsheets/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 's-1',
+              name: 'budget',
+              fullyQualifiedName: 'drive.shared.budget',
+              service: { name: 'drive' },
+              worksheets: [{ name: 'Sheet1', type: 'worksheet', fullyQualifiedName: 'drive.shared.budget.Sheet1' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'w-1',
+            name: 'Sheet1',
+            fullyQualifiedName: 'drive.shared.budget.Sheet1',
+            service: { name: 'drive' },
+            columns: [{ name: 'amount', dataType: 'DECIMAL' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const directory = await fetchAssetDetail('directory', 'drive.shared.docs');
+    expect(directory.children?.map((child) => child.name)).toEqual(['report.csv', 'sub']);
+    expect(lastFetch().url).toContain('/api/v1/drives/directories/name/');
+    expect(lastFetch().url).toContain('children');
+
+    const file = await fetchAssetDetail('file', 'drive.shared.docs.report.csv');
+    expect(file.schemaRows).toEqual([{ key: 'id', name: 'id', dataType: 'BIGINT', indexPath: [0] }]);
+    expect(file.schemaLabel).toBe('Columns');
+    expect(lastFetch().url).toContain('/api/v1/drives/files/name/');
+    expect(lastFetch().url).toContain('columns');
+
+    const spreadsheet = await fetchAssetDetail('spreadsheet', 'drive.shared.budget');
+    expect(spreadsheet.children?.[0]).toMatchObject({ name: 'Sheet1', type: 'worksheet' });
+    expect(lastFetch().url).toContain('/api/v1/drives/spreadsheets/name/');
+    expect(lastFetch().url).toContain('worksheets');
+
+    const worksheet = await fetchAssetDetail('worksheet', 'drive.shared.budget.Sheet1');
+    expect(worksheet.schemaRows).toEqual([{ key: 'amount', name: 'amount', dataType: 'DECIMAL', indexPath: [0] }]);
+    expect(lastFetch().url).toContain('/api/v1/drives/worksheets/name/');
+    expect(lastFetch().url).toContain('rowCount');
+  });
 });
 
 describe('mapTags labelType', () => {
@@ -715,5 +798,96 @@ describe('D-F2 schema rows', () => {
     expect(next[0].children?.[0].description).toBe('City name');
     expect(rows[0].children?.[0].description).toBeUndefined();
     expect(updateSchemaRowField(rows, 'missing', { description: 'x' })).toEqual(rows);
+  });
+});
+
+describe('hover prefetch (D24)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  function detailPayload(fqn: string): Record<string, unknown> {
+    return {
+      id: 'tbl-1',
+      name: 'orders',
+      fullyQualifiedName: fqn,
+      columns: [{ name: 'id', dataType: 'BIGINT' }],
+    };
+  }
+
+  it('warms the detail slot so the following fetchAssetDetail issues no second request', async () => {
+    const fetchMock = vi.fn(async (..._args: unknown[]) =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-a')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('table', 'svc.db.schema.orders-a');
+    await flushPromises();
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders-a');
+    expect(asset.fullyQualifiedName).toBe('svc.db.schema.orders-a');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/v1/tables/name/');
+  });
+
+  it('consumes the warmed slot exactly once — a later refetch hits the network', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-a2')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('table', 'svc.db.schema.orders-a2');
+    await flushPromises();
+    await fetchAssetDetail('table', 'svc.db.schema.orders-a2');
+    await fetchAssetDetail('table', 'svc.db.schema.orders-a2');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not serve the prefetched base field set to a caller appending extra fields', async () => {
+    const fetchMock = vi.fn(async (..._args: unknown[]) =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-b')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('table', 'svc.db.schema.orders-b');
+    await flushPromises();
+    await fetchAssetDetail('table', 'svc.db.schema.orders-b', { extraFields: ['usageSummary'] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('usageSummary');
+  });
+
+  it('drops a failed prefetch so the later click retries for real', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-c')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    prefetchAssetDetail('table', 'svc.db.schema.orders-c');
+    await flushPromises();
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders-c');
+    expect(asset.fullyQualifiedName).toBe('svc.db.schema.orders-c');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('is a no-op for unwired entity types', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('glossaryTerm', 'some.term');
+    await flushPromises();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
