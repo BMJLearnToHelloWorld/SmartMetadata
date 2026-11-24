@@ -88,10 +88,10 @@ describe('UserDetailView (pin UserPage)', () => {
     vi.unstubAllGlobals();
   });
 
-  async function mountUser(path: string, currentUserName = 'alice') {
+  async function mountUser(path: string, currentUserName = 'alice', isAdmin = true) {
     const pinia = createPinia();
     setActivePinia(pinia);
-    useAuthStore().user = { id: 'u1', name: currentUserName, isAdmin: true };
+    useAuthStore().user = { id: 'u1', name: currentUserName, isAdmin };
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -169,5 +169,26 @@ describe('UserDetailView (pin UserPage)', () => {
     userFixture = null;
     const { wrapper } = await mountUser('/users/ghost');
     expect(wrapper.find('[data-testid="no-data-placeholder"]').exists()).toBe(true);
+  });
+
+  // D-CFG-3 (host lane): pin profileNavConfig.tsx:219-227 — the
+  // platform-settings tab is admin-only on the own profile.
+  it('shows the platform-settings tab only for the logged-in admin, and mounts the panel', async () => {
+    const selfAdmin = await mountUser('/users/alice/platform-settings', 'alice', true);
+    expect(
+      selfAdmin.wrapper.find('[data-testid="user-detail-tabs"] .ant-tabs-nav').text(),
+    ).toContain('Platform settings');
+    expect(selfAdmin.wrapper.find('[data-testid="platform-settings-tab"]').exists()).toBe(true);
+    expect(selfAdmin.wrapper.find('[data-testid="platform-settings-panel"]').exists()).toBe(true);
+
+    const selfNonAdmin = await mountUser('/users/alice', 'alice', false);
+    expect(
+      selfNonAdmin.wrapper.find('[data-testid="user-detail-tabs"] .ant-tabs-nav').text(),
+    ).not.toContain('Platform settings');
+
+    const otherAdmin = await mountUser('/users/alice', 'bob', true);
+    expect(
+      otherAdmin.wrapper.find('[data-testid="user-detail-tabs"] .ant-tabs-nav').text(),
+    ).not.toContain('Platform settings');
   });
 });

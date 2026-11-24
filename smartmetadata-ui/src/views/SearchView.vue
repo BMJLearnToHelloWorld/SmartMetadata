@@ -6,14 +6,30 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Empty, Input, Pagination, Select, Space, Switch, Tag, Typography } from 'ant-design-vue';
-import { searchAssets } from '@/api/search';
+import { Alert, Button, Dropdown, Empty, Input, Menu, Pagination, Select, Space, Switch, Tag, Typography } from 'ant-design-vue';
+import { prefetchAssetDetail } from '@/api/entities';
 import {
-  ADVANCED_SEARCH_FIELDS,
-  composeAdvancedQuery,
-  parseAdvancedQuery,
-  type AdvancedSearchRow,
-} from '@/catalog/advancedSearch';
+  MAX_RESULT_HITS,
+  SEARCH_EXCLUDE_SOURCE_FIELDS,
+  entityTypeCountsFromPage,
+  nlqSearch,
+  searchAssets,
+  searchEntityTypeCounts,
+} from '@/api/search';
+import { getTableShardingByName } from '@/api/tables';
+import { createExploreCache } from '@/catalog/exploreCache';
+import { findShardedFamilies, type ShardedFamilyTable } from '@/catalog/tableSharding';
+import {
+  buildQueryFilter,
+  createQueryRule,
+  emptyQueryGroup,
+  findFieldDef,
+  isTreeComplete,
+  parseElasticsearchQuery,
+  queryFilterToSql,
+  type QueryBuilderFieldDef,
+  type QueryGroup,
+} from '@/catalog/queryBuilder';
 import {
   EXPLORE_TABS,
   defaultSortForTab,
@@ -32,12 +48,21 @@ import {
   estateFromQuery,
   filtersForEstateNode,
   findEstateNode,
-  isResidualEstate,
   selectedEstateFromFilters,
   type EstateNode,
 } from '@/catalog/browseEstate';
-import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
-import { NULL_OPTION_KEY, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { assetLocation, detailLocationForHit, lineageLocation, openSearchHit, parentTableLocation } from '@/catalog/entityRoutes';
+import {
+  cardBreadcrumbs,
+  cardDescriptionNeedles,
+  cardDisplayName,
+  cardMatches,
+  cardNameNeedles,
+  shouldPrefetchCard,
+} from '@/catalog/exploreCard';
+import { entityIconFor } from '@/catalog/entityIcons';
+import { CHIP_FACET_IDS, NULL_OPTION_KEY, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { buildRankingDetails, type RankingDetails } from '@/catalog/rankingDetails';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
@@ -61,10 +86,20 @@ import {
 import DetailTabs from '@/components/shared/DetailTabs.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import SmProfilePicture from '@/components/shared/SmProfilePicture.vue';
+import SearchEntityIcon from '@/components/shared/SearchEntityIcon.vue';
+import HighlightedText from '@/components/ingestion/HighlightedText.vue';
+import DomainFilterChip from '@/components/ingestion/DomainFilterChip.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useDomainStore } from '@/stores/domain';
+import AdvancedSearchBuilder from '@/features/explore/AdvancedSearchBuilder.vue';
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
+import ExploreRankingDetails from '@/features/explore/ExploreRankingDetails.vue';
+import { useAdvancedSearchFields } from '@/features/explore/useAdvancedSearchFields';
+import { useSearchStore } from '@/stores/search';
 import { useFacetOptions } from '@/features/explore/useFacetOptions';
 import type { SearchHit } from '@/types/api';
 import { readGlobalPageSize, writeGlobalPageSize } from '@/utils/userPageSizePreference';
@@ -73,21 +108,57 @@ const route = useRoute();
 const router = useRouter();
 const { t, te } = useI18n();
 const authStore = useAuthStore();
+const searchStore = useSearchStore();
+// D35: the domain store is only hydrated by DomainSelect, which is not
+// mounted anywhere in the shell — Explore hydrates it itself so a
+// persisted pick surfaces in the filter chip below. The list fetch runs
+// only when an id is actually stored: without one there is nothing to
+// resolve, and the chip stays hidden.
+const domainStore = useDomainStore();
+domainStore.hydrate();
+if (domainStore.activeDomainId) {
+  void domainStore.loadDomains();
+}
+
+/**
+ * D31: the 30s SWR search cache (catalog/exploreCache.ts, STALE_TIME_MS
+ * = 30_000, mirroring official hooks/useExploreCache.ts). One cache per
+ * mounted Explore view: results, counts and sharded-family lookups for
+ * one search key share it, and leaving the page drops it.
+ */
+const exploreCache = createExploreCache();
 
 const loading = ref(false);
 const errorMessage = ref('');
 const indexNotFound = ref(false);
 const advancedOpen = ref(false);
-const advancedRows = ref<AdvancedSearchRow[]>([]);
+// Tools → Ranking details (D12): pin's ExplorePageV1 holds this as
+// page-local state (`useState(false)`), not persisted, not in the URL.
+const showRankingDetails = ref(false);
 const advancedFreeText = ref('');
+const advancedTree = ref<QueryGroup>(emptyQueryGroup());
+const advancedFields = useAdvancedSearchFields();
 const hits = ref<SearchHit[]>([]);
 const total = ref(0);
 const facets = ref<SearchFacet[]>([]);
+// D11 echo: the NLQ response's backend-detected filter fields
+// (applied_quick_filters.fieldList); empty on keyword searches.
+const nlqAppliedFilters = ref<string[]>([]);
 const estateFacets = ref<SearchFacet[]>([]);
 const estateChildMap = ref<Record<string, EstateNode[]>>({});
 const estateLoadingKeys = ref<Set<string>>(new Set());
 const expandedKeys = ref<string[]>([]);
 const selectedFqn = ref('');
+/**
+ * D4: per-type counts from GET /v1/search/entityTypeCounts for the
+ * current query, with the query key they were fetched for. A stale
+ * response for a superseded query never overwrites the current one
+ * (see loadTypeCounts); the key also gates D3 hiding.
+ */
+const typeCounts = ref<Map<string, number> | null>(null);
+const typeCountsKey = ref('');
+/** D17: sharded tables the query names (pin "Matching sharded families"). */
+const shardedFamilies = ref<ShardedFamilyTable[]>([]);
 
 const query = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const filters = computed(() => filtersFromQuery(route.query));
@@ -103,6 +174,24 @@ const queryFilter = computed(() =>
   typeof route.query.query_filter === 'string' ? route.query.query_filter : undefined,
 );
 /**
+ * Advanced-search field config for the active tab (pin `getTreeConfig`
+ * per search index) and for the applied-filter SQL text. The SQL text
+ * renders against the `dataAsset` union, so a filter built on another tab
+ * (or a CuratedAssets saved filter) still renders when this tab's field
+ * set does not contain its fields.
+ */
+const advancedFieldDefs = computed<QueryBuilderFieldDef[]>(() =>
+  advancedFields.fieldsForTab(activeTab.value?.index ?? 'dataAsset'),
+);
+const advancedSqlFields = computed<QueryBuilderFieldDef[]>(() =>
+  advancedFields.fieldsForTab('dataAsset'),
+);
+const advancedSql = computed(() => queryFilterToSql(queryFilter.value, advancedSqlFields.value));
+/** An empty root group applies as "clear the filter"; any other tree must be complete. */
+const advancedCanApply = computed(
+  () => advancedTree.value.children.length === 0 || isTreeComplete(advancedTree.value, advancedFieldDefs.value),
+);
+/**
  * The filter sent to the server: the saved `query_filter` from the URL
  * plus the "No X" (must_not.exists) clauses for the active filters (pin
  * ExplorePureUtils.getExploreQueryFilterMust). The URL keeps only the
@@ -116,13 +205,20 @@ const page = computed(() => pageFromQuery(route.query.page));
 const showDeleted = computed(() => route.query.showDeleted === 'true');
 const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, readGlobalPageSize(window.localStorage, authStore.user?.name)));
 const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
-const residual = computed(() => isResidualEstate(estateId.value));
 const activeTab = computed<ExploreTab | null>(() => exploreTabFromQuery(route.query));
-const sortOptions = computed(() =>
-  activeTab.value
+const sortOptions = computed(() => {
+  const base = activeTab.value
     ? sortOptionsForTab(activeTab.value)
-    : SORT_OPTIONS.map((option) => ({ id: option.id, field: option.field, defaultOrder: option.defaultOrder })),
-);
+    : SORT_OPTIONS.map((option) => ({ id: option.id, field: option.field, defaultOrder: option.defaultOrder }));
+  if (!activeTab.value) {
+    return base;
+  }
+  // D33 pin quirk: the API tabs default to totalVotes although the tag
+  // sorting group has no popularity option. The dropdown carries the
+  // default as well, so the sort label never renders blank.
+  const fallback = defaultSortForTab(activeTab.value);
+  return base.some((option) => option.id === fallback.id) ? base : [...base, fallback];
+});
 const currentSort = computed<ExploreSort>(() => {
   if (activeTab.value) {
     return exploreSortFromQuery(route.query, activeTab.value);
@@ -153,6 +249,26 @@ const chipFacets = computed<SearchFacet[]>(() => {
   return [...byId.values()];
 });
 watch(facets, (next) => facetOptions.rememberFacets(next));
+/**
+ * D4: the counts request is keyed by everything that narrows it — the
+ * text query, the chip filters (which travel as Lucene in the counts
+ * `q`, as pin's travel in its `queryFilter`), the deleted flag and the
+ * saved `query_filter`. The tab is deliberately excluded: counts span
+ * every tab index, so they stay valid across tab switches.
+ */
+const countsKey = computed(() =>
+  JSON.stringify({
+    q: query.value.trim(),
+    filters: filters.value,
+    deleted: showDeleted.value,
+    queryFilter: queryFilter.value,
+  }),
+);
+const countsForCurrentQuery = computed(() =>
+  typeCounts.value !== null && typeCountsKey.value === countsKey.value ? typeCounts.value : null,
+);
+/** D3 may hide tabs only when counts cover every tab (the counts endpoint). */
+const countsComplete = computed(() => countsForCurrentQuery.value !== null);
 
 /**
  * Per-tab filter sets (pin SearchClassBase.getDropDownItems): the chips
@@ -206,17 +322,21 @@ watch(
   { immediate: true },
 );
 const tabCounts = computed(() => {
-  const facet = facets.value.find((item) => item.id === 'entityType');
   const counts = new Map<string, number>();
-  for (const bucket of facet?.buckets ?? []) {
-    counts.set(bucket.key, bucket.count);
+  if (countsForCurrentQuery.value) {
+    for (const [key, value] of countsForCurrentQuery.value) {
+      counts.set(key, value);
+    }
+  } else {
+    const facet = facets.value.find((item) => item.id === 'entityType');
+    for (const bucket of facet?.buckets ?? []) {
+      counts.set(bucket.key, bucket.count);
+    }
   }
   // Official publishCounts behaviour: the active tab's count is the current
   // page's result total, not the aggregation bucket. Other tabs keep their
-  // aggregation counts; tabs with no bucket stay count-less (unknown, not 0),
-  // because no independent count endpoint is wired (see residuals). On a
-  // failed search the total is a reset 0, not a result count, so it must
-  // not overwrite the bucket into a misleading (0).
+  // counts; on a failed search the total is a reset 0, not a result count,
+  // so it must not overwrite the bucket into a misleading (0).
   if (activeTab.value && !errorMessage.value) {
     counts.set(activeTab.value.entityType, total.value);
   }
@@ -230,11 +350,54 @@ const exploreTabItems = computed(() => {
     },
   ];
   for (const tab of EXPLORE_TABS) {
-    // Counts come only from the current search's entityType aggregation;
-    // no independent per-tab count request is faked (see residuals).
+    // Counts come from the counts endpoint when a query is present, else
+    // from the current search's entityType aggregation; tabs with no
+    // bucket stay count-less (unknown, not 0) on partial counts.
     const count = tabCounts.value.get(tab.entityType);
     const label = t(`explore.entity.${tab.labelKey}`);
     items.push({ key: tab.index, label: count !== undefined ? `${label} (${count})` : label });
+  }
+  // D3 (ExplorePageV1.component.tsx:327-342): with a query, hide
+  // zero-result tabs, keeping the active tab (so the tab control never
+  // loses its selection) and the 'all' pseudo-tab. The product has no
+  // global-search scope tab to keep — the active tab is the kept one.
+  // Hiding applies only on complete counts: a missing bucket on partial
+  // aggregation counts is unknown, not zero.
+  if (!query.value.trim() || !countsComplete.value) {
+    return items;
+  }
+  return items.filter((item) => {
+    if (item.key === 'all' || item.key === activeTab.value?.index) {
+      return true;
+    }
+    const tab = EXPLORE_TABS.find((entry) => entry.index === item.key);
+    return tab !== undefined && (tabCounts.value.get(tab.entityType) ?? 0) > 0;
+  });
+});
+/**
+ * D14 (pin ExploreV1 exploreLeftPanel): while a query is typed the left
+ * aside shows the same tabs vertically — icon + truncating label + count
+ * badge, click switches tab — instead of the estate tree. Counts are the
+ * same aggregation counts as the top bar; a count-less tab shows no badge.
+ * The 'all' item uses the SearchEntityIcon 'query' (SearchOutlined)
+ * fallback, as the icon map has no all-tab glyph.
+ */
+const leftPanelItems = computed(() => {
+  const items: Array<{ key: string; label: string; iconType: string; count?: number }> = [
+    {
+      key: 'all',
+      label: t('explore.all'),
+      iconType: 'query',
+      count: total.value ? total.value : undefined,
+    },
+  ];
+  for (const tab of EXPLORE_TABS) {
+    items.push({
+      key: tab.index,
+      label: t(`explore.entity.${tab.labelKey}`),
+      iconType: tab.entityType,
+      count: tabCounts.value.get(tab.entityType),
+    });
   }
   return items;
 });
@@ -242,14 +405,43 @@ const searchKey = computed(() =>
   JSON.stringify({
     q: query.value,
     filters: filters.value,
+    queryFilter: queryFilter.value,
     page: page.value,
     pageSize: pageSize.value,
     showDeleted: showDeleted.value,
+    showRankingDetails: showRankingDetails.value,
+    // D11: flipping the NLP toggle refires the search through the NLQ
+    // path (or back to keyword) without a navigation.
+    nlq: searchStore.isNLPActive && searchStore.isNLPEnabled,
     sort: currentSort.value,
     estate: estateFromQuery(route.query),
     tab: activeTab.value?.index ?? 'all',
   }),
 );
+
+/**
+ * Ranking sections for the current hits, keyed by hit object. Built only
+ * while the toggle is on — pin's `SearchedData` passes the hit's score,
+ * explanation and matched queries to the card only then, and the search
+ * only carries them when it sent `explain: true`.
+ */
+const rankingByHit = computed(() => {
+  const byHit = new Map<SearchHit, RankingDetails>();
+  if (!showRankingDetails.value) {
+    return byHit;
+  }
+  for (const hit of hits.value) {
+    const details = buildRankingDetails(hit, t('explore.rankingBaseline'));
+    if (details) {
+      byHit.set(hit, details);
+    }
+  }
+  return byHit;
+});
+
+function rankingFor(hit: SearchHit): RankingDetails | null {
+  return rankingByHit.value.get(hit) ?? null;
+}
 
 const estateNodes = computed(() => buildEstateTree(estateFacets.value, estateChildMap.value));
 const selectedEstateKeys = computed(() => {
@@ -269,6 +461,27 @@ const recordRange = computed(() => {
   }
   const from = page.value * pageSize.value + 1;
   return { from, to: Math.min(total.value, from + hits.value.length - 1) };
+});
+/** D29 (ExploreV1.component.tsx:676-687): the displayed page, clamped into [1, totalPages]. */
+const totalPages = computed(() => Math.max(Math.ceil(total.value / pageSize.value), 1));
+const validPage = computed(() => Math.min(Math.max(page.value, 0), totalPages.value - 1));
+/**
+ * D34 (SearchedData.tsx:92-117, ExploreV1.component.tsx:515,706-709):
+ * the "N results" badge shows only when something is applied — a text
+ * query, a chip filter, or a saved query_filter — never on the bare
+ * unfiltered browse.
+ */
+const showResultCount = computed(() =>
+  Boolean(query.value.trim() || hasActiveFilters(filters.value) || queryFilter.value),
+);
+const resultCountText = computed(() => {
+  if (total.value === 1) {
+    return t('explore.resultOne');
+  }
+  if (total.value === MAX_RESULT_HITS) {
+    return t('explore.resultsCapped', { total: total.value });
+  }
+  return t('explore.results', { total: total.value });
 });
 
 function entityLabel(entityType: string): string {
@@ -307,12 +520,19 @@ function pushSearch(
   nextSort: { id: string; order: 'asc' | 'desc' } = currentSort.value,
   nextEstate = estateFromQuery(route.query),
   nextTab: ExploreTab | null = activeTab.value,
-  nextOptions: { showDeleted?: boolean; pageSize?: number } = {},
+  nextOptions: { showDeleted?: boolean; pageSize?: number; queryFilter?: string | null } = {},
 ): void {
   const next: Record<string, string> = { ...filtersToQuery(nextFilters) };
   const trimmed = nextQuery.trim();
   if (trimmed) {
     next.q = trimmed;
+  }
+  // The advanced-search filter lives in `query_filter` (pin `queryFilter`
+  // URL param); it survives tab/sort/page navigation unless the caller
+  // explicitly sets (string) or clears (null) it.
+  const nextQueryFilter = nextOptions.queryFilter === undefined ? queryFilter.value : nextOptions.queryFilter;
+  if (nextQueryFilter) {
+    next.query_filter = nextQueryFilter;
   }
   if (nextPage > 0) {
     next.page = String(nextPage);
@@ -375,7 +595,8 @@ function onToggleFacet(id: FacetId, value: string): void {
 }
 
 function onClearFilters(): void {
-  pushSearch(query.value, {}, 0, currentSort.value, '');
+  // Pin `onResetAllFilters`: clearing filters also clears the advanced filter.
+  pushSearch(query.value, {}, 0, currentSort.value, '', activeTab.value, { queryFilter: null });
 }
 
 function onPageChange(next: number): void {
@@ -408,18 +629,38 @@ function onToggleSortOrder(): void {
 
 function onTabChange(key: string): void {
   const tab = key === 'all' ? null : (EXPLORE_TABS.find((item) => item.index === key) ?? null);
-  const options = tab ? sortOptionsForTab(tab) : SORT_OPTIONS;
+  // D30 (ExplorePageV1.component.tsx:211-230, handleSearchIndexChange):
+  // only the common owner + tag filters carry over (explore.constants
+  // COMMON_FILTERS_FOR_DIFFERENT_TABS); with a query the sort resets to
+  // _score, otherwise to the new tab's default; the page returns to 1
+  // and the order resets to the new tab's default. The estate drill is
+  // a filter too, so it does not survive the switch either — official's
+  // tree selection lives in the quick filter, which is dropped the
+  // same way.
+  const carried: SearchFilters = {};
+  if (filters.value.owner?.length) {
+    carried.owner = filters.value.owner;
+  }
+  if (filters.value.tagFqn?.length) {
+    carried.tagFqn = filters.value.tagFqn;
+  }
   const fallback = tab ? defaultSortForTab(tab) : { id: DEFAULT_SORT.id, defaultOrder: DEFAULT_SORT.order };
-  const sort = options.some((item) => item.id === currentSort.value.id)
-    ? { id: currentSort.value.id, order: currentSort.value.order }
+  const sort = query.value.trim()
+    ? { id: 'relevance', order: 'desc' as const }
     : { id: fallback.id, order: fallback.defaultOrder };
-  pushSearch(query.value, filters.value, 0, sort, estateFromQuery(route.query), tab);
+  pushSearch(query.value, carried, 0, sort, '', tab);
 }
 
 function onShowDeletedChange(value: boolean): void {
   pushSearch(query.value, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value, {
     showDeleted: value,
   });
+}
+
+function onToggleRankingDetails(): void {
+  // Flipping the toggle refires the search (it is part of searchKey) with
+  // `explain` on or off; pin's Tools item does the same state flip.
+  showRankingDetails.value = !showRankingDetails.value;
 }
 
 function onPageSizeChange(_current: number, size: number): void {
@@ -430,36 +671,52 @@ function onPageSizeChange(_current: number, size: number): void {
   });
 }
 
+function freshAdvancedTree(fields: QueryBuilderFieldDef[]): QueryGroup {
+  const field = findFieldDef(fields, 'ownerDisplayName') ?? fields[0];
+  return field
+    ? { kind: 'group', conjunction: 'AND', children: [createQueryRule(field)] }
+    : emptyQueryGroup();
+}
+
 function openAdvancedSearch(): void {
-  const parsed = parseAdvancedQuery(query.value);
-  advancedFreeText.value = parsed.freeText;
-  advancedRows.value = parsed.rows.length ? parsed.rows : [{ field: ADVANCED_SEARCH_FIELDS[0], value: '' }];
+  // The free text is the Lucene `q` as-is: advanced clauses now live in
+  // `query_filter`, not in `q` (the old flat rows parsed them out of `q`).
+  advancedFreeText.value = query.value;
+  // Reopen the applied filter for editing when it parses against this
+  // tab's fields (pin `QbUtils.loadTree` + `isValidTree`); an unparseable
+  // filter (e.g. a saved filter with an unknown shape) starts a fresh
+  // tree instead of being rewritten — Cancel keeps the URL untouched.
+  const parsed = queryFilter.value
+    ? parseElasticsearchQuery(queryFilter.value, advancedFieldDefs.value)
+    : null;
+  advancedTree.value = parsed ?? freshAdvancedTree(advancedFieldDefs.value);
+  void advancedFields.loadCustomPropertyFields();
   advancedOpen.value = true;
 }
 
-function addAdvancedRow(): void {
-  advancedRows.value = [...advancedRows.value, { field: ADVANCED_SEARCH_FIELDS[0], value: '' }];
-}
-
-function removeAdvancedRow(index: number): void {
-  advancedRows.value = advancedRows.value.filter((_, item) => item !== index);
-}
-
 function resetAdvancedSearch(): void {
-  advancedRows.value = [];
+  advancedTree.value = freshAdvancedTree(advancedFieldDefs.value);
 }
 
 function applyAdvancedSearch(): void {
-  const composed = composeAdvancedQuery(advancedFreeText.value, advancedRows.value);
+  if (!advancedCanApply.value) {
+    return;
+  }
+  const filter = buildQueryFilter(advancedTree.value, advancedFieldDefs.value);
   advancedOpen.value = false;
-  pushSearch(composed, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value);
+  pushSearch(advancedFreeText.value, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value, {
+    queryFilter: filter ?? null,
+  });
+}
+
+/** Pin `onResetQueryFilter`: clears only the advanced filter, keeping `q` and the quick filters. */
+function clearAdvancedSearch(): void {
+  pushSearch(query.value, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value, {
+    queryFilter: null,
+  });
 }
 
 function onEstateSelect(node: EstateNode): void {
-  if (isResidualEstate(node.categoryId)) {
-    pushSearch(query.value, { ...filters.value, entityType: undefined, service: undefined }, 0, currentSort.value, node.categoryId);
-    return;
-  }
   pushSearch(query.value, filtersForEstateNode(node, filters.value), 0, currentSort.value, node.categoryId);
 }
 
@@ -482,20 +739,34 @@ function parentTableTo(hit: SearchHit): { name: string; params: { entityType: st
   return location;
 }
 
+/**
+ * Hover/focus prefetch (D24). Pin `ExploreSearchCard` `handlePrefetch`
+ * warms the detail cache for table / dashboard / pipeline / topic on
+ * the name link's mouseenter + focus, so the click that follows hits a
+ * populated slot; other types are no-ops. The warmed slot is the
+ * `prefetchAssetDetail` cache consulted by `fetchAssetDetail`.
+ */
+function prefetchHit(hit: SearchHit): void {
+  if (shouldPrefetchCard(hit.entityType) && hit.fullyQualifiedName) {
+    prefetchAssetDetail(hit.entityType, hit.fullyQualifiedName);
+  }
+}
+
 function openHit(hit: SearchHit): void {
-  // Column hits navigate to the parent table when the hit carries its FQN
-  // (official column cards link to the parent table; there is no column
-  // detail page). Without a parent FQN the hit only selects, as before.
-  const parent = parentTableLocation(hit.entityType, hit.tableFqn);
-  if (parent) {
-    void router.push(parent);
-    return;
-  }
-  if (!hit.fullyQualifiedName || !hit.entityType || !isDetailWired(hit.entityType)) {
+  // D26: parent table, wired asset detail, or governance detail for
+  // glossaryTerm / tag / dataProduct (when the hit carries an id).
+  // Anything without a navigation target only selects the preview.
+  if (!openSearchHit((to) => void router.push(to), hit)) {
     selectHit(hit);
-    return;
   }
-  void router.push(assetLocation(hit.entityType, hit.fullyQualifiedName));
+}
+
+// D25: the preview lineage entry navigates to the lineage page for the
+// hit (product analogue of pin EntitySummaryPanel handleLineageClick).
+function openLineageHit(hit: SearchHit): void {
+  if (hit.fullyQualifiedName) {
+    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
+  }
 }
 
 function hitKey(hit: SearchHit, index: number): string {
@@ -507,19 +778,86 @@ function isSelected(hit: SearchHit): boolean {
   return selectedHit.value ? (selectedHit.value.fullyQualifiedName || selectedHit.value.name) === key : false;
 }
 
-function openResidual(): void {
-  const routeName = estateNodes.value.find((node) => node.key === estateId.value)?.residualRoute;
-  if (routeName) {
-    void router.push({ name: routeName });
-  }
-}
-
 async function loadEstatePresence(): Promise<void> {
   try {
-    const pageResult = await searchAssets(query.value.trim() || '*', 0, 0, { deleted: showDeleted.value });
+    const pageResult = await exploreCache.getOrLoad(
+      JSON.stringify({ estatePresence: query.value.trim() || '*', deleted: showDeleted.value }),
+      () => searchAssets(query.value.trim() || '*', 0, 0, { deleted: showDeleted.value }),
+    );
     estateFacets.value = pageResult.facets;
   } catch {
     estateFacets.value = [];
+  }
+}
+
+/**
+ * D4: per-tab counts for the current query from GET
+ * /v1/search/entityTypeCounts (ExploreUtils.ts:209-235), over every
+ * Explore tab index with the chip filters folded into the Lucene `q`
+ * and the saved `query_filter` passed through. The 30s SWR cache
+ * shares the request across tab switches within the session. A slow
+ * response for a superseded query never overwrites the current
+ * query's counts; a failed counts call leaves the aggregation counts
+ * in place (tabs are never hidden on partial counts).
+ */
+async function loadTypeCounts(): Promise<void> {
+  const key = countsKey.value;
+  const page = await exploreCache.getOrLoad(
+    `counts:${key}`,
+    () =>
+      searchEntityTypeCounts({
+        query: composeSearchQuery(query.value, filters.value),
+        index: EXPLORE_TABS.map((tab) => tab.index),
+        queryFilter: queryFilter.value,
+        deleted: showDeleted.value,
+        includeTopHit: !activeTab.value,
+      }),
+  );
+  if (key === countsKey.value) {
+    typeCounts.value = entityTypeCountsFromPage(page);
+    typeCountsKey.value = key;
+  }
+}
+
+/**
+ * D17 (ExplorePageV1.component.tsx:645-671): the sharded tables the
+ * query names, shown as "Matching sharded families". Runs beside the
+ * results search, never blocking it; a superseded query's result is
+ * dropped, and a failed lookup clears the section.
+ */
+async function loadShardedFamilies(): Promise<void> {
+  const trimmed = query.value.trim();
+  try {
+    const families = await exploreCache.getOrLoad(
+      `sharded:${JSON.stringify({ q: trimmed, queryFilter: queryFilter.value, deleted: showDeleted.value })}`,
+      () =>
+        findShardedFamilies(trimmed, {
+          queryFilter: queryFilter.value,
+          includeDeleted: showDeleted.value,
+          searchTables: async (filter) => {
+            const page = await searchAssets('', 0, 10, {
+              index: 'table',
+              includeAggregations: false,
+              query_filter: filter,
+            });
+            return page.hits;
+          },
+          fetchTable: async (fqn) => {
+            try {
+              return await getTableShardingByName(fqn);
+            } catch {
+              return undefined;
+            }
+          },
+        }),
+    );
+    if (trimmed === query.value.trim()) {
+      shardedFamilies.value = families;
+    }
+  } catch {
+    if (trimmed === query.value.trim()) {
+      shardedFamilies.value = [];
+    }
   }
 }
 
@@ -560,23 +898,76 @@ async function runSearch(): Promise<void> {
     // A new search rebuilds the tree and drops previously loaded children,
     // matching the official tree's rebuild behaviour.
     estateChildMap.value = {};
-    if (residual.value) {
-      hits.value = [];
-      total.value = 0;
-      facets.value = [];
-      await estatePromise;
-      return;
+    // D4 + D17 run beside the results search, never blocking it:
+    // official runs counts and results concurrently when a tab is
+    // explicit (ExploreUtils.ts:349-359), and the sharded-family
+    // lookup is its own effect (ExplorePageV1.component.tsx:645-671).
+    // A failed counts call must not fail the results (see D3 hiding).
+    const trimmedQuery = query.value.trim();
+    const countsPromise = trimmedQuery ? loadTypeCounts().catch(() => undefined) : Promise.resolve(undefined);
+    if (trimmedQuery) {
+      void loadShardedFamilies();
+    } else {
+      shardedFamilies.value = [];
     }
-    const pageResult = await searchAssets(composeSearchQuery(query.value, filters.value), page.value * pageSize.value, pageSize.value, {
-      index: activeTab.value?.index ?? 'dataAsset',
+    // D11 NLQ (pin ExploreUtils.fetchEntityData): NLP active + a
+    // non-empty query goes through nlqSearch instead of the keyword
+    // search. The query is the raw text (pin sends the escaped query
+    // plus the combined query_filter separately); the chip filters are
+    // the product's Lucene transport and are not composed into an NLQ
+    // call. The /hybrid route pin's UI calls is not reproduced: no
+    // /hybrid route exists in the pin server or this server (B2-S1
+    // verdict) — GET /v1/search/nlq/query is the route both serve.
+    const useNlq =
+      searchStore.isNLPActive && searchStore.isNLPEnabled && trimmedQuery !== '';
+    const index = activeTab.value?.index ?? 'dataAsset';
+    // D31/D29/D32: the keyword search goes through the 30s cache, keyed
+    // by the exact request (the ranking-details explain flag is part of
+    // the key, so toggling it is never served a stale cached result);
+    // the request uses the clamped page (D29), and sends
+    // track_total_hits, explain and exclude_source_fields
+    // (ExploreUtils.ts:191-193,314-319). NLQ stays a direct call: it is
+    // a different endpoint and is not part of the results cache.
+    const searchParams = {
+      q: composeSearchQuery(query.value, filters.value),
+      from: validPage.value * pageSize.value,
+      size: pageSize.value,
+      index,
       sortField: currentSort.value.field,
       sortOrder: currentSort.value.order,
       deleted: showDeleted.value,
-      query_filter: effectiveQueryFilter.value,
-    });
+      explain: showRankingDetails.value,
+      queryFilter: effectiveQueryFilter.value,
+    };
+    const pageResult = useNlq
+      ? await nlqSearch(query.value.trim(), searchParams.from, pageSize.value, {
+          index,
+          sortField: currentSort.value.field,
+          sortOrder: currentSort.value.order,
+          deleted: showDeleted.value,
+          explain: showRankingDetails.value,
+          query_filter: effectiveQueryFilter.value,
+        })
+      : await exploreCache.getOrLoad(JSON.stringify(searchParams), () =>
+          searchAssets(searchParams.q, searchParams.from, searchParams.size, {
+            index: searchParams.index,
+            sortField: searchParams.sortField,
+            sortOrder: searchParams.sortOrder,
+            deleted: searchParams.deleted,
+            explain: searchParams.explain,
+            query_filter: searchParams.queryFilter,
+            trackTotalHits: true,
+            excludeSourceFields: [...SEARCH_EXCLUDE_SOURCE_FIELDS],
+          }),
+        );
     hits.value = pageResult.hits;
     total.value = pageResult.total;
     facets.value = pageResult.facets;
+    // D11 echo: surface the backend-detected filters pin's
+    // onNlqAppliedFilters hands to the Explore filters. Absent on
+    // keyword searches and on NLQ searches that detected none.
+    nlqAppliedFilters.value = pageResult.appliedQuickFilters?.fieldList ?? [];
+    await countsPromise;
     if (estateId.value) {
       expandedKeys.value = [estateId.value];
       await Promise.all([
@@ -589,10 +980,24 @@ async function runSearch(): Promise<void> {
     if (hits.value.length && !hits.value.some((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value)) {
       selectedFqn.value = hits.value[0].fullyQualifiedName || hits.value[0].name;
     }
+    // D29: once results settle, correct an out-of-range page in the URL,
+    // as official's ExploreV1 effect navigates to validCurrentPage
+    // (ExploreV1.component.tsx:924-941). The re-run this triggers reads
+    // the same clamped page from the D31 cache.
+    if (page.value !== validPage.value) {
+      const nextQuery = { ...route.query };
+      if (validPage.value > 0) {
+        nextQuery.page = String(validPage.value);
+      } else {
+        delete nextQuery.page;
+      }
+      await router.replace({ name: 'search', query: nextQuery });
+    }
   } catch (error) {
     hits.value = [];
     total.value = 0;
     facets.value = [];
+    nlqAppliedFilters.value = [];
     const message = error instanceof Error ? error.message : t('explore.failed');
     errorMessage.value = message;
     indexNotFound.value = isIndexNotFoundError(message);
@@ -679,6 +1084,34 @@ watch(expandedKeys, (keys) => {
         >
           {{ t('explore.advancedSearch') }}
         </Button>
+        <Dropdown :trigger="['click']" data-testid="explore-tools">
+          <Button
+            size="small"
+            data-testid="explore-tools-trigger"
+            :aria-label="t('explore.tools')"
+          >
+            {{ t('explore.tools') }}
+          </Button>
+          <template #overlay>
+            <Menu :selectable="false" data-testid="explore-tools-menu">
+              <Menu.Item
+                key="ranking-details"
+                data-testid="explore-ranking-details"
+                @click="onToggleRankingDetails"
+              >
+                <span class="explore__tools-item">
+                  {{ t('explore.rankingDetails') }}
+                  <Switch
+                    size="small"
+                    :checked="showRankingDetails"
+                    class="explore__tools-switch"
+                    :aria-label="t('explore.rankingDetails')"
+                  />
+                </span>
+              </Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <Button
           v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
           type="link"
@@ -691,6 +1124,14 @@ watch(expandedKeys, (keys) => {
         </Button>
       </div>
     </div>
+    <Typography.Text
+      v-if="nlqAppliedFilters.length"
+      type="secondary"
+      class="explore__nlq-filters"
+      data-testid="explore-nlq-applied-filters"
+    >
+      {{ t('explore.nlqAppliedFilters', { fields: nlqAppliedFilters.join(', ') }) }}
+    </Typography.Text>
     <Space v-if="hasActiveFilters(filters)" wrap class="explore__active">
       <template v-for="id in activeFilterIds" :key="id">
         <Tag
@@ -704,9 +1145,57 @@ watch(expandedKeys, (keys) => {
         </Tag>
       </template>
     </Space>
+    <div v-if="advancedSql" class="explore__applied-filter" data-testid="advance-search-filter-container">
+      <Typography.Text type="secondary">{{ t('explore.advancedSearch') }}</Typography.Text>
+      <span class="explore__applied-filter-text" data-testid="advance-search-filter-text">{{ advancedSql }}</span>
+      <Button
+        size="small"
+        data-testid="advance-search-filter-btn"
+        :aria-label="t('explore.advancedEdit')"
+        @click="openAdvancedSearch"
+      >
+        {{ t('explore.advancedEdit') }}
+      </Button>
+      <Button
+        size="small"
+        data-testid="advance-search-clear-btn"
+        :aria-label="t('explore.advancedClear')"
+        @click="clearAdvancedSearch"
+      >
+        {{ t('explore.advancedClear') }}
+      </Button>
+    </div>
+    <!-- D35 (pin ExploreV1:413): the active-domain chip sits directly under
+         the filter-chips row. It renders nothing without an active domain. -->
+    <DomainFilterChip class="explore__domain-chip" />
     <div class="explore__split">
       <aside class="explore__pane explore__pane--estate">
+        <!-- D14 (pin ExploreV1 exploreLeftPanel): a query turns the left
+             aside into the vertical tab list; without one it is the tree. -->
+        <nav
+          v-if="query"
+          class="explore__left-panel"
+          data-testid="explore-left-panel"
+          :aria-label="t('explore.browseEstate')"
+        >
+          <button
+            v-for="item in leftPanelItems"
+            :key="item.key"
+            type="button"
+            class="explore__left-tab"
+            :class="{ 'explore__left-tab--active': (activeTab?.index ?? 'all') === item.key }"
+            :data-testid="`explore-left-tab-${item.key}`"
+            @click="onTabChange(item.key)"
+          >
+            <SearchEntityIcon :entity-type="item.iconType" :size="16" />
+            <span class="explore__left-label">{{ item.label }}</span>
+            <span v-if="item.count !== undefined" class="explore__left-count" data-testid="filter-count">
+              {{ item.count }}
+            </span>
+          </button>
+        </nav>
         <ExploreEstateTree
+          v-else
           :nodes="estateNodes"
           :selected-keys="selectedEstateKeys"
           :expanded-keys="expandedKeys"
@@ -737,18 +1226,27 @@ watch(expandedKeys, (keys) => {
           </template>
         </Alert>
         <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="explore__error" />
+        <div
+          v-if="shardedFamilies.length"
+          class="explore__sharded"
+          data-testid="explore-sharded-families"
+          :aria-label="t('explore.matchingShardedFamilies')"
+        >
+          <Typography.Text strong>{{ t('explore.matchingShardedFamilies') }}</Typography.Text>
+          <div class="explore__sharded-links">
+            <router-link
+              v-for="table in shardedFamilies"
+              :key="table.id"
+              :to="assetLocation('table', table.fullyQualifiedName)"
+              data-testid="explore-sharded-family"
+            >
+              {{ table.fullyQualifiedName }}
+            </router-link>
+          </div>
+        </div>
         <div data-testid="search-results" class="explore__results">
           <Empty
-            v-if="!loading && residual && !errorMessage"
-            data-testid="explore-residual-empty"
-            :description="estateId === 'contextCenter' ? t('explore.residualContext') : t('explore.residualDomains')"
-          >
-            <Button type="primary" data-testid="explore-residual-cta" @click="openResidual">
-              {{ estateId === 'contextCenter' ? t('explore.openContextCenter') : t('explore.openDomains') }}
-            </Button>
-          </Empty>
-          <Empty
-            v-else-if="!loading && !hits.length && !errorMessage"
+            v-if="!loading && !hits.length && !errorMessage"
             data-testid="explore-empty"
             :description="t('explore.emptyTitle')"
           >
@@ -773,34 +1271,52 @@ watch(expandedKeys, (keys) => {
             :data-testid="`search-card-${hit.fullyQualifiedName || hit.name}`"
             @click="selectHit(hit)"
           >
+            <!-- D18: clickable entity breadcrumbs replace the raw FQN row
+                 (pin `ExploreSearchCard` `BreadcrumbAndScoreCell`). -->
+            <SmBreadcrumb
+              v-if="cardBreadcrumbs(hit).length"
+              :items="cardBreadcrumbs(hit)"
+              :test-id="`explore-card-breadcrumbs-${hit.fullyQualifiedName || hit.name}`"
+              class="explore__card-crumbs"
+            />
             <div class="explore__card-head">
-              <Tag :color="entityTypeColor(hit.entityType)">{{ entityLabel(hit.entityType) }}</Tag>
+              <!-- D22: the entity icon, not a type Tag chip. -->
+              <component :is="entityIconFor(hit.entityType)" class="explore__card-icon" />
               <!-- Column titles are plain text in the official card (its
                    column link resolves to ''), so they are not anchors here
                    either; the parent-table link below is the navigation. -->
               <span v-if="hit.entityType === 'tableColumn'" class="explore__card-name">
-                {{ hit.displayName || hit.name }}
+                <HighlightedText :text="cardDisplayName(hit)" :search-terms="cardNameNeedles(hit)" />
               </span>
-              <a v-else href="#" class="explore__card-name" @click.prevent.stop="openHit(hit)">
-                {{ hit.displayName || hit.name }}
-              </a>
-              <Typography.Text
-                v-if="!isDetailWired(hit.entityType) && !parentTableLocation(hit.entityType, hit.tableFqn)"
-                type="secondary"
+              <a
+                v-else
+                href="#"
+                class="explore__card-name"
+                @click.prevent.stop="openHit(hit)"
+                @mouseenter="prefetchHit(hit)"
+                @focus="prefetchHit(hit)"
               >
+                <HighlightedText :text="cardDisplayName(hit)" :search-terms="cardNameNeedles(hit)" />
+              </a>
+              <Typography.Text v-if="!detailLocationForHit(hit)" type="secondary">
                 {{ t('explore.unwired') }}
               </Typography.Text>
             </div>
-            <Typography.Paragraph v-if="hit.fullyQualifiedName" class="explore__fqn" type="secondary">
-              {{ hit.fullyQualifiedName }}
-            </Typography.Paragraph>
-            <Typography.Paragraph
-              class="explore__desc"
-              :ellipsis="{ rows: 2 }"
-              :content="hit.description || t('explore.noDescription')"
-            />
+            <!-- Two-line clamp is CSS here, not antd `ellipsis`: the
+                 antd ellipsis prop only truncates a `content` string and
+                 warns (without truncating) when children are slotted in,
+                 and the highlighted description must render as children. -->
+            <p class="explore__desc">
+              <HighlightedText
+                :text="hit.description || t('explore.noDescription')"
+                :search-terms="cardDescriptionNeedles(hit)"
+              />
+            </p>
             <div class="explore__meta">
-              <Typography.Text type="secondary">
+              <!-- The breadcrumbs above already carry service / database /
+                   schema; the location text stays only for types without
+                   a breadcrumb trail. -->
+              <Typography.Text v-if="!cardBreadcrumbs(hit).length" type="secondary">
                 {{ hitLocation(hit) || t('explore.locationMissing') }}
               </Typography.Text>
               <Typography.Text v-if="hit.serviceType" type="secondary">{{ hit.serviceType }}</Typography.Text>
@@ -820,14 +1336,41 @@ watch(expandedKeys, (keys) => {
                 {{ hit.tableName || hit.tableFqn }}
               </router-link>
             </div>
+            <!-- D20: Matches section — hit fields except `.ngram` and the
+                 name fields (pin `SearchedData.tsx` + `MatchesSection`). -->
+            <div
+              v-if="cardMatches(hit.highlight).length"
+              class="explore__matches"
+              :data-testid="`explore-card-matches-${hit.fullyQualifiedName || hit.name}`"
+            >
+              <Typography.Text type="secondary">{{ t('explore.matches') }}:</Typography.Text>
+              <Typography.Text
+                v-for="(match, matchIndex) in cardMatches(hit.highlight)"
+                :key="match.key"
+                type="secondary"
+              >
+                {{ t('explore.matchIn', { count: match.value, field: match.label })
+                }}{{ matchIndex < cardMatches(hit.highlight).length - 1 ? ',' : '' }}
+              </Typography.Text>
+            </div>
             <Space wrap>
               <Typography.Text v-if="!hit.owners.length" type="secondary">{{ t('explore.noOwners') }}</Typography.Text>
-              <span v-for="owner in hit.owners" :key="owner.name">{{ owner.displayName || owner.name }}</span>
-              <Tag v-for="tag in hit.tags" :key="tag.tagFQN">{{ tag.name }}</Tag>
+              <!-- D23: owner avatars, not plain-text names (pin `Owner`
+                   `avatarSize={24}`); the name survives as the hover title. -->
+              <SmProfilePicture
+                v-for="owner in hit.owners"
+                :key="owner.name"
+                :name="owner.name"
+                :display-name="owner.displayName"
+                :is-team="owner.type === 'team'"
+                size="xs"
+                :title="owner.displayName || owner.name"
+              />
             </Space>
+            <ExploreRankingDetails :details="rankingFor(hit)" />
           </article>
         </div>
-        <div v-if="!loading && !errorMessage && !residual" class="explore__footer">
+        <div v-if="!loading && !errorMessage" class="explore__footer">
           <Typography.Text type="secondary">
             {{
               total
@@ -835,11 +1378,14 @@ watch(expandedKeys, (keys) => {
                 : t('explore.shown', { shown: hits.length })
             }}
           </Typography.Text>
+          <Typography.Text v-if="showResultCount" type="secondary" data-testid="search-results-count">
+            {{ resultCountText }}
+          </Typography.Text>
           <Pagination
-            v-if="total > pageSize"
+            v-if="total > 0"
             data-testid="search-pagination"
             size="small"
-            :current="page + 1"
+            :current="validPage + 1"
             :page-size="pageSize"
             :page-size-options="EXPLORE_PAGE_SIZE_OPTIONS.map(String)"
             :total="total"
@@ -850,7 +1396,7 @@ watch(expandedKeys, (keys) => {
         </div>
       </section>
       <aside class="explore__pane explore__pane--preview">
-        <ExplorePreview :hit="residual ? null : selectedHit" @open="openHit" />
+        <ExplorePreview :hit="selectedHit" @open="openHit" @open-lineage="openLineageHit" />
       </aside>
     </div>
     <FormModal
@@ -858,6 +1404,7 @@ watch(expandedKeys, (keys) => {
       :title="t('explore.advancedSearch')"
       size="xl"
       :ok-text="t('explore.advancedApply')"
+      :ok-disabled="!advancedCanApply"
       test-id="advanced-search-modal"
       @ok="applyAdvancedSearch"
       @cancel="advancedOpen = false"
@@ -871,40 +1418,22 @@ watch(expandedKeys, (keys) => {
           :placeholder="t('explore.advancedFreeText')"
           @update:value="advancedFreeText = $event"
         />
-        <div
-          v-for="(row, index) in advancedRows"
-          :key="index"
-          class="explore__advanced-row"
-        >
-          <Select
-            :data-testid="`advanced-search-field-${index}`"
-            :value="row.field"
-            :aria-label="t('explore.advancedField')"
-            @change="advancedRows[index].field = $event"
-          >
-            <Select.Option v-for="field in ADVANCED_SEARCH_FIELDS" :key="field" :value="field">
-              {{ t(`explore.facets.${field}`) }}
-            </Select.Option>
-          </Select>
-          <Input
-            :data-testid="`advanced-search-value-${index}`"
-            :value="row.value"
-            :aria-label="t('explore.advancedValue')"
-            :placeholder="t('explore.advancedValue')"
-            @update:value="advancedRows[index].value = $event"
-          />
-          <Button size="small" :data-testid="`advanced-search-remove-${index}`" @click="removeAdvancedRow(index)">
-            {{ t('explore.advancedRemove') }}
-          </Button>
-        </div>
+        <AdvancedSearchBuilder
+          v-model="advancedTree"
+          :fields="advancedFieldDefs"
+          :fetch-options="
+            (field, text) =>
+              advancedFields.fetchFieldOptions(field, text, activeTab?.index ?? 'dataAsset')
+          "
+        />
         <Space>
-          <Button size="small" data-testid="advanced-search-add-row" @click="addAdvancedRow">
-            {{ t('explore.advancedAddRow') }}
-          </Button>
           <Button size="small" data-testid="advanced-search-reset" @click="resetAdvancedSearch">
             {{ t('explore.advancedReset') }}
           </Button>
         </Space>
+        <Typography.Text v-if="!advancedCanApply" type="warning">
+          {{ t('explore.advancedIncomplete') }}
+        </Typography.Text>
       </Space>
     </FormModal>
   </div>
@@ -939,14 +1468,103 @@ watch(expandedKeys, (keys) => {
   font-size: 12px;
   white-space: nowrap;
 }
+/* E2's applied-filter SQL text row (kept) + E4's Tools menu / old advanced-row
+   rules (kept; .explore__advanced-row is currently unused — E2 replaced the
+   old rows UI with AdvancedSearchBuilder — retained to preserve E4's diff). */
+.explore__applied-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.explore__tools-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+.explore__tools-switch {
+  /* Pin's Tools toggle is read-only with pointer-events none: the menu
+     row is the single toggle path, so the switch never double-fires. */
+  pointer-events: none;
+}
 .explore__advanced-row {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
+.explore__applied-filter-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--sm-text-primary);
+}
 .explore__active {
   margin-bottom: 0;
+}
+.explore__nlq-filters {
+  font-size: 12px;
+}
+.explore__domain-chip {
+  margin-top: 8px;
+}
+.explore__left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.explore__left-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--sm-border-radius);
+  background: transparent;
+  color: var(--sm-text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.explore__left-tab:hover {
+  background: var(--sm-bg-elevated);
+}
+.explore__left-tab--active {
+  border-color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
+  color: var(--sm-color-primary);
+}
+.explore__left-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore__left-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sm-bg-elevated);
+  color: var(--sm-text-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.explore__left-tab--active .explore__left-count {
+  background: var(--sm-color-primary);
+  color: var(--sm-bg-container);
 }
 .explore__split {
   display: grid;
@@ -974,6 +1592,19 @@ watch(expandedKeys, (keys) => {
 }
 .explore__error {
   margin-bottom: 12px;
+}
+.explore__sharded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.explore__sharded-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .explore__results {
   display: flex;
@@ -1008,23 +1639,39 @@ watch(expandedKeys, (keys) => {
   flex-wrap: wrap;
   min-height: 24px;
 }
+.explore__card-icon {
+  font-size: 20px;
+  color: var(--sm-color-primary);
+  flex-shrink: 0;
+}
+.explore__card-crumbs {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.explore__matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
 .explore__card-name {
   font-size: 14px;
   font-weight: 600;
   color: var(--sm-text-primary);
   line-height: 1.3;
 }
-.explore__fqn,
 .explore__desc {
   margin-bottom: 2px;
-}
-.explore__fqn {
-  font-size: 12px;
-  line-height: 1.4;
 }
 .explore__desc {
   font-size: 13px;
   color: var(--sm-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 .explore__meta {
   display: flex;

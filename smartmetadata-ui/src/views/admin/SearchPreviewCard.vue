@@ -15,7 +15,7 @@ import { useI18n } from 'vue-i18n';
 import { Card, Tag, Typography } from 'ant-design-vue';
 import { asRecord, asString } from '@/api/json';
 import type { PreviewSearchHit } from '@/api/search';
-import SearchEntityIcon from './SearchEntityIcon.vue';
+import SearchEntityIcon from '@/components/shared/SearchEntityIcon.vue';
 
 const props = defineProps<{
   hit: PreviewSearchHit;
