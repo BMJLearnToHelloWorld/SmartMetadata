@@ -1922,7 +1922,7 @@ const enUS = {
       serviceType: 'Assets by service type',
       serviceTypeLead: 'Live catalog snapshot by service type.',
       tier: 'Assets by tier',
-      tierLead: 'Assets grouped by tier. Hidden when the catalog has no tier tags.',
+      tierLead: 'Assets grouped by tier. Assets without a tier tag count under "No Tier".',
       testStatus: 'Test-case status',
       testStatusLead: 'Latest status on linked test cases.',
       incidents: 'Incident status',

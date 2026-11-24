@@ -188,6 +188,10 @@ describe('DataAssetsView', () => {
   });
 
   it('plots live catalog and quality snapshots from existing GET payloads', async () => {
+    // The tier bar shares the system-chart tier distribution with the
+    // summary rows, so its points come from the chart payload, not the
+    // search 'tier' facet.
+    routeChartCalls();
     const wrapper = await mountView();
     expect(wrapper.text()).toContain('7');
     expect(wrapper.find('[data-testid="insights-entity-chart"]').attributes('data-points')).toBe('1');
@@ -281,6 +285,36 @@ describe('DataAssetsView', () => {
     // Tier shares are of the global total (7 of 300), not of tiered assets.
     expect(tierRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 2.33');
     expect(tierRows[0].find('.ant-progress-text').exists()).toBe(false);
+  });
+
+  // Pin DataInsightChartCard.tsx:717 renders tier group names through
+  // startCase, so the untiered group displays as "No Tier". The stored
+  // chart data has been seen both as the canonical `NoTier` (server
+  // TierStep.java:48) and as lowercase `notier`; both spellings map to
+  // the "No Tier" display name. The tier bar shares the system-chart
+  // distribution with the summary rows, so it plots the same bucket
+  // instead of the search facet's "No data" state.
+  it.each(['notier', 'NoTier'])('labels the untiered tier group %s as "No Tier"', async (group) => {
+    const tierPayload = {
+      ...legacyPayload,
+      total_data_assets_by_tier: [
+        { count: 112, day: DAY_7, group },
+        { count: 7, day: DAY_7, group: 'Tier.Gold' },
+      ],
+    };
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return tierPayload;
+    });
+    const wrapper = await mountView();
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
+    expect(tierRows).toHaveLength(2);
+    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toBe('No Tier');
+    expect(tierRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('112');
+    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
+    expect(wrapper.find('[data-testid="insights-tier-chart"]').attributes('data-points')).toBe('1');
   });
 
   it('renders the untiered bucket as pin-verbatim "No Tier"', async () => {
