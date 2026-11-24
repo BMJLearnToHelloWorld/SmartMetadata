@@ -22,7 +22,8 @@ import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { usePermissionStore } from '@/stores/permissions';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { createGlossary, deleteGlossary, getGlossary, listGlossaries, patchGlossary, updateGlossary } from '@/api/glossaries';
+import { createGlossary, deleteGlossary, exportGlossaryInCSVFormat, getGlossary, listGlossaries, patchGlossary, updateGlossary } from '@/api/glossaries';
+import { markCsvJobOwned } from '@/api/csvJobs';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getGlossaryVersionPath } from '@/catalog/versionPaths';
 import { listEntityActivity } from '@/api/activity';
@@ -122,6 +123,42 @@ const canEditReviewers = computed(
 const canEditCertification = computed(
   () => permissionStore.isAdminUser || glossaryPermissions.can('EditCertification'),
 );
+
+/**
+ * B2-G6 glossary CSV export gate (pin GlossaryHeader.component.tsx:564-580
+ * `importExportPermissions`): global All/EditAll on GLOSSARY_TERM, or
+ * entity All/EditAll on the glossary. The product permission model
+ * carries no `All` operation — a user with pin's All has every operation
+ * allowed, hence EditAll — so the entity EditAll flag covers both
+ * branches; the server enforces the export endpoint regardless.
+ */
+const canExportGlossary = computed(
+  () => permissionStore.isAdminUser || glossaryPermissions.canEditAll.value,
+);
+const isExporting = ref(false);
+
+/**
+ * B2-G6 official handleGlossaryExportClick (pin GlossaryHeader): async
+ * export of the glossary's terms, then claim the job for the CSV jobs
+ * tray so it surfaces even if it finishes before the tray's first fetch
+ * (same contract as MetricsListView.onExport). The export button is
+ * disabled while an export is in flight; a failure toasts.
+ */
+async function onExportGlossary(): Promise<void> {
+  if (isExporting.value || !glossary.value) {
+    return;
+  }
+  isExporting.value = true;
+  try {
+    const fqn = glossary.value.fullyQualifiedName || glossary.value.name;
+    const job = await exportGlossaryInCSVFormat(fqn);
+    markCsvJobOwned(job.jobId);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  } finally {
+    isExporting.value = false;
+  }
+}
 watch(
   () => glossaryPermissions.error.value,
   (error) => {
@@ -816,6 +853,7 @@ onMounted(() => {
                 {{ t('governance.glossaries.addTerm') }}
               </Button>
               <Button data-testid="glossary-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
+              <Button data-testid="export-glossary" :disabled="!glossary || !canExportGlossary || isExporting" @click="onExportGlossary">{{ t('label.export') }}</Button>
               <Button data-testid="edit-glossary" :disabled="!glossary || !canEditGlossary" @click="openEdit">{{ t('crud.edit') }}</Button>
               <Button danger data-testid="delete-glossary" :disabled="!glossary || !canDeleteGlossary" @click="onDeleteGlossary">{{ t('crud.delete') }}</Button>
             </Space>

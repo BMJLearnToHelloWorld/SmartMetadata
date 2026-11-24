@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { isCsvJobOwned } from '@/api/csvJobs';
 import GlossaryDetailView from './GlossaryDetailView.vue';
 
 // The relations tab renders the real G6 canvas; stub the graph engine the
@@ -908,6 +909,75 @@ describe('GlossaryDetailView description gate (D-4)', () => {
     const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
     expect(wrapper.find('[data-testid="widget-description"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+describe('GlossaryDetailView CSV export (B2-G6)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaries/name/Business/exportAsync')) {
+          return jsonResponse({ jobId: 'job-9', message: 'started' });
+        }
+        if (url.includes('/api/v1/glossaries/g1')) {
+          return jsonResponse({
+            id: 'g1',
+            name: 'Business',
+            displayName: 'Business Glossary',
+            description: 'Core terms',
+            fullyQualifiedName: 'Business',
+            owners: [],
+            reviewers: [],
+            tags: [],
+            domains: [],
+            termCount: 1,
+          });
+        }
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/glossaryTerms')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/permissions/glossary/name/')) {
+          return jsonResponse({ resource: 'glossary', permissions: operations });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView('g1');
+    await flushPromises();
+    await flushPromises();
+    return wrapper;
+  }
+
+  it('enables export with EditAll and starts the async export, claiming the job for the CSV tray', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditAll', access: 'allow' }]);
+    const button = wrapper.find('[data-testid="export-glossary"]');
+    expect(button.exists()).toBe(true);
+    expect((button.element as HTMLButtonElement).disabled).toBe(false);
+    await button.trigger('click');
+    await flushPromises();
+    const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/api/v1/glossaries/name/Business/exportAsync'))).toBe(true);
+    expect(isCsvJobOwned('job-9')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('disables export without EditAll (pin importExportPermissions gate)', async () => {
+    const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    const button = wrapper.find('[data-testid="export-glossary"]');
+    expect(button.exists()).toBe(true);
+    expect((button.element as HTMLButtonElement).disabled).toBe(true);
     wrapper.unmount();
   });
 });

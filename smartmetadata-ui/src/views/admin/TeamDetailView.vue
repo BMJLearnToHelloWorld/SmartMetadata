@@ -66,6 +66,7 @@ import { splitTransElements } from '@/utils/emptyPlaceholder';
 import {
   assetLocation,
   isDetailWired,
+  lineageLocation,
   parentTableLocation,
 } from '@/catalog/entityRoutes';
 import AddTeamFormModal from './AddTeamFormModal.vue';
@@ -797,6 +798,13 @@ function openPreviewAsset(hit: SearchHit): void {
   void router.push(assetLocation(hit.entityType, hit.fullyQualifiedName));
 }
 
+// D25: the preview lineage entry navigates to the lineage page for the hit.
+function openPreviewLineage(hit: SearchHit): void {
+  if (hit.fullyQualifiedName) {
+    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
+  }
+}
+
 // --- Custom properties ---
 const customPropDefs = ref<CustomPropertyDef[]>([]);
 const customPropsError = ref('');
@@ -992,7 +1000,7 @@ function onBreadcrumbNavigate(to: unknown): void {
               />
             </div>
             <div v-if="previewAsset" class="team-detail__assets-preview">
-              <ExplorePreview :hit="previewAsset" @open="openPreviewAsset" />
+              <ExplorePreview :hit="previewAsset" @open="openPreviewAsset" @open-lineage="openPreviewLineage" />
               <Button size="small" @click="previewAsset = undefined">{{ t('label.close') }}</Button>
             </div>
           </div>

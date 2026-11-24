@@ -139,6 +139,8 @@ describe('LineageView', () => {
   it('navigates to asset detail when a supported node is clicked', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRAPH)));
     const { wrapper, router } = await mountLineage();
+    // ELK layout is async: node buttons render only once positions resolve.
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-up-id"]').exists()).toBe(true));
     await wrapper.get('[data-testid="lineage-node-up-id"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset');
@@ -184,6 +186,8 @@ describe('LineageView', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountLineage();
+    // ELK layout is async: the connect stub renders only once nodes are laid out.
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="vue-flow-connect-stub"]').exists()).toBe(true));
     await wrapper.get('[data-testid="vue-flow-connect-stub"]').trigger('click');
     await flushPromises();
     const putCall = fetchMock.mock.calls.find(
@@ -213,6 +217,8 @@ describe('LineageView', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountLineage();
+    // ELK layout is async: the connect stub renders only once nodes are laid out.
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="vue-flow-connect-stub"]').exists()).toBe(true));
     await wrapper.get('[data-testid="vue-flow-connect-stub"]').trigger('click');
     await flushPromises();
     expect(
