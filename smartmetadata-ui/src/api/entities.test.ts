@@ -7,11 +7,12 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { tagsPatch } from '@/governance/assetPatch';
 import type { SchemaRow } from '@/types/api';
-import { fetchAssetDetail, mapColumns, mapTags, patchAsset, updateSchemaRowField, updateSchemaRowTags } from './entities';
+import { fetchAssetDetail, mapColumns, mapTags, patchAsset, prefetchAssetDetail, updateSchemaRowField, updateSchemaRowTags } from './entities';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -797,5 +798,96 @@ describe('D-F2 schema rows', () => {
     expect(next[0].children?.[0].description).toBe('City name');
     expect(rows[0].children?.[0].description).toBeUndefined();
     expect(updateSchemaRowField(rows, 'missing', { description: 'x' })).toEqual(rows);
+  });
+});
+
+describe('hover prefetch (D24)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  function detailPayload(fqn: string): Record<string, unknown> {
+    return {
+      id: 'tbl-1',
+      name: 'orders',
+      fullyQualifiedName: fqn,
+      columns: [{ name: 'id', dataType: 'BIGINT' }],
+    };
+  }
+
+  it('warms the detail slot so the following fetchAssetDetail issues no second request', async () => {
+    const fetchMock = vi.fn(async (..._args: unknown[]) =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-a')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('table', 'svc.db.schema.orders-a');
+    await flushPromises();
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders-a');
+    expect(asset.fullyQualifiedName).toBe('svc.db.schema.orders-a');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/v1/tables/name/');
+  });
+
+  it('consumes the warmed slot exactly once — a later refetch hits the network', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-a2')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('table', 'svc.db.schema.orders-a2');
+    await flushPromises();
+    await fetchAssetDetail('table', 'svc.db.schema.orders-a2');
+    await fetchAssetDetail('table', 'svc.db.schema.orders-a2');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not serve the prefetched base field set to a caller appending extra fields', async () => {
+    const fetchMock = vi.fn(async (..._args: unknown[]) =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-b')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('table', 'svc.db.schema.orders-b');
+    await flushPromises();
+    await fetchAssetDetail('table', 'svc.db.schema.orders-b', { extraFields: ['usageSummary'] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('usageSummary');
+  });
+
+  it('drops a failed prefetch so the later click retries for real', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify(detailPayload('svc.db.schema.orders-c')), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    prefetchAssetDetail('table', 'svc.db.schema.orders-c');
+    await flushPromises();
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders-c');
+    expect(asset.fullyQualifiedName).toBe('svc.db.schema.orders-c');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('is a no-op for unwired entity types', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    prefetchAssetDetail('glossaryTerm', 'some.term');
+    await flushPromises();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

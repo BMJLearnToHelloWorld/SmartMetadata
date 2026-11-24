@@ -4,12 +4,15 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  addAssetsToMetric,
   buildMetricStatusQueryFilter,
   createMetric,
   deleteMetricAsync,
   exportMetricsCsvAsync,
+  fetchMetricLinkedAssetIds,
   getCustomUnitsOfMeasurement,
   getMetricAncestorFqns,
+  getMetricAssets,
   getMetricGroupMetrics,
   getMetricHierarchy,
   getMetricHierarchyContext,
@@ -20,6 +23,7 @@ import {
   mapMetricHierarchyItem,
   METRIC_STATUS_VALUES,
   patchMetric,
+  removeAssetsFromMetric,
 } from './metrics';
 
 function jsonResponse(body: unknown): Response {
@@ -482,5 +486,165 @@ describe('getMetricAncestorFqns', () => {
       vi.fn(async () => new Response('not found', { status: 404 })),
     );
     await expect(getMetricAncestorFqns('kpi.missing')).resolves.toEqual([]);
+  });
+});
+
+describe('getMetricAssets (B2-G1; official rest/metricsAPI.ts:259)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('GETs /v1/metrics/{id}/assets with the pin params and maps directions', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              asset: { id: 't1', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders', type: 'table' },
+              direction: 'upstream',
+              affectsHealth: true,
+            },
+            {
+              asset: { id: 'd1', name: 'sales', fullyQualifiedName: 'svc.sales', type: 'dashboard' },
+              direction: 'downstream',
+            },
+            { direction: 'unrelated' },
+          ],
+          paging: { total: 3 },
+        }),
+      ),
+    );
+    const page = await getMetricAssets('m1', { limit: 20, offset: 0, q: 'ord', entityType: 'table', direction: 'upstream' });
+    const url = lastUrl();
+    expect(url.pathname).toContain('/api/v1/metrics/m1/assets');
+    expect(url.searchParams.get('limit')).toBe('20');
+    expect(url.searchParams.get('offset')).toBe('0');
+    expect(url.searchParams.get('q')).toBe('ord');
+    expect(url.searchParams.get('entityType')).toBe('table');
+    expect(url.searchParams.get('direction')).toBe('upstream');
+    expect(page.total).toBe(3);
+    // The row without an asset is dropped: direction is meaningless without one.
+    expect(page.data).toHaveLength(2);
+    expect(page.data[0]).toMatchObject({
+      asset: expect.objectContaining({ id: 't1', type: 'table' }),
+      direction: 'upstream',
+      affectsHealth: true,
+    });
+    expect(page.data[1]).toMatchObject({ direction: 'downstream', affectsHealth: undefined });
+  });
+
+  it('defaults an unrecognized direction to unrelated (schema default)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              asset: { id: 't1', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders', type: 'table' },
+              direction: 'sideways',
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await getMetricAssets('m1');
+    expect(page.data[0]?.direction).toBe('unrelated');
+  });
+});
+
+describe('fetchMetricLinkedAssetIds (pin useMetricLinkedAssets.ts)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pages at the 1000 cap and returns every linked id', async () => {
+    const seenOffsets: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = new URL(String(input));
+        seenOffsets.push(url.searchParams.get('offset') ?? '');
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        return jsonResponse({
+          data:
+            offset === 0
+              ? [
+                  { asset: { id: 'a1', type: 'table' }, direction: 'upstream' },
+                  { asset: { id: 'a2', type: 'table' }, direction: 'downstream' },
+                ]
+              : [{ asset: { id: 'a3', type: 'dashboard' }, direction: 'unrelated' }],
+          paging: { total: 1001 },
+        });
+      }),
+    );
+    await expect(fetchMetricLinkedAssetIds('m1')).resolves.toEqual(['a1', 'a2', 'a3']);
+    expect(seenOffsets).toEqual(['0', '1000']);
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain('limit=1000');
+  });
+
+  it('makes a single call when the total fits on one page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [{ asset: { id: 'a1', type: 'table' }, direction: 'upstream' }],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    await expect(fetchMetricLinkedAssetIds('m1')).resolves.toEqual(['a1']);
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
+  });
+});
+
+describe('addAssetsToMetric / removeAssetsFromMetric (official rest/metricsAPI.ts:227-249)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('PUTs {assets} to /v1/metrics/{fqn}/assets/add by FQN', async () => {
+    let seenInit: RequestInit | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        seenInit = init;
+        return jsonResponse({ status: 'SUCCESS', numberOfRowsPassed: 1 });
+      }),
+    );
+    const result = await addAssetsToMetric('kpi.mau', [
+      { id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders' },
+    ]);
+    expect(seenInit?.method).toBe('PUT');
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain(
+      '/api/v1/metrics/kpi.mau/assets/add',
+    );
+    expect(JSON.parse(String(seenInit?.body))).toEqual({
+      assets: [{ id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders' }],
+    });
+    expect(result).toMatchObject({ status: 'SUCCESS', numberOfRowsPassed: 1 });
+  });
+
+  it('PUTs {assets} to /v1/metrics/{fqn}/assets/remove by FQN', async () => {
+    let seenInit: RequestInit | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        seenInit = init;
+        return jsonResponse({ status: 'SUCCESS', numberOfRowsPassed: 1 });
+      }),
+    );
+    const result = await removeAssetsFromMetric('kpi.mau', [
+      { id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders' },
+    ]);
+    expect(seenInit?.method).toBe('PUT');
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain(
+      '/api/v1/metrics/kpi.mau/assets/remove',
+    );
+    expect(JSON.parse(String(seenInit?.body))).toEqual({
+      assets: [{ id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders' }],
+    });
+    expect(result).toMatchObject({ status: 'SUCCESS', numberOfRowsPassed: 1 });
   });
 });

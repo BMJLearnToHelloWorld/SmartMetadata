@@ -64,4 +64,28 @@ describe('exploreTabs', () => {
     });
     expect(exploreSortFromQuery({}, null).id).toBe('popularity');
   });
+
+  it('defaults the API tabs to totalVotes although the tag group has no popularity option (D33 pin quirk)', () => {
+    const collection = exploreTabForIndex('apiCollection');
+    const endpoint = exploreTabForIndex('apiEndpoint');
+    expect(defaultSortForTab(collection)).toEqual({ id: 'popularity', field: 'totalVotes', defaultOrder: 'desc' });
+    expect(defaultSortForTab(endpoint)).toEqual({ id: 'popularity', field: 'totalVotes', defaultOrder: 'desc' });
+    // The tag group's options are unchanged: totalVotes is the default,
+    // not a selectable option.
+    expect(sortOptionsForTab(collection).map((option) => option.id)).toEqual(['name', 'relevance', 'updated']);
+    // …and the other tag tabs still default to name.
+    expect(defaultSortForTab(exploreTabForIndex('tag'))).toEqual({
+      id: 'name',
+      field: 'displayName.keyword',
+      defaultOrder: 'asc',
+    });
+    expect(defaultSortForTab(exploreTabForIndex('dataProduct')).id).toBe('name');
+    expect(defaultSortForTab(exploreTabForIndex('metric')).id).toBe('name');
+    // No sort in the URL resolves to the quirk default on the API tabs.
+    expect(exploreSortFromQuery({}, collection)).toEqual({
+      id: 'popularity',
+      order: 'desc',
+      field: 'totalVotes',
+    });
+  });
 });
