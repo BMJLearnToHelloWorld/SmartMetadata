@@ -19,7 +19,6 @@ import {
   getLineageEdgeDetails,
   getLineagePagingData,
   getLineageScene,
-  getPlatformLineage,
   isLineageNotFound,
   putEntityLineage,
   searchLineage,
@@ -191,33 +190,6 @@ describe('lineage API', () => {
     const url = lastFetch().url;
     expect(url).not.toContain('startTime');
     expect(url).not.toContain('endTime');
-  });
-
-  it('GETs /v1/lineage/getPlatformLineage with view and includeDeleted=false', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ nodes: {} }), { status: 200 })),
-    );
-    await getPlatformLineage({ view: 'service' });
-    const { url, init } = lastFetch();
-    expect(url).toContain('/api/v1/lineage/getPlatformLineage');
-    expect(url).toContain('view=service');
-    expect(url).toContain('includeDeleted=false');
-    expect(url).not.toContain('query_filter');
-    expect(url).not.toContain('upstreamDepth');
-    expect(url).not.toContain('size=');
-    expect(init?.method ?? 'GET').toBe('GET');
-  });
-
-  it('passes query_filter through for platform lineage', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ nodes: {} }), { status: 200 })),
-    );
-    await getPlatformLineage({ view: 'domain', queryFilter: '{"term":{"x":1}}' });
-    const { url } = lastFetch();
-    expect(url).toContain('view=domain');
-    expect(url).toContain(`query_filter=${encodeURIComponent('{"term":{"x":1}}')}`);
   });
 
   it('sends query_filter/column_filter and the directional path like getLineageDataByFQN', async () => {

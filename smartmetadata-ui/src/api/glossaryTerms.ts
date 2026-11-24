@@ -17,6 +17,7 @@ import type {
   OntologySummary,
 } from '@/types/ontologyDataGraph';
 import { apiRequest } from './client';
+import { notifyCsvJobsRefresh } from './csvJobs';
 import { mapTags } from './entities';
 
 export const GLOSSARY_TERM_FIELDS =
@@ -629,6 +630,32 @@ export async function getOntologyDataGraph(
       after: paging ? asString(paging.after) || undefined : undefined,
     },
   };
+}
+
+/**
+ * Official exportGlossaryTermsInCSVFormat (rest/glossaryAPI.ts:213):
+ * GET /v1/glossaryTerms/name/{fqn}/exportAsync — async CSV export of a
+ * glossary term subtree; the response carries the CSV job id (pin
+ * CSVExportResponse), never a file. Same contract as
+ * exportGlossaryInCSVFormat / exportMetricsCsvAsync (CSV-jobs tray
+ * refresh on call, no invented jobId). Server endpoint verified present
+ * in the product server (B2-S1: GlossaryTermResource.java:1707
+ * exportAsync). Pin wires this only through the bulk-edit export
+ * mapping (EntityBulkEditUtils.tsx:56), which the product has no
+ * equivalent of — so this client ships with tests and no UI consumer
+ * yet; the header export is the glossary one.
+ */
+export interface GlossaryTermCsvExportJob {
+  jobId?: string;
+}
+
+export async function exportGlossaryTermsInCSVFormat(fqn: string): Promise<GlossaryTermCsvExportJob> {
+  const payload = await apiRequest<unknown>(
+    `/v1/glossaryTerms/name/${encodeURIComponent(fqn)}/exportAsync`,
+  );
+  notifyCsvJobsRefresh();
+  const jobId = asString(asRecord(payload)?.jobId);
+  return jobId ? { jobId } : {};
 }
 
 export interface DeleteEntityOptions {

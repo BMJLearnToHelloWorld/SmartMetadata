@@ -261,13 +261,22 @@ export async function bulkUpdateColumnsPreview(
   };
 }
 
+/**
+ * Official columnAPI bulkUpdateColumnsAsync: POST
+ * /v1/columns/bulk-update-async. The server starts the job before
+ * answering, so the response carries the jobId the bulk-assets socket
+ * channel reports progress for (pin ColumnGrid.component.tsx:1791,
+ * SOCKET_EVENTS.BULK_ASSETS_CHANNEL).
+ */
 export async function bulkUpdateColumnsAsync(
   columnUpdates: ColumnUpdateInput[],
-): Promise<unknown> {
-  return apiRequest<unknown>('/v1/columns/bulk-update-async', {
+): Promise<{ jobId?: string }> {
+  const payload = await apiRequest<unknown>('/v1/columns/bulk-update-async', {
     method: 'POST',
     json: { columnUpdates: toRequestUpdates(columnUpdates) },
   });
+  const rec = asRecord(payload) ?? {};
+  return { jobId: asString(rec.jobId) || undefined };
 }
 
 export interface ColumnCsvFilters {

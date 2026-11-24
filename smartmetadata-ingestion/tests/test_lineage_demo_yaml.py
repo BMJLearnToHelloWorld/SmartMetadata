@@ -19,10 +19,14 @@ and no cycles.
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from pathlib import Path
+from urllib.parse import unquote
 
+import httpx
 import yaml
+from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.base import StaticSource
 from smartmetadata_ingestion.records import (
@@ -35,7 +39,7 @@ from smartmetadata_ingestion.records import (
     PipelineServiceRecord,
     TableRecord,
 )
-from smartmetadata_ingestion.sinks.metadata_rest import _lineage_details
+from smartmetadata_ingestion.sinks.metadata_rest import MetadataRestSink, _lineage_details
 
 DEMO_YAML = Path(__file__).resolve().parents[2] / "scripts" / "rebuild" / "lineage-demo.yaml"
 PREFIX = "lineage-demo.demo.public"
@@ -274,19 +278,17 @@ def test_demo_yaml_lineage_edges() -> None:
     assert dashboard_edges[0].source == "DashboardLineage"
 
 
-def test_demo_yaml_lineage_wire_payloads() -> None:
-    """put_lineage bodies the sink will send for the attributed edges."""
+def test_demo_yaml_lineage_wire_payloads(workflow_config) -> None:
+    """put_lineage bodies the sink sends for the attributed edges.
+
+    The pipeline ref carries the server-resolved ``id``: pin's
+    EntityReference requires ["id", "type"], so the bare-FQN shape the
+    seed declares — and this test previously asserted — 400s on the
+    server (live 2026-11-23: the two PipelineLineage edges into
+    fact_orders). The sink resolves each FQN with one
+    GET /v1/pipelines/name/{fqn} before the PUT."""
     _, records = _load_records()
     edges = [r for r in records if isinstance(r, LineageRecord)]
-    pipeline_edge = next(e for e in edges if e.from_entity.fqn == _table("stg_orders"))
-    assert _lineage_details(pipeline_edge) == {
-        "source": "PipelineLineage",
-        "sqlQuery": "SELECT order_id, customer_id, amount FROM stg_orders",
-        "pipeline": {
-            "type": "pipeline",
-            "fullyQualifiedName": "lineage-demo-airflow.demo_orders_etl",
-        },
-    }
     column_edge = next(e for e in edges if e.from_entity.fqn == _table("shop_raw_customer"))
     assert _lineage_details(column_edge) == {
         "source": "DbtLineage",
@@ -300,6 +302,57 @@ def test_demo_yaml_lineage_wire_payloads() -> None:
             }
         ],
     }
+
+    pipeline_ids = {
+        "lineage-demo-airflow.demo_orders_etl": "11111111-1111-4111-8111-111111111111",
+        "lineage-demo-airflow.demo_customer_etl": "22222222-2222-4222-8222-222222222222",
+    }
+    put_bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.startswith("/api/v1/pipelines/name/"):
+            fqn = unquote(path.removeprefix("/api/v1/pipelines/name/"))
+            return httpx.Response(
+                200,
+                json={
+                    "id": pipeline_ids[fqn],
+                    "name": fqn.rsplit(".", 1)[-1],
+                    "fullyQualifiedName": fqn,
+                },
+            )
+        if request.method == "PUT" and path.startswith("/api/v1/lineage/"):
+            put_bodies.append(json.loads(request.content.decode()))
+            return httpx.Response(200, json={"ok": True})
+        raise AssertionError(f"unexpected {request.method} {path}")
+
+    client = RestClient(
+        workflow_config.server, transport=httpx.MockTransport(handler)
+    )
+    sink = MetadataRestSink(client)
+    pipeline_edges = [e for e in edges if e.pipeline is not None]
+    assert len(pipeline_edges) == 2
+    for edge in pipeline_edges:
+        sink.write(edge)
+    assert [body["pipeline"] for body in put_bodies] == [
+        {
+            "type": "pipeline",
+            "id": pipeline_ids["lineage-demo-airflow.demo_orders_etl"],
+            "name": "demo_orders_etl",
+            "fullyQualifiedName": "lineage-demo-airflow.demo_orders_etl",
+        },
+        {
+            "type": "pipeline",
+            "id": pipeline_ids["lineage-demo-airflow.demo_customer_etl"],
+            "name": "demo_customer_etl",
+            "fullyQualifiedName": "lineage-demo-airflow.demo_customer_etl",
+        },
+    ]
+    assert put_bodies[0]["source"] == "PipelineLineage"
+    assert (
+        put_bodies[0]["sqlQuery"]
+        == "SELECT order_id, customer_id, amount FROM stg_orders"
+    )
 
 
 def test_demo_yaml_edges_reference_declared_entities() -> None:
