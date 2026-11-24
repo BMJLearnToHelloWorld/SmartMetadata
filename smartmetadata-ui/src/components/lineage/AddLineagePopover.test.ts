@@ -5,6 +5,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd, { Select } from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import type { SearchHit } from '@/types/api';
 import AddLineagePopover from './AddLineagePopover.vue';
@@ -53,6 +54,11 @@ const CANVAS_NODES = [
 ];
 
 function mountPopover(props: Record<string, unknown>) {
+  // SmDrawer reads the route (close-on-navigation), so mount with a router.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', name: 'home', component: { template: '<div>home</div>' } }],
+  });
   return mount(AddLineagePopover, {
     props: {
       open: true,
@@ -62,12 +68,12 @@ function mountPopover(props: Record<string, unknown>) {
       canvasNodes: CANVAS_NODES,
       ...props,
     },
-    global: { plugins: [Antd, createTestI18n()] },
+    global: { plugins: [router, Antd, createTestI18n()] },
     attachTo: document.body,
   });
 }
 
-/** The Modal teleports to document.body; earlier tests' portals may linger, so read the last match. */
+/** The Drawer teleports to document.body; earlier tests' portals may linger, so read the last match. */
 function bodyEl(testId: string): HTMLElement {
   const all = [...document.body.querySelectorAll(`[data-testid="${testId}"]`)];
   const el = all.at(-1);
@@ -119,7 +125,7 @@ describe('AddLineagePopover', () => {
     await flushPromises();
     expect(document.body.innerHTML).toContain('Add upstream lineage');
     expect(bodyEl('add-lineage-preview').textContent).toContain('Customers');
-    const submit = bodyEl('add-lineage-submit');
+    const submit = bodyEl('add-lineage-popover-save');
     expect(submit.hasAttribute('disabled')).toBe(false);
     submit.click();
     expect(wrapper.emitted('submit')).toEqual([
@@ -131,7 +137,18 @@ describe('AddLineagePopover', () => {
   it('submit stays disabled until an asset is picked', async () => {
     const wrapper = mountPopover({});
     await flushPromises();
-    expect(bodyEl('add-lineage-submit').hasAttribute('disabled')).toBe(true);
+    expect(bodyEl('add-lineage-popover-save').hasAttribute('disabled')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('renders as a slideout with the pin header description, cancel emits close', async () => {
+    const wrapper = mountPopover({});
+    await flushPromises();
+    expect(document.body.innerHTML).toContain(
+      'Pick the asset that feeds data into Orders. The connection is saved when you select Add.',
+    );
+    bodyEl('add-lineage-popover-cancel').click();
+    expect(wrapper.emitted('close')).toBeTruthy();
     wrapper.unmount();
   });
 
@@ -153,7 +170,7 @@ describe('AddLineagePopover', () => {
     ]);
     await afterPick[1].vm.$emit('change', 'svc.db.schema.customers.id');
     await flushPromises();
-    bodyEl('add-lineage-submit').click();
+    bodyEl('add-lineage-popover-save').click();
     expect(wrapper.emitted('submit')).toEqual([
       [
         {

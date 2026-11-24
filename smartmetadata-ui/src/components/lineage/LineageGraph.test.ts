@@ -114,6 +114,23 @@ describe('LineageGraph', () => {
     expect(editable.find('[data-testid="lineage-connect-hint"]').exists()).toBe(true);
   });
 
+  it('right-click on a node only suppresses the browser menu (pin onNodeContextMenu)', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    await flow.vm.$emit('node-context-menu', { event, node: MODEL.nodes[0] });
+    expect(event.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('select-node')).toBeUndefined();
+    expect(wrapper.emitted('navigate')).toBeUndefined();
+    // The template binding reaches the handler through a real DOM event too.
+    await wrapper.get('[data-testid="lineage-node-center-id"]').trigger('contextmenu');
+    expect(wrapper.emitted('select-node')).toBeUndefined();
+    expect(wrapper.emitted('navigate')).toBeUndefined();
+  });
+
   it('selects an edge on edge-click and offers its delete, emitting select-edge/delete-edge', async () => {
     const wrapper = mount(LineageGraph, {
       props: { model: MODEL },
