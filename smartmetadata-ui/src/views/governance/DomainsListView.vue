@@ -117,6 +117,24 @@ async function checkPermission(): Promise<void> {
   }
 }
 
+/**
+ * P1 dual line (pin DomainListPage.tsx:153: canCreateDomain =
+ * permissions.domain?.Create || false; rendered at :247 and as the page
+ * header create permission). Fail-closed — a permission fetch failure
+ * hides the create button; the list itself still loads. Row/card delete
+ * is out of this lane's scope (create only) and stays as-is.
+ */
+const resourceOps = ref<Record<string, boolean>>({});
+const canCreate = computed(() => permissionStore.isAdminUser || resourceOps.value.Create === true);
+
+async function checkPermission(): Promise<void> {
+  try {
+    resourceOps.value = await permissionStore.getResourcePermission('domain');
+  } catch {
+    resourceOps.value = {};
+  }
+}
+
 // B-10: the persona view-mode chain, wired the same way as
 // LearningResourcesView — the stored view is the default, the local
 // selection overrides it, and a change resets paging and reloads
