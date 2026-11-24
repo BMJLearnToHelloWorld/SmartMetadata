@@ -22,10 +22,8 @@ import {
   deleteEntityLineageByName,
   exportLineageAsync,
   getDataQualityLineage,
-  getPlatformLineage,
   putEntityLineage,
   searchLineage,
-  type PlatformLineageView,
 } from '@/api/lineage';
 import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
 import { assetLocation, isDetailWired, lineageLocation, resolveDetailEndpoint } from '@/catalog/entityRoutes';
@@ -82,15 +80,6 @@ const props = withDefaults(
     entityType?: string;
     fqn?: string;
     variant?: 'page' | 'tab';
-    /**
-     * Platform-wide view (pin PlatformLineage with no entity): the graph
-     * comes from getPlatformLineage instead of the entity search
-     * endpoint, and there is no focus entity to open. L4 replaces this
-     * slot with the scene map; the canvas stays the interim renderer.
-     */
-    platform?: boolean;
-    /** Lens driving the platform fetch's `view` param (pin ?lineageLens=). */
-    lens?: PlatformLineageView;
     /** The unified lineage page renders its own header; tabs keep this one. */
     showHeader?: boolean;
     /**
@@ -101,7 +90,7 @@ const props = withDefaults(
      */
     hasEditAccess?: boolean;
   }>(),
-  { entityType: '', fqn: '', variant: 'page', platform: false, lens: 'service', showHeader: true, hasEditAccess: true },
+  { entityType: '', fqn: '', variant: 'page', showHeader: true, hasEditAccess: true },
 );
 
 const router = useRouter();
@@ -135,10 +124,8 @@ const dqHighlightResult = computed(() =>
 const center = computed(() => graph.value?.nodes.find((node) => node.isCenter));
 const empty = computed(() => (graph.value ? isLineageEmpty(graph.value) : false));
 
-/** PNG export names the platform view after its lens; the entity view after the focus entity. */
-const exportIdentity = computed(() =>
-  props.platform ? { entityType: 'platform', fqn: props.lens } : { entityType: props.entityType, fqn: props.fqn },
-);
+/** PNG export names the graph after the focus entity. */
+const exportIdentity = computed(() => ({ entityType: props.entityType, fqn: props.fqn }));
 
 const lineageStore = useLineageStore();
 const shellConfig = useShellConfigStore();
@@ -485,17 +472,6 @@ async function load(): Promise<void> {
   dqIds.value = [];
   clearHighlight();
   try {
-    if (props.platform) {
-      // Platform-wide view (pin PlatformLineage with no entity): the
-      // whole catalog's lineage via getPlatformLineage. The payload is
-      // a SearchLineageResult, so the search adapter consumes it; with
-      // no focus entity the adapter centres the depth-0 (or first) node.
-      // The endpoint is admin-only server-side: a 403 surfaces here as
-      // an error, never as an empty graph.
-      const payload = await getPlatformLineage({ view: props.lens });
-      graph.value = mapSearchLineage(payload, '');
-      return;
-    }
     // The graph is search-backed, like the official lineage page
     // (rest/lineageAPI.ts getLineageDataByFQN → /v1/lineage/getLineage):
     // the traversal GET accepts no time params, so a time-filtered graph
@@ -955,8 +931,6 @@ watch(
   () => [
     props.entityType,
     props.fqn,
-    props.platform,
-    props.lens,
     upstreamDepth.value,
     downstreamDepth.value,
     lineageStore.config.layer,
@@ -1033,7 +1007,7 @@ watch(
           {{ t('lineage.config') }}
         </Button>
         <Button
-          v-if="variant === 'page' && !platform"
+          v-if="variant === 'page'"
           data-testid="lineage-open-asset"
           type="link"
           @click="openCenterDetail"
@@ -1087,7 +1061,7 @@ watch(
         <Alert v-if="denialMessage" type="error" show-icon :message="denialMessage" />
         <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
         <Alert
-          v-else-if="!platform && !isDetailWired(entityType)"
+          v-else-if="!isDetailWired(entityType)"
           type="info"
           show-icon
           :message="t('lineage.unwired')"

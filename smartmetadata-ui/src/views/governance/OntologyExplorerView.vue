@@ -236,6 +236,27 @@ async function loadStudioGate(): Promise<void> {
   }
 }
 
+/**
+ * P1 dual line (pin OntologyExplorerPage.tsx:436-441
+ * canCreateNativeOntology: Boolean(isAdminUser) ||
+ * checkPermission(Create, ONTOLOGY, permissions)). Separate from
+ * loadStudioGate: the studio gate is the E-D6 four-item resource
+ * formula and must not be touched. Fail-closed — a permission fetch
+ * failure hides both create buttons.
+ */
+const ontologyOps = ref<Record<string, boolean>>({});
+const canCreateOntology = computed(
+  () => permissionStore.isAdminUser || ontologyOps.value.Create === true,
+);
+
+async function loadCreateGate(): Promise<void> {
+  try {
+    ontologyOps.value = await permissionStore.getResourcePermission('ontology');
+  } catch {
+    ontologyOps.value = {};
+  }
+}
+
 const treeIndex = computed(() => buildOntologyTreeIndex(graphData.value));
 
 const highlightGroups = computed(() => {
@@ -1020,6 +1041,7 @@ onMounted(() => {
   })();
   void loadPacks();
   void loadStudioGate();
+  void loadCreateGate();
 });
 </script>
 
@@ -1065,7 +1087,7 @@ onMounted(() => {
         :placeholder="t('ontology.browser.searchPlaceholder')"
         style="width: 240px"
       />
-      <Button type="primary" data-testid="ontology-create" @click="showCreateModal = true">
+      <Button v-if="canCreateOntology" type="primary" data-testid="ontology-create" @click="showCreateModal = true">
         {{ t('ontology.create') }}
       </Button>
       <Button v-if="canOpenStudio" data-testid="ontology-open-studio" @click="router.push({ name: 'ontology-studio' })">
@@ -1081,7 +1103,7 @@ onMounted(() => {
       :description="t('ontology.empty')"
       data-testid="ontology-empty"
     >
-      <Button type="primary" data-testid="ontology-empty-create" @click="showCreateModal = true">
+      <Button v-if="canCreateOntology" type="primary" data-testid="ontology-empty-create" @click="showCreateModal = true">
         {{ t('ontology.create') }}
       </Button>
     </Empty>

@@ -19,6 +19,7 @@ import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import { usePermissionStore } from '@/stores/permissions';
 import type { Classification, ClassificationTag } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
@@ -32,6 +33,36 @@ const classification = ref<Classification | null>(null);
 const isEditable = computed(() => !!classification.value && classification.value.disabled !== true);
 
 /**
+ * P1 dual line (pin TagsPage.tsx:120-130 + ClassificationDetails.tsx):
+ * the composable fetches the classification's permissions by id — the
+ * same identifier pin passes — and derives the flags; a fetch failure
+ * is toasted once via the error watcher and the flags stay all-false
+ * (fail-closed). Disabled is deliberately NOT folded into the
+ * derivation: pin's enable/disable toggle (handleEnableDisableClassificationClick,
+ * ClassificationDetails.tsx:437-447) is the edit path and works both
+ * ways, so the Switch must stay usable to re-enable; disabled is
+ * applied as a separate conjunct where pin applies it (edit button,
+ * ClassificationDetails.tsx:360-365).
+ */
+const permissionStore = usePermissionStore();
+const classificationPermissions = useEntityPermissions('classification', () => ({ id: props.id }));
+const canEditClassification = computed(
+  () => permissionStore.isAdminUser || classificationPermissions.canEditAll.value,
+);
+const canDeleteClassification = computed(
+  () => permissionStore.isAdminUser || classificationPermissions.canDelete.value,
+);
+// Pin TagsPage.tsx:535-539: createTagsPermission = checkPermission(Create,
+// TAG, permissions) || classificationCanEditAll. The TAG leg is a
+// resource fetch; the classification leg is the entity flag above.
+const tagResourceOps = ref<Record<string, boolean>>({});
+const canCreateTag = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    tagResourceOps.value.Create === true ||
+    classificationPermissions.canEditAll.value,
+);
+/**
  * Pin ClassificationDetails getTagsTableColumn
  * (ClassificationUtils.tsx:45-58): the per-tag disable toggle is gated
  * by the classification's EditAll, and never renders enabled on a
@@ -39,10 +70,6 @@ const isEditable = computed(() => !!classification.value && classification.value
  * all-false until the fetch resolves); no `deleted` input — pin's gate
  * does not include deleted.
  */
-const classificationPermissions = useEntityPermissions(
-  'classification',
-  () => classification.value?.fullyQualifiedName || classification.value?.name || '',
-);
 const canToggleDisable = computed(
   () => classificationPermissions.canEditAll.value && classification.value?.disabled !== true,
 );
@@ -54,6 +81,15 @@ watch(
     }
   },
 );
+
+async function checkTagPermission(): Promise<void> {
+  try {
+    tagResourceOps.value = await permissionStore.getResourcePermission('tag');
+  } catch {
+    tagResourceOps.value = {};
+  }
+}
+
 const tags = ref<ClassificationTag[]>([]);
 const activeTab = ref('overview');
 const editOpen = ref(false);
@@ -117,7 +153,7 @@ async function load(): Promise<void> {
 }
 
 async function onDeleteClassification(): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !isEditable.value || !canDeleteClassification.value) {
     return;
   }
   const confirmed = await confirmDelete({
@@ -139,7 +175,7 @@ async function onDeleteClassification(): Promise<void> {
 }
 
 async function onToggleDisabled(disabled: boolean): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !canEditClassification.value) {
     return;
   }
   const previous = classification.value.disabled === true;
@@ -209,7 +245,7 @@ function openEdit(): void {
 }
 
 async function onSave(): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !isEditable.value || !canEditClassification.value) {
     return;
   }
   saving.value = true;
@@ -231,7 +267,7 @@ async function onSave(): Promise<void> {
 }
 
 async function onCreateTag(): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !isEditable.value || !canCreateTag.value) {
     return;
   }
   creating.value = true;
@@ -262,6 +298,7 @@ watch(
 );
 
 onMounted(() => {
+  void checkTagPermission();
   void load();
 });
 </script>
@@ -280,12 +317,12 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button type="primary" :disabled="!isEditable" data-testid="edit-classification" @click="openEdit">
+      <Button type="primary" :disabled="!isEditable || !canEditClassification" data-testid="edit-classification" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
       <Button :disabled="!classification" data-testid="classification-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button danger :disabled="!classification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>
-      <Button :disabled="!classification" data-testid="create-tag" @click="createTagOpen = true">
+      <Button danger :disabled="!classification || !isEditable || !canDeleteClassification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>
+      <Button :disabled="!classification || !isEditable || !canCreateTag" data-testid="create-tag" @click="createTagOpen = true">
         {{ t('governance.classifications.createTag') }}
       </Button>
     </template>
@@ -296,6 +333,7 @@ onMounted(() => {
         <Descriptions.Item :label="t('crud.disabled')">
           <Switch
             :checked="classification.disabled === true"
+            :disabled="!classification || !canEditClassification"
             data-testid="classification-disabled"
             @change="(value: boolean | string | number) => onToggleDisabled(value === true)"
           />

@@ -45,9 +45,12 @@ describe('data access request routes', () => {
 // (see docs/decisions/2026-11-07-route-aliases-use-official-paths.md).
 // '/settings' is NOT an alias anymore: it is the canonical Hub path
 // (D-1 hard cut, DESIGN §4.2); see the pattern manifest below.
+// B2-E5b (D1): '/explore' is now the canonical Explore path and
+// '/search' its alias, so both resolve to 'search' here.
 describe('official-path aliases (G-01…G-10)', () => {
   const cases: Array<[alias: string, name: string]> = [
     ['/explore', 'search'],
+    ['/search', 'search'],
     ['/data-quality', 'quality-test-cases'],
     ['/data-quality/test-suites', 'quality-test-suites'],
     ['/test-suites/some-suite', 'quality-test-suite'],

@@ -19,10 +19,15 @@ import AssetsTabs from './AssetsTabs.vue';
 const searchAssets = vi.fn();
 const removeAssetsFromTags = vi.fn();
 const removeAssetsFromGlossaryTerm = vi.fn();
+const removeAssetsFromMetric = vi.fn();
 const confirmDelete = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
+}));
+
+vi.mock('@/api/metrics', () => ({
+  removeAssetsFromMetric: (...args: unknown[]) => removeAssetsFromMetric(...args),
 }));
 
 vi.mock('@/api/tags', () => ({
@@ -392,6 +397,66 @@ describe('AssetsTabs (pin GlossaryTermsV1 ASSETS tab, B-15 G-1)', () => {
     });
     expect(wrapper.find('[data-testid="data-assets-add-button"]').exists()).toBe(false);
     expect(wrapper.text()).toContain('This term is Draft. Assets can be added once it is approved.');
+    wrapper.unmount();
+  });
+});
+
+describe('AssetsTabs (pin MetricAssetsTab, B2-G1)', () => {
+  beforeEach(() => {
+    searchAssets.mockReset();
+    removeAssetsFromMetric.mockReset();
+    confirmDelete.mockReset();
+    confirmDelete.mockResolvedValue(true);
+    removeAssetsFromMetric.mockResolvedValue({ numberOfRowsPassed: 1 });
+    searchAssets.mockResolvedValue(searchPage([ORDERS, DASHBOARD], 2));
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
+  function mountMetricTabs(props: Record<string, unknown> = {}) {
+    return mountTabs({
+      type: 'metric',
+      entityId: 'm1',
+      entityFqn: 'kpi.mau',
+      assetIds: ['t1', 'd1'],
+      ...props,
+    });
+  }
+
+  it('searches ES with the ids filter for the linked assets', async () => {
+    const wrapper = await mountMetricTabs();
+    expect(searchAssets).toHaveBeenCalledWith(
+      '**',
+      0,
+      15,
+      expect.objectContaining({ index: 'all' }),
+    );
+    const filterArg = JSON.parse(String(searchAssets.mock.calls[0][3].query_filter));
+    expect(filterArg).toEqual({
+      query: { bool: { must: [{ ids: { values: ['t1', 'd1'] } }] } },
+    });
+    expect(wrapper.text()).toContain('Orders');
+    expect(wrapper.text()).toContain('Sales');
+    wrapper.unmount();
+  });
+
+  it('removes one asset through the metric endpoint by FQN', async () => {
+    vi.useFakeTimers();
+    const wrapper = await mountMetricTabs();
+    await wrapper.find('[data-testid="remove-asset-svc.db.schema.orders"]').trigger('click');
+    await flushPromises();
+    expect(confirmDelete).toHaveBeenCalled();
+    expect(removeAssetsFromMetric).toHaveBeenCalledWith('kpi.mau', [
+      expect.objectContaining({ id: 't1', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' }),
+    ]);
+    expect(removeAssetsFromTags).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    expect(wrapper.emitted('remove-asset')).toHaveLength(1);
     wrapper.unmount();
   });
 });
