@@ -358,6 +358,25 @@ describe('LineageHomeView (platform lineage page)', () => {
     });
   });
 
+  it('wraps the Spin in a native div so the flex height chain reaches the map', async () => {
+    vi.stubGlobal('fetch', vi.fn(routeFetch));
+    const { wrapper } = await mountPage();
+    // Regression (live 2026-11-25, home canvas 0px): a class put on
+    // <Spin> never reaches the DOM — antd Spin is inheritAttrs:false
+    // and folds the class onto the spinner element, which only renders
+    // while spinning (platform view never spins). The height-chain hook
+    // must therefore be a native element, not a class on Spin.
+    const spinHost = wrapper.find('.lineage-page__spin');
+    expect(spinHost.exists()).toBe(true);
+    expect(spinHost.element.tagName).toBe('DIV');
+    // The Spin root and the map sit inside that host, so the scoped flex
+    // rules (.lineage-page__spin, :deep(.ant-spin-nested-loading),
+    // :deep(.ant-spin-container)) all match and the canvas gets height.
+    expect(spinHost.find('.ant-spin-nested-loading').exists()).toBe(true);
+    expect(spinHost.find('.ant-spin-container').exists()).toBe(true);
+    expect(spinHost.find('[data-testid="lineage-map"]').exists()).toBe(true);
+  });
+
   it('surfaces a scene fetch failure as an error, never an empty canvas', async () => {
     vi.stubGlobal(
       'fetch',

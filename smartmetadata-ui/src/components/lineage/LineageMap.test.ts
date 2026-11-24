@@ -7,6 +7,9 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -410,5 +413,19 @@ describe('LineageMap', () => {
       document.body.querySelector('[data-testid="lineage-map-onboarding-dialog"]'),
     ).toBeNull();
     deleted.unmount();
+  });
+
+  it('keeps a min-height floor on the canvas so the graph can never collapse to 0', () => {
+    // Regression (live 2026-11-25, home canvas 0px): jsdom has no
+    // layout, so the floor is asserted at the source — the
+    // .lineage-map__canvas rule must declare a min-height. 320px is
+    // derived in the style comment: below the smallest normal canvas
+    // height (~400px at a 600px viewport), ~2 service-node rows.
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'LineageMap.vue'),
+      'utf8',
+    );
+    const canvasRule = source.match(/\.lineage-map__canvas\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(canvasRule).toContain('min-height: 320px');
   });
 });

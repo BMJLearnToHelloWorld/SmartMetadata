@@ -222,29 +222,37 @@ function openTarget(target: { entityType: string; fqn: string }): void {
           </Tooltip>
         </div>
       </div>
-      <Spin :spinning="permissionsLoading" class="lineage-page__spin">
-        <LineageMap
-          v-if="!focused"
-          ref="mapRef"
-          :lens="sceneRequest.lens"
-          :band="sceneRequest.band"
-          :focus-fqn="sceneRequest.focusFqn"
-          :entity-type="sceneRequest.entityType"
-          :upstream-depth="lineageStore.config.upstreamDepth"
-          :downstream-depth="lineageStore.config.downstreamDepth"
-          @request-change="onSceneRequestChange"
-          @navigate="openSceneAsset"
-        />
-        <LineageCanvas
-          v-else
-          ref="canvasRef"
-          :entity-type="entityType"
-          :fqn="fqn"
-          :show-header="false"
-          :has-edit-access="canEditLineage"
-          variant="page"
-        />
-      </Spin>
+      <!-- The height-chain hook is a native div, never a class on
+        <Spin>: antd Spin is inheritAttrs:false and folds a fallthrough
+        class onto the spinner element, which only renders while
+        spinning — in the platform view (never spinning) the class
+        vanishes from the DOM and the flex rules below never match
+        (live 2026-11-25: home canvas 0px). -->
+      <div class="lineage-page__spin">
+        <Spin :spinning="permissionsLoading">
+          <LineageMap
+            v-if="!focused"
+            ref="mapRef"
+            :lens="sceneRequest.lens"
+            :band="sceneRequest.band"
+            :focus-fqn="sceneRequest.focusFqn"
+            :entity-type="sceneRequest.entityType"
+            :upstream-depth="lineageStore.config.upstreamDepth"
+            :downstream-depth="lineageStore.config.downstreamDepth"
+            @request-change="onSceneRequestChange"
+            @navigate="openSceneAsset"
+          />
+          <LineageCanvas
+            v-else
+            ref="canvasRef"
+            :entity-type="entityType"
+            :fqn="fqn"
+            :show-header="false"
+            :has-edit-access="canEditLineage"
+            variant="page"
+          />
+        </Spin>
+      </div>
       <LineageConfigModal
         v-if="!focused"
         :open="configModalOpen"
@@ -288,6 +296,17 @@ function openTarget(target: { entityType: string; fqn: string }): void {
   flex-shrink: 0;
 }
 .lineage-page__platform .lineage-page__spin {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The Spin root is a plain block flex-item of the host div, so it
+   needs its own flex rule too — the host alone is not enough: without
+   this the root stays at content height (~106px toolbar) and the
+   container's flex:1 has nothing to distribute. Both :deep() rules
+   are required because antd renders both elements, not this SFC. */
+.lineage-page__platform .lineage-page__spin :deep(.ant-spin-nested-loading) {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
