@@ -249,7 +249,7 @@ describe('entityRoutes', () => {
     ).toBeNull();
     expect(
       detailLocationForHit({ entityType: 'directory', fullyQualifiedName: 'drive.root' }),
-    ).toBeNull();
+    ).toEqual({ name: 'asset', params: { entityType: 'directory', fqn: 'drive.root' } });
     expect(
       detailLocationForHit({ entityType: 'unknownThing', fullyQualifiedName: 'x.y' }),
     ).toBeNull();
