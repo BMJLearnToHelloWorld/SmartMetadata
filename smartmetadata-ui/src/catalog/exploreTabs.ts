@@ -97,6 +97,73 @@ export const EXPLORE_TABS: ExploreTab[] = [
   { index: 'page', slug: 'knowledgePages', entityType: 'page', sortGroup: 'entity', labelKey: 'knowledgePage' },
 ];
 
+import type { FacetId } from './searchFacets';
+
+/**
+ * Per-tab filter sets, ported from official
+ * SearchClassBase.getDropDownItems (utils/SearchClassBase.ts:676-734)
+ * over AdvancedSearch.constants.ts. The all-tab (null) is the DATA_ASSET
+ * set — the only set with entityType and certification. Chart, directory,
+ * file, spreadsheet and worksheet have no pin entry, so they show no
+ * chips (getDropDownItems returns [] for an unmapped index).
+ */
+export const COMMON_TAB_FACET_IDS: readonly FacetId[] = [
+  'domain',
+  'dataProduct',
+  'owner',
+  'tagFqn',
+  'tier',
+  'service',
+  'serviceType',
+];
+
+export const DATA_ASSET_TAB_FACET_IDS: readonly FacetId[] = [
+  'entityType',
+  'domain',
+  'dataProduct',
+  'owner',
+  'tagFqn',
+  'tier',
+  'certification',
+  'service',
+  'serviceType',
+];
+
+const TAB_FACET_IDS: Readonly<Record<string, readonly FacetId[]>> = {
+  table: [...COMMON_TAB_FACET_IDS, 'database', 'schema', 'column', 'tableType', 'columnDescriptionStatus'],
+  tableColumn: ['dataType', 'tableName', 'database', 'schema'],
+  storedProcedure: [...COMMON_TAB_FACET_IDS],
+  database: [...COMMON_TAB_FACET_IDS],
+  databaseSchema: [...COMMON_TAB_FACET_IDS],
+  dashboard: [...COMMON_TAB_FACET_IDS, 'dataModel', 'chart', 'project'],
+  dashboardDataModel: [...COMMON_TAB_FACET_IDS, 'dataModelType', 'column', 'project'],
+  chart: [],
+  pipeline: [...COMMON_TAB_FACET_IDS, 'task'],
+  topic: [...COMMON_TAB_FACET_IDS, 'schemaField'],
+  mlmodel: [...COMMON_TAB_FACET_IDS, 'feature'],
+  container: [...COMMON_TAB_FACET_IDS, 'containerColumn'],
+  searchIndex: [...COMMON_TAB_FACET_IDS, 'field'],
+  glossaryTerm: ['domain', 'owner', 'tagFqn', 'glossary', 'entityStatus'],
+  tag: ['domain', 'classification'],
+  dataProduct: ['domain', 'owner'],
+  apiCollection: [...COMMON_TAB_FACET_IDS],
+  apiEndpoint: [...COMMON_TAB_FACET_IDS, 'requestSchemaField', 'responseSchemaField'],
+  metric: [...COMMON_TAB_FACET_IDS],
+  directory: [],
+  file: [],
+  spreadsheet: [],
+  worksheet: [],
+  page: ['owner', 'tagFqn'],
+};
+
+/** The filter chips for a tab; the all-tab (null) shows the data-asset set. */
+export function facetsForTab(tab: ExploreTab | null): FacetId[] {
+  if (!tab) {
+    return [...DATA_ASSET_TAB_FACET_IDS];
+  }
+  return [...(TAB_FACET_IDS[tab.index] ?? [])];
+}
+
 export function exploreTabForIndex(index: string): ExploreTab | null {
   return EXPLORE_TABS.find((tab) => tab.index === index) ?? null;
 }

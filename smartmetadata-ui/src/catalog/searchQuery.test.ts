@@ -11,9 +11,12 @@ import { describe, expect, it } from 'vitest';
 import {
   composeFacetQuery,
   composeSearchQuery,
+  FILTER_LUCENE_FIELD,
   filtersFromQuery,
   isIndexNotFoundError,
   luceneTerm,
+  mergeQueryFilters,
+  nullExistsQueryFilter,
   pageSizeFromQuery,
   searchRouteFromLocation,
   searchRouteQuery,
@@ -21,7 +24,7 @@ import {
   sortFromQuery,
   toggleFilterValue,
 } from './searchQuery';
-import { aggregationFieldNamesForFacet } from './searchFacets';
+import { aggregationFieldNamesForFacet, NULL_OPTION_KEY } from './searchFacets';
 
 describe('searchQuery', () => {
   it('composes documented Lucene q= terms for entity type and tags', () => {
@@ -144,5 +147,116 @@ describe('searchQuery', () => {
     expect(selfExcludedFacetIds('entityType')).toEqual(['entityType']);
     expect(selfExcludedFacetIds('service')).toEqual(['service']);
     expect(selfExcludedFacetIds('tagFqn')).toEqual(['tagFqn']);
+    // Database/schema filter on the display-name .keyword field while
+    // their aggregations carry no .keyword suffix: the facet's own
+    // Lucene field is part of the exclusion, or opening the database
+    // chip would narrow its own options by its own selection.
+    expect(selfExcludedFacetIds('database')).toEqual(['database']);
+    expect(selfExcludedFacetIds('schema')).toEqual(['schema']);
+  });
+
+  it('filters database and schema on the display-name keyword field (pin TABLE/COLUMN dropdowns)', () => {
+    expect(FILTER_LUCENE_FIELD.database).toBe('database.displayName.keyword');
+    expect(FILTER_LUCENE_FIELD.schema).toBe('databaseSchema.displayName.keyword');
+    expect(composeSearchQuery('', { database: ['Orders DB'] })).toBe(
+      'database.displayName.keyword:"Orders DB"',
+    );
+    expect(composeSearchQuery('', { schema: ['Public'] })).toBe(
+      'databaseSchema.displayName.keyword:Public',
+    );
+  });
+
+  it('composes per-tab Lucene terms for the new D5 facets', () => {
+    expect(composeSearchQuery('', { column: ['order_id'] })).toBe('columns.name.keyword:order_id');
+    expect(composeSearchQuery('', { tableType: ['Regular'] })).toBe('tableType:Regular');
+    expect(composeSearchQuery('', { dataType: ['INT'] })).toBe('dataType:INT');
+    expect(composeSearchQuery('', { tableName: ['orders'] })).toBe('table.name.keyword:orders');
+    expect(composeSearchQuery('', { classification: ['PII'] })).toBe(
+      'classification.name.keyword:PII',
+    );
+    expect(composeSearchQuery('', { glossary: ['Business'] })).toBe(
+      'glossary.name.keyword:Business',
+    );
+    expect(composeSearchQuery('', { entityStatus: ['Approved'] })).toBe('entityStatus:Approved');
+    expect(composeSearchQuery('', { columnDescriptionStatus: ['Completed'] })).toBe(
+      'columnDescriptionStatus:Completed',
+    );
+    expect(filtersFromQuery({ column: 'order_id', tableType: 'Regular', entityStatus: 'Approved' })).toEqual({
+      column: ['order_id'],
+      tableType: ['Regular'],
+      entityStatus: ['Approved'],
+    });
+  });
+
+  it('keeps a "No X" selection out of Lucene q (pin NULL_OPTION_KEY)', () => {
+    expect(composeSearchQuery('', { owner: [NULL_OPTION_KEY] })).toBe('*');
+    expect(composeSearchQuery('orders', { owner: [NULL_OPTION_KEY], tier: ['Tier1'] })).toBe(
+      'orders AND tier.tagFQN:Tier1',
+    );
+    // A null selection mixed with a real value on the same facet: only
+    // the real value becomes a Lucene term.
+    expect(composeSearchQuery('', { owner: ['alice', NULL_OPTION_KEY] })).toBe(
+      'ownerDisplayName:alice',
+    );
+  });
+
+  it('builds the structured must_not.exists filter for "No X" selections', () => {
+    expect(nullExistsQueryFilter({})).toBeUndefined();
+    expect(nullExistsQueryFilter({ owner: ['alice'] })).toBeUndefined();
+    expect(nullExistsQueryFilter({ owner: [NULL_OPTION_KEY] })).toBe(
+      JSON.stringify({
+        query: {
+          bool: {
+            must: [
+              {
+                bool: {
+                  should: [
+                    { bool: { must_not: { exists: { field: 'ownerDisplayName' } } } },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+    // One must clause per facet with a null selection, in field order.
+    const merged = nullExistsQueryFilter({
+      owner: [NULL_OPTION_KEY],
+      tier: ['Tier1', NULL_OPTION_KEY],
+    });
+    const parsed = JSON.parse(merged ?? '') as {
+      query: { bool: { must: Array<{ bool: { should: unknown[] } }> } } };
+    expect(parsed.query.bool.must).toHaveLength(2);
+    expect(JSON.stringify(parsed.query.bool.must[1])).toContain('tier.tagFQN');
+    // Self-exclusion: the options query for a facet drops its own null.
+    expect(nullExistsQueryFilter({ owner: [NULL_OPTION_KEY] }, 'owner')).toBeUndefined();
+    expect(nullExistsQueryFilter({ owner: [NULL_OPTION_KEY], domain: [NULL_OPTION_KEY] }, 'owner')).toContain(
+      'domains.displayName.keyword',
+    );
+  });
+
+  it('merges a saved query_filter with the null clauses', () => {
+    const saved = JSON.stringify({
+      query: { bool: { must: [{ term: { 'tags.tagFQN': 'PII.Sensitive' } }] } },
+    });
+    const nulls = nullExistsQueryFilter({ owner: [NULL_OPTION_KEY] });
+    const merged = mergeQueryFilters(saved, nulls);
+    const parsed = JSON.parse(merged ?? '') as {
+      query: { bool: { must: unknown[] } };
+    };
+    expect(parsed.query.bool.must).toHaveLength(2);
+    expect(parsed.query.bool.must[0]).toEqual({ term: { 'tags.tagFQN': 'PII.Sensitive' } });
+    expect(mergeQueryFilters(undefined, undefined)).toBeUndefined();
+    expect(mergeQueryFilters(saved)).toBe(saved);
+    // A single filter that parses but has no bool.must to decompose
+    // (D28: an unparseable saved filter) is returned verbatim, not
+    // re-wrapped into a bool.must — the server must receive it unchanged.
+    const matchAll = JSON.stringify({ query: { match_all: {} } });
+    expect(mergeQueryFilters(matchAll)).toBe(matchAll);
+    expect(mergeQueryFilters(matchAll, undefined)).toBe(matchAll);
+    // An unparseable saved filter is returned verbatim rather than
+    // silently dropped to make room for a null selection.
+    expect(mergeQueryFilters('not-json', nulls)).toBe('not-json');
   });
 });
