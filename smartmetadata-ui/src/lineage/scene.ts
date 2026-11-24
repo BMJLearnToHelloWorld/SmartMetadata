@@ -24,9 +24,9 @@
  * - No `qs` dependency in the product: search parsing uses URLSearchParams.
  * - No `lru-cache` dependency in the product: the cache is a bounded Map
  *   with the same cap (50) and the same load/dedup/evict semantics.
- * - Node layout reuses the product's dagre `layoutLineageGraph` (see
+ * - Node layout reuses the product's ELK `layoutLineageGraph` (see
  *   `mapSceneToGraphModel`); the official ELK layout is L2's decision
- *   (D-LAYOUT-1), not re-decided here.
+ *   (D-LAYOUT-1), ported by the ELK lane.
  * - Translation is a `(key, params?) => string` function instead of
  *   i18next's TFunction, so the helpers stay framework-free.
  */
@@ -1005,10 +1005,10 @@ export const isEditableSceneEdge = (
 
 /**
  * Adapt a fetched scene to the product graph model so the map reuses the
- * existing dagre layout (`layoutLineageGraph`) and node chrome. Field-band
+ * existing ELK layout (`layoutLineageGraph`) and node chrome. Field-band
  * edges keep their `::field::` handles as column edges; all other bands
  * draw plain entity edges. Edges whose endpoints are not in the scene are
- * dropped — dagre would otherwise create sizeless implicit nodes.
+ * dropped — ELK would otherwise lay out sizeless implicit nodes.
  */
 export function mapSceneToGraphModel(scene: LineageScene): LineageGraphModel {
   const nodeIds = new Set(scene.nodes.map((node) => node.id));

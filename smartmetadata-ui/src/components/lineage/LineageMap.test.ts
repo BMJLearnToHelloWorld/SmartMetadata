@@ -9,8 +9,9 @@
  */
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getLineageEdgeDetails, getLineageScene } from '@/api/lineage';
+import { ELKLayout } from '@/lineage/elkLayout';
 import { captureLineagePng } from '@/lineage/exportPng';
 import {
   LINEAGE_MAP_ONBOARDING_COOKIE,
@@ -171,6 +172,21 @@ async function mountMap(
 }
 
 describe('LineageMap', () => {
+  // The map lays out through the async ELK engine; warm the engine once
+  // here so each mount pays a warm layout (~200 ms) instead of the cold
+  // engine start (dynamic import + first layout, seconds on this VM). The
+  // layout itself still runs for real on every mount; only the one-time
+  // engine start moves out of the tests' wait budget.
+  beforeAll(async () => {
+    await ELKLayout.layoutGraph(
+      [
+        { id: 'warm-a', width: 260, height: 78 },
+        { id: 'warm-b', width: 260, height: 78 },
+      ],
+      [{ id: 'warm-e', sources: ['warm-a'], targets: ['warm-b'] }],
+    );
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     clearOnboardingCookie();
@@ -258,11 +274,12 @@ describe('LineageMap', () => {
     expect(wrapper.emitted('update:lens')).toEqual([['domain']]);
     expect(wrapper.emitted('request-change')?.[0][0]).toMatchObject({ lens: 'domain', band: 'LAYER' });
     await wrapper.get('[data-testid="lineage-map-rail-field"]').trigger('click');
-    await flushPromises();
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-column-svc1.db.a.id"]').exists()).toBe(true),
+    );
     expect(mockedGetLineageScene).toHaveBeenCalledWith(
       expect.objectContaining({ lens: 'domain', band: 'FIELD' }),
     );
-    expect(wrapper.find('[data-testid="lineage-column-svc1.db.a.id"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
@@ -283,8 +300,7 @@ describe('LineageMap', () => {
     await vi.waitFor(() => expect(mockedGetLineageScene.mock.calls.length).toBeGreaterThanOrEqual(5));
     const callsAfterDrill = mockedGetLineageScene.mock.calls.length;
     await wrapper.get('[data-testid="lineage-map-crumb-root"]').trigger('click');
-    await flushPromises();
-    expect(wrapper.find('[data-testid="lineage-node-svc1"]').exists()).toBe(true);
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-svc1"]').exists()).toBe(true));
     expect(mockedGetLineageScene.mock.calls.length).toBe(callsAfterDrill);
     wrapper.unmount();
   });

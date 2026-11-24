@@ -93,6 +93,18 @@ describe('searchQuery', () => {
     });
   });
 
+  it('carries the global-search scope as tab and omits it for All (D13)', () => {
+    expect(searchRouteQuery('orders', {}, 0, { tab: 'table' })).toEqual({
+      q: 'orders',
+      tab: 'table',
+    });
+    expect(searchRouteQuery('orders', {}, 0, { tab: '' })).toEqual({ q: 'orders' });
+    expect(searchRouteQuery('orders', {}, 0)).toEqual({ q: 'orders' });
+    expect(
+      searchRouteFromLocation('orders', { q: 'old', tab: 'topic' }, 0, { tab: 'table' }),
+    ).toEqual({ q: 'orders', tab: 'table' });
+  });
+
   it('composes certification and data-product Lucene terms when those chips are set', () => {
     expect(composeSearchQuery('', { certification: ['Certification.Gold'] })).toBe(
       'certification.tagLabel.tagFQN:Certification.Gold',

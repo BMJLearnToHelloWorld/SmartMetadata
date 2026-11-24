@@ -36,6 +36,7 @@ describe('shared presentation tables (R1)', () => {
 
   it('keeps drawer widths at the official slideout widths', () => {
     expect(DRAWER_WIDTHS).toEqual({
+      addLineage: 440,
       feed: 'max(40vw, 480px)',
       form: 700,
       relationTypeForm: 500,
