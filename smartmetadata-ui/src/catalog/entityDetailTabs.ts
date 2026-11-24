@@ -153,20 +153,22 @@ const API_ENDPOINT_TABS: EntityDetailTabDef[] = [
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
-// D-TAB-2 (host lane): DriveService detail tabs. Pin tab order per type
-// (DirectoryDetailsUtils.tsx / FileDetailsUtils.tsx /
+// D-TAB-2 (host lane + tab-mount lane): DriveService detail tabs. Pin tab
+// order per type (DirectoryDetailsUtils.tsx / FileDetailsUtils.tsx /
 // SpreadsheetDetailsUtils.tsx / WorksheetDetailsUtils.tsx, a3012259ca):
 // first tab → activity_feed → LINEAGE → contract → custom_properties.
-// The lineage entry is NOT added here: the later tab-mount lane inserts
-// `{ key: 'lineage', labelKey: 'lineage', slot: 'lineage' }` after
-// `activity_feed` in each set below (see PIN-MEMO.md §1.4-1.5). Contract
-// is residual, as for every other split type (no contract API is wired).
-// File's schema tab is unconditional in the product — pin adds it only
-// when the file has columns; the schema piece renders its own empty
-// state for column-less files (bounded divergence, PIN-MEMO.md §4).
+// The lineage entry is mounted here (L3d); the `#lineage` slot in
+// AssetDetailView renders `<LineageCanvas variant="tab">` for any tab with
+// slot `lineage`, and drive types are unflipped so the slot's fallback pane
+// renders it (PIN-MEMO.md §1.2). Contract is residual, as for every other
+// split type (no contract API is wired). File's schema tab is unconditional
+// in the product — pin adds it only when the file has columns; the schema
+// piece renders its own empty state for column-less files (bounded
+// divergence, PIN-MEMO.md §4 of the host lane).
 const DIRECTORY_TABS: EntityDetailTabDef[] = [
   { key: 'children', labelKey: 'children', slot: 'children' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
@@ -175,6 +177,7 @@ const FILE_TABS: EntityDetailTabDef[] = [
   { key: 'overview', labelKey: 'overview', slot: 'overview' },
   { key: 'schema', labelKey: 'schema', slot: 'schema' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
@@ -182,6 +185,7 @@ const FILE_TABS: EntityDetailTabDef[] = [
 const SPREADSHEET_TABS: EntityDetailTabDef[] = [
   { key: 'worksheets', labelKey: 'worksheets', slot: 'worksheets' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
@@ -189,6 +193,7 @@ const SPREADSHEET_TABS: EntityDetailTabDef[] = [
 const WORKSHEET_TABS: EntityDetailTabDef[] = [
   { key: 'schema', labelKey: 'schema', slot: 'schema' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
