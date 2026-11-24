@@ -131,6 +131,10 @@ const ICONS: Record<string, Component> = {
   help: QuestionCircleOutlined,
   'notification-bell': BellOutlined,
   'action-search': SearchOutlined,
+  // Explore D13: the NLP toggle in the global search bar (pin's
+  // suggestions icon). BulbOutlined is already imported for the
+  // learning/insights entries; no new icon dependency.
+  'action-nlp': BulbOutlined,
   'action-globe': GlobalOutlined,
   'action-menu-fold': MenuFoldOutlined,
   'action-menu-unfold': MenuUnfoldOutlined,

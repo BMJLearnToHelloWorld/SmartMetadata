@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { FacetId } from './searchFacets';
-import { aggregationFieldNamesForFacet } from './searchFacets';
+import { aggregationFieldNamesForFacet, NULL_OPTION_KEY } from './searchFacets';
 import { estateFromQuery } from './browseEstate';
 
 export type SearchFilters = Partial<Record<FacetId, string[]>>;
@@ -17,14 +17,38 @@ export const FILTER_LUCENE_FIELD: Record<FacetId, string> = {
   entityType: 'entityType',
   serviceType: 'serviceType',
   service: 'service.displayName.keyword',
-  database: 'database.name.keyword',
-  schema: 'databaseSchema.name.keyword',
+  // Pin TABLE/COLUMN dropdown fields (AdvancedSearch.constants.ts):
+  // the display-name variants, matching the database/schema facets'
+  // aggregation sources (catalog/searchFacets.ts).
+  database: 'database.displayName.keyword',
+  schema: 'databaseSchema.displayName.keyword',
   tagFqn: 'tags.tagFQN',
   owner: 'ownerDisplayName',
   domain: 'domains.displayName.keyword',
   tier: 'tier.tagFQN',
   certification: 'certification.tagLabel.tagFQN',
   dataProduct: 'dataProducts.displayName.keyword',
+  // Per-tab fields (pin EntityFields): none of these has a page
+  // aggregation; their options come from POST /v1/search/aggregate.
+  column: 'columns.name.keyword',
+  tableType: 'tableType',
+  columnDescriptionStatus: 'columnDescriptionStatus',
+  dataType: 'dataType',
+  tableName: 'table.name.keyword',
+  classification: 'classification.name.keyword',
+  glossary: 'glossary.name.keyword',
+  entityStatus: 'entityStatus',
+  dataModel: 'dataModels.displayName.keyword',
+  chart: 'charts.displayName.keyword',
+  project: 'project.keyword',
+  task: 'tasks.displayName.keyword',
+  schemaField: 'messageSchema.schemaFields.name.keyword',
+  field: 'fields.name.keyword',
+  feature: 'mlFeatures.name',
+  requestSchemaField: 'requestSchema.schemaFields.name.keyword',
+  responseSchemaField: 'responseSchema.schemaFields.name.keyword',
+  containerColumn: 'dataModel.columns.name.keyword',
+  dataModelType: 'dataModelType',
 };
 
 export const SORT_OPTIONS = [
@@ -94,7 +118,12 @@ export function composeSearchQuery(userQuery: string, filters: SearchFilters = {
     clauses.push(trimmed);
   }
   for (const id of Object.keys(FILTER_LUCENE_FIELD) as FacetId[]) {
-    const values = (filters[id] ?? []).filter((value) => value.trim().length > 0);
+    // A "No X" selection is a structured must_not.exists clause in
+    // query_filter (nullExistsQueryFilter), never a Lucene term: the
+    // sentinel value has no meaning as a field value.
+    const values = (filters[id] ?? []).filter(
+      (value) => value.trim().length > 0 && value !== NULL_OPTION_KEY,
+    );
     if (!values.length) {
       continue;
     }
@@ -109,17 +138,115 @@ export function composeSearchQuery(userQuery: string, filters: SearchFilters = {
 }
 
 /**
+ * Pin ExplorePureUtils.getExploreQueryFilterMust: a NULL_OPTION_KEY
+ * selection becomes `{bool: {must_not: {exists: {field}}}}` inside the
+ * same OR group as the facet's term clauses. The product renders that
+ * shape as a standalone `query_filter` JSON string (one must clause per
+ * facet with a null selection), merged with the URL's saved `query_filter`
+ * by mergeQueryFilters. `excludeId` drops one facet's null selection —
+ * the options query for a facet must not narrow by its own field
+ * (self-exclusion, ADR:2026-11-11-explore-facet-self-exclusion).
+ */
+export function nullExistsQueryFilter(
+  filters: SearchFilters = {},
+  excludeId?: FacetId,
+): string | undefined {
+  const must: Array<Record<string, unknown>> = [];
+  for (const id of Object.keys(FILTER_LUCENE_FIELD) as FacetId[]) {
+    if (id === excludeId) {
+      continue;
+    }
+    if ((filters[id] ?? []).includes(NULL_OPTION_KEY)) {
+      must.push({
+        bool: {
+          should: [{ bool: { must_not: { exists: { field: FILTER_LUCENE_FIELD[id] } } } }],
+        },
+      });
+    }
+  }
+  if (!must.length) {
+    return undefined;
+  }
+  return JSON.stringify({ query: { bool: { must } } });
+}
+
+function mustClausesOf(filterJson: string): Array<Record<string, unknown>> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(filterJson) as unknown;
+  } catch {
+    return null;
+  }
+  const root = parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  if (!root) {
+    return null;
+  }
+  const query = root.query !== null && typeof root.query === 'object' ? (root.query as Record<string, unknown>) : null;
+  if (!query) {
+    return [root];
+  }
+  const bool = query.bool !== null && typeof query.bool === 'object' ? (query.bool as Record<string, unknown>) : null;
+  if (!bool) {
+    return [query];
+  }
+  if (Array.isArray(bool.must)) {
+    return bool.must as Array<Record<string, unknown>>;
+  }
+  if (bool.must !== null && typeof bool.must === 'object') {
+    return [bool.must as Record<string, unknown>];
+  }
+  return [query];
+}
+
+/**
+ * Combine serialized `query_filter` JSON strings into one filter whose
+ * `must` is the concatenation of every input's must clauses (pin
+ * getCombinedQueryFilterObject shape). Inputs that are undefined or empty
+ * are skipped; with no clauses at all the result is undefined. A single
+ * input is returned verbatim — there is nothing to combine, and
+ * re-serializing it would change its exact string (D28: an unparseable
+ * saved filter must still reach the server unchanged). An unparseable
+ * input is returned verbatim instead of merged — the saved filter it
+ * carries must not be silently dropped to make room for a null selection.
+ */
+export function mergeQueryFilters(...filters: Array<string | undefined>): string | undefined {
+  const present = filters.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  if (!present.length) {
+    return undefined;
+  }
+  if (present.length === 1) {
+    return present[0];
+  }
+  if (present.some((item) => mustClausesOf(item) === null)) {
+    return present[0];
+  }
+  const must = present.flatMap((item) => mustClausesOf(item) ?? []);
+  if (!must.length) {
+    return undefined;
+  }
+  return JSON.stringify({ query: { bool: { must } } });
+}
+
+/**
  * The facet ids whose filter must be left out of one facet's own options
  * query. A filter is excluded when its Lucene field is one of the facet's
- * own aggregation names. Official keeps two entity-type filter keys
- * (`entityType` and `entityType.keyword`) and excludes both when the
- * entity-type dropdown opens; this console collapses them into the one
- * `entityType` FacetId, so the derivation yields just `['entityType']` —
- * the `.keyword` aggregation name is recorded in AGG_TO_FACET, but there
- * is no second filter id to exclude.
+ * own aggregation names — or the facet's own Lucene field itself. The
+ * second arm matters since database/schema filter on the display-name
+ * `.keyword` field while their aggregations are named `database.name`
+ * / `database.displayName` (no `.keyword` suffix): without it the
+ * database chip would narrow its own options by its own selection.
+ * Official keeps two entity-type filter keys (`entityType` and
+ * `entityType.keyword`) and excludes both when the entity-type dropdown
+ * opens; this console collapses them into the one `entityType` FacetId,
+ * so the derivation yields just `['entityType']` — the `.keyword`
+ * aggregation name is recorded in AGG_TO_FACET, but there is no second
+ * filter id to exclude.
  */
 export function selfExcludedFacetIds(facetId: FacetId): FacetId[] {
-  const ownFields = new Set(aggregationFieldNamesForFacet(facetId));
+  const ownFields = new Set([
+    ...aggregationFieldNamesForFacet(facetId),
+    FILTER_LUCENE_FIELD[facetId],
+  ]);
   return (Object.keys(FILTER_LUCENE_FIELD) as FacetId[]).filter((id) =>
     ownFields.has(FILTER_LUCENE_FIELD[id]),
   );
@@ -216,6 +343,13 @@ export function sortField(sort: SearchSort): string {
 export interface SearchRouteOptions {
   sort?: SearchSort;
   estate?: string;
+  /**
+   * Explore tab index (D13): the global search bar submits with the
+   * scope the user picked (`tab=<index>`), and pin always forces
+   * `sort=_score` on that submit. Empty means the all-tab — no `tab`
+   * param, exactly as pin navigates with an empty tab for All.
+   */
+  tab?: string;
 }
 
 export function searchRouteQuery(
@@ -245,6 +379,10 @@ export function searchRouteQuery(
   if (estate) {
     next.estate = estate;
   }
+  const tab = options.tab ?? '';
+  if (tab) {
+    next.tab = tab;
+  }
   return next;
 }
 
@@ -261,6 +399,7 @@ export function searchRouteFromLocation(
     {
       sort: overrides.sort ?? sortFromQuery(query),
       estate: overrides.estate ?? estateFromQuery(query),
+      tab: overrides.tab,
     },
   );
 }

@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, message} from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, Tooltip, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import { deleteClassification, getClassification, patchClassification, updateClassification } from '@/api/classifications';
@@ -14,10 +14,12 @@ import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getClassificationVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { setFieldPatch } from '@/admin/jsonPatch';
-import { createTag, listTags } from '@/api/tags';
+import { createTag, listTags, patchTag } from '@/api/tags';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import { usePermissionStore } from '@/stores/permissions';
 import type { Classification, ClassificationTag } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
@@ -29,6 +31,65 @@ const classification = ref<Classification | null>(null);
 // Same upstream isEditable rule as the tag view (see TagDetailView): disabled
 // revokes Edit; Delete is not an Edit* operation and keeps its own gate.
 const isEditable = computed(() => !!classification.value && classification.value.disabled !== true);
+
+/**
+ * P1 dual line (pin TagsPage.tsx:120-130 + ClassificationDetails.tsx):
+ * the composable fetches the classification's permissions by id — the
+ * same identifier pin passes — and derives the flags; a fetch failure
+ * is toasted once via the error watcher and the flags stay all-false
+ * (fail-closed). Disabled is deliberately NOT folded into the
+ * derivation: pin's enable/disable toggle (handleEnableDisableClassificationClick,
+ * ClassificationDetails.tsx:437-447) is the edit path and works both
+ * ways, so the Switch must stay usable to re-enable; disabled is
+ * applied as a separate conjunct where pin applies it (edit button,
+ * ClassificationDetails.tsx:360-365).
+ */
+const permissionStore = usePermissionStore();
+const classificationPermissions = useEntityPermissions('classification', () => ({ id: props.id }));
+const canEditClassification = computed(
+  () => permissionStore.isAdminUser || classificationPermissions.canEditAll.value,
+);
+const canDeleteClassification = computed(
+  () => permissionStore.isAdminUser || classificationPermissions.canDelete.value,
+);
+// Pin TagsPage.tsx:535-539: createTagsPermission = checkPermission(Create,
+// TAG, permissions) || classificationCanEditAll. The TAG leg is a
+// resource fetch; the classification leg is the entity flag above.
+const tagResourceOps = ref<Record<string, boolean>>({});
+const canCreateTag = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    tagResourceOps.value.Create === true ||
+    classificationPermissions.canEditAll.value,
+);
+/**
+ * Pin ClassificationDetails getTagsTableColumn
+ * (ClassificationUtils.tsx:45-58): the per-tag disable toggle is gated
+ * by the classification's EditAll, and never renders enabled on a
+ * disabled classification. The composable fails closed (flags
+ * all-false until the fetch resolves); no `deleted` input — pin's gate
+ * does not include deleted.
+ */
+const canToggleDisable = computed(
+  () => classificationPermissions.canEditAll.value && classification.value?.disabled !== true,
+);
+watch(
+  () => classificationPermissions.error.value,
+  (error) => {
+    if (error) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  },
+);
+
+async function checkTagPermission(): Promise<void> {
+  try {
+    tagResourceOps.value = await permissionStore.getResourcePermission('tag');
+  } catch {
+    tagResourceOps.value = {};
+  }
+}
+
 const tags = ref<ClassificationTag[]>([]);
 const activeTab = ref('overview');
 const editOpen = ref(false);
@@ -59,18 +120,29 @@ const tabs = computed<EntityDetailTab[]>(() => [
 ]);
 
 const tagColumns = computed(() => [
+  // Pin ClassificationUtils getTagsTableColumn: the disabled column is
+  // first (before the tag name), title label.enabled, width 100.
+  { title: t('label.enabled'), dataIndex: 'disabled', key: 'disabled', width: 100 },
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
   { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
   { title: t('governance.classifications.usage'), key: 'usageCount', width: 90 },
 ]);
+
+async function loadTags(): Promise<void> {
+  if (!classification.value) {
+    tags.value = [];
+    return;
+  }
+  const parent = classification.value.fullyQualifiedName || classification.value.name;
+  tags.value = (await listTags({ parent, limit: 100 })).data;
+}
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
     classification.value = await getClassification(props.id);
-    const parent = classification.value.fullyQualifiedName || classification.value.name;
-    tags.value = (await listTags({ parent, limit: 100 })).data;
+    await loadTags();
   } catch (error) {
     classification.value = null;
     tags.value = [];
@@ -81,7 +153,7 @@ async function load(): Promise<void> {
 }
 
 async function onDeleteClassification(): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !isEditable.value || !canDeleteClassification.value) {
     return;
   }
   const confirmed = await confirmDelete({
@@ -103,7 +175,7 @@ async function onDeleteClassification(): Promise<void> {
 }
 
 async function onToggleDisabled(disabled: boolean): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !canEditClassification.value) {
     return;
   }
   const previous = classification.value.disabled === true;
@@ -118,6 +190,31 @@ async function onToggleDisabled(disabled: boolean): Promise<void> {
     classification.value = { ...classification.value, disabled: previous };
     message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
+}
+
+/**
+ * Pin TagsPage handleToggleDisable (TagsPage.tsx:476): flip the tag's
+ * disabled flag via JSON Patch, then refresh the classification's tag
+ * list. No optimistic update — the refresh is the source of truth.
+ * On failure pin toasts server.entity-updating-error for the tag.
+ */
+async function onToggleTagDisabled(tag: ClassificationTag): Promise<void> {
+  const previous = tag.disabled === true;
+  try {
+    await patchTag(tag.id, setFieldPatch('/disabled', previous, !previous));
+    await loadTags();
+  } catch {
+    message.error(t('server.entity-updating-error', { entity: t('label.tag-lowercase') }));
+  }
+}
+
+function toggleTooltipTitle(tag: ClassificationTag): string {
+  if (canToggleDisable.value) {
+    return tag.disabled === true ? t('label.enable') : t('label.disable');
+  }
+  return classification.value?.disabled === true
+    ? t('message.disabled-classification-actions-message')
+    : t('message.no-permission-for-action');
 }
 
 async function onOpenVersions(): Promise<void> {
@@ -148,7 +245,7 @@ function openEdit(): void {
 }
 
 async function onSave(): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !isEditable.value || !canEditClassification.value) {
     return;
   }
   saving.value = true;
@@ -170,7 +267,7 @@ async function onSave(): Promise<void> {
 }
 
 async function onCreateTag(): Promise<void> {
-  if (!classification.value) {
+  if (!classification.value || !isEditable.value || !canCreateTag.value) {
     return;
   }
   creating.value = true;
@@ -201,6 +298,7 @@ watch(
 );
 
 onMounted(() => {
+  void checkTagPermission();
   void load();
 });
 </script>
@@ -219,12 +317,12 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button type="primary" :disabled="!isEditable" data-testid="edit-classification" @click="openEdit">
+      <Button type="primary" :disabled="!isEditable || !canEditClassification" data-testid="edit-classification" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
       <Button :disabled="!classification" data-testid="classification-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button danger :disabled="!classification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>
-      <Button :disabled="!classification" data-testid="create-tag" @click="createTagOpen = true">
+      <Button danger :disabled="!classification || !isEditable || !canDeleteClassification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>
+      <Button :disabled="!classification || !isEditable || !canCreateTag" data-testid="create-tag" @click="createTagOpen = true">
         {{ t('governance.classifications.createTag') }}
       </Button>
     </template>
@@ -235,6 +333,7 @@ onMounted(() => {
         <Descriptions.Item :label="t('crud.disabled')">
           <Switch
             :checked="classification.disabled === true"
+            :disabled="!classification || !canEditClassification"
             data-testid="classification-disabled"
             @change="(value: boolean | string | number) => onToggleDisabled(value === true)"
           />
@@ -254,7 +353,17 @@ onMounted(() => {
         size="small"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
+          <template v-if="column.key === 'disabled'">
+            <Tooltip :title="toggleTooltipTitle(record as ClassificationTag)" placement="top">
+              <Switch
+                :checked="(record as ClassificationTag).disabled !== true"
+                :disabled="!canToggleDisable"
+                :data-testid="`tag-disable-toggle-${(record as ClassificationTag).name}`"
+                @change="() => onToggleTagDisabled(record as ClassificationTag)"
+              />
+            </Tooltip>
+          </template>
+          <template v-else-if="column.key === 'name'">
             <a
               href="#"
               @click.prevent="router.push({ name: 'governance-tag', params: { id: (record as ClassificationTag).id } })"

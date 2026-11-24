@@ -51,8 +51,12 @@ import {
   type StatusCounts,
 } from '@/quality/landing';
 import {
+  buildDqTestCaseListQuery,
+  DQ_HEALTH_PIE_SEGMENT_ORDER,
+  DQ_TEST_CASE_PIE_SEGMENT_ORDER,
   fetchDqDashboardAggregations,
   type DqDashboardChartFilters,
+  type DqTestCaseListDrill,
 } from '@/quality/dashboard';
 import type { TestCase, TestSuite } from '@/types/quality';
 import TestCasesListView from './TestCasesListView.vue';
@@ -141,13 +145,29 @@ function queryStrings(value: unknown): string | undefined {
   return list.length ? list.join(',') : undefined;
 }
 
+/**
+ * Pin getTestCaseTabPath accepts a status array (health pie: [Success,
+ * Queued] / [Failed, Aborted]) — the drill query carries it as repeated
+ * `testCaseStatus=` params, so the list drill keeps the array (a single
+ * value stays a plain string for the single-select filter).
+ */
+function queryStatus(value: unknown): string | string[] | undefined {
+  const list = (Array.isArray(value) ? value : [value]).filter(
+    (item): item is string => typeof item === 'string' && Boolean(item),
+  );
+  if (list.length === 0) {
+    return undefined;
+  }
+  return list.length === 1 ? list[0] : list;
+}
+
 function queryNumber(value: unknown): number | undefined {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? num : undefined;
 }
 
 const listDrill = computed(() => ({
-  testCaseStatus: queryString(route.query.testCaseStatus),
+  testCaseStatus: queryStatus(route.query.testCaseStatus),
   dataQualityDimension: queryString(route.query.dataQualityDimension),
   tags: queryStrings(route.query.tags),
   tier: queryString(route.query.tier),
@@ -296,6 +316,55 @@ function openCases(): void {
 
 function openSuites(): void {
   onTabChange('test-suites');
+}
+
+/**
+ * Dashboard-tab donut drill-down (pin DqDashboardSectionContent + the
+ * three pie widgets): the landing view's own governance filters + range
+ * as the chart slice — owner is absent (pin carries no owner) and
+ * certification is not carried (buildDqTestCaseListQuery parity with
+ * the shared dashboard). The query is rebuilt from scratch so a
+ * previous drill's keys (e.g. a dimension) do not leak into the new
+ * slice; the list tab applies the drill through its props, which
+ * arrive after mount (TestCasesListView prop watcher).
+ */
+const donutChartFilters = computed<DqDashboardChartFilters>(() => ({
+  tags: [filters.tag, filters.glossaryTerm].filter(
+    (item): item is string => typeof item === 'string' && Boolean(item),
+  ),
+  tier: filters.tier ? [filters.tier] : undefined,
+  dataProductFqns: filters.dataProduct ? [filters.dataProduct] : undefined,
+  startTs: range.value.startTs,
+  endTs: range.value.endTs,
+}));
+
+function openDonutCases(drill?: DqTestCaseListDrill): void {
+  activeTab.value = 'test-cases';
+  void router.replace({
+    query: { tab: 'test-cases', ...buildDqTestCaseListQuery(donutChartFilters.value, drill) },
+  });
+}
+
+function openCoverageSegment(index: number): void {
+  if (index === 0) {
+    openSuites();
+  } else if (index === 1) {
+    void router.push({ name: 'search' });
+  }
+}
+
+function openHealthSegment(index: number): void {
+  const statuses = DQ_HEALTH_PIE_SEGMENT_ORDER[index];
+  if (statuses) {
+    openDonutCases({ testCaseStatus: [...statuses] });
+  }
+}
+
+function openResultsSegment(index: number): void {
+  const status = DQ_TEST_CASE_PIE_SEGMENT_ORDER[index];
+  if (status) {
+    openDonutCases({ testCaseStatus: status });
+  }
 }
 
 async function openCreateCase(): Promise<void> {
@@ -473,7 +542,7 @@ onMounted(() => {
             </Empty>
             <Row v-else :gutter="[16, 16]">
               <Col :xs="24" :lg="8">
-                <button class="dq-donut" data-testid="dq-coverage-card" type="button" @click="openSuites">
+                <div class="dq-donut" data-testid="dq-coverage-card">
                   <div class="dq-donut__title">{{ t('quality.landing.coverage') }}</div>
                   <div class="dq-donut__center">{{ t('quality.landing.tables', { count: coverage?.total ?? 0 }) }}</div>
                   <SmChart
@@ -482,15 +551,17 @@ onMounted(() => {
                     :series="coverageSeries"
                     :empty="t('quality.landing.chartEmpty')"
                     :height="200"
+                    segment-clickable
+                    @segment-click="openCoverageSegment"
                   />
                   <div class="dq-donut__legend">
                     {{ t('quality.landing.covered') }} {{ coverage?.covered ?? 0 }} ·
                     {{ t('quality.landing.notCovered') }} {{ coverage?.notCovered ?? 0 }}
                   </div>
-                </button>
+                </div>
               </Col>
               <Col :xs="24" :lg="8">
-                <button class="dq-donut" data-testid="dq-healthy-card" type="button" @click="openCases">
+                <div class="dq-donut" data-testid="dq-healthy-card">
                   <div class="dq-donut__title">{{ t('quality.landing.healthyAssets') }}</div>
                   <div class="dq-donut__center">{{ t('quality.landing.entities', { count: health?.total ?? 0 }) }}</div>
                   <SmChart
@@ -499,15 +570,17 @@ onMounted(() => {
                     :series="healthSeries"
                     :empty="t('quality.landing.chartEmpty')"
                     :height="200"
+                    segment-clickable
+                    @segment-click="openHealthSegment"
                   />
                   <div class="dq-donut__legend">
                     {{ t('quality.landing.healthy') }} {{ health?.healthy ?? 0 }} ·
                     {{ t('quality.landing.unhealthy') }} {{ health?.unhealthy ?? 0 }}
                   </div>
-                </button>
+                </div>
               </Col>
               <Col :xs="24" :lg="8">
-                <button class="dq-donut" data-testid="dq-results-card" type="button" @click="openCases">
+                <div class="dq-donut" data-testid="dq-results-card">
                   <div class="dq-donut__title">{{ t('quality.landing.testResults') }}</div>
                   <div class="dq-donut__center">{{ t('quality.landing.tests', { count: results?.total ?? 0 }) }}</div>
                   <SmChart
@@ -516,13 +589,15 @@ onMounted(() => {
                     :series="resultsSeries"
                     :empty="t('quality.landing.chartEmpty')"
                     :height="200"
+                    segment-clickable
+                    @segment-click="openResultsSegment"
                   />
                   <div class="dq-donut__legend">
                     {{ t('quality.landing.success') }} {{ results?.success ?? 0 }} ·
                     {{ t('quality.landing.failed') }} {{ results?.failed ?? 0 }} ·
                     {{ t('quality.landing.aborted') }} {{ results?.aborted ?? 0 }}
                   </div>
-                </button>
+                </div>
               </Col>
             </Row>
           </Card>
@@ -633,7 +708,6 @@ onMounted(() => {
   border: 0;
   background: transparent;
   text-align: center;
-  cursor: pointer;
   color: inherit;
 }
 .dq-donut__title {

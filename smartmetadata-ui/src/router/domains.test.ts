@@ -16,6 +16,7 @@ describe('router domain scheme and guards (Stage 1)', () => {
     const cases: Record<string, string> = {
       '/login': 'auth',
       '/my-data': 'home',
+      '/explore': 'discover',
       '/search': 'discover',
       '/assets/table/foo': 'discover',
       '/insights': 'insights',

@@ -85,6 +85,8 @@ def http_request(
 def _fqn(ref: object) -> str:
     if isinstance(ref, dict):
         return str(ref.get("fullyQualifiedName") or ref.get("name") or "")
+    if isinstance(ref, str):
+        return ref
     return ""
 
 
@@ -126,11 +128,25 @@ def lineage_nodes(payload: dict) -> dict[str, dict]:
 
 
 def lineage_edges(payload: dict) -> list[dict]:
+    # The lineage API returns edge endpoints as entity-ID strings; resolve
+    # them to FQNs via the payload's own nodes (live-stage fix: the shipped
+    # _fqn() returns "" for string refs, so every edge-pair check failed).
+    # Only string endpoints are looked up: a dict endpoint keeps the
+    # original behavior (passed through; _fqn reads its fullyQualifiedName).
+    by_id: dict[str, str] = {}
+    for ref in [payload.get("entity")] + list(payload.get("nodes") or []):
+        if isinstance(ref, dict) and ref.get("id") and _fqn(ref):
+            by_id[ref["id"]] = _fqn(ref)
     edges: list[dict] = []
     for key in ("upstreamEdges", "downstreamEdges"):
         for edge in payload.get(key) or []:
             if isinstance(edge, dict):
-                edges.append(edge)
+                e = dict(edge)
+                for endpoint in ("fromEntity", "toEntity"):
+                    value = edge.get(endpoint)
+                    if isinstance(value, str):
+                        e[endpoint] = by_id.get(value, value)
+                edges.append(e)
     return edges
 
 
