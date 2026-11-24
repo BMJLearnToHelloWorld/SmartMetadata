@@ -66,7 +66,7 @@ watch(
 </script>
 
 <template>
-  <section class="preview__block" data-testid="explore-preview-lineage">
+  <section class="preview__block" data-testid="explore-preview-lineage-section">
     <Typography.Text type="secondary">{{ t('lineage.title') }}</Typography.Text>
     <Spin v-if="loading" size="small" data-testid="lineage-section-loading" />
     <template v-else-if="upstreamCount === 0 && downstreamCount === 0">

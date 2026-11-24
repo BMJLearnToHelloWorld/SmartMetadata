@@ -38,6 +38,8 @@ export const SOCKET_CHANNELS = {
   RDF_INDEX_JOB: 'rdfIndexJobStatus',
   DATA_INSIGHTS_JOB: 'dataInsightsJobStatus',
   CACHE_WARMUP_JOB: 'cacheWarmupJobStatus',
+  /** Pin SOCKET_EVENTS.BULK_ASSETS_CHANNEL (constants.ts:367): column bulk-update progress. */
+  BULK_ASSETS: 'bulkAssetsChannel',
 } as const;
 
 export type SocketChannel = (typeof SOCKET_CHANNELS)[keyof typeof SOCKET_CHANNELS];

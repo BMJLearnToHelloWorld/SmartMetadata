@@ -8,7 +8,10 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { computed, onMounted, ref, toValue, type ComputedRef, type MaybeRefOrGetter, type Ref } from 'vue';
-import { checkPermissionEntityResource, type UIPermission } from '@/api/permissions';
+import {
+  getExcludedIndexesBasedOnEntityTypeEditTagPermission,
+  type UIPermission,
+} from '@/api/permissions';
 import { TAG_ASSET_EDIT_PERMISSION_ENTITY_TYPES } from '@/catalog/tagAssets';
 import { usePermissionStore } from '@/stores/permissions';
 
@@ -80,21 +83,18 @@ export function useTagAssetPermissions(editTagsPermission: MaybeRefOrGetter<bool
       // PermissionsUtils.ts:55-70) — EditTags OR EditAll — not the
       // field-priority derived flags, which let an explicit EditTags
       // deny win over EditAll. The reads above re-assemble the
-      // bulk-loaded UIPermission the helper reads from.
+      // bulk-loaded UIPermission the helper reads from; the partition
+      // itself lives in the single shared implementation
+      // (api/permissions.ts getExcludedIndexesBasedOnEntityTypeEditTagPermission),
+      // so the 24-type list exists once.
       const permissions: UIPermission = {};
       for (const { resource, ops } of reads) {
         permissions[resource] = ops;
       }
-      const results = TAG_ASSET_EDIT_PERMISSION_ENTITY_TYPES.map((resource) => ({
-        resource,
-        granted: checkPermissionEntityResource('EditTags', resource, permissions, true),
-      }));
-      entitiesHavingPermission.value = results
-        .filter((result) => result.granted)
-        .map((result) => result.resource);
-      entitiesNotHavingPermission.value = results
-        .filter((result) => !result.granted)
-        .map((result) => result.resource);
+      const { entitiesHavingPermission: having, entitiesNotHavingPermission: notHaving } =
+        getExcludedIndexesBasedOnEntityTypeEditTagPermission(permissions);
+      entitiesHavingPermission.value = having;
+      entitiesNotHavingPermission.value = notHaving;
     } catch (err) {
       error.value = err;
       entitiesHavingPermission.value = [];

@@ -18,8 +18,8 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-// SmMarkdown renders synchronously; the modal editor applies its
-// content on a 0ms timer, so save assertions wait for a real tick.
+// The read-only preview applies its content on a 0ms timer, so
+// render assertions wait for a real tick.
 async function tick(ms = 10) {
   await new Promise((resolve) => setTimeout(resolve, ms));
   await nextTick();
@@ -30,9 +30,8 @@ function mountCell(propsOverrides: Record<string, unknown> = {}) {
     attachTo: document.body,
     props: {
       description: 'The email column',
-      entityName: 'email',
       hasEditAccess: true,
-      onSave: () => undefined,
+      onEdit: () => undefined,
       ...propsOverrides,
     },
     global: { plugins: [Antd, createTestI18n()] },
@@ -63,27 +62,17 @@ describe('ColumnDescriptionCell', () => {
     readOnly.unmount();
   });
 
-  it('saves the trimmed editor content through the modal', async () => {
-    const onSave = vi.fn(() => Promise.resolve());
-    const wrapper = mountCell({ onSave });
-    await wrapper.find('[data-testid="edit-column-description"]').trigger('click');
+  it('reports the edit click to the parent and owns no modal', async () => {
+    // Pin TableDescription: the cell only calls its onClick prop; the
+    // modal lives in the parent (AssetDetailPiece). The convergence
+    // lane removed the batch-2 cell-owned modal, so clicking the
+    // button must call onEdit and must not open any modal.
+    const onEdit = vi.fn();
+    const wrapper = mountCell({ onEdit });
     await tick();
-    (document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement).click();
-    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
-    // The editor stores HTML (same as EntityDescriptionCell); the
-    // caller persists it as the column description.
-    expect(onSave).toHaveBeenCalledWith('<p>The email column</p>');
-    wrapper.unmount();
-  });
-
-  it('keeps the editor open when the save throws', async () => {
-    const onSave = vi.fn(() => Promise.reject(new Error('save failed')));
-    const wrapper = mountCell({ onSave });
     await wrapper.find('[data-testid="edit-column-description"]').trigger('click');
-    await tick();
-    (document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement).click();
-    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
-    expect(document.querySelector('.ant-modal')).not.toBeNull();
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.ant-modal')).toBeNull();
     wrapper.unmount();
   });
 });

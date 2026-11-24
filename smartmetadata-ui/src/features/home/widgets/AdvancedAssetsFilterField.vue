@@ -17,14 +17,13 @@ import type { CuratedAssetsFormSelectedAssetsInfo } from './CuratedAssetsModal.v
  * `AdvancedAssetsFilterField.component.tsx`.
  *
  * Official renders the react-awesome-query-builder tree bound to the
- * AdvanceSearchProvider. This console has no advanced-search query builder
- * (see `catalog/advancedSearch.ts`: the only verified search surface is
- * GET /v1/search/query), so the field edits the same `queryFilter` JSON
- * as text, validated by the same `isValidElasticsearchQuery`, with the
- * same debounced count and Explore link. The builder tree itself is a
- * stage-D residual, recorded in the ADR — the saved value's shape is
- * unchanged, so a builder can take over this field without migrating
- * any saved config.
+ * AdvanceSearchProvider. This console's Explore builder
+ * (`features/explore/AdvancedSearchBuilder.vue`, `catalog/queryBuilder.ts`)
+ * covers the same tree for Explore; this home field keeps editing the same
+ * `queryFilter` JSON as text, validated by the same
+ * `isValidElasticsearchQuery`, with the same debounced count and Explore
+ * link. The saved value's shape is unchanged, so a builder can take over
+ * this field without migrating any saved config.
  *
  * ADR:2026-11-08-my-data-curated-assets
  */
