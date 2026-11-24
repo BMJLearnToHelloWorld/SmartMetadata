@@ -147,6 +147,21 @@ describe('MarketplaceDataProductsWidget (pin MarketplaceDataProductsWidget)', ()
     wrapper.unmount();
   });
 
+  it('contains the empty state in a positioned host inside the widget', async () => {
+    // Lane 0: the placeholder root is absolutely positioned, so without
+    // the pin's relative host wrapper both widgets' empty states anchor
+    // to the same ancestor up the page, stack, and cover the sidebar.
+    mockedSearchAssets.mockResolvedValue(searchPage([], 0));
+    const wrapper = mountWidget();
+    await flushPromises();
+    const empty = wrapper.find('[data-testid="marketplace-dp-empty-state"]');
+    expect(empty.exists()).toBe(true);
+    const host = empty.element.closest('.marketplace-widget__empty');
+    expect(host).not.toBeNull();
+    expect(wrapper.find('[data-testid="marketplace-dp-widget"]').element.contains(host as Element)).toBe(true);
+    wrapper.unmount();
+  });
+
   it('refreshes the list on demand', async () => {
     mockedSearchAssets.mockResolvedValue(searchPage([hit('1', 'Sales Metrics')], 1));
     const wrapper = mountWidget();

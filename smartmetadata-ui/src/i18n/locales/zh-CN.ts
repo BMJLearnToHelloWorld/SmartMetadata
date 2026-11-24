@@ -1901,7 +1901,7 @@ const zhCN = {
       serviceType: '按服务类型的资产',
       serviceTypeLead: '按服务类型的实时目录快照。',
       tier: '按层级的资产',
-      tierLead: '按层级分组的资产。目录没有层级标签时隐藏。',
+      tierLead: '按层级分组的资产。没有层级标签的资产计入“无层级”。',
       testStatus: '测试用例状态',
       testStatusLead: '关联测试用例的最新状态。',
       incidents: '事故状态',

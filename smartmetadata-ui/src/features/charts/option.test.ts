@@ -31,6 +31,26 @@ describe('buildChartOption', () => {
     expect(defaultOption.color).toEqual([...SM_CHART_COLORS]);
   });
 
+  it('hides donut slice name labels: pin pie.ts shows labels only when showLabels is passed, and then only the percentage — slice names live in the legend', () => {
+    const series = [
+      {
+        name: 'types',
+        points: [
+          { label: 'table', value: 3 },
+          { label: 'dashboard', value: 2 },
+          { label: 'chart', value: 1 },
+        ],
+      },
+    ];
+    const option = buildChartOption('donut', series);
+    const pie = (option.series as Array<Record<string, unknown>>)[0];
+    // ECharts' default outside name labels collide once a donut has 8+
+    // slices; the legend below carries the names instead.
+    expect(pie.label).toEqual({ show: false });
+    expect(pie.labelLine).toEqual({ show: false });
+    expect(option.legend).toEqual({ bottom: 0, type: 'scroll' });
+  });
+
   it('renders area as a smooth line with a filled area (pin CustomAreaChart)', () => {
     const option = buildChartOption('area', [
       { name: 'success', points: [{ label: '2023-11-14', value: 2 }] },

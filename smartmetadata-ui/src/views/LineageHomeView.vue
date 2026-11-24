@@ -155,10 +155,13 @@ watch(permissionsError, (value) => {
 });
 
 // The page buttons delegate to whichever graph is mounted, mirroring
-// pin's page-level actions (pin's LineageExportButton is a PNG export
-// of the drawn graph; the map has its own Export PNG button too). The
-// focused view keeps the canvas's modal; the platform view renders the
-// same modal at page level because the canvas is not mounted there.
+// pin's page-level actions: pin PlatformLineage renders Export PNG and
+// Lineage configuration exactly once, in the page header (a3012259ca
+// `pages/PlatformLineage/PlatformLineage.tsx:214,218-224`), and the map
+// itself has no export button — so the page toolbar is the single place
+// for both. The focused view keeps the canvas's modal; the platform view
+// renders the same modal at page level because the canvas is not mounted
+// there.
 const canvasRef = ref<{
   exportPng: () => Promise<void>;
   openConfig: () => void;
@@ -200,54 +203,56 @@ function openTarget(target: { entityType: string; fqn: string }): void {
 
 <template>
   <PageLayout :document-title="pageTitle" test-id="platform-lineage-page">
-    <PageHeader :header="title" :sub-header="t('lineage.platformLead')" learning-page-id="lineage" />
-    <div class="lineage-page__toolbar" data-testid="platform-lineage-toolbar">
-      <div data-testid="search-entity-select">
-        <LineageEntitySearch :placeholder="focused ? fqn : undefined" @select="openTarget" />
+    <div :class="focused ? undefined : 'lineage-page__platform'">
+      <PageHeader :header="title" :sub-header="t('lineage.platformLead')" learning-page-id="lineage" />
+      <div class="lineage-page__toolbar" data-testid="platform-lineage-toolbar">
+        <div data-testid="search-entity-select">
+          <LineageEntitySearch :placeholder="focused ? fqn : undefined" @select="openTarget" />
+        </div>
+        <div class="lineage-page__actions">
+          <Tooltip :title="t('lineage.exportAsPng')" placement="top">
+            <Button data-testid="export-button" :aria-label="t('lineage.exportAsPng')" @click="onExportPng">
+              {{ t('lineage.exportPng') }}
+            </Button>
+          </Tooltip>
+          <Tooltip :title="t('lineage.config')" placement="top">
+            <Button data-testid="lineage-config" :aria-label="t('lineage.config')" @click="onOpenConfig">
+              {{ t('lineage.config') }}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
-      <div class="lineage-page__actions">
-        <Tooltip :title="t('lineage.exportAsPng')" placement="top">
-          <Button data-testid="export-button" :aria-label="t('lineage.exportAsPng')" @click="onExportPng">
-            {{ t('lineage.exportPng') }}
-          </Button>
-        </Tooltip>
-        <Tooltip :title="t('lineage.config')" placement="top">
-          <Button data-testid="lineage-config" :aria-label="t('lineage.config')" @click="onOpenConfig">
-            {{ t('lineage.config') }}
-          </Button>
-        </Tooltip>
-      </div>
-    </div>
-    <Spin :spinning="permissionsLoading">
-      <LineageMap
+      <Spin :spinning="permissionsLoading" class="lineage-page__spin">
+        <LineageMap
+          v-if="!focused"
+          ref="mapRef"
+          :lens="sceneRequest.lens"
+          :band="sceneRequest.band"
+          :focus-fqn="sceneRequest.focusFqn"
+          :entity-type="sceneRequest.entityType"
+          :upstream-depth="lineageStore.config.upstreamDepth"
+          :downstream-depth="lineageStore.config.downstreamDepth"
+          @request-change="onSceneRequestChange"
+          @navigate="openSceneAsset"
+        />
+        <LineageCanvas
+          v-else
+          ref="canvasRef"
+          :entity-type="entityType"
+          :fqn="fqn"
+          :show-header="false"
+          :has-edit-access="canEditLineage"
+          variant="page"
+        />
+      </Spin>
+      <LineageConfigModal
         v-if="!focused"
-        ref="mapRef"
-        :lens="sceneRequest.lens"
-        :band="sceneRequest.band"
-        :focus-fqn="sceneRequest.focusFqn"
-        :entity-type="sceneRequest.entityType"
-        :upstream-depth="lineageStore.config.upstreamDepth"
-        :downstream-depth="lineageStore.config.downstreamDepth"
-        @request-change="onSceneRequestChange"
-        @navigate="openSceneAsset"
+        :open="configModalOpen"
+        :config="lineageStore.config"
+        @ok="onConfigSave"
+        @cancel="configModalOpen = false"
       />
-      <LineageCanvas
-        v-else
-        ref="canvasRef"
-        :entity-type="entityType"
-        :fqn="fqn"
-        :show-header="false"
-        :has-edit-access="canEditLineage"
-        variant="page"
-      />
-    </Spin>
-    <LineageConfigModal
-      v-if="!focused"
-      :open="configModalOpen"
-      :config="lineageStore.config"
-      @ok="onConfigSave"
-      @cancel="configModalOpen = false"
-    />
+    </div>
   </PageLayout>
 </template>
 
@@ -263,5 +268,35 @@ function openTarget(target: { entityType: string; fqn: string }): void {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+/* Platform map height (pin `pages/PlatformLineage/platform-lineage.less`):
+   pin gives the lineage container a viewport-derived height
+   (`calc(100vh - navbar - 98px)`) and the card inside is a flex column
+   whose map container flexes to fill it. The product's chrome above this
+   page is the 64px app header plus the 16px shell content margins, so
+   the platform wrapper takes the same shape: a fixed viewport height,
+   flex column, header + toolbar at natural height, the map flexing to
+   fill the rest. Focused (entity) view keeps the scrolling page: the
+   wrapper is a plain div there and the canvas is untouched. */
+.lineage-page__platform {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--sm-header-height) - 32px);
+  min-height: 0;
+}
+.lineage-page__platform .lineage-page__toolbar {
+  flex-shrink: 0;
+}
+.lineage-page__platform .lineage-page__spin {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.lineage-page__platform .lineage-page__spin :deep(.ant-spin-container) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 </style>

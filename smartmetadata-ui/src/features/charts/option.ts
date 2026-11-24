@@ -35,6 +35,13 @@ export function buildChartOption(
           type: 'pie',
           radius: ['42%', '68%'],
           avoidLabelOverlap: true,
+          // Pin pie.ts (ui-core-components charts/options/pie.ts):
+          // slice labels are off unless showLabels is passed, and when
+          // shown they render only the percentage — the slice names live
+          // in the legend. ECharts' default outside name labels collide
+          // once a donut has 8+ slices (DataAssets "Assets by type").
+          label: { show: false },
+          labelLine: { show: false },
           data: points.map((point) => ({ name: point.label, value: point.value })),
         },
       ],

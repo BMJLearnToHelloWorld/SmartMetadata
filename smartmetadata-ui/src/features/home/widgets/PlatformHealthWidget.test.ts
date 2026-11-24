@@ -50,7 +50,7 @@ function serviceSummary(id: string, health: string, entityType = 'databaseServic
   };
 }
 
-async function mountWidget() {
+async function mountWidget({ flush = true }: { flush?: boolean } = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -70,8 +70,10 @@ async function mountWidget() {
     props: { widgetKey: 'platformHealth' },
     global: { plugins: [router, Antd, createTestI18n()] },
   });
-  await flushPromises();
-  await flushPromises();
+  if (flush) {
+    await flushPromises();
+    await flushPromises();
+  }
   return { wrapper, router };
 }
 
@@ -94,6 +96,32 @@ describe('PlatformHealthWidget', () => {
     );
     expect(getServicesOverview).not.toHaveBeenCalled();
     expect(listIngestionPipelines).not.toHaveBeenCalled();
+  });
+
+  it('shows a neutral loading summary instead of "0/0 services failing" while the stats load', async () => {
+    // Live 2026-11-24 item 5: while the stats fetch is in flight the counts
+    // are still zero, so the header must not already read "0/0 services
+    // failing" — pin shows a summary skeleton instead (TopicCard).
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        [serviceSummary('a', 'failed')],
+        { databaseService: { failed: 1, partialSuccess: 0, success: 2, notRun: 0 } },
+        3,
+      ),
+    );
+    const { wrapper } = await mountWidget({ flush: false });
+    expect(
+      wrapper.find('[data-testid="home-widget-platform-health-summary-skeleton"]').exists(),
+    ).toBe(true);
+    expect(wrapper.find('[data-testid="home-widget-platform-health-summary"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.text()).not.toContain('0/0 services failing');
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.get('[data-testid="home-widget-platform-health-summary"]').text()).toContain(
+      '1/3 services failing',
+    );
   });
 
   it('renders failing rows, chips and the needs-attention status', async () => {

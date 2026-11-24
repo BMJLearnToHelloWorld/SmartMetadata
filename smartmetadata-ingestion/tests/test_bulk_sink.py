@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from smartmetadata_ingestion.errors import RestError
 from smartmetadata_ingestion.records import (
     ChartRecord,
@@ -571,3 +573,122 @@ def test_bulk_sink_sampled_topic_flush_uses_depth_order() -> None:
     # then the sampled topic single-writes (upsert + sample PUT).
     kinds = [call[0] for call in client.calls]
     assert kinds == ["bulk_schema", "bulk_table", "topic", "sample"]
+
+
+# -- Per-step failure logging (Lane 5: the live 87.8% run named no step) ----
+# Every failure the workflow counts gets one ERROR log line with the
+# record's label and the reason, so the run's "N failed" is auditable
+# from the log alone instead of only from the JSON report. ERROR level,
+# so the lines show with the default logging setup.
+
+_SINK_LOGGER = "smartmetadata_ingestion.sinks.metadata_rest"
+
+
+def _sink_error_messages(caplog) -> list[str]:
+    return [
+        record.message
+        for record in caplog.records
+        if record.name == _SINK_LOGGER and record.levelno == logging.ERROR
+    ]
+
+
+def test_bulk_sink_empty_body_flush_logs_each_failure_with_label(caplog) -> None:
+    # The live shape: an empty-body 200 (RestClient.request() -> None)
+    # fails closed. The log must name both payloads and the response
+    # shape (NoneType), and the counts must not change.
+    client = NoListBulkResponseClient(None)
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    for name in ("t1", "t2"):
+        sink.write(TableRecord(name=name, database_schema="svc.db.public", columns=[]))
+    with caplog.at_level(logging.ERROR, logger=_SINK_LOGGER):
+        result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {}
+    assert [f.label for f in result.failed] == [
+        "table:svc.db.public.t1",
+        "table:svc.db.public.t2",
+    ]
+    errors = _sink_error_messages(caplog)
+    assert any("failed closed" in message and "NoneType" in message for message in errors)
+    assert any("table:svc.db.public.t1" in message for message in errors)
+    assert any("table:svc.db.public.t2" in message for message in errors)
+
+
+def test_bulk_sink_listless_dict_flush_logs_response_shape(caplog) -> None:
+    client = NoListBulkResponseClient({})
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
+    with caplog.at_level(logging.ERROR, logger=_SINK_LOGGER):
+        result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {}
+    assert [f.label for f in result.failed] == ["table:svc.db.public.t1"]
+    errors = _sink_error_messages(caplog)
+    assert any(
+        "failed closed" in message and "dict" in message and "{}" in message for message in errors
+    )
+    assert any("table:svc.db.public.t1" in message for message in errors)
+
+
+def test_bulk_sink_group_refusal_logs_group_and_each_failure(caplog) -> None:
+    # A whole-group 400: one line naming the group and the refusal, then
+    # one line per payload with its label.
+    client = BulkResultClient(fail_kinds=frozenset({"table"}))
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    for name in ("t1", "t2"):
+        sink.write(TableRecord(name=name, database_schema="svc.db.public", columns=[]))
+    with caplog.at_level(logging.ERROR, logger=_SINK_LOGGER):
+        result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {}
+    assert [f.label for f in result.failed] == [
+        "table:svc.db.public.t1",
+        "table:svc.db.public.t2",
+    ]
+    errors = _sink_error_messages(caplog)
+    assert any(
+        "flush refused" in message and "table" in message and "2 payload" in message
+        for message in errors
+    )
+    assert any("table:svc.db.public.t1" in message for message in errors)
+    assert any("table:svc.db.public.t2" in message for message in errors)
+
+
+def test_bulk_sink_successful_flush_logs_group_summary(caplog) -> None:
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    for name in ("t1", "t2"):
+        sink.write(TableRecord(name=name, database_schema="svc.db.public", columns=[]))
+    with caplog.at_level(logging.INFO, logger=_SINK_LOGGER):
+        result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {"table": 2}
+    assert result.failed == []
+    summaries = [
+        record.message
+        for record in caplog.records
+        if record.name == _SINK_LOGGER and record.levelno == logging.INFO
+    ]
+    assert summaries == ["bulk table flush: 2 payload(s), 2 succeeded, 0 failed"]
+
+
+def test_bulk_sink_partial_flush_logs_only_failed_record(caplog) -> None:
+    client = BulkResultClient(fail_names=frozenset({"orders_v"}))
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    for name in ("orders", "orders_v", "items"):
+        sink.write(TableRecord(name=name, database_schema="svc.db.public", columns=[]))
+    with caplog.at_level(logging.INFO, logger=_SINK_LOGGER):
+        result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {"table": 2}
+    assert [f.label for f in result.failed] == ["table:svc.db.public.orders_v"]
+    errors = _sink_error_messages(caplog)
+    assert len(errors) == 1
+    assert "table:svc.db.public.orders_v" in errors[0]
+    assert "bad orders_v" in errors[0]
+    summaries = [
+        record.message
+        for record in caplog.records
+        if record.name == _SINK_LOGGER and record.levelno == logging.INFO
+    ]
+    assert summaries == ["bulk table flush: 3 payload(s), 2 succeeded, 1 failed"]
