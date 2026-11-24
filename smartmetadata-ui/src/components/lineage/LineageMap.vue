@@ -993,6 +993,16 @@ const nodeTypes = {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  /* Floor so the graph can never collapse to 0 again (live 2026-11-25:
+     the flex chain above broke and the canvas went 0px). 320px is
+     derived, not restored: the normal canvas height is
+     100vh − 64px (header) − 32px (shell) − ~106px (toolbar) ≈ 400px
+     even at a 600px viewport, so 320px never binds while the chain
+     works; it is ~2 service-node rows, enough to keep the graph usable
+     if the chain ever breaks again. Pin itself has no floor
+     (Lineage.component.tsx:46 is flex-1 min-h-0); this is a safety net
+     only, and it must stay below the smallest normal height. */
+  min-height: 320px;
 }
 .lineage-map__canvas :deep(.vue-flow) {
   flex: 1 1 auto;
