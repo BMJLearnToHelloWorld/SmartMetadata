@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -53,7 +55,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _configure_logging() -> None:
+    """Apply LOG_LEVEL to the CLI process, if set.
+
+    The library never configures logging, so without this an operator's
+    LOG_LEVEL=INFO is silently ignored and INFO lines (e.g. per-group
+    flush summaries) never appear. An unknown level warns and keeps the
+    default (WARNING): a typo must not silence the run's ERROR lines.
+    """
+    level_name = os.environ.get("LOG_LEVEL", "").strip().upper()
+    if not level_name:
+        return
+    level = getattr(logging, level_name, None)
+    if not isinstance(level, int):
+        print(
+            f"warning: unknown LOG_LEVEL {level_name!r}; using WARNING",
+            file=sys.stderr,
+        )
+        return
+    # Set the level directly: logging.basicConfig() is a no-op once the
+    # root logger already has handlers, so it alone would leave the
+    # level unchanged in a test harness. Only add the stderr handler
+    # when the process has none (the real CLI path).
+    root = logging.getLogger()
+    root.setLevel(level)
+    if not root.handlers:
+        logging.basicConfig(level=level)
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
