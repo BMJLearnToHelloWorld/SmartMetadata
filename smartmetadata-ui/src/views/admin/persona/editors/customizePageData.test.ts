@@ -223,8 +223,9 @@ describe('customizePageData dispatch', () => {
   it('holds exactly the batch-6 flipped mount tabs in the registry (Batch 6)', () => {
     // D-2 batch 6: governance r2 merged its 4 flipped tabs, asset-schema
     // r2 merged its 8 flipped tabs, and the asset-overview lane merged its
-    // 6 flipped tabs into the registry — 18 entries total (Container carries
-    // both 'children' and 'schema').
+    // 6 flipped tabs into the registry; the B2-G6 Tag flip adds
+    // Tag/overview — 19 entries total (Container carries both 'children'
+    // and 'schema').
     expect(UNCONDITIONAL_MOUNT_TABS).toEqual({
       APICollection: ['apiEndpoint'],
       APIEndpoint: ['schema'],
@@ -242,6 +243,7 @@ describe('customizePageData dispatch', () => {
       Pipeline: ['tasks'],
       SearchIndex: ['fields'],
       StoredProcedure: ['code'],
+      Tag: ['overview'],
       Topic: ['schema'],
     });
     expect(isUnconditionalMountTab('APICollection', 'apiEndpoint')).toBe(true);
@@ -261,6 +263,7 @@ describe('customizePageData dispatch', () => {
     expect(isUnconditionalMountTab('Pipeline', 'tasks')).toBe(true);
     expect(isUnconditionalMountTab('SearchIndex', 'fields')).toBe(true);
     expect(isUnconditionalMountTab('StoredProcedure', 'code')).toBe(true);
+    expect(isUnconditionalMountTab('Tag', 'overview')).toBe(true);
     expect(isUnconditionalMountTab('Topic', 'schema')).toBe(true);
     // Table/schema stays unflipped: pin's default layout carries a
     // TableSharding widget with no product cell or data path (§3.1).
@@ -340,17 +343,18 @@ describe('customizePageData dispatch', () => {
   it('lists exactly the batch-6 flipped mount tabs as unconditional', () => {
     // D-2 batch 6 governance lane: one tab at a time, only tabs whose
     // widgets are all ready and whose default-panel equivalence is
-    // verified against pin. Tag/overview and Metric/overview are NOT
-    // listed: Tag's disabled toggle lives only in its default panel
-    // (pin puts it in the page header), and Metric's default layout
-    // carries a DataProducts widget its view chain never dispatches
-    // while its default panel's owners/domains rows are outside the
-    // grid (pin shows them in the page header).
+    // verified against pin. Tag/overview IS listed since B2-G6: its
+    // disabled toggle moved into the classification tags table per pin
+    // (ClassificationUtils.tsx), unblocking the flip. Metric/overview
+    // is NOT listed: its default layout carries a DataProducts widget
+    // its view chain never dispatches while its default panel's
+    // owners/domains rows are outside the grid (pin shows them in the
+    // page header).
     expect(isUnconditionalMountTab('Glossary', 'terms')).toBe(true);
     expect(isUnconditionalMountTab('GlossaryTerm', 'overview')).toBe(true);
     expect(isUnconditionalMountTab('Domain', 'documentation')).toBe(true);
     expect(isUnconditionalMountTab('DataProduct', 'documentation')).toBe(true);
-    expect(isUnconditionalMountTab('Tag', 'overview')).toBe(false);
+    expect(isUnconditionalMountTab('Tag', 'overview')).toBe(true);
     expect(isUnconditionalMountTab('Metric', 'overview')).toBe(false);
     expect(isUnconditionalMountTab('Glossary', 'overview')).toBe(false);
     expect(isUnconditionalMountTab('Domain', 'assets')).toBe(false);
