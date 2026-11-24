@@ -1544,7 +1544,6 @@ const enUS = {
     unwired: 'Detail page not wired for this type',
     matches: 'Matches',
     matchIn: '{count} in {field}',
-    tools: 'Tools',
     export: 'Export',
     exportScope: 'Export Scope',
     exportDescription: 'Export your filtered search results as a CSV report.',

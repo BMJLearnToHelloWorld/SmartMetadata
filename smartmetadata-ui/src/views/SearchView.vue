@@ -64,9 +64,9 @@ import {
   shouldPrefetchCard,
 } from '@/catalog/exploreCard';
 import { entityIconFor } from '@/catalog/entityIcons';
-import { CHIP_FACET_IDS, NULL_OPTION_KEY, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { NULL_OPTION_KEY, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { buildRankingDetails, type RankingDetails } from '@/catalog/rankingDetails';
-import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
+import { hitLocation } from '@/catalog/searchHits';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
   DEFAULT_EXPLORE_PAGE_SIZE,
