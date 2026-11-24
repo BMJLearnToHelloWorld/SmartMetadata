@@ -72,3 +72,71 @@ describe('ExplorePreview Generated-tag rendering', () => {
     wrapper.unmount();
   });
 });
+
+describe('ExplorePreview D26 governance detail navigation', () => {
+  function governanceHit(entityType: string, id?: string): SearchHit {
+    return {
+      name: 'term',
+      fullyQualifiedName: 'biz.term',
+      entityType,
+      owners: [],
+      tags: [],
+      domains: [],
+      dataProducts: [],
+      ...(id ? { id } : {}),
+    };
+  }
+
+  it.each(['glossaryTerm', 'tag', 'dataProduct'])(
+    'opens a %s hit instead of showing the unwired marker',
+    (entityType) => {
+      const hit = governanceHit(entityType, `${entityType}-1`);
+      const wrapper = mountPreview(hit);
+      expect(wrapper.find('[data-testid="explore-preview-open"]').exists()).toBe(true);
+      expect(wrapper.text()).not.toContain('Detail page not wired for this type');
+      wrapper.find('[data-testid="explore-preview-open"]').trigger('click');
+      expect(wrapper.emitted('open')).toBeTruthy();
+      expect(wrapper.emitted('open')?.[0]).toEqual([hit]);
+      wrapper.unmount();
+    },
+  );
+
+  it('keeps the unwired marker for a governance hit without an id', () => {
+    const wrapper = mountPreview(governanceHit('tag'));
+    expect(wrapper.find('[data-testid="explore-preview-open"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Detail page not wired for this type');
+    wrapper.unmount();
+  });
+});
+
+describe('ExplorePreview D25 lineage entry', () => {
+  it('emits openLineage for a lineage-capable hit', async () => {
+    const hit = hitWith(undefined);
+    const wrapper = mountPreview(hit);
+    const lineage = wrapper.find('[data-testid="explore-preview-lineage"]');
+    expect(lineage.exists()).toBe(true);
+    expect(lineage.text()).toContain('Open lineage');
+    await lineage.trigger('click');
+    expect(wrapper.emitted('openLineage')).toBeTruthy();
+    expect(wrapper.emitted('openLineage')?.[0]).toEqual([hit]);
+    wrapper.unmount();
+  });
+
+  it.each(['glossaryTerm', 'tag', 'dataProduct'])(
+    'shows no lineage entry for a %s hit',
+    (entityType) => {
+      const wrapper = mountPreview({
+        name: 'term',
+        fullyQualifiedName: 'biz.term',
+        entityType,
+        owners: [],
+        tags: [],
+        domains: [],
+        dataProducts: [],
+        id: `${entityType}-1`,
+      });
+      expect(wrapper.find('[data-testid="explore-preview-lineage"]').exists()).toBe(false);
+      wrapper.unmount();
+    },
+  );
+});

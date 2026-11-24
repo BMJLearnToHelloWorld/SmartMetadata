@@ -216,6 +216,13 @@ export function sortField(sort: SearchSort): string {
 export interface SearchRouteOptions {
   sort?: SearchSort;
   estate?: string;
+  /**
+   * Explore tab index (D13): the global search bar submits with the
+   * scope the user picked (`tab=<index>`), and pin always forces
+   * `sort=_score` on that submit. Empty means the all-tab — no `tab`
+   * param, exactly as pin navigates with an empty tab for All.
+   */
+  tab?: string;
 }
 
 export function searchRouteQuery(
@@ -245,6 +252,10 @@ export function searchRouteQuery(
   if (estate) {
     next.estate = estate;
   }
+  const tab = options.tab ?? '';
+  if (tab) {
+    next.tab = tab;
+  }
   return next;
 }
 
@@ -261,6 +272,7 @@ export function searchRouteFromLocation(
     {
       sort: overrides.sort ?? sortFromQuery(query),
       estate: overrides.estate ?? estateFromQuery(query),
+      tab: overrides.tab,
     },
   );
 }

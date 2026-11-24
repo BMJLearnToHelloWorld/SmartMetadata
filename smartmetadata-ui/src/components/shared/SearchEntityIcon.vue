@@ -1,8 +1,8 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Entity-type glyph for the Search settings header and cards. The
-  official glyphs are per-entity colored SVGs, which have no product
+  Entity-type glyph for the Search settings header and cards and the
+  Explore vertical tab list. The official glyphs are per-entity colored SVGs, which have no product
   equivalent; these antd glyphs are visual-direction approximations
   with the same slot and sizing contract (55px header, 40px card).
   The mapping is data, keyed by entity type; unknown types fall back
@@ -27,6 +27,7 @@ import {
   FundOutlined,
   GatewayOutlined,
   GlobalOutlined,
+  LineChartOutlined,
   PartitionOutlined,
   ProfileOutlined,
   SearchOutlined,
@@ -47,6 +48,7 @@ const ICONS: Record<string, Component> = {
   topic: GatewayOutlined,
   glossaryTerm: BookOutlined,
   apiEndpoint: ApiOutlined,
+  apiCollection: ApiOutlined,
   dashboardDataModel: PartitionOutlined,
   storedProcedure: CodeOutlined,
   container: CloudOutlined,
@@ -64,6 +66,7 @@ const ICONS: Record<string, Component> = {
   spreadsheet: TableOutlined,
   worksheet: ProfileOutlined,
   tableColumn: ColumnHeightOutlined,
+  chart: LineChartOutlined,
 };
 
 const icon = ICONS[props.entityType] ?? FileOutlined;
