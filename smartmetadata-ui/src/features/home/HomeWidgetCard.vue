@@ -153,8 +153,19 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
         </span>
         <span class="home-widget-card__title-block">
           <span class="home-widget-card__title-text">{{ title }}</span>
+          <!-- Pin TopicCard/TopicSummary: while the fetch is in flight the
+               counts are still zero, so a summary read from them would state
+               something false ("0/0 services failing") and then be replaced
+               once the data lands. A skeleton says "not yet" instead. -->
           <span
-            v-if="summary"
+            v-if="isLoading && summary"
+            :data-testid="`${testId}-summary-skeleton`"
+            class="home-widget-card__summary-skeleton"
+          >
+            <Skeleton :paragraph="false" :title="{ width: '70%' }" active />
+          </span>
+          <span
+            v-else-if="summary"
             :data-testid="`${testId}-summary`"
             class="home-widget-card__summary"
           >
@@ -344,6 +355,12 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
   color: var(--sm-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.home-widget-card__summary-skeleton {
+  display: block;
+}
+.home-widget-card__summary-skeleton :deep(.ant-skeleton-title) {
+  margin: 0;
 }
 .home-widget-card__status {
   flex: none;
