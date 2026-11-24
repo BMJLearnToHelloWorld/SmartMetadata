@@ -7,10 +7,8 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Empty, Tag, Typography } from 'ant-design-vue';
 import { detailLocationForHit, isLineageCapable, parentTableLocation } from '@/catalog/entityRoutes';
-import { hasLineageSection } from '@/catalog/lineageSection';
 import { entityTypeColor } from '@/catalog/searchHits';
 import { getUsageData } from '@/catalog/usagePercentile';
-import LineageSection from './LineageSection.vue';
 import type { SearchHit } from '@/types/api';
 
 const props = defineProps<{
@@ -111,16 +109,6 @@ const overviewRows = computed(() => {
           </template>
         </dl>
       </section>
-      <!-- Q-TAB-4 item 1 (host lane): pin DataAssetSummaryPanelV1.tsx:
-           628-634 mounts LineageSection after overview, gated by
-           hasLineageTab (the 11-type set in catalog/lineageSection.ts).
-           The lineage tab itself is a later lane's mount; this section
-           is the panel's lineage entry point. -->
-      <LineageSection
-        v-if="hasLineageSection(hit.entityType)"
-        :entity-type="hit.entityType"
-        :fqn="hit.fullyQualifiedName"
-      />
       <section class="preview__block" data-testid="explore-preview-owners">
         <Typography.Text type="secondary">{{ t('asset.fields.owners') }}</Typography.Text>
         <Typography.Paragraph v-if="!hit.owners.length">{{ t('explore.noOwners') }}</Typography.Paragraph>
