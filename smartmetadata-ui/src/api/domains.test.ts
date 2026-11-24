@@ -14,8 +14,10 @@ import {
   createDomain,
   getDomainByName,
   listDomainAssets,
+  listDomainChildren,
   listDomains,
   removeDomainAssets,
+  searchDomains,
 } from './domains';
 
 function lastFetch(): { url: string; init?: RequestInit } {
@@ -169,6 +171,95 @@ describe('domains API', () => {
     expect(lastFetch().url).toContain('/api/v1/domains/finance/assets/add');
     expect(lastFetch().init?.method).toBe('PUT');
     expect(result.pendingApproval).toBe(1);
+  });
+
+  it('searches domains from GET /v1/search/query with index=domain', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        expect(url).toContain('/api/v1/search/query');
+        expect(url).toContain('index=domain');
+        expect(url).toContain('q=market');
+        return new Response(
+          JSON.stringify({
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _index: 'domain_search_index',
+                  _id: 'd1',
+                  _source: {
+                    id: 'd1',
+                    name: 'Marketing',
+                    fullyQualifiedName: 'Marketing',
+                    description: 'Growth',
+                    domainType: 'Consumer-aligned',
+                    childrenCount: 2,
+                  },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const page = await searchDomains('market');
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]?.name).toBe('Marketing');
+    expect(page.data[0]?.domainType).toBe('Consumer-aligned');
+    expect(page.data[0]?.childrenCount).toBe(2);
+    expect(page.total).toBe(1);
+  });
+
+  it('lists hierarchy roots from GET /v1/domains/hierarchy without a parent', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        expect(url).toContain('/api/v1/domains/hierarchy');
+        expect(url).toContain('fields=parent');
+        expect(url).not.toContain('directChildrenOf');
+        return new Response(
+          JSON.stringify({
+            data: [
+              { id: 'd1', name: 'Marketing', domainType: 'Consumer-aligned', childrenCount: 1 },
+              { id: 'd2', name: 'Sales', domainType: 'Source-aligned' },
+            ],
+            paging: { total: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const page = await listDomainChildren(undefined, 0, 15);
+    expect(page.data).toHaveLength(2);
+    expect(page.data[0]?.childrenCount).toBe(1);
+    expect(page.total).toBe(2);
+  });
+
+  it('lists direct children with directChildrenOf for a parent fqn', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        expect(url).toContain('/api/v1/domains/hierarchy');
+        expect(url).toContain('directChildrenOf=Marketing');
+        expect(url).toContain('offset=15');
+        return new Response(
+          JSON.stringify({
+            data: [{ id: 'd3', name: 'SEO', fullyQualifiedName: 'Marketing.SEO', domainType: 'Consumer-aligned' }],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const page = await listDomainChildren('Marketing', 15, 15);
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]?.fullyQualifiedName).toBe('Marketing.SEO');
+    expect(page.total).toBe(1);
   });
 
   it('removes assets with PUT /v1/domains/{fqn}/assets/remove', async () => {

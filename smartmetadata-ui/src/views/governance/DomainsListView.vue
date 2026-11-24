@@ -3,13 +3,13 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Form, Input, Select, Segmented, message} from 'ant-design-vue';
-import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue';
+import {Button, Form, Input, Select, Segmented, Typography, message} from 'ant-design-vue';
+import { AppstoreOutlined, ApartmentOutlined, TableOutlined } from '@ant-design/icons-vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { createDomain, deleteDomain, listDomains } from '@/api/domains';
+import { createDomain, deleteDomain, listDomains, searchDomains } from '@/api/domains';
 import { usePersonaViewMode } from '@/composables/usePersonaViewMode';
 import EntityCardGrid, { type EntityCardItem } from '@/features/crud/EntityCardGrid.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -29,6 +29,7 @@ import type { EntityListColumn } from '@/features/crud/types';
 import { usePermissionStore } from '@/stores/permissions';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
 import type { PageViewMode } from '@/types/persona';
+import DomainTreeView from './DomainTreeView.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -56,8 +57,47 @@ const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.parent'), key: 'parent' },
 ]);
 
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
+const hasNext = computed(() =>
+  isSearching.value
+    ? total.value !== undefined && searchOffset.value + DEFAULT_PAGE_SIZE < total.value
+    : canGoNext(pageAfter.value),
+);
+const hasPrev = computed(() => (isSearching.value ? searchOffset.value > 0 : canGoPrev(cursor.value)));
+
+// G2 search (pin DomainListPage useListSearchInput, 300 ms debounce —
+// same shape as G3's DataProductsListView search): a query switches the
+// list to the ES domain index (pin SearchIndex.DOMAIN); clearing it
+// restores the REST list from the first page. Stale responses are
+// discarded by generation.
+const searchInput = ref('');
+const debouncedSearch = ref('');
+const isSearching = computed(() => debouncedSearch.value.trim().length > 0);
+const searchOffset = ref(0);
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let loadGeneration = 0;
+
+// G2 bulk delete (pin DomainListPage useDelete, same shape as G3):
+// multi-select in the table view only — pin's card view has no
+// selection either. The selection is ids so it survives a reload; it
+// clears on view change, on a new search, and on a fully successful
+// bulk delete.
+const selectedKeys = ref<string[]>([]);
+const bulkDeleting = ref(false);
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedKeys.value,
+  onChange: (keys: unknown) => {
+    selectedKeys.value = (keys as string[]).filter((key) => typeof key === 'string');
+  },
+}));
+
+function clearSelection(): void {
+  selectedKeys.value = [];
+}
+
+// G2 tree refresh (pin DomainListPage refreshAllDomains): the tree loads
+// its own hierarchy, so create/delete bumps this token and the tree
+// reloads its roots while it is mounted.
+const treeRefreshToken = ref(0);
 
 /**
  * P1 dual line (pin DomainListPage.tsx:153: canCreateDomain =
@@ -80,19 +120,16 @@ async function checkPermission(): Promise<void> {
 // B-10: the persona view-mode chain, wired the same way as
 // LearningResourcesView — the stored view is the default, the local
 // selection overrides it, and a change resets paging and reloads
-// (pin `DomainListPage` + `usePersonaViewMode`). The toggle offers
-// table and card only: pin's third view, tree, needs the domain
-// hierarchy, which the paginated flat list API does not provide, so
-// it stays a named residual rather than a broken third button; a
-// stored 'tree' still resolves to 'tree' through the resolver (the
-// page declares it), but the toggle offers only table/card, so the
-// table renders for any non-card view.
+// (pin `DomainListPage` + `usePersonaViewMode`). G2 adds pin's third
+// view, tree, to the toggle (ApartmentOutlined); the tree renders its
+// own hierarchy in the #content slot.
 const personaView = usePersonaViewMode('domains');
 const selectedView = ref<PageViewMode | null>(null);
 const view = computed<PageViewMode>(() => selectedView.value ?? personaView.value);
 const viewOptions = [
   { value: 'table', label: () => h(TableOutlined) },
   { value: 'card', label: () => h(AppstoreOutlined) },
+  { value: 'tree', label: () => h(ApartmentOutlined) },
 ];
 const cardItems = computed<EntityCardItem[]>(() =>
   domains.value.map((domain) => ({
@@ -107,34 +144,98 @@ const cardItems = computed<EntityCardItem[]>(() =>
 function handleViewChange(next: PageViewMode): void {
   selectedView.value = next;
   cursor.value = createCursorPager();
+  searchOffset.value = 0;
+  clearSelection();
   void load();
 }
 
 async function load(): Promise<void> {
+  const generation = ++loadGeneration;
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listDomains({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
-    domains.value = page.data;
-    total.value = page.total;
-    pageAfter.value = page.after;
+    if (isSearching.value) {
+      const page = await searchDomains(
+        debouncedSearch.value,
+        searchOffset.value,
+        DEFAULT_PAGE_SIZE,
+      );
+      if (generation !== loadGeneration) {
+        return;
+      }
+      domains.value = page.data;
+      total.value = page.total;
+      pageAfter.value = undefined;
+    } else {
+      const page = await listDomains({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
+      if (generation !== loadGeneration) {
+        return;
+      }
+      domains.value = page.data;
+      total.value = page.total;
+      pageAfter.value = page.after;
+    }
   } catch (error) {
+    if (generation !== loadGeneration) {
+      return;
+    }
     domains.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
-    loading.value = false;
+    if (generation === loadGeneration) {
+      loading.value = false;
+    }
   }
 }
 
+function applySearch(): void {
+  searchTimer = undefined;
+  const query = searchInput.value.trim();
+  if (query.length === 0) {
+    debouncedSearch.value = '';
+    searchOffset.value = 0;
+    cursor.value = createCursorPager();
+    clearSelection();
+    void load();
+    return;
+  }
+  debouncedSearch.value = query;
+  searchOffset.value = 0;
+  cursor.value = createCursorPager();
+  clearSelection();
+  void load();
+}
+
+function onSearchInput(value: string): void {
+  searchInput.value = value;
+  if (searchTimer !== undefined) {
+    clearTimeout(searchTimer);
+  }
+  searchTimer = setTimeout(applySearch, 300);
+}
+
+function onSearchEnter(): void {
+  if (searchTimer !== undefined) {
+    clearTimeout(searchTimer);
+  }
+  applySearch();
+}
+
 function onNext(): void {
-  if (pageAfter.value) {
+  if (isSearching.value) {
+    searchOffset.value += DEFAULT_PAGE_SIZE;
+  } else if (pageAfter.value) {
     cursor.value = goNext(cursor.value, pageAfter.value);
   }
   void load();
 }
 
 function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
+  if (isSearching.value) {
+    searchOffset.value = Math.max(0, searchOffset.value - DEFAULT_PAGE_SIZE);
+  } else {
+    cursor.value = goPrev(cursor.value);
+  }
   void load();
 }
 
@@ -150,6 +251,7 @@ async function onCreate(): Promise<void> {
     });
     createOpen.value = false;
     message.success(t('governance.domains.created', { name: created.name }));
+    treeRefreshToken.value += 1;
     await load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));
@@ -183,11 +285,65 @@ async function onDelete(record: Domain): Promise<void> {
   try {
     await deleteDomain(record.id, { hardDelete: true, recursive: true });
     message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    treeRefreshToken.value += 1;
     await load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
+
+// Pin useDelete outcome shape: Promise.allSettled over the selection,
+// success toast + clear selection + reload only when every delete
+// succeeded; on partial failure the failed rows stay selected (so they
+// can be retried) and the error names them.
+async function onBulkDelete(): Promise<void> {
+  const ids = [...selectedKeys.value];
+  if (ids.length === 0 || bulkDeleting.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('governance.domains.bulkDeleteTitle'),
+    content: t('governance.domains.bulkDeleteConfirm', { count: ids.length }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  bulkDeleting.value = true;
+  try {
+    const results = await Promise.allSettled(
+      ids.map((id) => deleteDomain(id, { hardDelete: true, recursive: true })),
+    );
+    const failedNames = results.flatMap((result, index) => {
+      if (result.status === 'fulfilled') {
+        return [];
+      }
+      const domain = domains.value.find((item) => item.id === ids[index]);
+      return [domain ? domain.displayName || domain.name : ids[index] ?? ''];
+    });
+    if (failedNames.length === 0) {
+      message.success(t('governance.domains.bulkDeleted', { count: ids.length }));
+      clearSelection();
+      treeRefreshToken.value += 1;
+    } else {
+      message.error(t('governance.domains.bulkDeleteFailed', { names: failedNames.join(', ') }));
+    }
+    await load();
+    if (failedNames.length > 0) {
+      const remaining = new Set(domains.value.map((domain) => domain.id));
+      selectedKeys.value = selectedKeys.value.filter((id) => remaining.has(id));
+    }
+  } finally {
+    bulkDeleting.value = false;
+  }
+}
+
+onBeforeUnmount(() => {
+  if (searchTimer !== undefined) {
+    clearTimeout(searchTimer);
+  }
+});
 
 onMounted(() => {
   void checkPermission();
@@ -196,6 +352,27 @@ onMounted(() => {
 </script>
 
 <template>
+  <div
+    v-if="selectedKeys.length > 0"
+    data-testid="domains-bulk-bar"
+    class="domains-bulk-bar"
+  >
+    <Typography.Text strong>
+      {{ t('governance.domains.selectedCount', { count: selectedKeys.length }) }}
+    </Typography.Text>
+    <Button data-testid="domains-clear-selection" type="link" @click="clearSelection">
+      {{ t('crud.clear') }}
+    </Button>
+    <span class="domains-bulk-bar__spacer" />
+    <Button
+      danger
+      data-testid="domains-bulk-delete"
+      :loading="bulkDeleting"
+      @click="onBulkDelete"
+    >
+      {{ t('crud.delete') }}
+    </Button>
+  </div>
   <EntityListShell
     :title="t('governance.domains.title')"
     :lead="t('governance.domains.lead')"
@@ -206,9 +383,15 @@ onMounted(() => {
     table-test-id="domains-table"
     show-row-actions
     show-edit-action
+    show-search
+    :search-value="searchInput"
+    :search-placeholder="t('governance.domains.searchPlaceholder')"
+    :row-selection="rowSelection"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
+    @update:search-value="onSearchInput"
+    @search="onSearchEnter"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
@@ -234,6 +417,13 @@ onMounted(() => {
         test-id="domains-cards"
         @open="(id) => openDomain(domains.find((domain) => domain.id === id) as Domain)"
         @delete="(id) => onDelete(domains.find((domain) => domain.id === id) as Domain)"
+      />
+    </template>
+    <template v-if="view === 'tree'" #content>
+      <DomainTreeView
+        :search-query="debouncedSearch"
+        :refresh-token="treeRefreshToken"
+        @open="(domain) => openDomain(domain)"
       />
     </template>
     <template #bodyCell="{ column, record }">
@@ -287,3 +477,19 @@ onMounted(() => {
     </Form>
   </FormModal>
 </template>
+
+<style scoped>
+.domains-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--sm-color-primary-bg);
+  border-radius: 8px;
+}
+
+.domains-bulk-bar__spacer {
+  flex: 1;
+}
+</style>
