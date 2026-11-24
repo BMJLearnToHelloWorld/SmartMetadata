@@ -56,6 +56,28 @@ describe('HomeWidgetCard', () => {
     expect(wrapper.text()).not.toContain('No Recent Activity');
   });
 
+  it('shows a summary skeleton instead of the zero-counts summary while loading', () => {
+    // Pin TopicCard/TopicSummary: counts start at zero, so a summary read
+    // from them during load would state something false ("0/0 services
+    // failing") and then be replaced once the data lands.
+    const wrapper = mountCard({ isLoading: true, summary: '0/3 services failing' });
+    expect(wrapper.find('[data-testid="home-widget-activity-summary-skeleton"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="home-widget-activity-summary"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('0/3 services failing');
+  });
+
+  it('shows the summary text once loaded', () => {
+    const wrapper = mountCard({ summary: '1/3 services failing' });
+    expect(wrapper.find('[data-testid="home-widget-activity-summary-skeleton"]').exists()).toBe(
+      false,
+    );
+    expect(wrapper.get('[data-testid="home-widget-activity-summary"]').text()).toContain(
+      '1/3 services failing',
+    );
+  });
+
   it('renders the error block with a retry action', async () => {
     const wrapper = mountCard({ isError: true });
     expect(wrapper.find('[data-testid="home-widget-activity-error"]').exists()).toBe(true);
