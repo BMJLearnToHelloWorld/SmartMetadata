@@ -26,6 +26,7 @@ import {
   type LineageGraphEdge,
   type LineageGraphModel,
   type LineageGraphNode,
+  type PositionedLineageGraph,
 } from '@/lineage/graphModel';
 import LineageLayers from './LineageLayers.vue';
 import LineageNode, { type LineageNodeData } from './LineageNode.vue';
@@ -130,10 +131,44 @@ const nodeTypes: NodeTypesObject = {
 
 const expandedSet = computed(() => new Set(expandedIds.value));
 
-const positioned = computed(() => {
-  layoutNonce.value;
-  return layoutLineageGraph(props.model, expandedSet.value);
-});
+/**
+ * ELK layout is async (pin `Lineage.tsx`: the reposition awaits
+ * `positionNodesUsingElk`), so positions arrive in a ref, not a computed.
+ * The run id drops stale results when the model changes mid-layout; a
+ * re-layout for an expand toggle keeps the previous positions until the
+ * new ones resolve, while a new center clears them. The first layout of a
+ * model fits the view once — `fit-view-on-init` cannot see nodes that
+ * arrive after mount.
+ */
+const positioned = ref<PositionedLineageGraph | undefined>();
+const layoutRunId = ref(0);
+let lastLayoutCenterId = '';
+
+async function runLayout(fitAfter: boolean): Promise<void> {
+  const run = ++layoutRunId.value;
+  const result = await layoutLineageGraph(props.model, expandedSet.value);
+  if (run !== layoutRunId.value) {
+    return;
+  }
+  positioned.value = result;
+  if (fitAfter && flowRef.value) {
+    await nextTick();
+    await flowRef.value.fitView({ padding: 0.1 });
+  }
+}
+
+watch(
+  [() => props.model, expandedSet, layoutNonce],
+  () => {
+    const centerChanged = props.model.centerId !== lastLayoutCenterId;
+    if (centerChanged) {
+      lastLayoutCenterId = props.model.centerId;
+      positioned.value = undefined;
+    }
+    void runLayout(centerChanged);
+  },
+  { immediate: true },
+);
 
 function toggleExpand(nodeId: string): void {
   expandedIds.value = expandedIds.value.includes(nodeId)
@@ -142,7 +177,7 @@ function toggleExpand(nodeId: string): void {
 }
 
 const nodes = computed<Node<LineageNodeData>[]>(() =>
-  positioned.value.nodes.map((node) => {
+  (positioned.value?.nodes ?? []).map((node) => {
     const neighbors = lineageNodeNeighbors(props.model, node.id);
     return {
       id: node.id,
@@ -421,7 +456,8 @@ watch(
     columnsLineageOnlyIds.value = [];
     selectedNodeId.value = undefined;
     selectedEdge.value = undefined;
-    layoutNonce.value += 1;
+    // The model watch re-lays out for the new center; no nonce bump here
+    // (it would only start a second, discarded layout run).
   },
 );
 
@@ -499,7 +535,6 @@ watch(
       :node-types="nodeTypes"
       :nodes-draggable="true"
       :nodes-connectable="canEdit"
-      fit-view-on-init
       :min-zoom="0.3"
       :max-zoom="2"
       @node-click="onNodeClick"
