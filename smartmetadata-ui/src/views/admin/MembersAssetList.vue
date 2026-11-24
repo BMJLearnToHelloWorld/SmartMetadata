@@ -195,31 +195,39 @@ const searchEmptyTitle = computed(() =>
       <Skeleton :active="true" :paragraph="{ rows: 2 }" />
     </div>
     <template v-else-if="showEmpty">
-      <NoDataPlaceholder
-        v-if="searchValue || assetKind !== 'team'"
-        test-id="no-data-placeholder"
-        :title="searchValue ? searchEmptyTitle : t('server.no-records-found')"
-      />
-      <CreatePlaceholder
-        v-else
-        :title="t('label.no-assets-linked-yet')"
-        :description="
-          t('message.link-assets-description', { entity: t('label.team-lowercase') })
-        "
-        :actions="
-          canCreate
-            ? [
-                {
-                  key: 'add-asset',
-                  id: 'data-assets-add-button',
-                  label: t('label.add-entity', { entity: t('label.asset') }),
-                  color: 'primary',
-                  onPress: () => emit('add-asset'),
-                },
-              ]
-            : undefined
-        "
-      />
+      <!-- Pin AssetsTabs.component.tsx (~:1068): the empty state renders
+           inside a relative host with a 360px floor (h-full tw:relative
+           tw:min-h-90). EmptyPlaceholder is absolutely positioned and
+           must not anchor to the antd tab content, which is only the
+           search box tall when the list is empty (~52px) — its 104px
+           icon+title overflowed upward and covered the tab strip. -->
+      <div class="members-asset-list__empty">
+        <NoDataPlaceholder
+          v-if="searchValue || assetKind !== 'team'"
+          test-id="no-data-placeholder"
+          :title="searchValue ? searchEmptyTitle : t('server.no-records-found')"
+        />
+        <CreatePlaceholder
+          v-else
+          :title="t('label.no-assets-linked-yet')"
+          :description="
+            t('message.link-assets-description', { entity: t('label.team-lowercase') })
+          "
+          :actions="
+            canCreate
+              ? [
+                  {
+                    key: 'add-asset',
+                    id: 'data-assets-add-button',
+                    label: t('label.add-entity', { entity: t('label.asset') }),
+                    color: 'primary',
+                    onPress: () => emit('add-asset'),
+                  },
+                ]
+              : undefined
+          "
+        />
+      </div>
     </template>
     <template v-else>
       <div class="members-asset-list__cards">
@@ -302,6 +310,12 @@ const searchEmptyTitle = computed(() =>
 <style scoped>
 .members-asset-list__search {
   margin-bottom: 12px;
+}
+.members-asset-list__empty {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
 }
 .members-asset-list__loader {
   display: flex;
