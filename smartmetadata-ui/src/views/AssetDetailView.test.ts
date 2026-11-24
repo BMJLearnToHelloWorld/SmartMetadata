@@ -3305,34 +3305,20 @@ describe('AssetDetailView DriveService detail pages (D-TAB-2)', () => {
     ],
   };
 
-  it('renders a directory with pin tab order, children rows, and a lineage tab', async () => {
+  it('renders a directory with pin tab order, children rows, and no lineage tab yet', async () => {
     stubDrive({ directories: directoryPayload });
     const { wrapper } = await mountTypedView('directory', 'drive.shared.docs');
     expect(wrapper.text()).toContain('Children');
     expect(wrapper.text()).toContain('Activity feed');
-    expect(wrapper.text()).toContain('Lineage');
     expect(wrapper.text()).toContain('Contract');
     expect(wrapper.text()).toContain('Custom Properties');
-    // L3d: the lineage tab mounts the shared canvas (the `#lineage`
-    // slot's fallback pane — drive types are unflipped, PIN-MEMO §1.2).
-    expect(wrapper.findComponent(LineageCanvas).exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Lineage');
     expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('report.csv');
     expect(wrapper.text()).toContain('sub');
-    // The detail fetch still requests the pin `children` field: the
-    // mounted lineage canvas issues its own later detail fetch with
-    // the smaller layer field set (`fields=domains,dataProducts,
-    // service`, LineageCanvas.vue), so the assertion looks for ANY
-    // matching call, not the last one.
-    const detailCall = vi
-      .mocked(fetch)
-      .mock.calls.find(
-        ([url]) =>
-          String(url).includes('/api/v1/drives/directories/name/') &&
-          String(url).includes(encodeURIComponent('drive.shared.docs')) &&
-          String(url).includes('children'),
-      );
-    expect(detailCall).toBeDefined();
+    const call = lastMatchingFetch((url) => url.includes('/api/v1/drives/directories/name/'));
+    expect(call.url).toContain(encodeURIComponent('drive.shared.docs'));
+    expect(call.url).toContain('children');
   });
 
   it('sends a directory vote to PUT /v1/drives/directories/{id}/vote', async () => {
@@ -3368,8 +3354,7 @@ describe('AssetDetailView DriveService detail pages (D-TAB-2)', () => {
     });
     const { wrapper } = await mountTypedView('spreadsheet', 'drive.shared.budget');
     expect(wrapper.text()).toContain('Worksheets');
-    // L3d: the lineage tab is mounted after activity_feed (pin order).
-    expect(wrapper.text()).toContain('Lineage');
+    expect(wrapper.text()).not.toContain('Lineage');
     expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Sheet1');
     expect(wrapper.text()).toContain('Sheet2');
@@ -3391,8 +3376,7 @@ describe('AssetDetailView DriveService detail pages (D-TAB-2)', () => {
     });
     const { wrapper } = await mountTypedView('worksheet', 'drive.shared.budget.Sheet1');
     expect(wrapper.text()).toContain('Schema');
-    // L3d: the lineage tab is mounted after activity_feed (pin order).
-    expect(wrapper.text()).toContain('Lineage');
+    expect(wrapper.text()).not.toContain('Lineage');
     expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('amount');
   });
@@ -3415,8 +3399,7 @@ describe('AssetDetailView DriveService detail pages (D-TAB-2)', () => {
     const { wrapper } = await mountTypedView('file', 'drive.shared.docs.notes.txt');
     expect(wrapper.text()).toContain('Overview');
     expect(wrapper.text()).toContain('Schema');
-    // L3d: the lineage tab is mounted after activity_feed (pin order).
-    expect(wrapper.text()).toContain('Lineage');
+    expect(wrapper.text()).not.toContain('Lineage');
     expect(wrapper.find('[data-testid="asset-schema-empty"]').exists()).toBe(true);
   });
 });

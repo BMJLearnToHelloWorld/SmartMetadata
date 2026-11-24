@@ -154,16 +154,16 @@ describe('entityDetailTabs', () => {
     ]);
   });
 
-  // D-TAB-2 (host lane + tab-mount lane): DriveService split tabs follow
-  // pin's tab order (DirectoryDetailsUtils / FileDetailsUtils /
-  // SpreadsheetDetailsUtils / WorksheetDetailsUtils, a3012259ca) with the
-  // lineage entry mounted after `activity_feed` in each set.
-  it('splits DriveService types with pin tab order and lineage after activity_feed', () => {
+  // D-TAB-2 (host lane): DriveService split tabs follow pin's tab order
+  // (DirectoryDetailsUtils / FileDetailsUtils / SpreadsheetDetailsUtils /
+  // WorksheetDetailsUtils, a3012259ca) with the lineage entry held for
+  // the later tab-mount lane: the mount lane inserts
+  // `{ key: 'lineage', ... }` after `activity_feed` in each set.
+  it('splits DriveService types with pin tab order and no lineage entry yet', () => {
     expect(isOfficiallySplit('directory')).toBe(true);
     expect(entityDetailTabDefs('directory')?.map((tab) => tab.key)).toEqual([
       'children',
       'activity_feed',
-      'lineage',
       'contract',
       'custom_properties',
     ]);
@@ -172,7 +172,6 @@ describe('entityDetailTabs', () => {
       'overview',
       'schema',
       'activity_feed',
-      'lineage',
       'contract',
       'custom_properties',
     ]);
@@ -180,7 +179,6 @@ describe('entityDetailTabs', () => {
     expect(entityDetailTabDefs('spreadsheet')?.map((tab) => tab.key)).toEqual([
       'worksheets',
       'activity_feed',
-      'lineage',
       'contract',
       'custom_properties',
     ]);
@@ -188,14 +186,11 @@ describe('entityDetailTabs', () => {
     expect(entityDetailTabDefs('worksheet')?.map((tab) => tab.key)).toEqual([
       'schema',
       'activity_feed',
-      'lineage',
       'contract',
       'custom_properties',
     ]);
     for (const entityType of ['directory', 'file', 'spreadsheet', 'worksheet']) {
-      const lineage = entityDetailTabDef(entityType, 'lineage');
-      expect(lineage?.slot).toBe('lineage');
-      expect(lineage?.labelKey).toBe('lineage');
+      expect(entityDetailTabDefs(entityType)?.map((tab) => tab.key)).not.toContain('lineage');
     }
     expect(entityDetailTabDef('directory', 'contract')?.residual).toBe('asset.tabResidual.contract');
   });

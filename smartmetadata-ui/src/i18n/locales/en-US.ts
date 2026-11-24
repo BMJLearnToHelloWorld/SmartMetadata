@@ -2628,11 +2628,6 @@ const enUS = {
       noInputPorts: 'No input ports returned for this data product.',
       noOutputPorts: 'No output ports returned for this data product.',
       portsUpdated: 'Ports updated',
-      portsLineage: 'Ports Lineage',
-      portsLineageSummary: '({input} input, {output} output)',
-      noAssetsForPortsLineage:
-        'To view lineage, assign assets to this Data Product and add them as input/output ports.',
-      noPortsToDisplayLineage: 'No ports available to display lineage',
       removeAssetConfirm: 'Remove asset {name} from this data product?',
       domainChangeConfirm: 'Changing the domain will move {count} linked assets to the new domain. Continue?',
       searchPlaceholder: 'Search data products',

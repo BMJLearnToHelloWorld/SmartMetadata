@@ -15,14 +15,9 @@ vi.mock('@/api/dataProducts', () => ({
   addOutputPortsToDataProduct: vi.fn(),
   getDataProductInputPorts: vi.fn(),
   getDataProductOutputPorts: vi.fn(),
-  getDataProductPortsView: vi.fn(),
   removeInputPortsFromDataProduct: vi.fn(),
   removeOutputPortsFromDataProduct: vi.fn(),
 }));
-
-vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
-vi.mock('@vue-flow/background', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/background']());
-vi.mock('@vue-flow/controls', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/controls']());
 
 vi.mock('@/features/crud/confirmDelete', () => ({
   confirmDelete: vi.fn(async () => true),
@@ -32,13 +27,11 @@ import {
   addInputPortsToDataProduct,
   getDataProductInputPorts,
   getDataProductOutputPorts,
-  getDataProductPortsView,
   removeInputPortsFromDataProduct,
 } from '@/api/dataProducts';
 
 const getInputMock = getDataProductInputPorts as unknown as ReturnType<typeof vi.fn>;
 const getOutputMock = getDataProductOutputPorts as unknown as ReturnType<typeof vi.fn>;
-const getPortsViewMock = getDataProductPortsView as unknown as ReturnType<typeof vi.fn>;
 const addInputMock = addInputPortsToDataProduct as unknown as ReturnType<typeof vi.fn>;
 const removeInputMock = removeInputPortsFromDataProduct as unknown as ReturnType<typeof vi.fn>;
 
@@ -73,15 +66,10 @@ describe('DataProductPortsPanel (Q-TAB-4)', () => {
     vi.restoreAllMocks();
     getInputMock.mockReset();
     getOutputMock.mockReset();
-    getPortsViewMock.mockReset();
     addInputMock.mockReset();
     removeInputMock.mockReset();
     getInputMock.mockResolvedValue({ data: [INPUT_PORT], after: undefined, before: undefined, total: 1 });
     getOutputMock.mockResolvedValue({ data: [], after: undefined, before: undefined, total: 0 });
-    getPortsViewMock.mockResolvedValue({
-      inputPorts: { data: [INPUT_PORT], after: undefined, before: undefined, total: 1 },
-      outputPorts: { data: [], after: undefined, before: undefined, total: 0 },
-    });
     addInputMock.mockResolvedValue({ id: 'p1', name: 'churn' });
     removeInputMock.mockResolvedValue({ id: 'p1', name: 'churn' });
   });
@@ -127,65 +115,6 @@ describe('DataProductPortsPanel (Q-TAB-4)', () => {
     expect(wrapper.find('[data-testid="add-input-ports"]').attributes('disabled')).toBeDefined();
     expect(wrapper.find('[data-testid="add-output-ports"]').attributes('disabled')).toBeDefined();
     expect(wrapper.find('[data-testid="remove-input-port-t1"]').attributes('disabled')).toBeDefined();
-    wrapper.unmount();
-  });
-
-  it('shows the Ports Lineage accordion collapsed with the pin summary and no ports-view fetch yet', async () => {
-    const wrapper = mountPanel();
-    await flushPromises();
-    const header = wrapper.find('[data-testid="toggle-lineage-collapse"]');
-    expect(header.exists()).toBe(true);
-    expect(header.text()).toContain('Ports Lineage');
-    expect(header.text()).toContain('(1 input, 0 output)');
-    expect(getPortsViewMock).not.toHaveBeenCalled();
-    expect(wrapper.find('[data-testid="ports-lineage-view"]').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
-  it('loads the ports view lazily on first expand and renders the graph once', async () => {
-    const wrapper = mountPanel();
-    await flushPromises();
-    await wrapper.find('[data-testid="toggle-lineage-collapse"]').trigger('click');
-    await flushPromises();
-    expect(getPortsViewMock).toHaveBeenCalledTimes(1);
-    expect(getPortsViewMock).toHaveBeenCalledWith('marketing.churn');
-    expect(wrapper.find('[data-testid="ports-lineage-view"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="data-product-center-node"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="port-node-svc.db.orders"]').exists()).toBe(true);
-    // Collapse and expand again: the loaded view is reused, not refetched.
-    await wrapper.find('[data-testid="toggle-lineage-collapse"]').trigger('click');
-    await wrapper.find('[data-testid="toggle-lineage-collapse"]').trigger('click');
-    await flushPromises();
-    expect(getPortsViewMock).toHaveBeenCalledTimes(1);
-    wrapper.unmount();
-  });
-
-  it('shows the no-assets empty state when the product has no assets and no ports', async () => {
-    getPortsViewMock.mockResolvedValue({
-      inputPorts: { data: [], after: undefined, before: undefined, total: 0 },
-      outputPorts: { data: [], after: undefined, before: undefined, total: 0 },
-    });
-    const wrapper = mountPanel();
-    await flushPromises();
-    await wrapper.find('[data-testid="toggle-lineage-collapse"]').trigger('click');
-    await flushPromises();
-    expect(wrapper.find('[data-testid="no-ports-placeholder"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="no-ports-placeholder"]').text()).toContain(
-      'assign assets to this Data Product',
-    );
-    wrapper.unmount();
-  });
-
-  it('navigates to the asset detail page when a port node is clicked', async () => {
-    const wrapper = mountPanel();
-    await flushPromises();
-    await wrapper.find('[data-testid="toggle-lineage-collapse"]').trigger('click');
-    await flushPromises();
-    await wrapper.find('[data-testid="port-node-svc.db.orders"]').trigger('click');
-    await flushPromises();
-    const router = (wrapper.vm as unknown as { $router: { currentRoute: { value: { name?: string; params: Record<string, string> } } } }).$router;
-    expect(router.currentRoute.value.name).toBe('asset');
-    expect(router.currentRoute.value.params).toEqual({ entityType: 'table', fqn: 'svc.db.orders' });
     wrapper.unmount();
   });
 });
