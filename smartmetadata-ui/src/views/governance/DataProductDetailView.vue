@@ -934,6 +934,8 @@ onMounted(() => {
         :fqn="product.fullyQualifiedName || product.name"
         :product-name="product.displayName || product.name"
         :can-edit="canEditAssets"
+        :product="product"
+        :asset-count="assets.length"
       />
     </template>
     <template #customProperties>
