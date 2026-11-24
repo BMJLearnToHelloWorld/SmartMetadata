@@ -86,7 +86,7 @@ type PermissionEntries = Array<{ operation: string; access: string }>;
 
 function stubFetch(
   onPost?: (url: string, init?: RequestInit) => Response,
-  permissions?: { glossary?: PermissionEntries; glossaryTerm?: PermissionEntries },
+  permissions?: { glossary?: PermissionEntries; glossaryTerm?: PermissionEntries; ontology?: PermissionEntries },
 ): void {
   vi.stubGlobal(
     'fetch',
@@ -94,6 +94,9 @@ function stubFetch(
       const url = String(input);
       if (init?.method === 'POST') {
         return onPost ? onPost(url, init) : jsonResponse({});
+      }
+      if (url.includes('/v1/permissions/ontology')) {
+        return jsonResponse({ resource: 'ontology', permissions: permissions?.ontology ?? [] });
       }
       if (url.includes('/v1/permissions/glossaryTerm')) {
         return jsonResponse({ resource: 'glossaryTerm', permissions: permissions?.glossaryTerm ?? [] });
@@ -240,7 +243,7 @@ describe('OntologyExplorerView', () => {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         posts.push({ url, body });
         return jsonResponse({ id: 'o9', name: body.name });
-      }),
+      }, { ontology: [{ operation: 'Create', access: 'allow' }] }),
     );
     await wrapper.find('[data-testid="ontology-create"]').trigger('click');
     await wrapper.find('[data-testid="ontology-create-name"]').setValue('sales-ontology');
@@ -254,6 +257,43 @@ describe('OntologyExplorerView', () => {
       name: 'sales-ontology',
       iri: 'https://example.com/sales',
       namespace: 'https://example.com/sales#',
+    });
+  });
+
+  describe('create permission gate (pin OntologyExplorerPage.tsx:436-441,663)', () => {
+    it('shows the create button with an ontology Create grant', { timeout: 15000 }, async () => {
+      const wrapper = await mountAt('/govern/ontology', () =>
+        stubFetch(undefined, { ontology: [{ operation: 'Create', access: 'allow' }] }),
+      );
+      expect(wrapper.find('[data-testid="ontology-create"]').exists()).toBe(true);
+    });
+
+    it('hides the toolbar create button without an ontology Create grant', { timeout: 15000 }, async () => {
+      const wrapper = await mountAt('/govern/ontology', () => stubFetch());
+      expect(wrapper.find('[data-testid="ontology-create"]').exists()).toBe(false);
+    });
+
+    it('hides the empty-state create button without an ontology Create grant', { timeout: 15000 }, async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('/v1/permissions/ontology')) {
+            return jsonResponse({ resource: 'ontology', permissions: [] });
+          }
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }),
+      );
+      const { pinia, router } = mountPage();
+      await router.push('/govern/ontology');
+      await router.isReady();
+      const wrapper = mount(OntologyExplorerView, {
+        global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      });
+      await flushPromises();
+      await flushPromises();
+      expect(wrapper.find('[data-testid="ontology-empty"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="ontology-empty-create"]').exists()).toBe(false);
     });
   });
 

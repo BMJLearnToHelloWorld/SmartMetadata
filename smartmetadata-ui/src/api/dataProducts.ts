@@ -10,10 +10,12 @@
 import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
+import type { SearchHit } from '@/types/api';
 import type { CreateDataProductRequest, DataProduct } from '@/types/governance';
 import { apiRequest } from './client';
 import { addBulkAssets, removeBulkAssets, type BulkAssetResult } from './bulkAssets';
 import { mapCertification, mapTags } from './entities';
+import { searchAssets } from './search';
 
 export const DATA_PRODUCT_FIELDS = 'domains,owners,reviewers,experts,tags,extension,certification';
 
@@ -92,6 +94,48 @@ export function listDataProducts(query: ListDataProductsQuery = {}): Promise<Pag
       after: query.after,
     },
   }).then((payload) => parsePaged(payload, mapDataProduct));
+}
+
+/**
+ * Pin DataProductListPage search (useDataProductListingData with
+ * SearchIndex.DATA_PRODUCT = 'dataProduct'): the listing is ES-search
+ * backed while a query is present. The shared searchAssets helper sends
+ * the same GET /v1/search/query call; hits map back to DataProduct rows
+ * (the list only renders id/name/displayName/description/domains, all
+ * carried by the hit). Offset paging (`from`) because the search
+ * endpoint has no cursor.
+ */
+export async function searchDataProducts(
+  query: string,
+  from = 0,
+  size = 25,
+): Promise<Paged<DataProduct>> {
+  const page = await searchAssets(query, from, size, { index: 'dataProduct' });
+  return {
+    data: page.hits.flatMap((hit: SearchHit) => {
+      const product = hitToDataProduct(hit);
+      return product ? [product] : [];
+    }),
+    total: page.total,
+  };
+}
+
+function hitToDataProduct(hit: SearchHit): DataProduct | null {
+  if (!hit.id && !hit.name) {
+    return null;
+  }
+  return {
+    id: hit.id ?? hit.fullyQualifiedName,
+    name: hit.name,
+    displayName: hit.displayName,
+    description: hit.description,
+    fullyQualifiedName: hit.fullyQualifiedName || hit.name,
+    domains: hit.domains ?? [],
+    owners: hit.owners ?? [],
+    reviewers: [],
+    experts: [],
+    tags: hit.tags ?? [],
+  };
 }
 
 export async function getDataProduct(id: string): Promise<DataProduct> {

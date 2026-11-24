@@ -564,6 +564,159 @@ export async function getMetricObservability(id: string): Promise<MetricObservab
 }
 
 // ---------------------------------------------------------------------------
+// Metric linked assets (B2-G1; pin rest/metricsAPI.ts:227-273,
+// rest/metricTabsAPI.ts:62-115, hooks/useMetricLinkedAssets.ts).
+// ---------------------------------------------------------------------------
+
+/**
+ * Official MetricAssetDirection (generated/api/data/
+ * metricObservability.ts; spec api/data/metricObservability.json
+ * definitions.metricAssetDirection): a data asset linked to a metric,
+ * annotated with where it sits relative to the metric in the lineage
+ * graph. `direction` defaults to 'unrelated' per the schema; only a
+ * direct upstream Table affects health.
+ */
+export type MetricAssetDirectionValue = 'upstream' | 'downstream' | 'unrelated';
+
+export interface MetricAssetDirection {
+  asset: EntityRef;
+  direction: MetricAssetDirectionValue;
+  affectsHealth?: boolean;
+}
+
+const METRIC_ASSET_DIRECTIONS: readonly string[] = ['upstream', 'downstream', 'unrelated'];
+
+/** The server caps a single page of linked assets at 1000 (pin useMetricLinkedAssets.ts:16). */
+export const METRIC_LINKED_ASSETS_PAGE_LIMIT = 1000;
+
+export function mapMetricAssetDirection(raw: Record<string, unknown>): MetricAssetDirection | null {
+  const asset = mapEntityRefs(raw.asset ? [raw.asset] : [])[0];
+  if (!asset) {
+    return null;
+  }
+  const direction = asString(raw.direction);
+  return {
+    asset,
+    direction: (METRIC_ASSET_DIRECTIONS as readonly string[]).includes(direction)
+      ? (direction as MetricAssetDirectionValue)
+      : 'unrelated',
+    affectsHealth: asBoolean(raw.affectsHealth) ?? undefined,
+  };
+}
+
+export interface MetricAssetsParams {
+  direction?: MetricAssetDirectionValue;
+  entityType?: string;
+  limit?: number;
+  offset?: number;
+  q?: string;
+}
+
+/**
+ * Official getMetricAssets (rest/metricsAPI.ts:259-273): GET
+ * /v1/metrics/{id}/assets, offset-paged. The id is the metric id, not
+ * its FQN (unlike add/remove below, which take the FQN).
+ */
+export async function getMetricAssets(
+  id: string,
+  params: MetricAssetsParams = {},
+): Promise<Paged<MetricAssetDirection>> {
+  const payload = await apiRequest<unknown>(`/v1/metrics/${encodeURIComponent(id)}/assets`, {
+    query: {
+      direction: params.direction,
+      entityType: params.entityType,
+      limit: params.limit ?? 20,
+      offset: params.offset ?? 0,
+      q: params.q,
+    },
+  });
+  return parsePaged(payload, mapMetricAssetDirection);
+}
+
+/**
+ * Official fetchMetricLinkedAssetIds (hooks/useMetricLinkedAssets.ts:
+ * 26-53): every linked asset id, paging at the server cap of 1000.
+ * The tab count is the ids' length, not the paging total (pin
+ * useMetricLinkedAssets assetCount = data?.length ?? 0).
+ */
+export async function fetchMetricLinkedAssetIds(metricId: string): Promise<string[]> {
+  const firstPage = await getMetricAssets(metricId, {
+    limit: METRIC_LINKED_ASSETS_PAGE_LIMIT,
+    offset: 0,
+  });
+  const total = firstPage.total ?? firstPage.data.length;
+  const remainingOffsets = Array.from(
+    { length: Math.max(Math.ceil(total / METRIC_LINKED_ASSETS_PAGE_LIMIT) - 1, 0) },
+    (_, index) => (index + 1) * METRIC_LINKED_ASSETS_PAGE_LIMIT,
+  );
+  const remainingPages = await Promise.all(
+    remainingOffsets.map((offset) =>
+      getMetricAssets(metricId, { limit: METRIC_LINKED_ASSETS_PAGE_LIMIT, offset }),
+    ),
+  );
+  return [firstPage, ...remainingPages].flatMap(({ data }) =>
+    // An asset without an id cannot be targeted by document id downstream,
+    // so it is dropped rather than carried as undefined.
+    data.flatMap(({ asset }) => (asset.id ? [asset.id] : [])),
+  );
+}
+
+/**
+ * Bulk link/unlink result (server BulkOperationResult, as returned by
+ * MetricResource bulkAddAssets/bulkRemoveAssets). Only the fields a
+ * caller could read are mapped; the per-asset request lists stay
+ * server-side.
+ */
+export interface MetricAssetsBulkResult {
+  status?: string;
+  numberOfRowsProcessed?: number;
+  numberOfRowsPassed?: number;
+  numberOfRowsFailed?: number;
+}
+
+function mapMetricAssetsBulkResult(raw: unknown): MetricAssetsBulkResult {
+  const rec = asRecord(raw) ?? {};
+  return {
+    status: asString(rec.status) || undefined,
+    numberOfRowsProcessed: asNumber(rec.numberOfRowsProcessed),
+    numberOfRowsPassed: asNumber(rec.numberOfRowsPassed),
+    numberOfRowsFailed: asNumber(rec.numberOfRowsFailed),
+  };
+}
+
+/**
+ * Official addAssetsToMetric (rest/metricsAPI.ts:227-237): PUT
+ * /v1/metrics/{fqn}/assets/add with {assets}. By FQN, not id — the
+ * server path is /{name}/assets/add. Authorized as EDIT_ALL on the
+ * metric (MetricResource bulkAddAssets).
+ */
+export async function addAssetsToMetric(
+  fqn: string,
+  assets: EntityRef[],
+): Promise<MetricAssetsBulkResult> {
+  const raw = await apiRequest<unknown>(
+    `/v1/metrics/${encodeURIComponent(fqn)}/assets/add`,
+    { method: 'PUT', json: { assets } },
+  );
+  return mapMetricAssetsBulkResult(raw);
+}
+
+/**
+ * Official removeAssetsFromMetric (rest/metricsAPI.ts:239-249): PUT
+ * /v1/metrics/{fqn}/assets/remove with {assets}. By FQN, like add.
+ */
+export async function removeAssetsFromMetric(
+  fqn: string,
+  assets: EntityRef[],
+): Promise<MetricAssetsBulkResult> {
+  const raw = await apiRequest<unknown>(
+    `/v1/metrics/${encodeURIComponent(fqn)}/assets/remove`,
+    { method: 'PUT', json: { assets } },
+  );
+  return mapMetricAssetsBulkResult(raw);
+}
+
+// ---------------------------------------------------------------------------
 // Tree search paths (official rest/metricsAPI.ts getMetricSearchPaths /
 // getMetricParentIds). The search response mapper drops the parent link,
 // so these read `_source` directly instead of going through searchAssets:
