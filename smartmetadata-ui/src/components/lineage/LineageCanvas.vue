@@ -1003,7 +1003,11 @@ watch(
         <Tooltip :title="t('lineage.reloadHelp')">
           <Button data-testid="lineage-reload" :aria-label="t('lineage.reloadHelp')" @click="load">{{ t('lineage.reload') }}</Button>
         </Tooltip>
-        <Button data-testid="lineage-config-open" @click="configModalOpen = true">
+        <Button
+          v-if="variant !== 'page'"
+          data-testid="lineage-config-open"
+          @click="configModalOpen = true"
+        >
           {{ t('lineage.config') }}
         </Button>
         <Button
@@ -1047,6 +1051,7 @@ watch(
         :entity-type="exportIdentity.entityType"
         :fqn="exportIdentity.fqn"
         :png-available="Boolean(graph && !empty && !errorMessage && activeView === 'diagram')"
+        :show-png-button="variant !== 'page'"
         :on-export-png="onExportPng"
         :on-export-csv="onExportCsv"
         :exporting-csv="exportingCsv"

@@ -66,4 +66,10 @@ describe('LineageExportPanel (L3)', () => {
     await wrapper.find('[data-testid="lineage-export-png"]').trigger('click');
     expect(onExportPng).toHaveBeenCalledTimes(1);
   });
+
+  it('hides the PNG button when showPngButton is false and keeps CSV', () => {
+    const wrapper = mountPanel({ showPngButton: false });
+    expect(wrapper.find('[data-testid="lineage-export-png"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-export-csv"]').exists()).toBe(true);
+  });
 });

@@ -349,9 +349,14 @@ describe('LineageMap', () => {
     wrapper.unmount();
   });
 
-  it('exports PNG through the exposed flow and toggles the mini map', async () => {
+  it('exposes PNG export for the page toolbar, has no map export button, and toggles the mini map', async () => {
     const wrapper = await mountMap();
-    await wrapper.get('[data-testid="lineage-map-export"]').trigger('click');
+    // Pin PlatformLineage renders Export PNG exactly once, in the page
+    // header; the map has no export button of its own.
+    expect(wrapper.find('[data-testid="lineage-map-export"]').exists()).toBe(false);
+    await (
+      wrapper.vm as unknown as { exportPng: () => Promise<void> }
+    ).exportPng();
     await flushPromises();
     expect(mockedCapturePng).toHaveBeenCalled();
     expect(mockedCapturePng.mock.calls[0][1]).toBe('lineage-map-service-layer.png');
