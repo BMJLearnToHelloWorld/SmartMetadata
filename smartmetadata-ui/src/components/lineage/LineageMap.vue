@@ -17,7 +17,8 @@ import SmState from '@/components/shared/SmState.vue';
 import { LINEAGE_PLATFORM_LENSES } from '@/lineage/config';
 import { clampLineageDepth } from '@/lineage/depth';
 import { captureLineagePng, lineagePngFileName } from '@/lineage/exportPng';
-import { layoutLineageGraph, lineageNodeSize } from '@/lineage/graphModel';
+import { layoutLineageGraph, lineageNodeSize, type LineageGraphModel, type PositionedLineageGraph } from '@/lineage/graphModel';
+import type { LayoutOptions } from '@/lineage/elkLayout';
 import {
   getBoxNearestPoint,
   getBreadcrumbSceneRequest,
@@ -73,6 +74,42 @@ const ZOOM_TARGET_CENTRE_REGION = 0.5;
 const PROGRAMMATIC_ZOOM_SUPPRESSION_MS = 1200;
 const MAP_MIN_ZOOM = 0.1;
 const MAP_MAX_ZOOM = 2.5;
+
+/**
+ * Per-band ELK spacing overrides (pin `SCENE_LAYOUT_OPTIONS`,
+ * `LineageMap.component.tsx:212-241`, a3012259ca): denser bands pack
+ * tighter, the field band spreads widest. Merged over the base options
+ * by `ELKLayout.layoutGraph`.
+ */
+const SCENE_LAYOUT_OPTIONS: Record<LineageBand, LayoutOptions> = {
+  LAYER: {
+    'elk.spacing.componentComponent': '64',
+    'elk.spacing.edgeEdge': '16',
+    'elk.spacing.edgeNode': '24',
+    'elk.spacing.nodeNode': '48',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '20',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '28',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '150',
+  },
+  ASSET: {
+    'elk.spacing.componentComponent': '80',
+    'elk.spacing.edgeEdge': '18',
+    'elk.spacing.edgeNode': '28',
+    'elk.spacing.nodeNode': '64',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '24',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '36',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '190',
+  },
+  FIELD: {
+    'elk.spacing.componentComponent': '96',
+    'elk.spacing.edgeEdge': '20',
+    'elk.spacing.edgeNode': '32',
+    'elk.spacing.nodeNode': '80',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '28',
+    'elk.layered.spacing.edgeNodeBetweenLayers': '44',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '230',
+  },
+};
 
 const props = withDefaults(
   defineProps<{
@@ -163,8 +200,51 @@ const showGraph = computed(() => Boolean(scene.value && scene.value.nodes.length
 const graphModel = computed(() => (scene.value ? mapSceneToGraphModel(scene.value) : undefined));
 const expandedSet = computed(() => new Set(expandedIds.value));
 
-const positioned = computed(() =>
-  graphModel.value ? layoutLineageGraph(graphModel.value, expandedSet.value) : undefined,
+/**
+ * ELK layout is async (pin `LineageMap.component.tsx:667` `layoutNodes`),
+ * so positions arrive in a ref, not a computed — same shape as
+ * LineageGraph: a run id drops stale results, a new scene clears the old
+ * positions and fits the view once (the map's `fit-view-on-init` cannot
+ * see nodes that arrive after mount), and an expand toggle re-lays out
+ * over the previous positions.
+ */
+const positioned = ref<PositionedLineageGraph | undefined>();
+const layoutRunId = ref(0);
+let lastLayoutModel: LineageGraphModel | undefined;
+
+async function runLayout(fitAfter: boolean): Promise<void> {
+  const run = ++layoutRunId.value;
+  const model = graphModel.value;
+  if (!model) {
+    positioned.value = undefined;
+    return;
+  }
+  const result = await layoutLineageGraph(
+    model,
+    expandedSet.value,
+    SCENE_LAYOUT_OPTIONS[currentRequest.value.band],
+  );
+  if (run !== layoutRunId.value) {
+    return;
+  }
+  positioned.value = result;
+  if (fitAfter && flowRef.value) {
+    await nextTick();
+    await flowRef.value.fitView({ padding: 0.1 });
+  }
+}
+
+watch(
+  [graphModel, expandedSet],
+  () => {
+    const modelChanged = graphModel.value !== lastLayoutModel;
+    if (modelChanged) {
+      lastLayoutModel = graphModel.value;
+      positioned.value = undefined;
+    }
+    void runLayout(modelChanged);
+  },
+  { immediate: true },
 );
 
 const sceneNodeById = computed(
@@ -754,7 +834,6 @@ const nodeTypes = {
         :node-types="nodeTypes"
         :nodes-draggable="true"
         :nodes-connectable="false"
-        fit-view-on-init
         :min-zoom="MAP_MIN_ZOOM"
         :max-zoom="MAP_MAX_ZOOM"
         @node-click="onNodeClick"

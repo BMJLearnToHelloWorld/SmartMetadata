@@ -58,6 +58,16 @@ export interface ExploreTab {
   sortGroup: ExploreSortGroup;
   /** i18n key under explore.entity.* (tab labels reuse entity labels). */
   labelKey: string;
+  /**
+   * Override for the tab default sort id. Only the API tabs set it:
+   * official `getTabsInfo` gives API_COLLECTION/API_ENDPOINT
+   * `sortField: INITIAL_SORT_FIELD` (`totalVotes`) although their
+   * `sortingFields` are the tag group, which has no totalVotes —
+   * the pin quirk (SearchClassBase.ts:610-627). `defaultSortForTab`
+   * resolves such an id against every group when the tab's own group
+   * lacks it.
+   */
+  defaultSortId?: string;
 }
 
 export const EXPLORE_TABS: ExploreTab[] = [
@@ -77,8 +87,8 @@ export const EXPLORE_TABS: ExploreTab[] = [
   { index: 'glossaryTerm', slug: 'glossaryTerms', entityType: 'glossaryTerm', sortGroup: 'entity', labelKey: 'glossaryTerm' },
   { index: 'tag', slug: 'tags', entityType: 'tag', sortGroup: 'tag', labelKey: 'tag' },
   { index: 'dataProduct', slug: 'dataProducts', entityType: 'dataProduct', sortGroup: 'tag', labelKey: 'dataProduct' },
-  { index: 'apiCollection', slug: 'apiCollections', entityType: 'apiCollection', sortGroup: 'tag', labelKey: 'apiCollection' },
-  { index: 'apiEndpoint', slug: 'apiEndpoints', entityType: 'apiEndpoint', sortGroup: 'tag', labelKey: 'apiEndpoint' },
+  { index: 'apiCollection', slug: 'apiCollections', entityType: 'apiCollection', sortGroup: 'tag', labelKey: 'apiCollection', defaultSortId: 'popularity' },
+  { index: 'apiEndpoint', slug: 'apiEndpoints', entityType: 'apiEndpoint', sortGroup: 'tag', labelKey: 'apiEndpoint', defaultSortId: 'popularity' },
   { index: 'metric', slug: 'metrics', entityType: 'metric', sortGroup: 'tag', labelKey: 'metric' },
   { index: 'directory', slug: 'directories', entityType: 'directory', sortGroup: 'tag', labelKey: 'directory' },
   { index: 'file', slug: 'files', entityType: 'file', sortGroup: 'tag', labelKey: 'file' },
@@ -86,6 +96,73 @@ export const EXPLORE_TABS: ExploreTab[] = [
   { index: 'worksheet', slug: 'worksheets', entityType: 'worksheet', sortGroup: 'tag', labelKey: 'worksheet' },
   { index: 'page', slug: 'knowledgePages', entityType: 'page', sortGroup: 'entity', labelKey: 'knowledgePage' },
 ];
+
+import type { FacetId } from './searchFacets';
+
+/**
+ * Per-tab filter sets, ported from official
+ * SearchClassBase.getDropDownItems (utils/SearchClassBase.ts:676-734)
+ * over AdvancedSearch.constants.ts. The all-tab (null) is the DATA_ASSET
+ * set — the only set with entityType and certification. Chart, directory,
+ * file, spreadsheet and worksheet have no pin entry, so they show no
+ * chips (getDropDownItems returns [] for an unmapped index).
+ */
+export const COMMON_TAB_FACET_IDS: readonly FacetId[] = [
+  'domain',
+  'dataProduct',
+  'owner',
+  'tagFqn',
+  'tier',
+  'service',
+  'serviceType',
+];
+
+export const DATA_ASSET_TAB_FACET_IDS: readonly FacetId[] = [
+  'entityType',
+  'domain',
+  'dataProduct',
+  'owner',
+  'tagFqn',
+  'tier',
+  'certification',
+  'service',
+  'serviceType',
+];
+
+const TAB_FACET_IDS: Readonly<Record<string, readonly FacetId[]>> = {
+  table: [...COMMON_TAB_FACET_IDS, 'database', 'schema', 'column', 'tableType', 'columnDescriptionStatus'],
+  tableColumn: ['dataType', 'tableName', 'database', 'schema'],
+  storedProcedure: [...COMMON_TAB_FACET_IDS],
+  database: [...COMMON_TAB_FACET_IDS],
+  databaseSchema: [...COMMON_TAB_FACET_IDS],
+  dashboard: [...COMMON_TAB_FACET_IDS, 'dataModel', 'chart', 'project'],
+  dashboardDataModel: [...COMMON_TAB_FACET_IDS, 'dataModelType', 'column', 'project'],
+  chart: [],
+  pipeline: [...COMMON_TAB_FACET_IDS, 'task'],
+  topic: [...COMMON_TAB_FACET_IDS, 'schemaField'],
+  mlmodel: [...COMMON_TAB_FACET_IDS, 'feature'],
+  container: [...COMMON_TAB_FACET_IDS, 'containerColumn'],
+  searchIndex: [...COMMON_TAB_FACET_IDS, 'field'],
+  glossaryTerm: ['domain', 'owner', 'tagFqn', 'glossary', 'entityStatus'],
+  tag: ['domain', 'classification'],
+  dataProduct: ['domain', 'owner'],
+  apiCollection: [...COMMON_TAB_FACET_IDS],
+  apiEndpoint: [...COMMON_TAB_FACET_IDS, 'requestSchemaField', 'responseSchemaField'],
+  metric: [...COMMON_TAB_FACET_IDS],
+  directory: [],
+  file: [],
+  spreadsheet: [],
+  worksheet: [],
+  page: ['owner', 'tagFqn'],
+};
+
+/** The filter chips for a tab; the all-tab (null) shows the data-asset set. */
+export function facetsForTab(tab: ExploreTab | null): FacetId[] {
+  if (!tab) {
+    return [...DATA_ASSET_TAB_FACET_IDS];
+  }
+  return [...(TAB_FACET_IDS[tab.index] ?? [])];
+}
 
 export function exploreTabForIndex(index: string): ExploreTab | null {
   return EXPLORE_TABS.find((tab) => tab.index === index) ?? null;
@@ -111,10 +188,25 @@ export function sortOptionsForTab(tab: ExploreTab | null): ExploreSortOption[] {
 /**
  * Official defaults: totalVotes for table/entity groups, displayName for
  * tag/column groups (TAGS_INITIAL_SORT_FIELD; column default is name,
- * not the first sorting field, which is dataType).
+ * not the first sorting field, which is dataType). A tab with a
+ * `defaultSortId` override (the API tabs) resolves it against its own
+ * group first, then against every group, so the pin quirk default of
+ * totalVotes survives although the tag group has no popularity option.
  */
 export function defaultSortForTab(tab: ExploreTab | null): ExploreSortOption {
   const options = sortOptionsForTab(tab);
+  if (tab?.defaultSortId) {
+    const inGroup = options.find((option) => option.id === tab.defaultSortId);
+    if (inGroup) {
+      return inGroup;
+    }
+    const known = Object.values(EXPLORE_SORT_GROUPS)
+      .flat()
+      .find((option) => option.id === tab.defaultSortId);
+    if (known) {
+      return known;
+    }
+  }
   const group = tab?.sortGroup ?? 'entity';
   const defaultId = group === 'tag' || group === 'column' ? 'name' : 'popularity';
   return options.find((option) => option.id === defaultId) ?? options[0];

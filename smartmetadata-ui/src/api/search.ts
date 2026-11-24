@@ -26,6 +26,17 @@ export interface SearchAssetsOptions {
    */
   deleted?: boolean;
   /**
+  /**
+   * Explore D12 ranking details: pin's ExploreUtils sends
+   * `explain: showRankingDetails` on both search payloads, and pin's
+   * axios client serializes the boolean as given (`false` becomes
+   * `explain=false`); the parameter is omitted only when the option is
+   * absent, so existing requests stay byte-identical. With it the
+   * server returns each hit's `_explanation` and `matched_queries`,
+   * which `mapSearchResponse` carries onto the hit.
+   */
+  explain?: boolean;
+  /**
    * Official searchQuery trackTotalHits: without it the ES total caps at
    * 10000 (pin ExploreUtils comment). Only the export count query opts
    * in; every other caller keeps the existing behaviour.
@@ -39,7 +50,27 @@ export interface SearchAssetsOptions {
    * object passed here would arrive as "[object Object]".
    */
   query_filter?: string;
+  /**
+   * Official search request parameters (ExploreUtils fetchEntityData /
+   * runResultsSearch). Each is sent only when the caller opts in, so
+   * existing callers stay byte-identical: Explore passes all three on
+   * its results search. `excludeSourceFields` travels as repeated
+   * `exclude_source_fields` params (see apiRequest array values).
+   */
+  trackTotalHits?: boolean;
+  excludeSourceFields?: string[];
 }
+
+/**
+ * Official Explore `excludeSourceFields` (ExploreUtils.ts:193,316):
+ * heavy source fields the Explore list never renders. Without
+ * `trackTotalHits` Elasticsearch caps the reported total at 10000
+ * (ExploreUtils.ts:311-312).
+ */
+export const SEARCH_EXCLUDE_SOURCE_FIELDS = ['columns', 'queries', 'columnNames', 'dataModel'] as const;
+
+/** Official `MAX_RESULT_HITS` (explore.constants.ts:27): the ES total cap. */
+export const MAX_RESULT_HITS = 10000;
 
 /**
  * Official AGGREGATE_PAGE_SIZE_LARGE (constants.ts): a terms
@@ -149,6 +180,19 @@ export interface NlqSearchOptions {
   sortField?: string;
   sortOrder?: 'asc' | 'desc';
   deleted?: boolean;
+  /**
+   * Already-serialized query_filter JSON (same convention as
+   * SearchAssetsOptions): the D11 NLQ path forwards the Explore
+   * query_filter, as pin's nlqSearch does.
+   */
+  query_filter?: string;
+  /**
+   * Explore D12: pin's ExploreUtils sends `explain: showRankingDetails`
+   * on the NLQ payload too (the same payload object feeds both the
+   * keyword and the NLQ request), serialized as given like the keyword
+   * payload (`false` becomes `explain=false`).
+   */
+  explain?: boolean;
 }
 
 /**
@@ -175,6 +219,8 @@ export async function nlqSearch(
       sort_field: options.sortField,
       sort_order: options.sortOrder,
       deleted: options.deleted === true ? true : undefined,
+      explain: options.explain,
+      query_filter: options.query_filter,
     },
   });
   return mapSearchResponse(payload);
@@ -205,9 +251,62 @@ export async function searchAssets(
       deleted: options.deleted === true ? true : undefined,
       track_total_hits: options.trackTotalHits === true ? true : undefined,
       query_filter: options.query_filter,
+      track_total_hits: options.trackTotalHits,
+      explain: options.explain,
+      exclude_source_fields: options.excludeSourceFields,
     },
   });
   return mapSearchResponse(payload);
+}
+
+export interface EntityTypeCountsRequest {
+  /** Raw user query; empty means match-all, as on the server. */
+  query: string;
+  /** Indexes to count across, e.g. every Explore tab index. */
+  index: string[];
+  queryFilter?: string;
+  postFilter?: string;
+  deleted?: boolean;
+  includeTopHit?: boolean;
+}
+
+/**
+ * Official `rest/searchAPI.ts searchEntityTypeCounts` (searchAPI.ts:218-240):
+ * GET /v1/search/entityTypeCounts. The fork's server exposes the same
+ * operation (`SearchResource.getEntityTypeCounts`, operationId
+ * `getEntityTypeCounts`): `q`, comma-joined `index`, `query_filter`,
+ * `post_filter`, `deleted`, `include_top_hit`. The response is a
+ * SearchResponse whose `entityType` aggregation carries one bucket per
+ * type with hits; read it with `entityTypeCountsFromPage`.
+ */
+export async function searchEntityTypeCounts(
+  request: EntityTypeCountsRequest,
+): Promise<SearchPage> {
+  const payload = await apiRequest<unknown>('/v1/search/entityTypeCounts', {
+    query: {
+      q: request.query,
+      index: request.index.join(','),
+      query_filter: request.queryFilter,
+      post_filter: request.postFilter,
+      deleted: request.deleted === true ? true : undefined,
+      include_top_hit: request.includeTopHit,
+    },
+  });
+  return mapSearchResponse(payload);
+}
+
+/**
+ * Official `ExploreUtils.applyHitCounts`: the counts response's
+ * `entityType` aggregation buckets, keyed by entity type. A type with
+ * no bucket has zero hits for the query.
+ */
+export function entityTypeCountsFromPage(page: SearchPage): Map<string, number> {
+  const counts = new Map<string, number>();
+  const facet = page.facets.find((item) => item.id === 'entityType');
+  for (const bucket of facet?.buckets ?? []) {
+    counts.set(bucket.key, bucket.count);
+  }
+  return counts;
 }
 
 /**

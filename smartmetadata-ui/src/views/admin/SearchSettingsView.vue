@@ -37,7 +37,7 @@ import type {
 import FieldValueBoostDialog from './FieldValueBoostDialog.vue';
 import FieldValueBoostList from './FieldValueBoostList.vue';
 import GlobalSettingItem from './GlobalSettingItem.vue';
-import SearchEntityIcon from './SearchEntityIcon.vue';
+import SearchEntityIcon from '@/components/shared/SearchEntityIcon.vue';
 import TermBoostList from './TermBoostList.vue';
 import {
   GLOBAL_SETTING_PROPERTIES,

@@ -501,6 +501,17 @@ class RestClient:
         params = {"fields": fields} if fields else None
         return self._as_object(self.request("GET", path, params=params))
 
+    def get_pipeline_by_name(self, fqn: str) -> dict[str, Any]:
+        """GET /v1/pipelines/name/{fqn} (pipeline entity for lineage
+        attribution: pin's EntityReference requires ["id", "type"], so a
+        pipeline-attributed edge must carry the resolved id — pin's
+        pipeline sources fetch the pipeline by name first, e.g.
+        airflow/metadata.py:890 @ a3012259ca)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("pipeline fqn is required")
+        path = f"{PIPELINES_PATH}/name/{encode_path_segment(str(fqn).strip())}"
+        return self._as_object(self.request("GET", path))
+
     def get_topic_by_name(
         self,
         fqn: str,

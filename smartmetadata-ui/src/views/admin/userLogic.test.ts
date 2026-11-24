@@ -25,6 +25,7 @@ import {
   mergeDefaultPersonaOptions,
   resolveEffectiveUserTab,
   shouldRedirectAccessToken,
+  USER_TAB_PLATFORM_SETTINGS,
   type CreateUserFormValues,
 } from './userLogic';
 
@@ -33,6 +34,17 @@ describe('userLogic tabs (pin Users.component)', () => {
     expect(getUserTabs(true)).toHaveLength(7);
     expect(getUserTabs(true)[6]).toBe('access-token');
     expect(getUserTabs(false)).toEqual(['activity_feed', 'task', 'mydata', 'following', 'permissions', 'custom_properties']);
+  });
+
+  // D-CFG-3 (host lane): pin profileNavConfig.tsx:219-227 — the
+  // platform-settings tab is admin-only on the own profile.
+  it('includes platform-settings only for the logged-in admin', () => {
+    expect(getUserTabs(true, true)).toHaveLength(8);
+    expect(getUserTabs(true, true)[7]).toBe(USER_TAB_PLATFORM_SETTINGS);
+    expect(getUserTabs(true, true)[7]).toBe('platform-settings');
+    expect(getUserTabs(true, false)).not.toContain(USER_TAB_PLATFORM_SETTINGS);
+    expect(getUserTabs(false, true)).not.toContain(USER_TAB_PLATFORM_SETTINGS);
+    expect(getUserTabs(false, false)).not.toContain(USER_TAB_PLATFORM_SETTINGS);
   });
 
   it('falls back to the first tab for unknown or missing segments', () => {

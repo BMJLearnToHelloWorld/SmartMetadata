@@ -233,6 +233,13 @@ function schemaRowsFor(entityType: string, body: Record<string, unknown>): { row
   if (entityType === 'dashboardDataModel') {
     return { rows: mapColumns(body.columns), label: 'Columns' };
   }
+  // D-TAB-2 (host lane): pin File/Worksheet detail pages request
+  // `columns` in their defaultFields (FileDetailsUtils.tsx,
+  // WorksheetDetailsUtils.tsx) and render them in the schema tab
+  // (FileColumnsTable / WorksheetColumnsTable).
+  if (entityType === 'file' || entityType === 'worksheet') {
+    return { rows: mapColumns(body.columns), label: 'Columns' };
+  }
   return { rows: [], label: 'Schema' };
 }
 
@@ -282,6 +289,12 @@ function relatedRefsFor(entityType: string, body: Record<string, unknown>): Enti
   if (entityType === 'databaseSchema') {
     return mapEntityRefs(body.tables);
   }
+  // D-TAB-2 (host lane): pin SpreadsheetDetailsUtils requests
+  // `worksheets` in its defaultFields; the spreadsheet's worksheets are
+  // the related rows of its first tab, like a directory's children.
+  if (entityType === 'spreadsheet') {
+    return mapEntityRefs(body.worksheets);
+  }
   return mapEntityRefs(body.children);
 }
 
@@ -320,6 +333,64 @@ export interface FetchAssetDetailOptions {
   extraFields?: string[];
 }
 
+/**
+ * Hover-prefetch cache (B2-E6, D24). Pin `ExploreSearchCard.tsx`
+ * `handlePrefetch` warms the React Query cache so the click that
+ * follows hits an already-populated slot; the product has no query
+ * cache, so the warmed slot lives here: `prefetchAssetDetail` stores
+ * the in-flight `fetchAssetDetail` promise and `fetchAssetDetail`
+ * reuses it. The requested field set is part of the key on purpose —
+ * pin's `tableQueryKey(fqn, fields)` rationale: a lite caller must
+ * never read a heavy caller's cached body, and a detail page that
+ * appends permission-gated `extraFields` must not be served the
+ * prefetch's base field set. Bounded (oldest entry evicted first);
+ * a failed prefetch is dropped so a later click retries for real.
+ * A prefetched entry is consumed exactly once: ordinary
+ * `fetchAssetDetail` calls never populate the cache, so explicit
+ * refetches (after a vote, a patch, a navigation) always hit the
+ * network instead of serving a stale hover snapshot.
+ */
+const PREFETCH_CACHE_MAX = 50;
+const prefetchedAssetDetails = new Map<string, Promise<AssetDetail>>();
+
+function prefetchCacheKey(entityType: string, fqn: string, extraFields: string[]): string {
+  return [entityType, fqn, [...extraFields].sort().join(',')].join('\0');
+}
+
+function storePrefetched(key: string, promise: Promise<AssetDetail>): Promise<AssetDetail> {
+  if (prefetchedAssetDetails.size >= PREFETCH_CACHE_MAX && !prefetchedAssetDetails.has(key)) {
+    const oldest = prefetchedAssetDetails.keys().next();
+    if (!oldest.done) {
+      prefetchedAssetDetails.delete(oldest.value);
+    }
+  }
+  prefetchedAssetDetails.set(key, promise);
+  // A failure must not poison the slot: drop it so the click retries.
+  void promise.catch(() => {
+    if (prefetchedAssetDetails.get(key) === promise) {
+      prefetchedAssetDetails.delete(key);
+    }
+  });
+  return promise;
+}
+
+/**
+ * Warm the detail slot for a table / dashboard / pipeline / topic FQN,
+ * for a hover/focus handler. Fire-and-forget: errors are swallowed
+ * (pin `prefetchTableByFqn` rationale — the user didn't ask for
+ * anything, so a failed prefetch must not surface); the detail page's
+ * own fetch surfaces the error if it really matters.
+ */
+export function prefetchAssetDetail(entityType: string, fqn: string): void {
+  if (!resolveDetailEndpoint(entityType, fqn)) {
+    return;
+  }
+  const key = prefetchCacheKey(entityType, fqn, []);
+  if (!prefetchedAssetDetails.has(key)) {
+    void storePrefetched(key, fetchAssetDetail(entityType, fqn)).catch(() => undefined);
+  }
+}
+
 export async function fetchAssetDetail(
   entityType: string,
   fqn: string,
@@ -332,9 +403,22 @@ export async function fetchAssetDetail(
   const fields = [...endpoint.fields.split(','), ...(options.extraFields ?? [])]
     .filter((field, index, all) => field && all.indexOf(field) === index)
     .join(',');
+  const extraFields = options.extraFields ?? [];
+  const key = prefetchCacheKey(entityType, fqn, extraFields);
+  const cached = prefetchedAssetDetails.get(key);
+  if (cached) {
+    // Consume-once: the warmed slot serves the click that follows the
+    // hover, and no later refetch is served a stale snapshot.
+    prefetchedAssetDetails.delete(key);
+    return cached;
+  }
   const body = await apiRequest<Record<string, unknown>>(endpoint.path, {
     query: { fields },
   });
+  return finishAssetDetail(entityType, fqn, body);
+}
+
+function finishAssetDetail(entityType: string, fqn: string, body: Record<string, unknown>): AssetDetail {
   const schema = schemaRowsFor(entityType, body);
   const code =
     mapStoredProcedureCode(body.storedProcedureCode) ?? mapStoredProcedureCode(body.metricExpression);

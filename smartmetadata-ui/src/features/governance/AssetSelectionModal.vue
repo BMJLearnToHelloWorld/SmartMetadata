@@ -11,6 +11,7 @@ import NextPrevious from '@/components/shared/NextPrevious.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { searchAssets } from '@/api/search';
 import { addAssetsToGlossaryTerm, getGlossaryTermByFqn } from '@/api/glossaryTerms';
+import { addAssetsToMetric, getMetricByFqn } from '@/api/metrics';
 import { addAssetsToTags, getTagByFqn } from '@/api/tags';
 import {
   buildTagAssetsQuickFilterQuery,
@@ -27,16 +28,20 @@ import type { EntityRef, SearchHit } from '@/types/api';
 /**
  * Pin AssetSelectionModal (components/DataAssets/AssetsSelectionModal/
  * AssetSelectionModal.tsx + useAssetSelectionState.ts), TAG + GLOSSARY
- * subsets — the TagPage add-assets modal (pages/TagPage/TagPage.tsx:982-991)
- * and the GlossaryTerm add-assets modal
- * (components/Glossary/GlossaryTerms/GlossaryTermsV1.component.tsx:366-376).
+ * + METRIC subsets — the TagPage add-assets modal
+ * (pages/TagPage/TagPage.tsx:982-991), the GlossaryTerm add-assets modal
+ * (components/Glossary/GlossaryTerms/GlossaryTermsV1.component.tsx:366-376),
+ * and the Metric add-assets modal (components/Metric/MetricDetails/
+ * MetricDetails.tsx:451-460, type METRIC).
  *
  * The `type` prop selects the pin branch: 'tag' saves through
  * addAssetsToTags, 'glossaryTerm' through addAssetsToGlossaryTerm
- * (useAssetSelectionState.ts:413-414 vs the GLOSSARY branch). The
+ * (useAssetSelectionState.ts:413-414 vs the GLOSSARY branch), 'metric'
+ * through addAssetsToMetric (useAssetSelectionState.ts:426). The
  * picker queryFilter comes from the parent in both cases (Tag:
  * getQueryFilterToExcludeTermsAndEntities, GlossaryTerm:
- * getQueryFilterToExcludeTerm).
+ * getQueryFilterToExcludeTerm, Metric:
+ * getMetricAssetSelectionQueryFilter).
  *
  * - Search (index ALL, page size 25 = PAGE_SIZE_MEDIUM) with the
  *   parent queryFilter merged with the quick-filter query; the
@@ -63,16 +68,18 @@ const props = defineProps<{
   queryFilter?: string;
   /**
    * Pin AssetsOfEntity branch, as in AssetsTabs.vue: 'tag' is TagPage,
-   * 'glossaryTerm' is GlossaryTermsV1 (pin passes type GLOSSARY).
+   * 'glossaryTerm' is GlossaryTermsV1 (pin passes type GLOSSARY),
+   * 'metric' is MetricDetails (pin passes type METRIC).
    * Defaults to 'tag'.
    */
-  type?: 'tag' | 'glossaryTerm';
+  type?: 'tag' | 'glossaryTerm' | 'metric';
   /**
    * Entity id when the parent already loaded the entity: skips the
    * by-FQN resolution fetch (same rationale as the AssetsTabs entityId
    * prop). Without it the modal resolves the id itself — TAG via
-   * getTagByFqn, GLOSSARY via getGlossaryTermByFqn (pin
-   * useAssetSelectionState.ts:227-230 fetches the active entity by FQN).
+   * getTagByFqn, GLOSSARY via getGlossaryTermByFqn, METRIC via
+   * getMetricByFqn (pin useAssetSelectionState.ts:227-230 fetches the
+   * active entity by FQN).
    */
   entityId?: string;
 }>();
@@ -170,7 +177,9 @@ async function fetchCurrentEntity(): Promise<void> {
     resolvedEntityId.value =
       props.type === 'glossaryTerm'
         ? (await getGlossaryTermByFqn(props.entityFqn)).id
-        : (await getTagByFqn(props.entityFqn)).id;
+        : props.type === 'metric'
+          ? (await getMetricByFqn(props.entityFqn)).id
+          : (await getTagByFqn(props.entityFqn)).id;
   } catch (error) {
     resolvedEntityId.value = undefined;
     message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
@@ -209,9 +218,13 @@ async function onSave(): Promise<void> {
         displayName: hit.displayName,
       }));
     // Pin useAssetSelectionState save branches: GLOSSARY saves through
-    // addAssetsToGlossaryTerm, TAG through addAssetsToTags.
+    // addAssetsToGlossaryTerm, TAG through addAssetsToTags, METRIC
+    // through addMetricTabAssets (the metricsAPI.ts twin,
+    // addAssetsToMetric) by FQN.
     if (props.type === 'glossaryTerm') {
       await addAssetsToGlossaryTerm(resolvedEntityId.value, refs);
+    } else if (props.type === 'metric') {
+      await addAssetsToMetric(props.entityFqn, refs);
     } else {
       await addAssetsToTags(resolvedEntityId.value, refs);
     }
