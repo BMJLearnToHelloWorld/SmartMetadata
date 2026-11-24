@@ -103,6 +103,14 @@ def test_sink_writes_usage_and_rich_lineage() -> None:
             calls.append(("usage", entity_type, fqn, date, count))
             return {"ok": 1}
 
+        def get_pipeline_by_name(self, fqn):
+            calls.append(("get_pipeline", fqn))
+            return {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "name": "q",
+                "fullyQualifiedName": fqn,
+            }
+
     sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
     sink.write(
         UsageRecord(entity_type="table", fqn="svc.db.s.t", date="2026-10-28", count=3)
@@ -116,9 +124,18 @@ def test_sink_writes_usage_and_rich_lineage() -> None:
         )
     )
     assert calls[0] == ("usage", "table", "svc.db.s.t", "2026-10-28", 3)
-    details = calls[1][1][4]
+    assert calls[1] == ("get_pipeline", "p.q")
+    details = calls[2][1][4]
     assert "columnsLineage" in details
-    assert details["pipeline"]["fullyQualifiedName"] == "p.q"
+    # The pipeline ref carries the resolved server id (pin's EntityReference
+    # requires ["id", "type"]); the bare-FQN shape this test previously
+    # asserted 400s on the server.
+    assert details["pipeline"] == {
+        "type": "pipeline",
+        "id": "33333333-3333-4333-8333-333333333333",
+        "name": "q",
+        "fullyQualifiedName": "p.q",
+    }
 
 
 def test_order_puts_usage_before_lineage() -> None:
