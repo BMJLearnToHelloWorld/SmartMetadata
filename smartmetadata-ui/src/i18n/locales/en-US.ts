@@ -1963,6 +1963,7 @@ const enUS = {
       withOwner: 'Data assets with owner',
       byEntityType: 'Assets by entity type',
       byTier: 'Assets by tier',
+      noTier: 'No Tier',
     },
     pipelineTitle: 'Data Insights pipeline',
     pipelineLead: 'Historical Data Insights charts appear after a Data Insights job writes report data.',

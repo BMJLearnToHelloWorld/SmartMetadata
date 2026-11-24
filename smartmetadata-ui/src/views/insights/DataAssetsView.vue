@@ -41,6 +41,7 @@ import type { ChartSeries } from '@/features/charts/types';
 import { seriesWindow } from '@/features/charts/types';
 import { SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
 import type { Kpi } from '@/types/kpi';
+import { startCase } from '@/utils/text';
 import ServiceInsightCard from './ServiceInsightCard.vue';
 
 const { t, te } = useI18n();
@@ -78,6 +79,23 @@ const kpiList = ref<Kpi[]>([]);
 function entityLabel(entityType: string): string {
   const key = `explore.entity.${entityType}`;
   return te(key) ? t(key) : entityType;
+}
+
+/**
+ * Pin DataInsightChartCard.tsx:717 renders the tier groups in the
+ * right-side summary rows with lodash `startCase` — `Tier.Gold` ->
+ * `Tier Gold`. The untiered group IS in the displayed keys: the :147
+ * `NoTier` exclusion covers only the tier-change computation, not the
+ * rows (the main useMemo :396-413 builds the keys unfiltered), so
+ * pin shows it as startCase('NoTier') = `No Tier`. The live catalog
+ * reports the untiered bucket lowercase (`notier`), so the check is
+ * case-insensitive and the label comes from i18n (zh `无层级`).
+ */
+function tierLabel(group: string): string {
+  if (group.toLowerCase() === 'notier') {
+    return t('insights.summary.noTier');
+  }
+  return startCase(group);
 }
 
 function facetBuckets(facets: Array<{ id: FacetId; buckets: Array<{ key: string; count: number }> }>, id: FacetId) {
@@ -347,7 +365,10 @@ async function load(): Promise<void> {
     );
     tierSeries.value = namedSeries(
       t('insights.series.tier'),
-      bucketsToPoints(facetBuckets(search.facets, 'tier')),
+      bucketsToPoints(facetBuckets(search.facets, 'tier')).map((point) => ({
+        ...point,
+        label: tierLabel(point.label),
+      })),
     );
     testSeries.value = namedSeries(
       t('insights.series.testStatus'),
@@ -555,7 +576,7 @@ onMounted(async () => {
               data-testid="insights-tier-progress-row"
             >
               <div class="insights-progress__meta">
-                <span class="insights-progress__name" data-testid="insights-progress-name">{{ row.group }}</span>
+                <span class="insights-progress__name" data-testid="insights-progress-name">{{ tierLabel(row.group) }}</span>
                 <span class="insights-progress__value" data-testid="insights-progress-value">{{ row.count }}</span>
               </div>
               <Progress

@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ServiceTagLabel } from '@/types/ingestion';
 import {
+  formatTierLabel,
   getCertificationTag,
   getTagsWithoutCertification,
   getTagsWithoutTier,
@@ -49,6 +50,16 @@ describe('tier tag helpers', () => {
     expect(getTierTag(tags)?.tagFQN).toBe('Tier.Tier2');
     expect(getTagsWithoutTier(tags)).toEqual([SUGGESTED]);
     expect(getTierTag([SUGGESTED])).toBeUndefined();
+  });
+
+  it('formats a tier FQN as its pin name (formatTierLabel)', () => {
+    // Pin AdvancedSearchPureUtils.ts:85-100: last FQN segment, default
+    // tiers normalised to `Tier1`.
+    expect(formatTierLabel('Tier.Gold')).toBe('Gold');
+    expect(formatTierLabel('Tier.Silver')).toBe('Silver');
+    expect(formatTierLabel('Tier.Tier1')).toBe('Tier1');
+    expect(formatTierLabel('Tier.tier2')).toBe('Tier2');
+    expect(formatTierLabel('Tier1')).toBe('Tier1');
   });
 });
 

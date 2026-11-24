@@ -9,6 +9,7 @@
  */
 
 import type { SearchFacet } from '@/catalog/searchFacets';
+import { formatTierLabel } from '@/ingestion/tierTags';
 import type { EntityRef } from '@/types/api';
 import type { TestCase, TestDefinition, TestSuite } from '@/types/quality';
 
@@ -333,7 +334,10 @@ export function cardinalityFromReportRows(rows: ReportRow[], field: string): num
 export function facetOptions(facets: SearchFacet[], id: SearchFacet['id']): Array<{ value: string; label: string }> {
   return (facets.find((facet) => facet.id === id)?.buckets ?? []).map((bucket) => ({
     value: bucket.key,
-    label: `${bucket.key} (${bucket.count})`,
+    // Pin's DQ dashboard tier filter labels the option with the tier
+    // NAME (getEntityName, useDataQualityDashboardFilters.ts:458-464),
+    // not the FQN and not startCase.
+    label: `${id === 'tier' ? formatTierLabel(bucket.key) : bucket.key} (${bucket.count})`,
   }));
 }
 

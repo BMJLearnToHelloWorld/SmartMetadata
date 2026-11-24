@@ -13,6 +13,7 @@ import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
 import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
+import { formatTierLabel } from '@/ingestion/tierTags';
 import { searchAssets } from '@/api/search';
 import { useAuthStore } from '@/stores/auth';
 import type { SearchHit } from '@/types/api';
@@ -263,7 +264,7 @@ const searchEmptyTitle = computed(() =>
               {{ hitLocation(hit) || t('explore.locationMissing') }}
             </Typography.Text>
             <Typography.Text v-if="hit.serviceType" type="secondary">{{ hit.serviceType }}</Typography.Text>
-            <Typography.Text v-if="hit.tier" type="secondary">{{ hit.tier }}</Typography.Text>
+            <Typography.Text v-if="hit.tier" type="secondary">{{ formatTierLabel(hit.tier) }}</Typography.Text>
             <Typography.Text v-if="hit.usageSummary" type="secondary">
               {{ usagePercentileText(hit) }}
             </Typography.Text>

@@ -31,6 +31,22 @@ export function isCertificationTag(tagFQN: string): boolean {
   return tagFQN.startsWith(CERTIFICATION_TAG_PREFIX);
 }
 
+/**
+ * Pin `formatTierLabel` (openmetadata-ui
+ * utils/AdvancedSearchPureUtils.ts:85-100): the tier NAME shown for a
+ * tier FQN string on filter/dropdown/badge surfaces — the last FQN
+ * segment, with a default tier normalised to `Tier1`
+ * (`Tier.Tier1` -> `Tier1`, `Tier.Gold` -> `Gold`). Pin's Explore
+ * quick filter and DQ dashboard tier filter both render this name;
+ * only the Insights chart rows use lodash `startCase` instead
+ * (DataInsightChartCard.tsx:717).
+ */
+export function formatTierLabel(fqn: string): string {
+  const name = fqn.split('.').pop() ?? fqn;
+  const match = name.match(/^tier(\d+)$/i);
+  return match ? `Tier${match[1]}` : name;
+}
+
 /** First `Tier.*` label, or undefined when the service has no tier. */
 export function getTierTag<T extends { tagFQN: string }>(tags: readonly T[]): T | undefined {
   return tags.find((tag) => isTierTag(tag.tagFQN));

@@ -15,6 +15,7 @@ import { DEFAULT_CURATED_RULE, describeCuratedClause, describeCuratedRule } from
 import { useCuratedAssets, type CuratedAssetsSource } from './useCuratedAssets';
 import type { CuratedAssetsConfig } from './CuratedAssetsModal.vue';
 import { serviceTypeIcon } from '@/features/home/serviceTypeIcon';
+import { formatTierLabel } from '@/ingestion/tierTags';
 import type { LandingPageLayoutItem } from '@/features/home/landingPageLayout';
 
 const CuratedAssetsModal = defineAsyncComponent(
@@ -208,7 +209,7 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
           />
           <span class="curated-assets__name-wrap">
             <span class="curated-assets__name">{{ asset.name }}</span>
-            <span v-if="asset.tier" class="curated-assets__tier">{{ asset.tier }}</span>
+            <span v-if="asset.tier" class="curated-assets__tier">{{ formatTierLabel(asset.tier) }}</span>
           </span>
           <!-- Only once the test lookup has answered: an unknown health gets
             no dot rather than a green nobody confirmed. -->

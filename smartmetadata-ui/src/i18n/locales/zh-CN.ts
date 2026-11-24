@@ -1942,6 +1942,7 @@ const zhCN = {
       withOwner: '有所有者的数据资产',
       byEntityType: '按实体类型分布',
       byTier: '按层级分布',
+      noTier: '无层级',
     },
     pipelineTitle: 'Data Insights 管道',
     pipelineLead: 'Data Insights 作业写入报告数据后才会显示历史图表。',

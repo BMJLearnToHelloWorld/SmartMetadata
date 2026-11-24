@@ -16,6 +16,7 @@ import {
 import type { SearchFilters } from '@/catalog/searchQuery';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import { serviceTypeIcon } from '@/features/home/serviceTypeIcon';
+import { formatTierLabel } from '@/ingestion/tierTags';
 import { navIcon } from '@/layouts/navIcons';
 
 const props = withDefaults(
@@ -111,7 +112,11 @@ function facetTitle(id: FacetId): string {
 }
 
 function optionLabel(id: FacetId, key: string, count: number): string | VNode {
-  const text = `${id === 'entityType' ? entityLabel(key) : key} (${count})`;
+  // Pin renders the tier option with its tier NAME, not the FQN and
+  // not startCase: `formatTierLabel` in AdvancedSearchPureUtils.ts
+  // (getNameFromFQN, default tiers normalised to `Tier1`).
+  const display = id === 'entityType' ? entityLabel(key) : id === 'tier' ? formatTierLabel(key) : key;
+  const text = `${display} (${count})`;
   const icon = optionIcon(id, key);
   if (!icon) {
     return text;
