@@ -80,6 +80,18 @@ function entityLabel(entityType: string): string {
   return te(key) ? t(key) : entityType;
 }
 
+/**
+ * Pin DataInsightChartCard.tsx:716 renders tier group names through
+ * startCase — the untiered group (the server's TierStep.java:48 emits
+ * `NoTier` for tier-eligible assets without a tier tag) displays as
+ * "No Tier". Stored chart data has also been seen with the lowercase
+ * `notier` spelling, so match case-insensitively. Real tier FQNs
+ * (Tier.Gold) keep their raw form.
+ */
+function tierLabel(group: string): string {
+  return group.toLowerCase() === 'notier' ? t('insights.summary.noTier') : group;
+}
+
 function facetBuckets(facets: Array<{ id: FacetId; buckets: Array<{ key: string; count: number }> }>, id: FacetId) {
   return facets.find((facet) => facet.id === id)?.buckets ?? [];
 }
@@ -345,10 +357,6 @@ async function load(): Promise<void> {
       t('insights.series.serviceType'),
       bucketsToPoints(facetBuckets(search.facets, 'serviceType')),
     );
-    tierSeries.value = namedSeries(
-      t('insights.series.tier'),
-      bucketsToPoints(facetBuckets(search.facets, 'tier')),
-    );
     testSeries.value = namedSeries(
       t('insights.series.testStatus'),
       testResultsToStatusPoints(
@@ -365,12 +373,28 @@ async function load(): Promise<void> {
     try {
       const data = await listSystemChartData(PIPELINE_CHART_NAMES, window.startTs, window.endTs, { filter });
       systemData.value = data;
+      // The tier bar shares the system-chart tier distribution with the
+      // top summary rows (pin's tier card is system-chart driven:
+      // DataInsightChartCard with SystemChartType.TotalDataAssetsByTier).
+      // The search 'tier' facet carries no buckets for untiered assets,
+      // so a facet-sourced bar rendered "No data" while the summary rows
+      // showed the untiered bucket — the two surfaces contradicted each
+      // other. One source, one rule: both show the untiered bucket as
+      // "No tier" via tierLabel.
+      tierSeries.value = namedSeries(
+        t('insights.series.tier'),
+        latestByGroup(data.total_data_assets_by_tier ?? []).map((item) => ({
+          label: tierLabel(item.group),
+          value: item.count,
+        })),
+      );
       pipeline.value = PIPELINE_CHART_NAMES.flatMap((name) => {
         const series = insightResultsToSeries(name, data[name] ?? []);
         return [{ name, title: t(`insights.pipeline.${name}`), series }];
       });
     } catch (error) {
       systemData.value = {};
+      tierSeries.value = [];
       pipeline.value = [];
       pipelineError.value = error instanceof Error ? error.message : t('insights.pipelineFailed');
     }
@@ -512,7 +536,7 @@ onMounted(async () => {
         <Typography.Title :level="5" data-testid="insights-summary-title" class="insights__sub">
           {{ summaryTitle }}
         </Typography.Title>
-        <div v-if="summaryCards.length" data-testid="insights-summary">
+        <div v-if="summaryCards.length" data-testid="insights-summary" class="insights-summary">
           <Row :gutter="[16, 16]">
             <Col v-for="card in summaryCards" :key="card.id" :xs="24" :md="8">
               <Card size="small" :title="card.label" :data-testid="`insights-summary-${card.id}`">
@@ -555,7 +579,7 @@ onMounted(async () => {
               data-testid="insights-tier-progress-row"
             >
               <div class="insights-progress__meta">
-                <span class="insights-progress__name" data-testid="insights-progress-name">{{ row.group }}</span>
+                <span class="insights-progress__name" data-testid="insights-progress-name">{{ tierLabel(row.group) }}</span>
                 <span class="insights-progress__value" data-testid="insights-progress-value">{{ row.count }}</span>
               </div>
               <Progress
@@ -743,6 +767,17 @@ onMounted(async () => {
 <style scoped>
 .insights__alert {
   margin-block: 12px;
+}
+/*
+ * The summary Row carries Ant's gutter negative margins (-8px each side),
+ * which make it 16px wider than this unpadded container — the container
+ * measured overflowX=true on the live page. Clip the gutter overhang here
+ * (the same containment .insights-progress already applies to its rows);
+ * the first/last cards stay flush with the container edges.
+ */
+.insights-summary {
+  min-width: 0;
+  overflow-x: hidden;
 }
 .insights__sub {
   margin-top: 20px;
