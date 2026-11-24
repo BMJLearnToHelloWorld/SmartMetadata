@@ -140,6 +140,24 @@ describe('apiRequest', () => {
     });
   });
 
+  it('sends an array query value as repeated parameters, never comma-joined (D32)', async () => {
+    let seenUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        seenUrl = String(input);
+        return new Response('{}', { status: 200 });
+      }),
+    );
+    await apiRequest('/v1/search/query', {
+      query: { q: 'orders', exclude_source_fields: ['columns', 'queries'] },
+    });
+    const url = new URL(seenUrl, 'http://localhost');
+    expect(url.searchParams.getAll('exclude_source_fields')).toEqual(['columns', 'queries']);
+    expect(seenUrl).not.toContain('columns%2Cqueries');
+    expect(seenUrl).not.toContain('columns,queries');
+  });
+
   it('serializes array query values as repeated params (pin multi-status form)', async () => {
     const mock = vi.fn(async (_input: RequestInfo | URL) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', mock);

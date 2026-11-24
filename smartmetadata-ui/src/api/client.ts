@@ -44,7 +44,15 @@ export interface ApiRequestOptions {
   json?: unknown;
   /** Raw text body (e.g. a CSV payload); Content-Type defaults to text/plain. */
   text?: string;
-  query?: Record<string, string | number | boolean | string[] | undefined>;
+  /**
+   * Query values; an array value is sent as repeated parameters
+   * (`exclude_source_fields=a&exclude_source_fields=b`), the wire form
+   * official's search client uses for list params (rest/searchAPI.ts
+   * paramsSerializer `indexes: null`) and the form the fork's
+   * SearchResource `List<String>` params read. Never comma-join a list
+   * into one value: Jersey would read it as a single field name.
+   */
+  query?: Record<string, string | number | boolean | Array<string | number | boolean> | undefined>;
   auth?: boolean;
   /** Defaults to application/json when `json` is set. Use for RFC 6902 patches. */
   contentType?: string;

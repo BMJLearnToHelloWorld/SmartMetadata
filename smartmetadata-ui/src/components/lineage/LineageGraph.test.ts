@@ -8,7 +8,8 @@
  */
 import { mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { ELKLayout } from '@/lineage/elkLayout';
 import { mapEntityLineage } from '@/lineage/graphModel';
 import { createTestI18n } from '@/test/i18n';
 import LineageGraph from './LineageGraph.vue';
@@ -47,11 +48,31 @@ const MODEL = mapEntityLineage({
 });
 
 describe('LineageGraph', () => {
-  it('renders MiniMap, node search, and denser node fields from the mapped model', () => {
+  // The component lays out through the async ELK engine; warm the engine
+  // once here so each mount pays a warm layout (~200 ms) instead of the
+  // cold engine start (dynamic import + first layout, seconds on this VM).
+  // The layout itself still runs for real on every mount; only the
+  // one-time engine start moves out of the tests' wait budget.
+  beforeAll(async () => {
+    await ELKLayout.layoutGraph(
+      [
+        { id: 'warm-a', width: 260, height: 78 },
+        { id: 'warm-b', width: 260, height: 78 },
+      ],
+      [{ id: 'warm-e', sources: ['warm-a'], targets: ['warm-b'] }],
+    );
+  });
+
+  it('renders MiniMap, node search, and denser node fields from the mapped model', async () => {
     const wrapper = mount(LineageGraph, {
       props: { model: MODEL },
       global: { plugins: [Antd, createTestI18n()] },
     });
+    // Node positions arrive from the async ELK layout; the toolbar renders
+    // immediately, the nodes only after the layout resolves.
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-node-center-id"]').exists()).toBe(true),
+    );
     expect(wrapper.get('[data-testid="lineage-graph"]').classes()).toContain('lineage-graph--om-chrome');
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);

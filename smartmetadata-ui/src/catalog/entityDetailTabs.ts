@@ -122,10 +122,12 @@ const STORED_PROCEDURE_TABS: EntityDetailTabDef[] = [
 ];
 
 // Official: utils/MetricEntityUtils/MetricDetailsClassBase.ts getMetricDetailPageTabsIds
+// B2-G1: the assets tab is served by GET /v1/metrics/{id}/assets
+// (getMetricAssets), so it is no longer a residual.
 const METRIC_TABS: EntityDetailTabDef[] = [
   { key: 'overview', labelKey: 'overview', slot: 'metricOverview' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'assets', labelKey: 'assets', slot: 'residual', residual: 'asset.tabResidual.assets' },
+  { key: 'assets', labelKey: 'assets', slot: 'assets' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];

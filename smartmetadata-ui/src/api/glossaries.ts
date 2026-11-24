@@ -7,10 +7,11 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { CreateGlossaryRequest, Glossary } from '@/types/governance';
 import { apiRequest } from './client';
+import { notifyCsvJobsRefresh } from './csvJobs';
 import { mapTags } from './entities';
 
 export const GLOSSARY_FIELDS = 'owners,tags,reviewers,usageCount,termCount,domains';
@@ -105,6 +106,31 @@ export function patchGlossary(id: string, patch: unknown[]): Promise<unknown> {
 export interface DeleteEntityOptions {
   hardDelete?: boolean;
   recursive?: boolean;
+}
+
+/**
+ * Official exportGlossaryInCSVFormat (rest/glossaryAPI.ts:205):
+ * GET /v1/glossaries/name/{fqn}/exportAsync — async CSV export of the
+ * glossary's terms; the response carries the CSV job id (pin
+ * CSVExportResponse), never a file. Same contract as
+ * exportMetricsCsvAsync: the call dispatches the CSV-jobs tray refresh
+ * so the job appears even if the tray has not polled yet, and a jobId
+ * is never invented when the response carries none
+ * (ADR:2026-11-08-csv-job-owned-memory-set). The caller claims the job
+ * for the tray (markCsvJobOwned). Server endpoint verified present in
+ * the product server (B2-S1: GlossaryResource.java:568 exportAsync).
+ */
+export interface GlossaryCsvExportJob {
+  jobId?: string;
+}
+
+export async function exportGlossaryInCSVFormat(fqn: string): Promise<GlossaryCsvExportJob> {
+  const payload = await apiRequest<unknown>(
+    `/v1/glossaries/name/${encodeURIComponent(fqn)}/exportAsync`,
+  );
+  notifyCsvJobsRefresh();
+  const jobId = asString(asRecord(payload)?.jobId);
+  return jobId ? { jobId } : {};
 }
 
 /** Official generic deleteEntity (rest/miscAPI.ts): DELETE /glossaries/{id}?hardDelete&recursive. */

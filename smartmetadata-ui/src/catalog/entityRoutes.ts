@@ -146,6 +146,87 @@ export function isDetailWired(entityType: string): boolean {
 }
 
 /**
+ * D26: glossaryTerm / tag / dataProduct detail pages live on governance
+ * routes (governance/terms/:id, governance/tags/:id,
+ * governance/data-products/:id) and their detail views load BY ID
+ * (getGlossaryTerm / getTag / getDataProduct) — they deliberately stay
+ * OUT of DETAIL_ENDPOINTS, whose map drives the generic `asset` route
+ * that has no rendering for them. Pin likewise routes them through
+ * their own detail paths (getGlossaryTermDetailsPath /
+ * getClassificationTagPath / getDataProductDetailsPath), not the generic
+ * entity-details path. The id is never derived from the FQN: a search
+ * hit without an id stays unwired rather than navigating to a
+ * nonexistent page.
+ */
+const GOVERNANCE_DETAIL_ROUTES: Record<string, string> = {
+  glossaryTerm: 'governance-term',
+  tag: 'governance-tag',
+  dataProduct: 'governance-data-product',
+};
+
+export function governanceDetailLocation(
+  entityType: string,
+  id?: string,
+): { name: string; params: { id: string } } | null {
+  const name = GOVERNANCE_DETAIL_ROUTES[entityType];
+  if (!name || !id) {
+    return null;
+  }
+  return { name, params: { id } };
+}
+
+/** A router location a search hit can navigate to: asset/lineage
+ * locations carry entityType + fqn, governance detail locations carry
+ * the entity id. */
+export type SearchHitLocation =
+  | { name: string; params: { entityType: string; fqn: string } }
+  | { name: string; params: { id: string } };
+
+/**
+ * Single navigation target for a search hit: parent table for a column
+ * hit, generic asset detail for a wired type, governance detail for
+ * glossaryTerm / tag / dataProduct when the hit carries an id. Null is
+ * the honest unwired marker — callers keep the hit selected (preview)
+ * instead of navigating.
+ */
+export function detailLocationForHit(
+  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string; id?: string },
+): SearchHitLocation | null {
+  const parent = parentTableLocation(hit.entityType, hit.tableFqn);
+  if (parent) {
+    return parent;
+  }
+  if (hit.entityType && hit.fullyQualifiedName && isDetailWired(hit.entityType)) {
+    return assetLocation(hit.entityType, hit.fullyQualifiedName);
+  }
+  return governanceDetailLocation(hit.entityType, hit.id);
+}
+
+/**
+ * D25: pin EntitySummaryPanel shows its Lineage tab for exactly these
+ * 11 entity types (EntityRightPanelVerticalNav.constants.ts
+ * LINEAGE_TABS_SET); glossaryTerm, tag and dataProduct are NOT in it.
+ * The preview lineage entry is gated on this set.
+ */
+export const LINEAGE_CAPABLE_ENTITY_TYPES: readonly string[] = [
+  'apiEndpoint',
+  'chart',
+  'container',
+  'dashboard',
+  'dashboardDataModel',
+  'directory',
+  'mlmodel',
+  'pipeline',
+  'searchIndex',
+  'table',
+  'topic',
+];
+
+export function isLineageCapable(entityType: string): boolean {
+  return LINEAGE_CAPABLE_ENTITY_TYPES.includes(entityType);
+}
+
+/**
  * Parent-table location for a tableColumn search hit. Official column cards
  * link to the parent table (ExploreSearchCard buildColumnDetails and the
  * column breadcrumb both use the embedded `table` reference); there is no
@@ -168,23 +249,20 @@ export function parentTableLocation(
  * Shared search-hit opener (pin ExploreSearchCard title link, as
  * already implemented inline in MembersAssetList and AssetsTabs):
  * a column hit opens its parent table, a wired type opens its asset
- * detail, anything else is unwired and the caller keeps the hit
+ * detail, a governance type with an id opens its governance detail
+ * page, anything else is unwired and the caller keeps the hit
  * selected (preview) instead of navigating. Returns true when a
  * navigation was pushed.
  */
 export function openSearchHit(
-  push: (to: { name: string; params: { entityType: string; fqn: string } }) => unknown,
-  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string },
+  push: (to: SearchHitLocation) => unknown,
+  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string; id?: string },
 ): boolean {
-  const parent = parentTableLocation(hit.entityType, hit.tableFqn);
-  if (parent) {
-    void push(parent);
-    return true;
-  }
-  if (!hit.fullyQualifiedName || !hit.entityType || !isDetailWired(hit.entityType)) {
+  const location = detailLocationForHit(hit);
+  if (!location) {
     return false;
   }
-  void push(assetLocation(hit.entityType, hit.fullyQualifiedName));
+  void push(location);
   return true;
 }
 

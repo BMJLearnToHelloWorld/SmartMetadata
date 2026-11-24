@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createGlossary, listGlossaries, updateGlossary } from './glossaries';
+import { createGlossary, exportGlossaryInCSVFormat, listGlossaries, updateGlossary } from './glossaries';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -81,5 +81,44 @@ describe('glossaries API', () => {
     await updateGlossary({ name: 'Finance', description: 'Updated' });
     expect(lastFetch().init?.method).toBe('PUT');
     expect(lastFetch().url).toContain('/api/v1/glossaries');
+  });
+
+  it('exports a glossary through GET /v1/glossaries/name/{fqn}/exportAsync and dispatches the CSV jobs refresh event (B2-G6)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ jobId: 'job-1', message: 'started' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const seen: Event[] = [];
+    const listener = (event: Event): void => {
+      seen.push(event);
+    };
+    window.addEventListener('csv-jobs-refresh', listener);
+    try {
+      const payload = await exportGlossaryInCSVFormat('Business');
+      expect(payload).toMatchObject({ jobId: 'job-1' });
+      expect(lastFetch().url).toContain('/api/v1/glossaries/name/Business/exportAsync');
+      expect(seen).toHaveLength(1);
+    } finally {
+      window.removeEventListener('csv-jobs-refresh', listener);
+    }
+  });
+
+  it('returns an empty job when the export response carries no jobId (B2-G6)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ message: 'started' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const payload = await exportGlossaryInCSVFormat('Business');
+    expect(payload).toEqual({});
   });
 });
