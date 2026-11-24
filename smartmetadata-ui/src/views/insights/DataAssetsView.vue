@@ -41,6 +41,7 @@ import type { ChartSeries } from '@/features/charts/types';
 import { seriesWindow } from '@/features/charts/types';
 import { SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
 import type { Kpi } from '@/types/kpi';
+import { startCase } from '@/utils/text';
 import ServiceInsightCard from './ServiceInsightCard.vue';
 
 const { t, te } = useI18n();
@@ -81,15 +82,20 @@ function entityLabel(entityType: string): string {
 }
 
 /**
- * Pin DataInsightChartCard.tsx:716 renders tier group names through
- * startCase — the untiered group (the server's TierStep.java:48 emits
- * `NoTier` for tier-eligible assets without a tier tag) displays as
- * "No Tier". Stored chart data has also been seen with the lowercase
- * `notier` spelling, so match case-insensitively. Real tier FQNs
- * (Tier.Gold) keep their raw form.
+ * Pin DataInsightChartCard.tsx:717 renders the tier groups in the
+ * right-side summary rows with lodash `startCase` — `Tier.Gold` ->
+ * `Tier Gold`. The untiered group IS in the displayed keys: the :147
+ * `NoTier` exclusion covers only the tier-change computation, not the
+ * rows (the main useMemo :396-413 builds the keys unfiltered), so
+ * pin shows it as startCase('NoTier') = `No Tier`. The live catalog
+ * reports the untiered bucket lowercase (`notier`), so the check is
+ * case-insensitive and the label comes from i18n (zh `无层级`).
  */
 function tierLabel(group: string): string {
-  return group.toLowerCase() === 'notier' ? t('insights.summary.noTier') : group;
+  if (group.toLowerCase() === 'notier') {
+    return t('insights.summary.noTier');
+  }
+  return startCase(group);
 }
 
 function facetBuckets(facets: Array<{ id: FacetId; buckets: Array<{ key: string; count: number }> }>, id: FacetId) {
@@ -380,7 +386,7 @@ async function load(): Promise<void> {
       // so a facet-sourced bar rendered "No data" while the summary rows
       // showed the untiered bucket — the two surfaces contradicted each
       // other. One source, one rule: both show the untiered bucket as
-      // "No tier" via tierLabel.
+      // "No Tier" via tierLabel.
       tierSeries.value = namedSeries(
         t('insights.series.tier'),
         latestByGroup(data.total_data_assets_by_tier ?? []).map((item) => ({

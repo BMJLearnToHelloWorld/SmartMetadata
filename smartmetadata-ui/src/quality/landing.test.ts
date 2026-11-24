@@ -15,6 +15,7 @@ import {
   buildDqTableQuery,
   coverageFrom,
   dimensionCards,
+  facetOptions,
   filterCasesForSearch,
   governanceFiltersActive,
   healthFromCases,
@@ -49,6 +50,28 @@ describe('DQ landing helpers', () => {
     expect(parseSuiteSubTab('')).toBe('table-suites');
     expect(suiteTypeForSubTab('table-suites')).toBe('basic');
     expect(suiteTypeForSubTab('bundle-suites')).toBe('logical');
+  });
+
+  it('labels tier facet options with the tier name, other facets with the raw key', () => {
+    // Pin's DQ dashboard tier filter labels the option with the tier
+    // NAME (getEntityName, useDataQualityDashboardFilters.ts:458-464):
+    // `Tier.Gold` -> `Gold`, `Tier.Tier1` -> `Tier1`. Values stay FQNs.
+    const facets = [
+      {
+        id: 'tier',
+        field: 'tier.tagFQN',
+        buckets: [
+          { key: 'Tier.Gold', count: 2 },
+          { key: 'Tier.Tier1', count: 1 },
+        ],
+      },
+      { id: 'owner', field: 'owner', buckets: [{ key: 'alice', count: 4 }] },
+    ] as never;
+    expect(facetOptions(facets, 'tier')).toEqual([
+      { value: 'Tier.Gold', label: 'Gold (2)' },
+      { value: 'Tier.Tier1', label: 'Tier1 (1)' },
+    ]);
+    expect(facetOptions(facets, 'owner')).toEqual([{ value: 'alice', label: 'alice (4)' }]);
   });
 
   it('counts latest test statuses without inventing missing buckets', () => {

@@ -277,21 +277,24 @@ describe('DataAssetsView', () => {
     expect(entityRows[0].find('.ant-progress-text').exists()).toBe(false);
     const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
     expect(tierRows).toHaveLength(2);
-    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Tier.Gold');
+    // Pin DataInsightChartCard.tsx:717 renders the tier groups with
+    // lodash startCase: `Tier.Gold` -> `Tier Gold`.
+    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
+    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Silver');
     expect(tierRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('7');
     // Tier shares are of the global total (7 of 300), not of tiered assets.
     expect(tierRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 2.33');
     expect(tierRows[0].find('.ant-progress-text').exists()).toBe(false);
   });
 
-  // Pin DataInsightChartCard.tsx:716 renders tier group names through
+  // Pin DataInsightChartCard.tsx:717 renders tier group names through
   // startCase, so the untiered group displays as "No Tier". The stored
   // chart data has been seen both as the canonical `NoTier` (server
   // TierStep.java:48) and as lowercase `notier`; both spellings map to
-  // the "No tier" display name. The tier bar shares the system-chart
+  // the "No Tier" display name. The tier bar shares the system-chart
   // distribution with the summary rows, so it plots the same bucket
   // instead of the search facet's "No data" state.
-  it.each(['notier', 'NoTier'])('labels the untiered tier group %s as "No tier"', async (group) => {
+  it.each(['notier', 'NoTier'])('labels the untiered tier group %s as "No Tier"', async (group) => {
     const tierPayload = {
       ...legacyPayload,
       total_data_assets_by_tier: [
@@ -308,10 +311,35 @@ describe('DataAssetsView', () => {
     const wrapper = await mountView();
     const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
     expect(tierRows).toHaveLength(2);
-    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toBe('No tier');
+    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toBe('No Tier');
     expect(tierRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('112');
-    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('Tier.Gold');
+    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
     expect(wrapper.find('[data-testid="insights-tier-chart"]').attributes('data-points')).toBe('1');
+  });
+
+  it('renders the untiered bucket as pin-verbatim "No Tier"', async () => {
+    // Pin shows the NoTier group in the tier card rows as
+    // startCase('NoTier') = `No Tier` (DataInsightChartCard.tsx:717;
+    // the :147 exclusion covers only the change computation). The live
+    // catalog reports the bucket lowercase (`notier`).
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return {
+        ...legacyPayload,
+        total_data_assets_by_tier: [
+          ...legacyPayload.total_data_assets_by_tier,
+          { count: 5, day: DAY_7, group: 'notier' },
+        ],
+      };
+    });
+    const wrapper = await mountView();
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
+    expect(tierRows).toHaveLength(3);
+    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
+    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('No Tier');
+    expect(tierRows[1].get('[data-testid="insights-progress-value"]').text()).toBe('5');
   });
 
   it('omits the summary description/owner cards when their summary cards have no value', async () => {

@@ -10,6 +10,7 @@ import { detailLocationForHit, isLineageCapable, parentTableLocation } from '@/c
 import { hasLineageSection } from '@/catalog/lineageSection';
 import { entityTypeColor } from '@/catalog/searchHits';
 import { getUsageData } from '@/catalog/usagePercentile';
+import { formatTierLabel } from '@/ingestion/tierTags';
 import LineageSection from './LineageSection.vue';
 import type { SearchHit } from '@/types/api';
 
@@ -137,7 +138,7 @@ const overviewRows = computed(() => {
       </section>
       <section class="preview__block" data-testid="explore-preview-tier">
         <Typography.Text type="secondary">{{ t('explore.facets.tier') }}</Typography.Text>
-        <Typography.Paragraph>{{ hit.tier || t('explore.noTier') }}</Typography.Paragraph>
+        <Typography.Paragraph>{{ hit.tier ? formatTierLabel(hit.tier) : t('explore.noTier') }}</Typography.Paragraph>
       </section>
       <section class="preview__block" data-testid="explore-preview-glossary">
         <Typography.Text type="secondary">{{ t('explore.glossaryTerms') }}</Typography.Text>

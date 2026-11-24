@@ -178,6 +178,21 @@ describe('ExploreFilterChips option icons and dropdown search (D6/D7)', () => {
     expect(chipOptions(wrapper, 'tier')[1].label).toBe('Tier1 (1)');
   });
 
+  it('labels tier facet options with the tier name, not the FQN', () => {
+    // Pin AdvancedSearchPureUtils.ts `formatTierLabel`: `Tier.Gold` ->
+    // `Gold`. The value stays the FQN.
+    const facets: SearchFacet[] = [
+      { id: 'tier', field: 'tier.tagFQN', buckets: [{ key: 'Tier.Gold', count: 3 }] },
+    ];
+    const wrapper = mount(ExploreFilterChips, {
+      props: { facets, filters: {}, facetIds: ['tier'] },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const options = chipOptions(wrapper, 'tier');
+    expect(options[1].value).toBe('Tier.Gold');
+    expect(options[1].label).toBe('Gold (3)');
+  });
+
   it('enables server search on every chip and emits the typed text', async () => {
     const wrapper = mount(ExploreFilterChips, {
       props: { facets: FACETS, filters: {}, facetIds: ['domain'] },

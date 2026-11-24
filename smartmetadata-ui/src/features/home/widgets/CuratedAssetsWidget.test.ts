@@ -84,6 +84,7 @@ describe('CuratedAssetsWidget', () => {
       '5 assets match the rule',
     );
     expect(wrapper.get('[data-testid="curated-asset-a.b"]').text()).toContain('Tier1');
+    expect(wrapper.get('[data-testid="curated-asset-a.b"]').text()).not.toContain('Tier.Tier1');
     expect(wrapper.get('[data-testid="home-widget-KnowledgePanel.CuratedAssets-meta"]').text()).toContain(
       '4 more assets match the rule',
     );
