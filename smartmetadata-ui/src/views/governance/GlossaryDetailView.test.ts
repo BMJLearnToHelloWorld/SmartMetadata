@@ -709,6 +709,30 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
       .map((node) => node.attributes('data-testid') as string);
   }
 
+  // Wait for the widget grid's async init to settle before asserting on
+  // its content. The grid mounts only after the persona docStore chain
+  // resolves, and the description cell's text lands one editor timer
+  // after mount (SmRichTextEditor content effect — the pin-exact
+  // BlockEditor.tsx:205-249 setTimeout). The landing round varies with
+  // load (probe: rounds 1-2 of the 3-flush budget), so a fixed flush
+  // count is not a settled state. Polls with flushPromises; if the text
+  // never lands, the assertions below still run and fail loudly — the
+  // wait adds no timeout, retry, or skip.
+  async function waitForWidgetText(
+    wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'],
+    testId: string,
+    expected: string,
+  ): Promise<void> {
+    for (let i = 0; i < 20; i++) {
+      const node = wrapper.find(`[data-testid="${testId}"]`);
+      if (node.exists() && node.text().includes(expected)) {
+        return;
+      }
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+    }
+  }
+
   // loadRelations is a multi-await chain (list terms -> build graph ->
   // mount canvas -> dynamic G6 import), so one flush does not cover
   // the relations pane mount; poll for the settled default pane (the
@@ -749,6 +773,7 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
     );
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountGlossary();
+    await waitForWidgetText(wrapper, 'widget-description', 'Core terms');
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Core terms');
     // The widget cell renders the GlossaryTermsWidget now (its table
     // carries the glossary-terms-table testid); the old view-owned
@@ -804,6 +829,7 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountGlossary();
     // Mount tab: the grid replaces the terms pane.
+    await waitForWidgetText(wrapper, 'widget-description', 'Core terms');
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Core terms');
     expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(false);
     // Relations tab keeps its existing pane once activated.
@@ -835,6 +861,7 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
     // inside the widget grid). Branch slots only: the shared cells
     // carry their own `widget-*-cell` root testids, which are not
     // branches.
+    await waitForWidgetText(wrapper, 'widget-description', 'Core terms');
     expect(
       widgetTestIds(wrapper).filter((id) => !id.endsWith('-cell')),
     ).toEqual([

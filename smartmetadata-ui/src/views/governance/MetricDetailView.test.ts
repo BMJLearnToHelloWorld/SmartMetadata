@@ -374,6 +374,30 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
       .map((node) => node.attributes('data-testid') as string);
   }
 
+  // Wait for the widget grid's async init to settle before asserting on
+  // its content. The grid mounts only after the persona docStore chain
+  // resolves, and the description cell's text lands one editor timer
+  // after mount (SmRichTextEditor content effect — the pin-exact
+  // BlockEditor.tsx:205-249 setTimeout). The landing round varies with
+  // load (probe: rounds 1-2 of the 3-flush budget), so a fixed flush
+  // count is not a settled state. Polls with flushPromises; if the text
+  // never lands, the assertions below still run and fail loudly — the
+  // wait adds no timeout, retry, or skip.
+  async function waitForWidgetText(
+    wrapper: Awaited<ReturnType<typeof mountMetric>>,
+    testId: string,
+    expected: string,
+  ): Promise<void> {
+    for (let i = 0; i < 20; i++) {
+      const node = wrapper.find(`[data-testid="${testId}"]`);
+      if (node.exists() && node.text().includes(expected)) {
+        return;
+      }
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+    }
+  }
+
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -436,6 +460,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     );
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountMetric();
+    await waitForWidgetText(wrapper, 'widget-description', 'Active users per month');
     const definition = wrapper.find('[data-testid="widget-metric-definition"]');
     // The definition widget renders the pin enum labels (mono uppercase).
     expect(definition.text()).toContain('Number');
@@ -531,6 +556,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountMetric();
     // Mount tab: the grid replaces the overview pane.
+    await waitForWidgetText(wrapper, 'widget-metric-definition', 'Number');
     expect(wrapper.find('[data-testid="widget-metric-definition"]').text()).toContain('Number');
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual(['widget-metric-definition']);
