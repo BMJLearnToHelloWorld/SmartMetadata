@@ -49,6 +49,10 @@ export const DRAWER_WIDTHS = {
    */
   relationTypeForm: 500,
   /**
+   * Add-lineage panel. AddLineagePopover.tsx (SlideoutMenu width 440).
+   */
+  addLineage: 440,
+  /**
    * Workflow creation panel. WorkflowsPage.tsx:438 (SlideoutMenu
    * width 640).
    */

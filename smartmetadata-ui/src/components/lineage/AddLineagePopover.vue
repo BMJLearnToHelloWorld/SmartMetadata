@@ -5,22 +5,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Modal, Select, Space, Typography, message } from 'ant-design-vue';
+import { Select, Space, Typography, message } from 'ant-design-vue';
 import { apiRequest } from '@/api/client';
 import { asRecord, asString } from '@/api/json';
 import { resolveDetailEndpoint } from '@/catalog/entityRoutes';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
 import type { LineageGraphNode } from '@/lineage/graphModel';
 import { getCanvasColumnAssets } from '@/lineage/edgeMutations';
 import LineageEntitySearch from './LineageEntitySearch.vue';
 
 /**
  * Add-lineage popover, mapped from the official `AddLineagePopover` (pin
- * a3012259ca): a panel with an edge preview (current → new), an entity
- * pick, and — for a column edit — a canvas-asset pick plus one of its
- * columns. The product renders it as an antd Modal (the product has no
- * slideout panel); the submit contract is pin's: the caller saves via
- * `saveLineageEdge` and closes the popover on success, so a failed save
- * keeps the pick.
+ * a3012259ca): a slideout panel (`SlideoutMenu`, width 440) with an edge
+ * preview (current → new), an entity pick, and — for a column edit — a
+ * canvas-asset pick plus one of its columns. The product renders it
+ * through the shared `SmDrawer` slideout at the pin width; the submit
+ * contract is pin's: the caller saves via `saveLineageEdge` and closes
+ * the popover on success, so a failed save keeps the pick.
  *
  * Pin fetches the picked asset's columns by FQN; the product does the
  * same through the entity detail endpoint (`fields=columns`, tables and
@@ -89,6 +90,11 @@ const pickedName = computed(() => {
     ? `${name}.${pickedColumnFqn.value.split('.').at(-1) ?? ''}`
     : name;
 });
+
+/** Pin header description entity: the node name, plus the edited column. */
+const currentName = computed(() =>
+  props.columnFqn ? `${props.nodeName}.${props.columnFqn.split('.').at(-1) ?? ''}` : props.nodeName,
+);
 
 const canSubmit = computed(
   () => Boolean(picked.value) && (!isColumnTarget.value || Boolean(pickedColumnFqn.value)),
@@ -207,13 +213,26 @@ function onSubmit(): void {
 </script>
 
 <template>
-  <Modal
+  <SmDrawer
     :open="open"
     :title="t(isUpstream ? 'lineage.addLineageUpstream' : 'lineage.addLineageDownstream')"
-    :confirm-loading="submitting"
+    :ok-text="t('lineage.addLineageSubmit')"
+    :confirm-loading="submitting || resolvingId"
+    :ok-disabled="!canSubmit"
+    width-key="addLineage"
+    test-id="add-lineage-popover"
+    @ok="onSubmit"
     @cancel="emit('close')"
   >
-    <Space direction="vertical" class="add-lineage-popover" data-testid="add-lineage-popover">
+    <Space direction="vertical" class="add-lineage-popover">
+      <Typography.Text type="secondary">
+        {{
+          t(
+            isUpstream ? 'lineage.addLineageUpstreamDescription' : 'lineage.addLineageDownstreamDescription',
+            { entity: currentName },
+          )
+        }}
+      </Typography.Text>
       <div class="add-lineage-popover__preview" data-testid="add-lineage-preview" aria-hidden="true">
         <div class="add-lineage-popover__card">
           <Typography.Text type="secondary">
@@ -256,23 +275,7 @@ function onSubmit(): void {
         {{ picked.displayName || picked.fqn }}
       </Typography.Text>
     </Space>
-    <template #footer>
-      <Space>
-        <Button data-testid="add-lineage-cancel" @click="emit('close')">
-          {{ t('label.cancel') }}
-        </Button>
-        <Button
-          type="primary"
-          data-testid="add-lineage-submit"
-          :disabled="!canSubmit"
-          :loading="submitting || resolvingId"
-          @click="onSubmit"
-        >
-          {{ t('lineage.addLineageSubmit') }}
-        </Button>
-      </Space>
-    </template>
-  </Modal>
+  </SmDrawer>
 </template>
 
 <style scoped>

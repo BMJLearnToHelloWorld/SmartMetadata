@@ -7,12 +7,21 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import type { SearchHit } from '@/types/api';
 import ExplorePreview from './ExplorePreview.vue';
+
+vi.mock('@/api/lineage', () => ({
+  getLineagePagingData: vi.fn(),
+}));
+
+import { getLineagePagingData } from '@/api/lineage';
+
+const getMock = getLineagePagingData as unknown as ReturnType<typeof vi.fn>;
 
 function hitWith(usageSummary: SearchHit['usageSummary']): SearchHit {
   return {
@@ -28,9 +37,22 @@ function hitWith(usageSummary: SearchHit['usageSummary']): SearchHit {
 }
 
 function mountPreview(hit: SearchHit | null) {
+  // Q-TAB-4: the mounted LineageSection calls useRouter on click, so the
+  // preview mounts with a memory router.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'home', component: { template: '<div>home</div>' } },
+      {
+        path: '/lineage/:entityType/:fqn',
+        name: 'lineage',
+        component: { template: '<div>lineage</div>' },
+      },
+    ],
+  });
   return mount(ExplorePreview, {
     props: { hit },
-    global: { plugins: [Antd, createTestI18n()] },
+    global: { plugins: [Antd, router, createTestI18n()] },
   });
 }
 
@@ -69,6 +91,115 @@ describe('ExplorePreview Generated-tag rendering', () => {
     for (const chip of chips) {
       expect(chip.classes()).not.toContain('asset-overview__generated-tag');
     }
+    wrapper.unmount();
+  });
+});
+
+describe('ExplorePreview D26 governance detail navigation', () => {
+  function governanceHit(entityType: string, id?: string): SearchHit {
+    return {
+      name: 'term',
+      fullyQualifiedName: 'biz.term',
+      entityType,
+      owners: [],
+      tags: [],
+      domains: [],
+      dataProducts: [],
+      ...(id ? { id } : {}),
+    };
+  }
+
+  it.each(['glossaryTerm', 'tag', 'dataProduct'])(
+    'opens a %s hit instead of showing the unwired marker',
+    (entityType) => {
+      const hit = governanceHit(entityType, `${entityType}-1`);
+      const wrapper = mountPreview(hit);
+      expect(wrapper.find('[data-testid="explore-preview-open"]').exists()).toBe(true);
+      expect(wrapper.text()).not.toContain('Detail page not wired for this type');
+      wrapper.find('[data-testid="explore-preview-open"]').trigger('click');
+      expect(wrapper.emitted('open')).toBeTruthy();
+      expect(wrapper.emitted('open')?.[0]).toEqual([hit]);
+      wrapper.unmount();
+    },
+  );
+
+  it('keeps the unwired marker for a governance hit without an id', () => {
+    const wrapper = mountPreview(governanceHit('tag'));
+    expect(wrapper.find('[data-testid="explore-preview-open"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Detail page not wired for this type');
+    wrapper.unmount();
+  });
+});
+
+describe('ExplorePreview D25 lineage entry', () => {
+  it('emits openLineage for a lineage-capable hit', async () => {
+    const hit = hitWith(undefined);
+    const wrapper = mountPreview(hit);
+    const lineage = wrapper.find('[data-testid="explore-preview-lineage"]');
+    expect(lineage.exists()).toBe(true);
+    expect(lineage.text()).toContain('Open lineage');
+    await lineage.trigger('click');
+    expect(wrapper.emitted('openLineage')).toBeTruthy();
+    expect(wrapper.emitted('openLineage')?.[0]).toEqual([hit]);
+    wrapper.unmount();
+  });
+
+  it.each(['glossaryTerm', 'tag', 'dataProduct'])(
+    'shows no lineage entry for a %s hit',
+    (entityType) => {
+      const wrapper = mountPreview({
+        name: 'term',
+        fullyQualifiedName: 'biz.term',
+        entityType,
+        owners: [],
+        tags: [],
+        domains: [],
+        dataProducts: [],
+        id: `${entityType}-1`,
+      });
+      expect(wrapper.find('[data-testid="explore-preview-lineage"]').exists()).toBe(false);
+      wrapper.unmount();
+    },
+  );
+});
+
+describe('ExplorePreview lineage section (Q-TAB-4)', () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    getMock.mockResolvedValue({
+      upstreamDepthInfo: [{ depth: 1, entityCount: 1 }],
+      downstreamDepthInfo: [{ depth: 1, entityCount: 4 }],
+      maxUpstreamDepth: 1,
+      maxDownstreamDepth: 1,
+      totalUpstreamEntities: 1,
+      totalDownstreamEntities: 4,
+    });
+  });
+
+  it('renders the lineage section after overview for a lineage type', async () => {
+    const wrapper = mountPreview(hitWith({ weeklyStats: { count: 20, percentileRank: 45 } }));
+    await flushPromises();
+    const section = wrapper.find('[data-testid="explore-preview-lineage-section"]');
+    expect(section.exists()).toBe(true);
+    expect(wrapper.find('[data-testid="upstream-count"]').text()).toBe('1');
+    expect(wrapper.find('[data-testid="downstream-count"]').text()).toBe('4');
+    // Pin section order: description, overview, lineage, owners.
+    const blocks = wrapper.findAll('.preview__block');
+    const testIds = blocks.map((block) => block.attributes('data-testid'));
+    expect(testIds.indexOf('explore-preview-overview')).toBeLessThan(
+      testIds.indexOf('explore-preview-lineage-section'),
+    );
+    expect(testIds.indexOf('explore-preview-lineage-section')).toBeLessThan(
+      testIds.indexOf('explore-preview-owners'),
+    );
+    wrapper.unmount();
+  });
+
+  it('omits the lineage section for types outside the pin set (metric)', async () => {
+    const wrapper = mountPreview({ ...hitWith(undefined), entityType: 'metric' });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="explore-preview-lineage-section"]').exists()).toBe(false);
+    expect(getMock).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });

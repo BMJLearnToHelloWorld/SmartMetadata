@@ -10,10 +10,10 @@ import PersonaSwitcher from '@/layouts/PersonaSwitcher.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import { getInboxCounts } from '@/api/inbox';
 import TourOverlay from '@/components/shared/TourOverlay.vue';
-import { Alert, Badge, Button, Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
+import { Alert, Badge, Button, Dropdown, Layout, Menu, message } from 'ant-design-vue';
 import monogramUrl from '@/assets/iqvia-monogram.svg';
 import logoUrl from '@/assets/iqvia-logo.svg';
-import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
+import GlobalSearchBar from '@/features/explore/GlobalSearchBar.vue';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
 import {
@@ -319,18 +319,6 @@ function onMenuClick({ key }: { key: string | number }): void {
   }
 }
 
-function onSearch(value: string): void {
-  const nextQuery = value.trim();
-  if (route.name === 'search') {
-    void router.push({
-      name: 'search',
-      query: searchRouteFromLocation(nextQuery, route.query, 0),
-    });
-    return;
-  }
-  void router.push({ name: 'search', query: searchRouteQuery(nextQuery, {}, 0) });
-}
-
 function toggleLocale(): void {
   const next = locale.value.startsWith('zh') ? 'en-US' : 'zh-CN';
   if (isSupportedLocale(next)) {
@@ -452,15 +440,7 @@ async function onLogout(): Promise<void> {
           <SmIcon v-if="collapsed" icon-key="action-menu-unfold" />
           <SmIcon v-else icon-key="action-menu-fold" />
         </button>
-        <Input.Search
-          v-if="!hideHeaderSearch"
-          data-testid="global-search"
-          class="shell__search"
-          :placeholder="t('chrome.searchPlaceholder')"
-          allow-clear
-          :default-value="typeof route.query.q === 'string' ? route.query.q : ''"
-          @search="onSearch"
-        />
+        <GlobalSearchBar v-if="!hideHeaderSearch" />
         <div v-else class="shell__search-spacer" />
         <div class="shell__toolbar">
           <PersonaSwitcher />
@@ -1007,10 +987,6 @@ async function onLogout(): Promise<void> {
   color: var(--sm-text-tertiary);
   font-size: 12px;
   font-weight: 400;
-}
-.shell__search {
-  max-width: 520px;
-  flex: 1;
 }
 .shell__search-spacer {
   flex: 1;

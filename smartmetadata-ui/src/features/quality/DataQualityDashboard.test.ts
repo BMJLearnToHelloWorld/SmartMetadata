@@ -13,6 +13,7 @@ import dayjs from 'dayjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import SmChart from '@/features/charts/SmChart.vue';
 import DataQualityDashboard from './DataQualityDashboard.vue';
 import type { DqDashboardChartFilters, DqHiddenFilter } from '@/quality/dashboard';
 
@@ -108,6 +109,7 @@ async function createTestRouter(): Promise<Router> {
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
       { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div>cases</div>' } },
+      { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
       {
         path: '/quality/test-suites',
         name: 'quality-test-suites',
@@ -283,12 +285,48 @@ describe('DataQualityDashboard', () => {
     expect(wrapper.find('[data-testid="dq-dashboard-health"]').exists()).toBe(true);
   });
 
-  it('drills the coverage donut to the test-suites tab', async () => {
+  it('drills the coverage donut covered slice to the test-suites tab', async () => {
     const { wrapper, router } = await mountDashboard();
-    await wrapper.get('[data-testid="dq-dashboard-coverage-card"]').trigger('click');
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[0].vm.$emit('segment-click', 0);
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('quality-test-cases');
     expect(router.currentRoute.value.query.tab).toBe('test-suites');
+  });
+
+  it('drills the coverage donut not-covered slice to explore (pin ROUTES.EXPLORE)', async () => {
+    const { wrapper, router } = await mountDashboard();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[0].vm.$emit('segment-click', 1);
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('search');
+  });
+
+  it('drills the healthy donut segments to per-status lists (pin BINARY_STATUS_PIE_SEGMENT_ORDER)', async () => {
+    const { wrapper, router } = await mountDashboard();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[1].vm.$emit('segment-click', 0);
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('quality-test-cases');
+    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Success', 'Queued']);
+    await charts[1].vm.$emit('segment-click', 1);
+    await flushPromises();
+    expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Failed', 'Aborted']);
+  });
+
+  it('drills the results donut segments to per-status lists (pin TEST_CASE_STATUS_PIE_SEGMENT_ORDER)', async () => {
+    const { wrapper, router } = await mountDashboard();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[2].vm.$emit('segment-click', 0);
+    await flushPromises();
+    expect(router.currentRoute.value.query.testCaseStatus).toBe('Success');
+    await charts[2].vm.$emit('segment-click', 1);
+    await flushPromises();
+    expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
+    await charts[2].vm.$emit('segment-click', 2);
+    await flushPromises();
+    expect(router.currentRoute.value.query.testCaseStatus).toBe('Aborted');
   });
 
   it('drills a dimension card to the test-case list with the dimension and the current slice', async () => {
