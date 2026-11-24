@@ -50,4 +50,73 @@ describe('SmChart', () => {
     expect(wrapper.text()).toContain('GET failed');
     expect(wrapper.find('[data-testid="v-chart"]').exists()).toBe(false);
   });
+
+  it('emits the slice index on a donut series click (pin CustomPieChart onSegmentClick)', async () => {
+    const wrapper = mount(SmChart, {
+      props: {
+        kind: 'donut',
+        empty: 'empty',
+        segmentClickable: true,
+        series: [
+          {
+            name: 'coverage',
+            points: [
+              { label: 'Covered', value: 2 },
+              { label: 'Not covered', value: 18 },
+            ],
+          },
+        ],
+      },
+      global: { plugins: [Antd] },
+    });
+    const chart = wrapper.findComponent({ name: 'VChart' });
+    expect(chart.exists()).toBe(true);
+    await chart.vm.$emit('click', { componentType: 'series', dataIndex: 1 });
+    expect(wrapper.emitted('segment-click')).toEqual([[1]]);
+  });
+
+  it('ignores legend and non-series clicks on a donut', async () => {
+    const wrapper = mount(SmChart, {
+      props: {
+        kind: 'donut',
+        empty: 'empty',
+        segmentClickable: true,
+        series: [{ name: 'coverage', points: [{ label: 'Covered', value: 2 }] }],
+      },
+      global: { plugins: [Antd] },
+    });
+    const chart = wrapper.findComponent({ name: 'VChart' });
+    await chart.vm.$emit('click', { componentType: 'legend', dataIndex: 0 });
+    await chart.vm.$emit('click', { componentType: 'series' });
+    expect(wrapper.emitted('segment-click')).toBeUndefined();
+  });
+
+  it('does not emit segment clicks for non-donut kinds', async () => {
+    const wrapper = mount(SmChart, {
+      props: {
+        kind: 'area',
+        empty: 'empty',
+        segmentClickable: true,
+        series: [{ name: 'success', points: [{ label: '2026-01-01', value: 3 }] }],
+      },
+      global: { plugins: [Antd] },
+    });
+    const chart = wrapper.findComponent({ name: 'VChart' });
+    await chart.vm.$emit('click', { componentType: 'series', dataIndex: 0 });
+    expect(wrapper.emitted('segment-click')).toBeUndefined();
+  });
+
+  it('does not emit segment clicks when the donut is not clickable', async () => {
+    const wrapper = mount(SmChart, {
+      props: {
+        kind: 'donut',
+        empty: 'empty',
+        series: [{ name: 'coverage', points: [{ label: 'Covered', value: 2 }] }],
+      },
+      global: { plugins: [Antd] },
+    });
+    const chart = wrapper.findComponent({ name: 'VChart' });
+    await chart.vm.$emit('click', { componentType: 'series', dataIndex: 0 });
+    expect(wrapper.emitted('segment-click')).toBeUndefined();
+  });
 });
