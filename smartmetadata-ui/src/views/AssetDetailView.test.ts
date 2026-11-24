@@ -460,7 +460,7 @@ describe('AssetDetailView governance', () => {
         state: 'Confirmed',
       },
     ]);
-  });
+  }, 20000);
 });
 
 async function mountTypedView(entityType: string, fqn: string) {

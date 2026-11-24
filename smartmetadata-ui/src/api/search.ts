@@ -57,7 +57,6 @@ export interface SearchAssetsOptions {
    * its results search. `excludeSourceFields` travels as repeated
    * `exclude_source_fields` params (see apiRequest array values).
    */
-  trackTotalHits?: boolean;
   excludeSourceFields?: string[];
 }
 
@@ -251,7 +250,6 @@ export async function searchAssets(
       deleted: options.deleted === true ? true : undefined,
       track_total_hits: options.trackTotalHits === true ? true : undefined,
       query_filter: options.query_filter,
-      track_total_hits: options.trackTotalHits,
       explain: options.explain,
       exclude_source_fields: options.excludeSourceFields,
     },

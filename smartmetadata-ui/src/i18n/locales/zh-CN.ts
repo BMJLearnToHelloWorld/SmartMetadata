@@ -1523,7 +1523,6 @@ const zhCN = {
     unwired: '此类型尚未接入详情页',
     matches: '命中',
     matchIn: '{field} {count} 次',
-    tools: '工具',
     export: '导出',
     exportScope: '导出范围',
     exportDescription: '将筛选后的搜索结果导出为 CSV 报告。',
