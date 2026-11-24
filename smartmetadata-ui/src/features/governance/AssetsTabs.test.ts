@@ -311,6 +311,27 @@ describe('AssetsTabs (pin TagPage ASSETS tab)', () => {
     wrapper.unmount();
   });
 
+  it('contains both empty states in a positioned host inside the tab', async () => {
+    // Lane 0: pin AssetsTabs.component.tsx:1024 renders the empty
+    // placeholder inside `h-full tw:relative tw:min-h-90`; the
+    // placeholder root is absolutely positioned and needs a positioned
+    // host, or it anchors up the page instead of the tab.
+    searchAssets.mockResolvedValue(searchPage([], 0));
+    const withCreate = await mountTabs({ assetCount: 0 });
+    const addButton = withCreate.find('[data-testid="data-assets-add-button"]');
+    expect(addButton.exists()).toBe(true);
+    const createHost = addButton.element.closest('.tag-assets-tab__empty');
+    expect(createHost).not.toBeNull();
+    expect(withCreate.find('[data-testid="table-container"]').element.contains(createHost as Element)).toBe(true);
+    withCreate.unmount();
+
+    const noMatch = await mountTabs();
+    const noData = noMatch.find('[data-testid="no-data-placeholder"]');
+    expect(noData.exists()).toBe(true);
+    expect(noData.element.closest('.tag-assets-tab__empty')).not.toBeNull();
+    noMatch.unmount();
+  });
+
   it('keeps the previous rows when the search fails', async () => {
     const wrapper = await mountTabs();
     searchAssets.mockRejectedValueOnce(new Error('boom'));

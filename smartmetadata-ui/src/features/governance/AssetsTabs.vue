@@ -392,7 +392,7 @@ onUnmounted(() => {
       <Skeleton :active="true" :paragraph="{ rows: 2 }" />
       <Skeleton :active="true" :paragraph="{ rows: 2 }" />
     </div>
-    <template v-else-if="hits.length === 0">
+    <div v-else-if="hits.length === 0" class="tag-assets-tab__empty">
       <NoDataPlaceholder
         v-if="searchValue || tabTotal > 0"
         test-id="no-data-placeholder"
@@ -417,7 +417,7 @@ onUnmounted(() => {
             : undefined
         "
       />
-    </template>
+    </div>
     <template v-else>
       <div v-if="showCheckboxes" class="tag-assets-tab__bulk">
         <Checkbox
@@ -515,6 +515,15 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 12px;
   height: 100%;
+}
+/* Pin AssetsTabs.component.tsx:1024 renders the empty placeholder
+   inside `h-full tw:relative tw:min-h-90`: the placeholder root is
+   absolutely positioned, so without a positioned host it anchors to
+   the nearest positioned ancestor up the page instead of the tab. */
+.tag-assets-tab__empty {
+  position: relative;
+  height: 100%;
+  min-height: 360px;
 }
 .tag-assets-tab__filters {
   display: flex;

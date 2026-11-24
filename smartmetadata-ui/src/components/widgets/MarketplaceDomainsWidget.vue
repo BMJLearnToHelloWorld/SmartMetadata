@@ -111,14 +111,15 @@ function domainSubtitle(hit: SearchHit): string {
         :on-click="() => emit('open', hit)"
       />
     </div>
-    <CreatePlaceholder
-      v-else
-      :icon="GlobalOutlined"
-      :title="t('marketplace.noDomainsYet')"
-      :description="t('marketplace.noDomainsYetDescription')"
-      test-id="marketplace-domains-empty-state"
-      :actions="canCreate ? [{ key: 'add', label: t('marketplace.addDomain'), color: 'primary', onPress: () => emit('add') }] : undefined"
-    />
+    <div v-else class="marketplace-widget__empty">
+      <CreatePlaceholder
+        :icon="GlobalOutlined"
+        :title="t('marketplace.noDomainsYet')"
+        :description="t('marketplace.noDomainsYetDescription')"
+        test-id="marketplace-domains-empty-state"
+        :actions="canCreate ? [{ key: 'add', label: t('marketplace.addDomain'), color: 'primary', onPress: () => emit('add') }] : undefined"
+      />
+    </div>
   </div>
 </template>
 
@@ -127,6 +128,20 @@ function domainSubtitle(hit: SearchHit): string {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Pin MarketplaceDomainsWidget.component.tsx:245 wraps the
+   CreatePlaceholder in `tw:relative tw:flex tw:min-h-60
+   tw:items-center tw:justify-center`: the placeholder root is
+   absolutely positioned, so without a positioned host it anchors to
+   the nearest positioned ancestor up the page and both widgets'
+   empty states stack on the same spot, covering the sidebar. */
+.marketplace-widget__empty {
+  position: relative;
+  display: flex;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
 }
 
 .marketplace-widget__header {
