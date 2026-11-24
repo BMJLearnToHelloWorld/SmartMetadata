@@ -24,7 +24,7 @@ import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTagVersionPath } from '@/catalog/versionPaths';
-import { openSearchHit } from '@/catalog/entityRoutes';
+import { lineageLocation, openSearchHit } from '@/catalog/entityRoutes';
 import {
   CERTIFICATION_CLASSIFICATION_NAME,
   getQueryFilterToExcludeTermsAndEntities,
@@ -106,9 +106,22 @@ const canDeleteTag = computed(
  * exposes only the named flags it owns; the rest go through its generic
  * `can(op)` escape hatch, which applies the same prioritization and
  * deleted gating (disabled feeds the deleted gate here, see above).
+ *
+ * Owners is the one exception: pin TagPage.tsx:305
+ * (disabledAwarePermissions) reads `tagCanEditAll ||
+ * tagPermissions.EditOwners` — the tag page's owners gate ORs the
+ * tag-level EditAll, so an explicit EditOwners=false does not beat
+ * EditAll there (M-1). Both flags below are already isEditable-gated
+ * by the composable's deleted option, so the OR equals pin's
+ * editable-branch formula.
  */
 const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
-const canEditOwners = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditOwners'));
+const canEditOwners = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    tagPermissions.canEditAll.value ||
+    tagPermissions.can('EditOwners'),
+);
 const canEditDomains = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditDomains'));
 const canEditReviewers = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditReviewers'));
 watch(
@@ -207,6 +220,13 @@ function handleAssetSave(): void {
 function handlePreviewOpen(hit: SearchHit): void {
   if (!openSearchHit((to) => router.push(to), hit)) {
     previewAsset.value = hit;
+  }
+}
+
+// D25: the preview lineage entry navigates to the lineage page for the hit.
+function handlePreviewLineage(hit: SearchHit): void {
+  if (hit.fullyQualifiedName) {
+    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
   }
 }
 
@@ -627,7 +647,7 @@ onMounted(() => {
               {{ t('crud.close') }}
             </Button>
           </div>
-          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" />
+          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" @open-lineage="handlePreviewLineage" />
         </aside>
       </div>
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.tagAssets')" />

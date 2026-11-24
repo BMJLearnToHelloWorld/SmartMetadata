@@ -92,6 +92,63 @@ describe('mapSearchResponse', () => {
     ]);
   });
 
+  it('carries the ES highlight node and parent FQNs for card breadcrumbs (D18–D20)', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 't1',
+            _index: 'table_search_index',
+            _source: {
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+              service: { name: 'bq', displayName: 'BigQuery Prod', fullyQualifiedName: 'bigquery' },
+              database: { name: 'analytics', fullyQualifiedName: 'bigquery.analytics' },
+              databaseSchema: { name: 'marts', fullyQualifiedName: 'bigquery.analytics.marts' },
+            },
+            highlight: {
+              displayName: ['<span class="text-highlighter">Orders</span>'],
+              description: ['Daily <span class="text-highlighter">orders</span>'],
+              'columns.name.ngram': ['ord'],
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits).toHaveLength(1);
+    expect(mapped.hits[0]).toMatchObject({
+      serviceFqn: 'bigquery',
+      databaseFqn: 'bigquery.analytics',
+      schemaFqn: 'bigquery.analytics.marts',
+      highlight: {
+        displayName: ['<span class="text-highlighter">Orders</span>'],
+        description: ['Daily <span class="text-highlighter">orders</span>'],
+        'columns.name.ngram': ['ord'],
+      },
+    });
+  });
+
+  it('leaves highlight and parent FQNs absent when the hit carries none', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 'k1',
+            _index: 'topic_search_index',
+            _source: { name: 'events', fullyQualifiedName: 'kafka.events', entityType: 'topic' },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0].highlight).toBeUndefined();
+    expect(mapped.hits[0].serviceFqn).toBeUndefined();
+    expect(mapped.hits[0].databaseFqn).toBeUndefined();
+    expect(mapped.hits[0].schemaFqn).toBeUndefined();
+  });
+
   it('accepts a numeric hits.total and infers type from the index name', () => {
     const mapped = mapSearchResponse({
       hits: {
@@ -278,5 +335,107 @@ describe('mapSearchResponse', () => {
     expect(mapped.hits[0]?.usageSummary?.weeklyStats?.percentileRank).toBe(45.5);
     expect(mapped.hits[1]?.usageSummary).toBeUndefined();
     expect(mapped.hits[2]?.usageSummary).toEqual({});
+  });
+
+  it('carries the ranking payload when explain was requested (D12)', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 't1',
+            _index: 'table_search_index',
+            _score: 12.345678,
+            _explanation: {
+              value: 12.345678,
+              description: 'sum of',
+              details: [
+                { value: 7, description: 'weight(displayName.keyword:orders in 0)' },
+                { value: 'not-a-number', description: 'weight(broken in 0)' },
+                { value: 1, description: '' },
+              ],
+            },
+            matched_queries: ['ranking:exactName', 'unrelated', 42],
+            _source: {
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0]?.score).toBe(12.345678);
+    expect(mapped.hits[0]?.matchedQueries).toEqual(['ranking:exactName', 'unrelated']);
+    expect(mapped.hits[0]?.explanation).toEqual({
+      value: 12.345678,
+      description: 'sum of',
+      details: [{ value: 7, description: 'weight(displayName.keyword:orders in 0)' }],
+    });
+  });
+
+  it('leaves the ranking payload absent without explain data (D12)', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 't1',
+            _index: 'table_search_index',
+            _source: {
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0]?.score).toBeUndefined();
+    expect(mapped.hits[0]?.explanation).toBeUndefined();
+    expect(mapped.hits[0]?.matchedQueries).toBeUndefined();
+  });
+
+  it('carries the NLQ applied-filters echo when present (D11)', () => {
+    const mapped = mapSearchResponse({
+      applied_quick_filters: { fieldList: ['owner', 'tier'] },
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 't1',
+            _index: 'table_search_index',
+            _source: {
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.appliedQuickFilters).toEqual({ fieldList: ['owner', 'tier'] });
+  });
+
+  it('leaves the NLQ echo absent without applied_quick_filters (D11)', () => {
+    const mapped = mapSearchResponse({
+      applied_quick_filters: { fieldList: [] },
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 't1',
+            _index: 'table_search_index',
+            _source: {
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.appliedQuickFilters).toBeUndefined();
+    expect('appliedQuickFilters' in mapped).toBe(false);
   });
 });

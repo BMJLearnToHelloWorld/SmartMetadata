@@ -50,6 +50,12 @@ describe('entityDetailTabs', () => {
     expect(tab?.residual).toBeUndefined();
   });
 
+  it('wires metric assets to its real slot now that getMetricAssets is served (B2-G1)', () => {
+    const tab = entityDetailTabDef('metric', 'assets');
+    expect(tab?.slot).toBe('assets');
+    expect(tab?.residual).toBeUndefined();
+  });
+
   it('matches the official tab ids for the R2 entities', () => {
     expect(entityDetailTabDefs('database')?.map((tab) => tab.key)).toEqual([
       'schemas',
@@ -147,6 +153,52 @@ describe('entityDetailTabs', () => {
       'custom_properties',
     ]);
   });
+
+  // D-TAB-2 (host lane + tab-mount lane): DriveService split tabs follow
+  // pin's tab order (DirectoryDetailsUtils / FileDetailsUtils /
+  // SpreadsheetDetailsUtils / WorksheetDetailsUtils, a3012259ca) with the
+  // lineage entry mounted after `activity_feed` in each set.
+  it('splits DriveService types with pin tab order and lineage after activity_feed', () => {
+    expect(isOfficiallySplit('directory')).toBe(true);
+    expect(entityDetailTabDefs('directory')?.map((tab) => tab.key)).toEqual([
+      'children',
+      'activity_feed',
+      'lineage',
+      'contract',
+      'custom_properties',
+    ]);
+    expect(isOfficiallySplit('file')).toBe(true);
+    expect(entityDetailTabDefs('file')?.map((tab) => tab.key)).toEqual([
+      'overview',
+      'schema',
+      'activity_feed',
+      'lineage',
+      'contract',
+      'custom_properties',
+    ]);
+    expect(isOfficiallySplit('spreadsheet')).toBe(true);
+    expect(entityDetailTabDefs('spreadsheet')?.map((tab) => tab.key)).toEqual([
+      'worksheets',
+      'activity_feed',
+      'lineage',
+      'contract',
+      'custom_properties',
+    ]);
+    expect(isOfficiallySplit('worksheet')).toBe(true);
+    expect(entityDetailTabDefs('worksheet')?.map((tab) => tab.key)).toEqual([
+      'schema',
+      'activity_feed',
+      'lineage',
+      'contract',
+      'custom_properties',
+    ]);
+    for (const entityType of ['directory', 'file', 'spreadsheet', 'worksheet']) {
+      const lineage = entityDetailTabDef(entityType, 'lineage');
+      expect(lineage?.slot).toBe('lineage');
+      expect(lineage?.labelKey).toBe('lineage');
+    }
+    expect(entityDetailTabDef('directory', 'contract')?.residual).toBe('asset.tabResidual.contract');
+  });
 });
 
 describe('preservedTabKeys (M-1)', () => {
@@ -170,6 +222,11 @@ describe('preservedTabKeys (M-1)', () => {
       'searchIndex',
       'storedProcedure',
       'metric',
+      // D-TAB-2 (host lane): the DriveService types are split now.
+      'directory',
+      'file',
+      'spreadsheet',
+      'worksheet',
     ]) {
       expect(keysFor(entityType)).toEqual([]);
     }
@@ -180,18 +237,24 @@ describe('preservedTabKeys (M-1)', () => {
     expect(keysFor('apiEndpoint')).toEqual(['overview']);
   });
 
-  it('preserves only quality for chart and file fallbacks', () => {
-    // Chart's overview resolves through the `details` alias and
-    // File's matches the official OVERVIEW id, so neither is kept.
+  it('preserves only quality for the chart fallback', () => {
+    // Chart's overview resolves through the `details` alias, so it is
+    // not kept. (File used to sit here; the D-TAB-2 host lane split it.)
     expect(keysFor('chart')).toEqual(['quality']);
-    expect(keysFor('file')).toEqual(['quality']);
   });
 
-  it('preserves overview and quality for pipeline and drive fallbacks', () => {
+  it('preserves overview and quality for the pipeline fallback', () => {
     expect(keysFor('pipeline')).toEqual(['overview', 'quality']);
-    expect(keysFor('directory')).toEqual(['overview', 'quality']);
-    expect(keysFor('spreadsheet')).toEqual(['overview', 'quality']);
-    expect(keysFor('worksheet')).toEqual(['overview', 'quality']);
+  });
+
+  // D-TAB-2 (host lane): the drive fallback branches are retained policy
+  // for unsplit states — they no longer fire through the view, so they
+  // are locked by direct calls with hasSplitDefs false.
+  it('preserves overview and quality for unsplit drive fallbacks', () => {
+    expect(preservedTabKeys('directory', false)).toEqual(['overview', 'quality']);
+    expect(preservedTabKeys('file', false)).toEqual(['quality']);
+    expect(preservedTabKeys('spreadsheet', false)).toEqual(['overview', 'quality']);
+    expect(preservedTabKeys('worksheet', false)).toEqual(['overview', 'quality']);
   });
 
   it('preserves quality for query and unknown fallback types', () => {

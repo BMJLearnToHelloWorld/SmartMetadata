@@ -6,9 +6,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Empty, message } from 'ant-design-vue';
+import { Button, Descriptions, Empty, Skeleton, message } from 'ant-design-vue';
 import { fetchAssetDetail } from '@/api/entities';
-import { deleteMetricAsync, patchMetric } from '@/api/metrics';
+import { deleteMetricAsync, fetchMetricLinkedAssetIds, patchMetric } from '@/api/metrics';
+import { getMetricAssetSelectionQueryFilter } from '@/catalog/metricAssets';
+import { openSearchHit } from '@/catalog/entityRoutes';
 import {
   certificationPatch,
   descriptionPatch,
@@ -50,12 +52,15 @@ import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageDa
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import AssetsTabs from '@/features/governance/AssetsTabs.vue';
+import AssetSelectionModal from '@/features/governance/AssetSelectionModal.vue';
+import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
-import type { AssetDetail, EntityRef } from '@/types/api';
+import type { AssetDetail, EntityRef, SearchHit } from '@/types/api';
 
 /**
  * Stage 4 metric detail page, following the official MetricDetailsPage
@@ -65,15 +70,17 @@ import type { AssetDetail, EntityRef } from '@/types/api';
  * metricExpression/metricType/unitOfMeasurement/granularity fields).
  * The description write goes through PATCH /v1/metrics/{id} (official
  * patchMetric; the server is the pin tree, so the endpoint exists with
- * no backend change). Delete and single-version detail are residuals,
- * not buttons that call nothing.
+ * no backend change). Delete is wired (deleteMetricAsync, recursive
+ * async soft delete); single-version detail is a residual, not a
+ * button that calls nothing.
  *
  * B-11 tab surface: the five official Metric tabs (METRIC_TABS, from
  * MetricDetailsClassBase.getMetricDetailPageTabsIds) through the
  * EntityDetailShell, with the tab layer (C-4) and widget layer (B-8)
  * following the other governance views. The lineage pane reuses the
- * shared LineageCanvas; the assets pane is the established honest
- * residual (no metric-assets API exists); activity and custom
+ * shared LineageCanvas; the assets pane is the pin MetricAssetsTab
+ * (B2-G1: linked ids from getMetricAssets, list via the shared
+ * AssetsTabs beside an ExplorePreview); activity and custom
  * properties reuse the shared panels and generic read APIs.
  */
 const props = defineProps<{ fqn: string }>();
@@ -245,6 +252,107 @@ const lineageHasEditAccess = computed(
 );
 
 /**
+ * B2-G1: pin MetricAssetsTab (components/Metric/MetricDetails/
+ * MetricDetails.tsx:99-104, 259-289) — the linked asset ids come from
+ * GET /v1/metrics/{id}/assets, paged at the server cap
+ * (useMetricLinkedAssets), and the list itself is the shared
+ * AssetsTabs over those ids (MetricPureUtils
+ * getMetricAssetsQueryFilter). `null` means "not loaded yet": the tab
+ * pill stays hidden until ids are actually known, never masquerading
+ * a failed fetch as "no assets" (Tag fetchAssetCount precedent).
+ */
+const linkedAssetIds = ref<string[] | null>(null);
+const linkedAssetsLoading = ref(false);
+const linkedAssetsError = ref('');
+const previewAsset = ref<SearchHit | undefined>();
+const assetModalVisible = ref(false);
+const assetsTabRef = ref<{ refreshAssets: () => void } | null>(null);
+
+/** Pin tab count: assetIds.length (MetricUtils.tsx ASSETS label). */
+const assetCount = computed<number | undefined>(() => linkedAssetIds.value?.length);
+
+/**
+ * Pin MetricDetails assetPermissions (MetricDetails.tsx:259-268):
+ * linking and unlinking assets are both EditAll on the metric, so
+ * AssetsTabs' Create (add + select) and EditAll (remove) gates
+ * collapse onto the same deleted-aware flag. The P1 admin line ORs in
+ * on top; the explicit !deleted conjunct is required because the
+ * admin line bypasses the composable's deleted gate (same shape as
+ * canEditRelatedMetrics above).
+ */
+const canEditAssets = computed(
+  () =>
+    metric.value?.deleted !== true &&
+    (permissionStore.isAdminUser || metricPermissions.canEditAll.value),
+);
+const assetPermissions = computed(() => ({
+  Create: canEditAssets.value,
+  EditAll: canEditAssets.value,
+}));
+
+// Pin MetricDetails assetSelectionQueryFilter (MetricDetails.tsx:
+// 272-276): already-linked assets and the never-offered entity types
+// are excluded from the picker.
+const assetModalQueryFilter = computed(() =>
+  JSON.stringify(getMetricAssetSelectionQueryFilter(linkedAssetIds.value ?? [])),
+);
+
+async function fetchLinkedAssets(): Promise<void> {
+  const id = metric.value?.id;
+  if (!id) {
+    linkedAssetIds.value = [];
+    return;
+  }
+  linkedAssetsLoading.value = true;
+  linkedAssetsError.value = '';
+  try {
+    linkedAssetIds.value = await fetchMetricLinkedAssetIds(id);
+  } catch (error) {
+    // A failed fetch leaves the previous ids (or null) in place and
+    // toasts; the tab shows the error state with a retry instead of
+    // claiming the metric has no linked assets.
+    linkedAssetsError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    message.error(linkedAssetsError.value);
+  } finally {
+    linkedAssetsLoading.value = false;
+  }
+}
+
+function handleAssetClick(hit: SearchHit | undefined): void {
+  previewAsset.value = hit;
+}
+
+function handleAddAsset(): void {
+  assetModalVisible.value = true;
+}
+
+/**
+ * Pin MetricDetails handleAssetSave (MetricDetails.tsx:277-289) + Tag
+ * handleAssetSave: close the modal, refresh the linked ids and the
+ * tab list, and switch to the assets tab when saving from elsewhere.
+ */
+function handleAssetSave(): void {
+  assetModalVisible.value = false;
+  void fetchLinkedAssets();
+  assetsTabRef.value?.refreshAssets();
+  if (activeTab.value !== 'assets') {
+    activeTab.value = 'assets';
+  }
+}
+
+/** Pin MetricDetails onRemoveAsset → onAssetsUpdate → refreshAssets. */
+function handleAssetsRemoved(): void {
+  void fetchLinkedAssets();
+  assetsTabRef.value?.refreshAssets();
+}
+
+function handlePreviewOpen(hit: SearchHit): void {
+  if (!openSearchHit((to) => router.push(to), hit)) {
+    previewAsset.value = hit;
+  }
+}
+
+/**
  * D-2 batch 5b metric definition save: the widget hands over the JSON
  * Patch ops it diffed from the pin save payload; a thrown failure keeps
  * the edit dialog open with its error alert.
@@ -313,11 +421,19 @@ const { customizedPage } = useCustomPages('Metric');
 
 const tabs = computed<EntityDetailTab[]>(() =>
   getDetailsTabWithNewLabel(
-    (entityDetailTabDefs('metric') ?? []).map((def) => ({
-      key: def.key,
-      label: t(`asset.tabs.${def.labelKey}`),
-      testId: `metric-tab-${def.key}`,
-    })),
+    (entityDetailTabDefs('metric') ?? []).map((def) => {
+      // Pin MetricUtils ASSETS label carries count={assetIds.length};
+      // the pill stays hidden until the count is known (undefined).
+      const tab: EntityDetailTab = {
+        key: def.key,
+        label: t(`asset.tabs.${def.labelKey}`),
+        testId: `metric-tab-${def.key}`,
+      };
+      if (def.key === 'assets' && assetCount.value !== undefined) {
+        tab.count = assetCount.value;
+      }
+      return tab;
+    }),
     customizedPage.value?.tabs,
   ),
 );
@@ -363,8 +479,12 @@ function widgetLayoutFor(tabKey: string) {
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  previewAsset.value = undefined;
+  linkedAssetIds.value = null;
+  linkedAssetsError.value = '';
   try {
     metric.value = await fetchAssetDetail('metric', decodeURIComponent(props.fqn));
+    void fetchLinkedAssets();
     const fqn = metric.value.fullyQualifiedName || metric.value.name;
     try {
       const [activityPage, conversationPage] = await Promise.all([
@@ -473,6 +593,18 @@ onMounted(() => {
       </Button>
       <Button danger data-testid="metric-delete" :disabled="!metric?.id || !canDeleteMetric" @click="onDeleteMetric">
         {{ t('crud.delete') }}
+      </Button>
+      <!-- B2-G1 pin MetricDetails headerActions (MetricDetails.tsx:
+           380-384): the Add Assets entry lives on the page header,
+           gated by the collapsed EditAll flag, on every tab; saving
+           from it switches to the assets tab. -->
+      <Button
+        v-if="metric && canEditAssets"
+        type="primary"
+        data-testid="metric-add-assets"
+        @click="handleAddAsset"
+      >
+        {{ t('label.add-entity', { entity: t('label.asset') }) }}
       </Button>
     </template>
     <template #overview>
@@ -814,6 +946,45 @@ onMounted(() => {
           </div>
         </template>
       </GenericTab>
+      <div v-else-if="metric" class="metric-assets-tab-wrap" data-testid="metric-assets-tab">
+        <div class="metric-assets-tab-list">
+          <div v-if="linkedAssetIds === null && linkedAssetsLoading" data-testid="metric-assets-loading">
+            <Skeleton :active="true" :paragraph="{ rows: 2 }" />
+            <Skeleton :active="true" :paragraph="{ rows: 2 }" />
+            <Skeleton :active="true" :paragraph="{ rows: 2 }" />
+          </div>
+          <div v-else-if="linkedAssetIds === null" class="metric-assets-tab-error" data-testid="metric-assets-error">
+            <Empty :description="linkedAssetsError || t('crud.loadFailed')" />
+            <Button data-testid="metric-assets-retry" @click="fetchLinkedAssets">{{ t('shared.retry') }}</Button>
+          </div>
+          <!-- B2-G1: the pin ASSETS tab (MetricAssetsTab + AssetsTabs,
+               with the preview panel beside the list in a fixed split —
+               the TagDetailView layout; there is no ResizablePanels
+               generic in the product). -->
+          <AssetsTabs
+            v-else
+            ref="assetsTabRef"
+            :entity-fqn="metric.fullyQualifiedName || metric.name"
+            :entity-id="metric.id"
+            type="metric"
+            :asset-ids="linkedAssetIds"
+            :permissions="assetPermissions"
+            :asset-count="assetCount"
+            :is-summary-panel-open="Boolean(previewAsset)"
+            @add-asset="handleAddAsset"
+            @asset-click="handleAssetClick"
+            @remove-asset="handleAssetsRemoved"
+          />
+        </div>
+        <aside v-if="previewAsset" class="metric-assets-tab-preview" data-testid="metric-asset-preview">
+          <div class="metric-assets-tab-preview-head">
+            <Button type="text" data-testid="metric-asset-preview-close" @click="previewAsset = undefined">
+              {{ t('crud.close') }}
+            </Button>
+          </div>
+          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" />
+        </aside>
+      </div>
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.assets')" />
     </template>
     <template #activity_feed>
@@ -1046,4 +1217,46 @@ onMounted(() => {
       @created="onChildMetricCreated"
     />
   </EntityDetailShell>
+  <!-- B2-G1 pin MetricDetails renderModals: the asset picker lives at
+       page level, OUTSIDE EntityDetailShell (TagDetailView precedent):
+       the shell only renders its default slot when there are no tabs,
+       so a modal placed inside it never mounts on this five-tab page. -->
+  <AssetSelectionModal
+    v-if="metric && assetModalVisible"
+    :entity-fqn="metric.fullyQualifiedName || metric.name"
+    :entity-id="metric.id"
+    :open="assetModalVisible"
+    type="metric"
+    :query-filter="assetModalQueryFilter"
+    @cancel="assetModalVisible = false"
+    @save="handleAssetSave"
+  />
 </template>
+
+<style scoped>
+.metric-assets-tab-wrap {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.metric-assets-tab-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.metric-assets-tab-preview {
+  flex: 0 0 360px;
+  border-left: 1px solid var(--sm-border-color);
+  padding-left: 16px;
+}
+.metric-assets-tab-preview-head {
+  display: flex;
+  justify-content: flex-end;
+}
+.metric-assets-tab-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0;
+}
+</style>

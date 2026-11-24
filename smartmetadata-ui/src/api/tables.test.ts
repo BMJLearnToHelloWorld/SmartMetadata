@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { getTableByName, listTables, patchTableDetails } from './tables';
+import { getTableByName, getTableShardingByName, listTables, patchTableDetails } from './tables';
 
 describe('tables API (P2-6)', () => {
   beforeEach(() => {
@@ -59,6 +59,48 @@ describe('tables API (P2-6)', () => {
     );
     const table = await getTableByName('svc.db.schema.orders');
     expect(table.columns).toEqual([]);
+  });
+
+  it('reads sharding fields from GET /v1/tables/name/{fqn}?fields=tableSharding,tableType (D17)', async () => {
+    let seenUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        seenUrl = String(input);
+        return new Response(
+          JSON.stringify({
+            id: 't-1',
+            fullyQualifiedName: 'svc.db.schema.orders20240101',
+            name: 'orders20240101',
+            tableType: 'Sharded',
+            tableSharding: { prefix: 'orders' },
+            deleted: false,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const table = await getTableShardingByName('svc.db.schema.orders20240101');
+    expect(seenUrl).toContain('/api/v1/tables/name/svc.db.schema.orders20240101');
+    expect(seenUrl).toContain('fields=tableSharding%2CtableType');
+    expect(table).toEqual({
+      id: 't-1',
+      fullyQualifiedName: 'svc.db.schema.orders20240101',
+      tableType: 'Sharded',
+      tableSharding: { prefix: 'orders' },
+      deleted: false,
+    });
+  });
+
+  it('reads a table without sharding as prefix-less (D17)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ id: 't-2', fullyQualifiedName: 'svc.db.schema.plain', name: 'plain' }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    const table = await getTableShardingByName('svc.db.schema.plain');
+    expect(table.tableSharding).toBeUndefined();
+    expect(table.tableType).toBeUndefined();
+    expect(table.deleted).toBeUndefined();
   });
 });
 

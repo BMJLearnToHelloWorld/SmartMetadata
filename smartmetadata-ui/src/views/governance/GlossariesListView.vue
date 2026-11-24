@@ -24,6 +24,7 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import { usePermissionStore } from '@/stores/permissions';
 import type { Glossary } from '@/types/governance';
 import PageHeader from '@/components/shared/PageHeader.vue';
 
@@ -35,6 +36,7 @@ import PageHeader from '@/components/shared/PageHeader.vue';
  */
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const glossaries = ref<Glossary[]>([]);
@@ -58,6 +60,29 @@ const columns = computed<EntityListColumn[]>(() => [
 
 const hasNext = computed(() => canGoNext(pageAfter.value));
 const hasPrev = computed(() => canGoPrev(cursor.value));
+
+/**
+ * P1 dual line (pin GlossaryPage.component.tsx:145-164 + GlossaryLeftPanel
+ * :42-45,99-107: createGlossaryPermission = checkPermission(Create,
+ * GLOSSARY, permissions); delete is the glossary resource Delete op, the
+ * same shape as the Metrics bulk-delete gate). Mirrors
+ * MetricsListView checkPermission: fail-closed — a permission fetch
+ * failure leaves the write flags false; the list itself still loads
+ * (no view gate in this lane — pin's whole-page view gate at
+ * GlossaryPage.component.tsx:602 is recorded in the lane pin memo as a
+ * follow-up, not silently added here).
+ */
+const resourceOps = ref<Record<string, boolean>>({});
+const canCreate = computed(() => permissionStore.isAdminUser || resourceOps.value.Create === true);
+const canDelete = computed(() => permissionStore.isAdminUser || resourceOps.value.Delete === true);
+
+async function checkPermission(): Promise<void> {
+  try {
+    resourceOps.value = await permissionStore.getResourcePermission('glossary');
+  } catch {
+    resourceOps.value = {};
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -124,6 +149,9 @@ async function onCreate(): Promise<void> {
 }
 
 async function onDelete(record: Glossary): Promise<void> {
+  if (!canDelete.value) {
+    return;
+  }
   const confirmed = await confirmDelete({
     title: t('crud.deleteTitle'),
     content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
@@ -143,6 +171,7 @@ async function onDelete(record: Glossary): Promise<void> {
 }
 
 onMounted(() => {
+  void checkPermission();
   void load();
 });
 </script>
@@ -163,6 +192,7 @@ onMounted(() => {
     :data-source="glossaries"
     table-test-id="glossaries-table"
     show-row-actions
+    :show-delete-action="canDelete"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -174,7 +204,7 @@ onMounted(() => {
     @delete="(record) => onDelete(record as Glossary)"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-glossary" @click="createOpen = true">
+      <Button v-if="canCreate" type="primary" data-testid="create-glossary" @click="createOpen = true">
         {{ t('governance.glossaries.create') }}
       </Button>
     </template>

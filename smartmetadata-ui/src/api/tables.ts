@@ -56,6 +56,36 @@ export async function getTableByName(fqn: string): Promise<TableColumns> {
   };
 }
 
+export interface TableSharding {
+  id: string;
+  fullyQualifiedName: string;
+  tableType?: string;
+  tableSharding?: { prefix?: string };
+  deleted?: boolean;
+}
+
+/**
+ * Official `TableShardingUtils.findShardedFamilies` verification read:
+ * GET /v1/tables/name/{fqn} with only the sharding fields, so the
+ * Explore sharded-family lookup can check a candidate table's prefix
+ * without fetching its columns. A missing table rejects (404), as with
+ * `getTableByName`; callers treat that as "not a family member".
+ */
+export async function getTableShardingByName(fqn: string): Promise<TableSharding> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/tables/name/${encodeFqnForApi(fqn)}`,
+    { query: { fields: 'tableSharding,tableType' } },
+  );
+  const sharding = asRecord(raw.tableSharding);
+  return {
+    id: asString(raw.id),
+    fullyQualifiedName: asString(raw.fullyQualifiedName) || fqn,
+    tableType: asString(raw.tableType) || undefined,
+    tableSharding: sharding ? { prefix: asString(sharding.prefix) || undefined } : undefined,
+    deleted: typeof raw.deleted === 'boolean' ? raw.deleted : undefined,
+  };
+}
+
 /**
  * Official SchemaTablesTab list fields (rest/tableAPI.ts getTableList
  * callers pass `commonTableFields`, utils/DatasetDetailsUtils.ts:24):

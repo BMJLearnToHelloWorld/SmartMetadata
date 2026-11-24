@@ -527,8 +527,12 @@ describe('ServiceMainTab', () => {
     await vi.waitFor(() => {
       expect(wrapper.find('[data-testid="edit-display-name-row-1"]').exists()).toBe(true);
     });
-    // Directory rows do not link (no detail page).
-    expect(wrapper.find('[data-testid="service-child-row-1"]').element.tagName).toBe('SPAN');
+    // L3a (D-TAB-2): directory rows link to the DriveService directory
+    // detail page now that it exists.
+    expect(wrapper.find('[data-testid="service-child-row-1"]').element.tagName).toBe('A');
+    expect(wrapper.find('[data-testid="service-child-row-1"]').attributes('href')).toContain(
+      '/assets/directory/svc.dir_one',
+    );
     await wrapper.find('[data-testid="edit-display-name-row-1"]').trigger('click');
     await wrapper.find('[data-testid="display-name-input-row-1"]').setValue('Dir Renamed');
     await wrapper.find('[data-testid="save-display-name-row-1"]').trigger('click');
