@@ -6,9 +6,11 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Empty, Tag, Typography } from 'ant-design-vue';
-import { isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
+import { detailLocationForHit, isLineageCapable, parentTableLocation } from '@/catalog/entityRoutes';
+import { hasLineageSection } from '@/catalog/lineageSection';
 import { entityTypeColor } from '@/catalog/searchHits';
 import { getUsageData } from '@/catalog/usagePercentile';
+import LineageSection from './LineageSection.vue';
 import type { SearchHit } from '@/types/api';
 
 const props = defineProps<{
@@ -17,6 +19,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   open: [hit: SearchHit];
+  openLineage: [hit: SearchHit];
 }>();
 
 const { t, te } = useI18n();
@@ -32,6 +35,17 @@ function entityLabel(entityType: string): string {
 const columnParent = computed(() =>
   props.hit ? parentTableLocation(props.hit.entityType, props.hit.tableFqn) : null,
 );
+
+// D26: the navigation target for this hit, or null when the hit is
+// honestly unwired (no parent table, no wired asset detail, no
+// governance id). Covers the parent-table case too, so it is the
+// single unwired check for the template.
+const detailLocation = computed(() => (props.hit ? detailLocationForHit(props.hit) : null));
+
+// D25: pin EntitySummaryPanel shows its Lineage tab for exactly the 11
+// lineage-capable types; glossaryTerm, tag and dataProduct have no
+// lineage entry in the pin preview.
+const showLineage = computed(() => Boolean(props.hit && isLineageCapable(props.hit.entityType)));
 
 const glossaryTags = computed(() => (props.hit?.tags ?? []).filter((tag) => tag.source === 'Glossary'));
 const classificationTags = computed(() =>
@@ -97,6 +111,16 @@ const overviewRows = computed(() => {
           </template>
         </dl>
       </section>
+      <!-- Q-TAB-4 item 1 (host lane): pin DataAssetSummaryPanelV1.tsx:
+           628-634 mounts LineageSection after overview, gated by
+           hasLineageTab (the 11-type set in catalog/lineageSection.ts).
+           The lineage tab itself is a later lane's mount; this section
+           is the panel's lineage entry point. -->
+      <LineageSection
+        v-if="hasLineageSection(hit.entityType)"
+        :entity-type="hit.entityType"
+        :fqn="hit.fullyQualifiedName"
+      />
       <section class="preview__block" data-testid="explore-preview-owners">
         <Typography.Text type="secondary">{{ t('asset.fields.owners') }}</Typography.Text>
         <Typography.Paragraph v-if="!hit.owners.length">{{ t('explore.noOwners') }}</Typography.Paragraph>
@@ -136,7 +160,7 @@ const overviewRows = computed(() => {
           <Tag v-for="product in hit.dataProducts" :key="product.name">{{ product.displayName || product.name }}</Tag>
         </div>
       </section>
-      <Typography.Text v-if="!isDetailWired(hit.entityType) && !columnParent" type="secondary">
+      <Typography.Text v-if="!detailLocation" type="secondary">
         {{ t('explore.unwired') }}
       </Typography.Text>
       <Button
@@ -147,6 +171,22 @@ const overviewRows = computed(() => {
       >
         {{ columnParent ? t('explore.openParentTable') : t('explore.openAsset') }}
       </Button>
+      <!--
+        D25: lineage entry for the 11 pin lineage-capable types. An emit,
+        not a router-link: this shared preview is mounted in views whose
+        test routers do not register the `lineage` route, and
+        router.resolve throws for an unregistered named route; the owning
+        view navigates via lineageLocation (the product analogue of pin
+        EntitySummaryPanel handleLineageClick).
+      -->
+      <a
+        v-if="showLineage"
+        href="#"
+        data-testid="explore-preview-lineage"
+        @click.prevent="emit('openLineage', hit)"
+      >
+        {{ t('explore.openLineage') }}
+      </a>
     </template>
   </aside>
 </template>

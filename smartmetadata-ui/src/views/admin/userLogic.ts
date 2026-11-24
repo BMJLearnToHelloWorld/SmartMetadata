@@ -21,6 +21,14 @@ export const USER_TAB_FOLLOWING = 'following';
 export const USER_TAB_PERMISSIONS = 'permissions';
 export const USER_TAB_CUSTOM_PROPERTIES = 'custom_properties';
 export const USER_TAB_ACCESS_TOKEN = 'access-token';
+// D-CFG-3 (host lane): pin personal-space Profile nav
+// (profileNavConfig.tsx:219-227, a3012259ca): the `platform-settings`
+// tab is admin-only (`isVisible: (_permissions, isAdmin) => isAdmin`)
+// and lives on the own profile. The product has no AI-shell
+// personal-space Profile page; the tab mounts on the product's profile
+// page (UserDetailView, same `/users/:fqn/:tab?` route shape) and is
+// therefore gated on self AND admin.
+export const USER_TAB_PLATFORM_SETTINGS = 'platform-settings';
 
 export const USER_TABS_ALL = [
   USER_TAB_ACTIVITY,
@@ -33,8 +41,12 @@ export const USER_TABS_ALL = [
 ] as const;
 
 /** Tab set (pin Users.component:214-346): Access Token exists only for self. */
-export function getUserTabs(isLoggedInUser: boolean): string[] {
-  return isLoggedInUser ? [...USER_TABS_ALL] : USER_TABS_ALL.slice(0, -1);
+export function getUserTabs(isLoggedInUser: boolean, isAdmin = false): string[] {
+  const tabs: string[] = isLoggedInUser ? [...USER_TABS_ALL] : USER_TABS_ALL.slice(0, -1);
+  if (isLoggedInUser && isAdmin) {
+    tabs.push(USER_TAB_PLATFORM_SETTINGS);
+  }
+  return tabs;
 }
 
 /**

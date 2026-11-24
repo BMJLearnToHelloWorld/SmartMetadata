@@ -49,6 +49,7 @@ import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import BulkAssetResultPanel from '@/features/crud/BulkAssetResultPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
+import DataProductPortsPanel from '@/features/crud/DataProductPortsPanel.vue';
 import { listDomains } from '@/api/domains';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
@@ -119,6 +120,18 @@ const tabs = computed<EntityDetailTab[]>(() =>
       { key: 'overview', label: t('crud.overview'), testId: 'data-product-tab-overview' },
       { key: 'assets', label: t('governance.dataProducts.assetsTab'), testId: 'data-product-tab-assets' },
       { key: 'activity', label: t('governance.dataProducts.activityTab'), testId: 'data-product-tab-activity' },
+      // Q-TAB-4 item 3 (host lane): pin DataProductClassBase.ts:78-90
+      // INPUT_OUTPUT_PORTS sits after ACTIVITY_FEED (before ASSETS in
+      // pin; the product keeps its existing assets/activity order and
+      // places the ports tab after activity, before custom properties).
+      // The tab label carries the total ports count in pin
+      // (DataProductUtils.tsx:253-275); the panel heading shows the
+      // per-list counts instead.
+      {
+        key: 'inputOutputPorts',
+        label: t('asset.tabs.inputOutputPorts'),
+        testId: 'data-product-tab-input-output-ports',
+      },
       {
         key: 'customProperties',
         label: t('governance.dataProducts.customPropertiesTab'),
@@ -909,6 +922,20 @@ onMounted(() => {
         :collaboration-error="collaborationError"
         entity-type="dataProduct"
         :fqn="product?.fullyQualifiedName || product?.name || ''"
+      />
+    </template>
+    <template #inputOutputPorts>
+      <!-- Q-TAB-4 item 3 (host lane): no widget-grid branch — the ports
+           tab id is not a widget-layout tab for DataProduct
+           (customizePageData.ts:246, layoutAppliesTo: documentation
+           only), so the fixed panel always renders. -->
+      <DataProductPortsPanel
+        v-if="product"
+        :fqn="product.fullyQualifiedName || product.name"
+        :product-name="product.displayName || product.name"
+        :can-edit="canEditAssets"
+        :product="product"
+        :asset-count="assets.length"
       />
     </template>
     <template #customProperties>

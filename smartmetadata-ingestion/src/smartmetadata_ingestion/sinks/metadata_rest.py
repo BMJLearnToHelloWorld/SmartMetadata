@@ -30,6 +30,7 @@ from smartmetadata_ingestion.records import (
     DatabaseServiceRecord,
     LifeCycleRecord,
     LineageRecord,
+    EntityRef,
     MessagingServiceRecord,
     SchemaRecord,
     ColumnRecord,
@@ -113,6 +114,94 @@ class OwnerResolver:
         )
 
 
+class PipelineResolver:
+    """Resolve pipeline FQNs to EntityReference dicts carrying the server id.
+
+    Pin's EntityReference schema requires ``["id", "type"]``, and pin's
+    pipeline sources resolve the pipeline with ``get_by_name`` before
+    building the lineage edge (Airflow ``metadata.py:890-899``,
+    Dagster ``metadata.py:269-272``, Airbyte ``metadata.py:469`` @
+    ``a3012259ca``). A bare-FQN reference is rejected by the server with
+    400, so the sink resolves here — the one place with a client — before
+    writing the edge. A pipeline the catalog does not know fails the run
+    loudly, like an unresolvable owner above, instead of sending a
+    payload the server is guaranteed to reject.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+    def resolve(self, fqn: str) -> dict[str, Any]:
+        ref = self._cache.get(fqn)
+        if ref is None:
+            ref = self._lookup(fqn)
+            self._cache[fqn] = ref
+            while len(self._cache) > _OWNER_CACHE_MAX:
+                self._cache.popitem(last=False)
+        return ref
+
+    def _lookup(self, fqn: str) -> dict[str, Any]:
+        get_pipeline = getattr(self._client, "get_pipeline_by_name", None)
+        if not callable(get_pipeline):
+            raise WorkflowError(
+                f"cannot resolve pipeline {fqn!r}: the catalog client "
+                "has no pipeline lookup"
+            )
+        try:
+            entity = get_pipeline(fqn)
+        except RestError as exc:
+            if exc.status_code == 404:
+                raise WorkflowError(
+                    f"pipeline {fqn!r} matches no pipeline in the catalog; "
+                    "a pipeline-attributed lineage edge needs a resolvable pipeline"
+                ) from exc
+            raise
+        entity_id = entity.get("id") if isinstance(entity, dict) else None
+        if not entity_id:
+            raise WorkflowError(
+                f"pipeline lookup for {fqn!r} returned no id"
+            )
+        return {
+            "id": entity_id,
+            "type": "pipeline",
+            "name": entity.get("name") or fqn.rsplit(".", 1)[-1],
+            "fullyQualifiedName": entity.get("fullyQualifiedName") or fqn,
+        }
+
+
+def _resolve_lineage_pipeline(
+    record: LineageRecord, resolver: PipelineResolver
+) -> LineageRecord:
+    """LineageRecord whose pipeline ref carries the server id.
+
+    A ref that already carries an id, and an edge with no pipeline, are
+    returned unchanged; only a bare-FQN ref is resolved, so a seed that
+    already carries ids never pays a lookup.
+    """
+    pipeline = record.pipeline
+    if pipeline is None or pipeline.id:
+        return record
+    fqn = pipeline.fully_qualified_name
+    if not fqn:
+        raise WorkflowError(
+            f"lineage edge {record.from_entity.fqn}->{record.to_entity.fqn} "
+            "names a pipeline with neither id nor fullyQualifiedName; "
+            "the server requires an id on the pipeline reference"
+        )
+    ref = resolver.resolve(fqn)
+    return record.model_copy(
+        update={
+            "pipeline": EntityRef(
+                type=ref.get("type") or pipeline.type,
+                fully_qualified_name=ref.get("fullyQualifiedName") or fqn,
+                id=ref.get("id"),
+                name=ref.get("name") or pipeline.name,
+            )
+        }
+    )
+
+
 def _payload_label(kind: str, payload: dict[str, Any]) -> str:
     """The record label a bulk payload stands for (``kind:fqn``).
 
@@ -179,9 +268,16 @@ def _owners_for(
 
 
 class MetadataRestSink:
-    def __init__(self, client: RestClient, *, owner_resolver: OwnerResolver | None = None):
+    def __init__(
+        self,
+        client: RestClient,
+        *,
+        owner_resolver: OwnerResolver | None = None,
+        pipeline_resolver: PipelineResolver | None = None,
+    ):
         self._client = client
         self._owner_resolver = owner_resolver or OwnerResolver(client)
+        self._pipeline_resolver = pipeline_resolver or PipelineResolver(client)
         self.written: list[str] = []
         # Query-link dedupe for QueryRecord writes: one usage/users/
         # usedBy PUT per (query, table) per run. Bounded — when full
@@ -231,7 +327,9 @@ class MetadataRestSink:
                 record.from_entity.fqn,
                 record.to_entity.type,
                 record.to_entity.fqn,
-                _lineage_details(record),
+                _lineage_details(
+                    _resolve_lineage_pipeline(record, self._pipeline_resolver)
+                ),
             )
         elif isinstance(record, UsageRecord):
             result = self._client.put_usage_by_name(
@@ -340,9 +438,15 @@ class BulkMetadataRestSink:
         batch_size: int = 100,
         override_metadata: bool = False,
         owner_resolver: OwnerResolver | None = None,
+        pipeline_resolver: PipelineResolver | None = None,
     ) -> None:
         self._owner_resolver = owner_resolver or OwnerResolver(client)
-        self._inner = MetadataRestSink(client, owner_resolver=self._owner_resolver)
+        self._pipeline_resolver = pipeline_resolver or PipelineResolver(client)
+        self._inner = MetadataRestSink(
+            client,
+            owner_resolver=self._owner_resolver,
+            pipeline_resolver=self._pipeline_resolver,
+        )
         self._client = client
         self._batch_size = batch_size
         # The bulk overrideMetadata query param: the server reads it from

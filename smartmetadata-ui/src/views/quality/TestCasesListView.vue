@@ -42,8 +42,8 @@ const props = withDefaults(
     dataProductFqn?: string;
     startTs?: number;
     endTs?: number;
-    /** Dashboard drill-down (pin getTestCaseListPath testCaseStatus): seeds the status filter. */
-    status?: string;
+    /** Dashboard drill-down (pin getTestCaseListPath testCaseStatus): seeds the status filter. A health-segment drill carries two statuses. */
+    status?: string | string[];
     /** Dashboard drill-down (pin getTestCaseListPath dataQualityDimension): search-path filter. */
     dataQualityDimension?: string;
     /** Dashboard drill-down (pin getTestCaseListPath tableFqn): search-path entity scope. */
@@ -65,7 +65,23 @@ const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref(0);
 const usingSearch = ref(false);
-const statusFilter = ref<string | undefined>(props.status);
+const statusFilter = ref<string | string[] | undefined>(props.status);
+
+/**
+ * The single-select shows a value only when exactly one status is
+ * active. A health-drill seed carries two statuses (Success+Queued /
+ * Failed+Aborted, pin BINARY_STATUS_PIE_SEGMENT_ORDER) — the list fetch
+ * honors both while the select shows the placeholder until the viewer
+ * picks one (pin's ClassicTestCaseFilter is single-select per key too).
+ */
+const statusSelectValue = computed(() =>
+  typeof statusFilter.value === 'string' ? statusFilter.value : undefined,
+);
+
+function onStatusFilterChange(value: unknown): void {
+  statusFilter.value = typeof value === 'string' && value ? value : undefined;
+  onFilterChange();
+}
 const searchValue = ref('');
 const definitions = ref<TestDefinition[]>([]);
 const createOpen = ref(false);
@@ -385,12 +401,12 @@ defineExpose({ openCreate });
     </template>
     <template #filters>
       <Select
-        v-model:value="statusFilter"
+        :value="statusSelectValue"
         allow-clear
         :placeholder="t('quality.testCases.statusFilter')"
         data-testid="test-cases-status-filter"
         style="width: 160px"
-        @change="onFilterChange"
+        @change="onStatusFilterChange"
       >
         <Select.Option v-for="status in TEST_CASE_STATUSES" :key="status" :value="status">
           {{ status }}
