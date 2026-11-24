@@ -111,14 +111,15 @@ defineExpose({ refresh: load });
         :on-click="() => emit('open', hit)"
       />
     </div>
-    <CreatePlaceholder
-      v-else
-      :icon="AppstoreOutlined"
-      :title="t('marketplace.noDataProductsYet')"
-      :description="t('marketplace.noDataProductsYetDescription')"
-      :test-id="'marketplace-dp-empty-state'"
-      :actions="canCreate ? [{ key: 'add', label: t('marketplace.addDataProduct'), color: 'primary', onPress: () => emit('add') }] : undefined"
-    />
+    <div v-else class="marketplace-widget__empty">
+      <CreatePlaceholder
+        :icon="AppstoreOutlined"
+        :title="t('marketplace.noDataProductsYet')"
+        :description="t('marketplace.noDataProductsYetDescription')"
+        :test-id="'marketplace-dp-empty-state'"
+        :actions="canCreate ? [{ key: 'add', label: t('marketplace.addDataProduct'), color: 'primary', onPress: () => emit('add') }] : undefined"
+      />
+    </div>
   </div>
 </template>
 
@@ -127,6 +128,20 @@ defineExpose({ refresh: load });
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Pin MarketplaceDataProductsWidget.component.tsx:264 wraps the
+   CreatePlaceholder in `tw:relative tw:flex tw:min-h-60
+   tw:items-center tw:justify-center`: the placeholder root is
+   absolutely positioned, so without a positioned host it anchors to
+   the nearest positioned ancestor up the page and both widgets'
+   empty states stack on the same spot, covering the sidebar. */
+.marketplace-widget__empty {
+  position: relative;
+  display: flex;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
 }
 
 .marketplace-widget__header {
