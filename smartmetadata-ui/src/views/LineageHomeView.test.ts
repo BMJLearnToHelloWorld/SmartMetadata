@@ -265,11 +265,16 @@ describe('LineageHomeView (platform lineage page)', () => {
     expect(String(sceneCall?.[0])).toContain('lens=service');
   });
 
-  it('shows export and config actions and opens the config modal', async () => {
+  it('shows export and config actions once and opens the config modal', async () => {
     vi.stubGlobal('fetch', vi.fn(routeFetch));
     const { wrapper } = await mountPage();
     expect(wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-config"]').exists()).toBe(true);
+    // Pin PlatformLineage: export lives once in the page header — the map
+    // has no export button of its own — and the platform page is a
+    // viewport-height flex column so the canvas fills the screen.
+    expect(wrapper.find('[data-testid="lineage-map-export"]').exists()).toBe(false);
+    expect(wrapper.find('.lineage-page__platform').exists()).toBe(true);
     await wrapper.get('[data-testid="lineage-config"]').trigger('click');
     await flushPromises();
     // The antd modal portals to document.body, like LineageConfigModal.test.ts asserts.
@@ -312,6 +317,8 @@ describe('LineageHomeView (platform lineage page)', () => {
     // Pin pageTitle names the focus entity; the visible header stays lens-based.
     expect(document.title).toContain('svc.db.schema.orders Lineage');
     expect(wrapper.text()).toContain('Service Lineage');
+    // The focused view keeps the scrolling page: no viewport-height wrapper.
+    expect(wrapper.find('.lineage-page__platform').exists()).toBe(false);
     expect(
       wrapper.find('[data-testid="lineage-entity-search-input"]').attributes('placeholder'),
     ).toBe('svc.db.schema.orders');

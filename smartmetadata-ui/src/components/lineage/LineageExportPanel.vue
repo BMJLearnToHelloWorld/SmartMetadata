@@ -9,20 +9,31 @@ import { Alert, Button, Space } from 'ant-design-vue';
 import type { LineageGraphModel } from '@/lineage/graphModel';
 import { impactEntityRows, type ImpactEntityRow } from '@/lineage/impact';
 
-const props = defineProps<{
-  model: LineageGraphModel | null;
-  entityType: string;
-  fqn: string;
-  pngAvailable: boolean;
-  onExportPng: () => Promise<void>;
-  /**
-   * Async server CSV (pin `exportHandler` → `exportLineageAsync`); the
-   * file downloads from the CSV jobs tray. The canvas owns the call;
-   * this panel only renders the button state.
-   */
-  onExportCsv: () => Promise<void>;
-  exportingCsv?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    model: LineageGraphModel | null;
+    entityType: string;
+    fqn: string;
+    pngAvailable: boolean;
+    /**
+     * Pin `pages/PlatformLineage/PlatformLineage.tsx`: on the `/lineage`
+     * page the export action lives once in the page header, so the page
+     * variant hides this panel's PNG button (the CSV button is not
+     * duplicated anywhere and stays). The tab variant has no page header
+     * and keeps both.
+     */
+    showPngButton?: boolean;
+    onExportPng: () => Promise<void>;
+    /**
+     * Async server CSV (pin `exportHandler` → `exportLineageAsync`); the
+     * file downloads from the CSV jobs tray. The canvas owns the call;
+     * this panel only renders the button state.
+     */
+    onExportCsv: () => Promise<void>;
+    exportingCsv?: boolean;
+  }>(),
+  { showPngButton: true },
+);
 
 const { t } = useI18n();
 const exportingPng = ref(false);
@@ -86,6 +97,7 @@ async function exportPng(): Promise<void> {
         {{ t('lineage.exportCsv') }}
       </Button>
       <Button
+        v-if="showPngButton"
         data-testid="lineage-export-png"
         :disabled="!pngAvailable"
         :loading="exportingPng"

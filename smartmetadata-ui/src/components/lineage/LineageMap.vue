@@ -690,14 +690,6 @@ async function exportPng(): Promise<void> {
   }
 }
 
-async function onExportClick(): Promise<void> {
-  try {
-    await exportPng();
-  } catch {
-    message.error(t('lineage.exportPngFailed'));
-  }
-}
-
 defineExpose({ exportPng, reload, request: currentRequest });
 
 const propsRequestKey = computed(() =>
@@ -767,11 +759,6 @@ const nodeTypes = {
             {{ t(getRailStopLabelKey(stop, currentRequest.lens)) }}
           </Button>
         </span>
-        <Tooltip :title="t('lineage.exportPng')">
-          <Button data-testid="lineage-map-export" :aria-label="t('lineage.exportPng')" @click="onExportClick">
-            {{ t('lineage.exportPng') }}
-          </Button>
-        </Tooltip>
         <Tooltip :title="t('lineage.reloadHelp')">
           <Button data-testid="lineage-map-reload" :aria-label="t('lineage.reloadHelp')" @click="reload">
             {{ t('lineage.reload') }}
@@ -939,10 +926,16 @@ const nodeTypes = {
 </template>
 
 <style scoped>
+/* Pin `components/Lineage/Lineage.component.tsx`: the card is a flex
+   column and the map container is `flex-1 min-h-0` — the canvas fills
+   whatever the viewport-derived page wrapper leaves, with no fixed
+   floor (the old `min-height: 420px` is what capped the home canvas at
+   420px with 150px of blank below it). */
 .lineage-map {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  min-height: 420px;
+  min-height: 0;
   border: 1px solid var(--sm-border-color);
   border-radius: var(--sm-radius-card);
   background: var(--sm-content-bg);
@@ -999,7 +992,7 @@ const nodeTypes = {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  min-height: 420px;
+  min-height: 0;
 }
 .lineage-map__canvas :deep(.vue-flow) {
   flex: 1 1 auto;

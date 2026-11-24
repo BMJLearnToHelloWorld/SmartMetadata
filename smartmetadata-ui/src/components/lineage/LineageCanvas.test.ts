@@ -504,6 +504,22 @@ describe('LineageCanvas (L3)', () => {
     expect(refreshed).toHaveBeenCalled();
   });
 
+  it('keeps config and PNG export once per variant: page hides its own copies, tab keeps them', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRAPH)));
+    // Pin PlatformLineage: on the /lineage page both actions live once in
+    // the page header; the canvas's own config button and PNG button are
+    // duplicates there (CSV is not duplicated and stays).
+    const page = await mountCanvas();
+    expect(page.wrapper.find('[data-testid="lineage-config-open"]').exists()).toBe(false);
+    expect(page.wrapper.find('[data-testid="lineage-export-png"]').exists()).toBe(false);
+    expect(page.wrapper.find('[data-testid="lineage-export-csv"]').exists()).toBe(true);
+    page.wrapper.unmount();
+    const tab = await mountCanvas({}, { variant: 'tab' });
+    expect(tab.wrapper.find('[data-testid="lineage-config-open"]').exists()).toBe(true);
+    expect(tab.wrapper.find('[data-testid="lineage-export-png"]').exists()).toBe(true);
+    tab.wrapper.unmount();
+  });
+
   it('saves a new edge from the add-lineage popover submit (404 probe → new PUT)', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
