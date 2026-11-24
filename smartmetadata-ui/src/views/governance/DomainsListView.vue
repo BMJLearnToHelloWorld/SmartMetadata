@@ -26,12 +26,14 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import { usePermissionStore } from '@/stores/permissions';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
 import type { PageViewMode } from '@/types/persona';
 import DomainTreeView from './DomainTreeView.vue';
 
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const domains = ref<Domain[]>([]);
@@ -96,6 +98,24 @@ function clearSelection(): void {
 // its own hierarchy, so create/delete bumps this token and the tree
 // reloads its roots while it is mounted.
 const treeRefreshToken = ref(0);
+
+/**
+ * P1 dual line (pin DomainListPage.tsx:153: canCreateDomain =
+ * permissions.domain?.Create || false; rendered at :247 and as the page
+ * header create permission). Fail-closed — a permission fetch failure
+ * hides the create button; the list itself still loads. Row/card delete
+ * is out of this lane's scope (create only) and stays as-is.
+ */
+const resourceOps = ref<Record<string, boolean>>({});
+const canCreate = computed(() => permissionStore.isAdminUser || resourceOps.value.Create === true);
+
+async function checkPermission(): Promise<void> {
+  try {
+    resourceOps.value = await permissionStore.getResourcePermission('domain');
+  } catch {
+    resourceOps.value = {};
+  }
+}
 
 // B-10: the persona view-mode chain, wired the same way as
 // LearningResourcesView — the stored view is the default, the local
@@ -326,6 +346,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(() => {
+  void checkPermission();
   void load();
 });
 </script>
@@ -385,7 +406,7 @@ onMounted(() => {
         data-testid="domains-view-toggle"
         @update:value="handleViewChange($event as PageViewMode)"
       />
-      <Button type="primary" data-testid="create-domain" @click="createOpen = true">
+      <Button v-if="canCreate" type="primary" data-testid="create-domain" @click="createOpen = true">
         {{ t('governance.domains.create') }}
       </Button>
     </template>

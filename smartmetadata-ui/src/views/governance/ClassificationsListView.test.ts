@@ -56,6 +56,15 @@ describe('ClassificationsListView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/v1/permissions/classification')) {
+          return jsonResponse({
+            resource: 'classification',
+            permissions: [
+              { operation: 'Create', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
         if (url.includes('/api/v1/classifications')) {
           return jsonResponse({
             data: [{ id: 'c1', name: 'PII', displayName: 'Personal data', description: 'PII tags', termCount: 3 }],
@@ -85,5 +94,43 @@ describe('ClassificationsListView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('governance-classification');
     expect(router.currentRoute.value.params.id).toBe('c1');
+  });
+
+  it('shows the row delete entry with a Delete grant', async () => {
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="row-overflow-c1"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="row-overflow-delete"]')?.textContent).toContain('Delete');
+    // The overflow menu teleports into document.body: unmount so its
+    // overlay cannot leak into the next test's null assertion.
+    wrapper.unmount();
+  });
+
+  describe('without a classification grant', () => {
+    it('hides create and row delete', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('/v1/permissions/classification')) {
+            return jsonResponse({ resource: 'classification', permissions: [] });
+          }
+          if (url.includes('/api/v1/classifications')) {
+            return jsonResponse({
+              data: [{ id: 'c1', name: 'PII', displayName: 'Personal data', description: 'PII tags', termCount: 3 }],
+              paging: { total: 1 },
+            });
+          }
+          return new Response('not found', { status: 404 });
+        }),
+      );
+      const { wrapper } = await mountView();
+      await flushPromises();
+      expect(wrapper.find('[data-testid="create-classification"]').exists()).toBe(false);
+      await wrapper.find('[data-testid="row-overflow-c1"]').trigger('click');
+      await flushPromises();
+      expect(document.querySelector('[data-testid="row-overflow-delete"]')).toBeNull();
+    });
   });
 });

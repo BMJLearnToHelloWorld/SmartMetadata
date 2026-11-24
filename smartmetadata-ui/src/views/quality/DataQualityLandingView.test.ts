@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import SmChart from '@/features/charts/SmChart.vue';
 import DataQualityLandingView from './DataQualityLandingView.vue';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
@@ -327,5 +328,61 @@ describe('DataQualityLandingView', () => {
     expect(list.exists()).toBe(true);
     expect(list.props('status')).toBe('Failed');
     expect(list.props('dataQualityDimension')).toBe('Completeness');
+  });
+
+  it('forwards a two-status health drill-down query to the test-case list', async () => {
+    const { wrapper } = await mountLanding(
+      '/quality/test-cases?tab=test-cases&testCaseStatus=Success&testCaseStatus=Queued',
+    );
+    const list = wrapper.findComponent(TestCasesListView);
+    expect(list.exists()).toBe(true);
+    expect(list.props('status')).toEqual(['Success', 'Queued']);
+  });
+
+  it('drills the dashboard-tab donuts per segment (pin pie widgets)', async () => {
+    const { wrapper, router } = await mountLanding();
+    const charts = wrapper.findAllComponents(SmChart);
+    expect(charts.length).toBe(3);
+    await charts[0].vm.$emit('segment-click', 0);
+    await flushPromises();
+    expect(router.currentRoute.value.query.tab).toBe('test-suites');
+  });
+
+  it('drills the not-covered slice to explore (pin ROUTES.EXPLORE)', async () => {
+    const { wrapper, router } = await mountLanding();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[0].vm.$emit('segment-click', 1);
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('search');
+  });
+
+  it('drills the healthy slice to the Success+Queued list', async () => {
+    const { wrapper, router } = await mountLanding();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[1].vm.$emit('segment-click', 0);
+    await flushPromises();
+    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Success', 'Queued']);
+    expect(wrapper.findComponent(TestCasesListView).props('status')).toEqual(['Success', 'Queued']);
+  });
+
+  it('drills the unhealthy slice to the Failed+Aborted list', async () => {
+    const { wrapper, router } = await mountLanding();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[1].vm.$emit('segment-click', 1);
+    await flushPromises();
+    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Failed', 'Aborted']);
+    expect(wrapper.findComponent(TestCasesListView).props('status')).toEqual(['Failed', 'Aborted']);
+  });
+
+  it('drills a results slice to the matching single-status list', async () => {
+    const { wrapper, router } = await mountLanding();
+    const charts = wrapper.findAllComponents(SmChart);
+    await charts[2].vm.$emit('segment-click', 1);
+    await flushPromises();
+    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
+    expect(wrapper.findComponent(TestCasesListView).props('status')).toBe('Failed');
   });
 });

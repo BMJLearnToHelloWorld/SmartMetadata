@@ -76,6 +76,15 @@ describe('GlossariesListView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/v1/permissions/glossary')) {
+          return jsonResponse({
+            resource: 'glossary',
+            permissions: [
+              { operation: 'Create', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
         if (url.includes('/api/v1/glossaries')) {
           return jsonResponse({ data: [], paging: { total: 0 } });
         }
@@ -83,7 +92,67 @@ describe('GlossariesListView', () => {
       }),
     );
     const { wrapper } = await mountView();
+    await flushPromises();
     expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-glossary"]').exists()).toBe(true);
+  });
+
+  it('shows the row delete entry with a Delete grant', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/permissions/glossary')) {
+          return jsonResponse({
+            resource: 'glossary',
+            permissions: [
+              { operation: 'Create', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({
+            data: [{ id: 'g1', name: 'Business', displayName: 'Business Glossary', description: 'Terms', termCount: 2 }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="create-glossary"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="row-overflow-g1"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="row-overflow-delete"]')?.textContent).toContain('Delete');
+    // The overflow menu teleports into document.body: unmount so its
+    // overlay cannot leak into the next test's null assertion.
+    wrapper.unmount();
+  });
+
+  it('hides create and row delete without a glossary grant', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/permissions/glossary')) {
+          return jsonResponse({ resource: 'glossary', permissions: [] });
+        }
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({
+            data: [{ id: 'g1', name: 'Business', displayName: 'Business Glossary', description: 'Terms', termCount: 2 }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="create-glossary"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="row-overflow-g1"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="row-overflow-delete"]')).toBeNull();
   });
 });
