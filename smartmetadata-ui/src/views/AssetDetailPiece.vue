@@ -14,6 +14,7 @@ import DashboardChartsWidget from '@/components/lists/DashboardChartsWidget.vue'
 import SchemaTablesWidget from '@/components/lists/SchemaTablesWidget.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import ColumnCustomPropertyCell from '@/components/shared/ColumnCustomPropertyCell.vue';
+import ColumnDescriptionCell from '@/components/shared/widgets/ColumnDescriptionCell.vue';
 import ColumnDescriptionModal from '@/components/shared/ColumnDescriptionModal.vue';
 import ColumnDisplayNameModal, { type ColumnDisplayNameData } from '@/components/shared/ColumnDisplayNameModal.vue';
 import ColumnFilter from '@/components/ingestion/ColumnFilter.vue';
@@ -325,9 +326,6 @@ const hasSchemaSearch = computed(
     props.context.entityType === 'topic' ||
     props.context.entityType === 'searchIndex',
 );
-const canEditSchemaDescription = computed(
-  () => props.context.schemaAccess.canEditDescription && !props.context.schemaAccess.readOnly,
-);
 const canEditSchemaDisplayName = computed(
   () => props.context.schemaAccess.canEditDisplayName && !props.context.schemaAccess.readOnly,
 );
@@ -511,17 +509,15 @@ const tableColumnNames = computed(() => flattenColumnNames(props.context.asset.s
             {{ (record as SchemaRow).dataType }}
           </template>
           <template v-else-if="column.key === 'description'">
-            <!-- Pin TableDescription: the description text itself opens
-                 the editor when the viewer may edit it. -->
-            <span
-              v-if="canEditSchemaDescription"
-              data-testid="schema-description-edit"
-              style="cursor: pointer"
-              @click="editDescriptionRow = record as SchemaRow"
-            >
-              {{ (record as SchemaRow).description || '—' }}
-            </span>
-            <span v-else>{{ (record as SchemaRow).description || '—' }}</span>
+            <!-- Pin TableDescription: preview + hover edit button; the
+                 click reports to the parent, which holds the edited row
+                 and the shared ColumnDescriptionModal below. -->
+            <ColumnDescriptionCell
+              :description="(record as SchemaRow).description"
+              :has-edit-access="context.schemaAccess.canEditDescription"
+              :read-only="context.schemaAccess.readOnly"
+              :on-edit="() => { editDescriptionRow = record as SchemaRow; }"
+            />
           </template>
           <template v-else-if="column.key === 'tags'">
             <SchemaTagCell
@@ -630,15 +626,12 @@ const tableColumnNames = computed(() => flattenColumnNames(props.context.asset.s
             {{ (record as SchemaRow).dataType }}
           </template>
           <template v-else-if="column.key === 'description'">
-            <span
-              v-if="canEditSchemaDescription"
-              data-testid="schema-description-edit"
-              style="cursor: pointer"
-              @click="editDescriptionRow = record as SchemaRow"
-            >
-              {{ (record as SchemaRow).description || '—' }}
-            </span>
-            <span v-else>{{ (record as SchemaRow).description || '—' }}</span>
+            <ColumnDescriptionCell
+              :description="(record as SchemaRow).description"
+              :has-edit-access="context.schemaAccess.canEditDescription"
+              :read-only="context.schemaAccess.readOnly"
+              :on-edit="() => { editDescriptionRow = record as SchemaRow; }"
+            />
           </template>
           <template v-else-if="column.key === 'tags'">
             <SchemaTagCell
@@ -777,15 +770,12 @@ const tableColumnNames = computed(() => flattenColumnNames(props.context.asset.s
           {{ (record as SchemaRow).dataType }}
         </template>
         <template v-else-if="column.key === 'description'">
-          <span
-            v-if="canEditSchemaDescription"
-            data-testid="schema-description-edit"
-            style="cursor: pointer"
-            @click="editDescriptionRow = record as SchemaRow"
-          >
-            {{ (record as SchemaRow).description || '—' }}
-          </span>
-          <span v-else>{{ (record as SchemaRow).description || '—' }}</span>
+          <ColumnDescriptionCell
+            :description="(record as SchemaRow).description"
+            :has-edit-access="context.schemaAccess.canEditDescription"
+            :read-only="context.schemaAccess.readOnly"
+            :on-edit="() => { editDescriptionRow = record as SchemaRow; }"
+          />
         </template>
         <template v-else-if="column.key === 'tags'">
           <SchemaTagCell

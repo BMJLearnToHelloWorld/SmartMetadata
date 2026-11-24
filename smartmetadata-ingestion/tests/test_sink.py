@@ -8,16 +8,20 @@
 
 from __future__ import annotations
 
+import json
+from urllib.parse import unquote
+
 import httpx
 import pytest
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import ProcessorConfig, SinkConfig
-from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.errors import RestError, WorkflowError
 from smartmetadata_ingestion.processors.identity import build_processors
 from smartmetadata_ingestion.records import (
     ColumnRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
+    EntityRef,
     LineageEndpoint,
     LineageRecord,
     MessagingServiceRecord,
@@ -100,6 +104,164 @@ def test_sink_sends_optional_fields(workflow_config) -> None:
     assert any("messageSchema" in body for body in bodies)
     assert any('"partitions": 3' in body or '"partitions":3' in body for body in bodies)
     assert build_sink(workflow_config, client).written == []
+
+
+_PIPELINE_FQN = "lineage-demo-airflow.demo_orders_etl"
+_PIPELINE_ID = "11111111-1111-4111-8111-111111111111"
+
+
+def _pipeline_edge(**pipeline_kwargs) -> LineageRecord:
+    return LineageRecord(
+        from_entity=LineageEndpoint(
+            type="table", fqn="lineage-demo.demo.public.stg_orders"
+        ),
+        to_entity=LineageEndpoint(
+            type="table", fqn="lineage-demo.demo.public.fact_orders"
+        ),
+        source="PipelineLineage",
+        sql_query="SELECT order_id, customer_id, amount FROM stg_orders",
+        pipeline=EntityRef(type="pipeline", **pipeline_kwargs),
+    )
+
+
+def _lineage_client(workflow_config, pipelines, calls):
+    """RestClient whose pipeline GETs come from ``pipelines`` and whose
+    lineage PUT bodies land in ``calls``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path.startswith("/api/v1/pipelines/name/"):
+            fqn = unquote(path.removeprefix("/api/v1/pipelines/name/"))
+            calls.append(("get_pipeline", fqn))
+            entity = pipelines.get(fqn)
+            if entity is None:
+                return httpx.Response(404, json={"code": 404, "message": "not found"})
+            return httpx.Response(200, json=entity)
+        if request.method == "PUT" and path.startswith("/api/v1/lineage/"):
+            calls.append(("put_lineage", json.loads(request.content.decode())))
+            return httpx.Response(200, json={"ok": True})
+        raise AssertionError(f"unexpected {request.method} {path}")
+
+    return RestClient(workflow_config.server, transport=httpx.MockTransport(handler))
+
+
+def test_sink_resolves_pipeline_fqn_to_id_before_lineage_put(workflow_config) -> None:
+    """A bare-FQN pipeline ref is resolved to the server id before the
+    lineage PUT: pin's EntityReference requires ["id", "type"], so the
+    seed's FQN-only shape 400s without this (live 2026-11-23)."""
+    calls: list = []
+    pipelines = {
+        _PIPELINE_FQN: {
+            "id": _PIPELINE_ID,
+            "name": "demo_orders_etl",
+            "fullyQualifiedName": _PIPELINE_FQN,
+        }
+    }
+    client = _lineage_client(workflow_config, pipelines, calls)
+    sink = MetadataRestSink(client)
+    edge = _pipeline_edge(fully_qualified_name=_PIPELINE_FQN)
+    sink.write(edge)
+    sink.write(edge)
+    assert [c for c in calls if c[0] == "get_pipeline"] == [
+        ("get_pipeline", _PIPELINE_FQN)
+    ]
+    bodies = [c[1] for c in calls if c[0] == "put_lineage"]
+    assert len(bodies) == 2
+    for body in bodies:
+        assert body["pipeline"] == {
+            "type": "pipeline",
+            "id": _PIPELINE_ID,
+            "name": "demo_orders_etl",
+            "fullyQualifiedName": _PIPELINE_FQN,
+        }
+    # The record is not mutated: resolution builds a copy for the wire.
+    assert edge.pipeline is not None and edge.pipeline.id is None
+
+
+def test_sink_lineage_with_unknown_pipeline_fails_loudly(workflow_config) -> None:
+    """An unresolvable pipeline fails the run instead of sending a
+    payload the server is guaranteed to reject with 400."""
+    calls: list = []
+    client = _lineage_client(workflow_config, {}, calls)
+    sink = MetadataRestSink(client)
+    with pytest.raises(WorkflowError, match="demo_orders_etl"):
+        sink.write(_pipeline_edge(fully_qualified_name=_PIPELINE_FQN))
+    assert not any(c[0] == "put_lineage" for c in calls)
+
+
+def test_sink_pipeline_lookup_server_error_propagates(workflow_config) -> None:
+    """Only a 404 becomes a WorkflowError; any other lookup failure
+    surfaces as the RestError it is."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(500, json={"code": 500, "message": "boom"})
+        raise AssertionError(f"unexpected {request.method} {request.url.path}")
+
+    client = RestClient(
+        workflow_config.server, transport=httpx.MockTransport(handler)
+    )
+    sink = MetadataRestSink(client)
+    with pytest.raises(RestError, match="500"):
+        sink.write(_pipeline_edge(fully_qualified_name=_PIPELINE_FQN))
+
+
+def test_sink_lineage_with_pipeline_id_skips_lookup(workflow_config) -> None:
+    """A ref that already carries an id is sent as-is with no lookup."""
+    bodies: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            raise AssertionError("must not look up a pipeline that has an id")
+        assert request.method == "PUT"
+        bodies.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"ok": True})
+
+    client = RestClient(
+        workflow_config.server, transport=httpx.MockTransport(handler)
+    )
+    sink = MetadataRestSink(client)
+    sink.write(
+        _pipeline_edge(
+            fully_qualified_name=_PIPELINE_FQN, id="22222222-2222-4222-8222-222222222222"
+        )
+    )
+    assert len(bodies) == 1
+    assert bodies[0]["pipeline"] == {
+        "type": "pipeline",
+        "id": "22222222-2222-4222-8222-222222222222",
+        "fullyQualifiedName": _PIPELINE_FQN,
+    }
+
+
+def test_sink_lineage_pipeline_without_id_or_fqn_fails(workflow_config) -> None:
+    """A pipeline ref with neither id nor FQN cannot be resolved, so the
+    edge fails loudly instead of 400ing on the server."""
+    calls: list = []
+    client = _lineage_client(workflow_config, {}, calls)
+    sink = MetadataRestSink(client)
+    with pytest.raises(WorkflowError, match="neither id nor fullyQualifiedName"):
+        sink.write(_pipeline_edge())
+    assert not any(c[0] == "put_lineage" for c in calls)
+
+
+def test_bulk_sink_resolves_pipeline_for_lineage_edges(workflow_config) -> None:
+    """Lineage is not a buffered kind: the bulk sink delegates it to the
+    inner sink, so the same resolution applies there."""
+    calls: list = []
+    pipelines = {
+        _PIPELINE_FQN: {
+            "id": _PIPELINE_ID,
+            "name": "demo_orders_etl",
+            "fullyQualifiedName": _PIPELINE_FQN,
+        }
+    }
+    client = _lineage_client(workflow_config, pipelines, calls)
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(_pipeline_edge(fully_qualified_name=_PIPELINE_FQN))
+    bodies = [c[1] for c in calls if c[0] == "put_lineage"]
+    assert len(bodies) == 1
+    assert bodies[0]["pipeline"]["id"] == _PIPELINE_ID
 
 
 def test_table_payload_omits_data_length_when_none() -> None:

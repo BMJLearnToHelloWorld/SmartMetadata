@@ -11,6 +11,7 @@ import {
   exploreTabForIndex,
   exploreTabForSlug,
   exploreTabFromQuery,
+  facetsForTab,
   sortOptionsForTab,
 } from './exploreTabs';
 
@@ -63,5 +64,117 @@ describe('exploreTabs', () => {
       field: 'displayName.keyword',
     });
     expect(exploreSortFromQuery({}, null).id).toBe('popularity');
+  });
+
+  it('defaults the API tabs to totalVotes although the tag group has no popularity option (D33 pin quirk)', () => {
+    const collection = exploreTabForIndex('apiCollection');
+    const endpoint = exploreTabForIndex('apiEndpoint');
+    expect(defaultSortForTab(collection)).toEqual({ id: 'popularity', field: 'totalVotes', defaultOrder: 'desc' });
+    expect(defaultSortForTab(endpoint)).toEqual({ id: 'popularity', field: 'totalVotes', defaultOrder: 'desc' });
+    // The tag group's options are unchanged: totalVotes is the default,
+    // not a selectable option.
+    expect(sortOptionsForTab(collection).map((option) => option.id)).toEqual(['name', 'relevance', 'updated']);
+    // …and the other tag tabs still default to name.
+    expect(defaultSortForTab(exploreTabForIndex('tag'))).toEqual({
+      id: 'name',
+      field: 'displayName.keyword',
+      defaultOrder: 'asc',
+    });
+    expect(defaultSortForTab(exploreTabForIndex('dataProduct')).id).toBe('name');
+    expect(defaultSortForTab(exploreTabForIndex('metric')).id).toBe('name');
+    // No sort in the URL resolves to the quirk default on the API tabs.
+    expect(exploreSortFromQuery({}, collection)).toEqual({
+      id: 'popularity',
+      order: 'desc',
+      field: 'totalVotes',
+    });
+  });
+});
+
+describe('facetsForTab (pin SearchClassBase.getDropDownItems)', () => {
+  it('shows the 9 data-asset chips on the all-tab only', () => {
+    expect(facetsForTab(null)).toEqual([
+      'entityType',
+      'domain',
+      'dataProduct',
+      'owner',
+      'tagFqn',
+      'tier',
+      'certification',
+      'service',
+      'serviceType',
+    ]);
+  });
+
+  it('gives the table tab the common set plus database/schema/column/table-type', () => {
+    expect(facetsForTab(exploreTabForIndex('table'))).toEqual([
+      'domain',
+      'dataProduct',
+      'owner',
+      'tagFqn',
+      'tier',
+      'service',
+      'serviceType',
+      'database',
+      'schema',
+      'column',
+      'tableType',
+      'columnDescriptionStatus',
+    ]);
+    // No entityType/certification chip where pin lacks it.
+    expect(facetsForTab(exploreTabForIndex('table'))).not.toContain('entityType');
+    expect(facetsForTab(exploreTabForIndex('table'))).not.toContain('certification');
+  });
+
+  it('gives the column tab only data-type/table/database/schema', () => {
+    expect(facetsForTab(exploreTabForIndex('tableColumn'))).toEqual([
+      'dataType',
+      'tableName',
+      'database',
+      'schema',
+    ]);
+  });
+
+  it('gives the glossary tab domains/owner/tag/glossary/status', () => {
+    expect(facetsForTab(exploreTabForIndex('glossaryTerm'))).toEqual([
+      'domain',
+      'owner',
+      'tagFqn',
+      'glossary',
+      'entityStatus',
+    ]);
+  });
+
+  it('gives the tag tab domains/classification and the data-product tab domains/owner', () => {
+    expect(facetsForTab(exploreTabForIndex('tag'))).toEqual(['domain', 'classification']);
+    expect(facetsForTab(exploreTabForIndex('dataProduct'))).toEqual(['domain', 'owner']);
+  });
+
+  it('gives common-only tabs the common set, and unmapped tabs no chips', () => {
+    for (const index of ['storedProcedure', 'database', 'databaseSchema', 'apiCollection', 'metric']) {
+      expect(facetsForTab(exploreTabForIndex(index))).toEqual([
+        'domain',
+        'dataProduct',
+        'owner',
+        'tagFqn',
+        'tier',
+        'service',
+        'serviceType',
+      ]);
+    }
+    for (const index of ['chart', 'directory', 'file', 'spreadsheet', 'worksheet']) {
+      expect(facetsForTab(exploreTabForIndex(index))).toEqual([]);
+    }
+    expect(facetsForTab(exploreTabForIndex('topic'))).toEqual([
+      'domain',
+      'dataProduct',
+      'owner',
+      'tagFqn',
+      'tier',
+      'service',
+      'serviceType',
+      'schemaField',
+    ]);
+    expect(facetsForTab(exploreTabForIndex('page'))).toEqual(['owner', 'tagFqn']);
   });
 });

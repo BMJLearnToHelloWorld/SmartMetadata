@@ -236,8 +236,6 @@ function openTarget(target: { entityType: string; fqn: string }): void {
         ref="canvasRef"
         :entity-type="entityType"
         :fqn="fqn"
-        :platform="!focused"
-        :lens="lens"
         :show-header="false"
         :has-edit-access="canEditLineage"
         variant="page"

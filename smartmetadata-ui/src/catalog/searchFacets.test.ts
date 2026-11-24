@@ -81,6 +81,128 @@ describe('aggregationFieldNamesForFacet', () => {
     // derived from these names (ADR:2026-11-11-explore-facet-self-exclusion).
     expect(aggregationFieldNamesForFacet('entityType')).toEqual(['entityType', 'entityType.keyword']);
     expect(aggregationFieldNamesForFacet('service')).toEqual(['service.displayName.keyword']);
-    expect(aggregationFieldNamesForFacet('tagFqn')).toEqual(['tags.tagFQN']);
+    // classificationTags / glossaryTags are tag FQNs split by provenance
+    // (server ParseTags), so they are fallback sources of the tag facet.
+    expect(aggregationFieldNamesForFacet('tagFqn')).toEqual([
+      'tags.tagFQN',
+      'classificationTags',
+      'glossaryTags',
+    ]);
+    // The database/schema facets filter on the display-name variants
+    // (pin TABLE/COLUMN dropdown fields) while keeping the name.keyword
+    // aggregations as fallback sources.
+    expect(aggregationFieldNamesForFacet('database')).toEqual([
+      'database.name.keyword',
+      'database.displayName',
+    ]);
+    expect(aggregationFieldNamesForFacet('schema')).toEqual([
+      'databaseSchema.name.keyword',
+      'databaseSchema.displayName',
+    ]);
+  });
+});
+
+describe('mapSearchAggregations display-name preference', () => {
+  it('prefers the displayName aggregation over name.keyword on a tie', () => {
+    const facets = mapSearchAggregations({
+      aggregations: {
+        'sterms#database.name.keyword': {
+          buckets: [{ key: 'orders', doc_count: 4 }],
+        },
+        'sterms#database.displayName': {
+          buckets: [{ key: 'Orders DB', doc_count: 4 }],
+        },
+        'sterms#databaseSchema.name.keyword': {
+          buckets: [{ key: 'public', doc_count: 4 }],
+        },
+        'sterms#databaseSchema.displayName': {
+          buckets: [{ key: 'Public', doc_count: 4 }],
+        },
+      },
+    });
+    expect(facets).toEqual([
+      {
+        id: 'database',
+        field: 'database.displayName.keyword',
+        buckets: [{ key: 'Orders DB', count: 4 }],
+      },
+      {
+        id: 'schema',
+        field: 'databaseSchema.displayName.keyword',
+        buckets: [{ key: 'Public', count: 4 }],
+      },
+    ]);
+  });
+
+  it('keeps a strictly longer fallback list over a shorter preferred one', () => {
+    const facets = mapSearchAggregations({
+      aggregations: {
+        'sterms#database.name.keyword': {
+          buckets: [
+            { key: 'orders', doc_count: 4 },
+            { key: 'billing', doc_count: 2 },
+          ],
+        },
+        'sterms#database.displayName': {
+          buckets: [{ key: 'Orders DB', doc_count: 4 }],
+        },
+      },
+    });
+    expect(facets).toEqual([
+      {
+        id: 'database',
+        field: 'database.displayName.keyword',
+        buckets: [
+          { key: 'orders', count: 4 },
+          { key: 'billing', count: 2 },
+        ],
+      },
+    ]);
+  });
+
+  it('maps classificationTags and glossaryTags as tag-facet fallbacks', () => {
+    expect(
+      mapSearchAggregations({
+        aggregations: {
+          'sterms#classificationTags': {
+            buckets: [{ key: 'PII.Sensitive', doc_count: 2 }],
+          },
+          'sterms#glossaryTags': {
+            buckets: [{ key: 'Glossary.Term', doc_count: 1 }],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        id: 'tagFqn',
+        field: 'tags.tagFQN',
+        buckets: [{ key: 'PII.Sensitive', count: 2 }],
+      },
+    ]);
+    // tags.tagFQN is the union source and wins when present.
+    expect(
+      mapSearchAggregations({
+        aggregations: {
+          'sterms#tags.tagFQN': {
+            buckets: [
+              { key: 'PII.Sensitive', doc_count: 2 },
+              { key: 'Glossary.Term', doc_count: 1 },
+            ],
+          },
+          'sterms#classificationTags': {
+            buckets: [{ key: 'PII.Sensitive', doc_count: 2 }],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        id: 'tagFqn',
+        field: 'tags.tagFQN',
+        buckets: [
+          { key: 'PII.Sensitive', count: 2 },
+          { key: 'Glossary.Term', count: 1 },
+        ],
+      },
+    ]);
   });
 });

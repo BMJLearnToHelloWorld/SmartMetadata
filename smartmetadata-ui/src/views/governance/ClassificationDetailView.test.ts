@@ -22,6 +22,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 async function mountClassification(id: string) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -30,14 +32,13 @@ async function mountClassification(id: string) {
   });
   await router.push('/governance/classifications');
   await router.isReady();
-  const pinia = createPinia();
-  setActivePinia(pinia);
   const wrapper = mount(ClassificationDetailView, {
     props: { id },
     global: {
       plugins: [pinia, router, Antd, createTestI18n()],
     },
   });
+  await flushPromises();
   await flushPromises();
   return wrapper;
 }
@@ -46,12 +47,27 @@ function isDisabled(wrapper: Awaited<ReturnType<typeof mountClassification>>, te
   return (wrapper.find(`[data-testid="${testid}"]`).element as HTMLButtonElement).disabled;
 }
 
-describe('ClassificationDetailView edit gating (upstream revokeEditPermissions)', () => {
+describe('ClassificationDetailView permission gates (pin TagsPage / ClassificationDetails)', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/v1/permissions/classification/')) {
+          return jsonResponse({
+            resource: 'classification',
+            permissions: [
+              { operation: 'EditAll', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/v1/permissions/tag')) {
+          return jsonResponse({
+            resource: 'tag',
+            permissions: [{ operation: 'Create', access: 'allow' }],
+          });
+        }
         if (url.includes('/api/v1/classifications/')) {
           // The stub encodes the classification state in the id.
           const disabled = url.includes('disabled-classification');
@@ -86,14 +102,46 @@ describe('ClassificationDetailView edit gating (upstream revokeEditPermissions)'
     expect(isDisabled(wrapper, 'edit-classification')).toBe(false);
     expect(isDisabled(wrapper, 'delete-classification')).toBe(false);
     expect(isDisabled(wrapper, 'create-tag')).toBe(false);
+    expect(isDisabled(wrapper, 'classification-disabled')).toBe(false);
   });
 
-  it('disables edit but not delete or create-tag on a disabled classification', async () => {
+  it('disables edit, delete and create-tag on a disabled classification, but keeps the disable switch usable', async () => {
+    // Pin ClassificationDetails: showEditOption requires !disabled
+    // (:360-365); the ManageButton delete requires !disabled (:641);
+    // the add-tag button isDisabled={isClassificationDisabled} (:612).
+    // The switch itself stays usable — it is the edit-path toggle that
+    // re-enables the classification (:437-447).
     const wrapper = await mountClassification('disabled-classification');
     expect(isDisabled(wrapper, 'edit-classification')).toBe(true);
-    // Delete and Create are not Edit* operations: upstream revoke leaves them untouched.
-    expect(isDisabled(wrapper, 'delete-classification')).toBe(false);
-    expect(isDisabled(wrapper, 'create-tag')).toBe(false);
+    expect(isDisabled(wrapper, 'delete-classification')).toBe(true);
+    expect(isDisabled(wrapper, 'create-tag')).toBe(true);
+    expect(isDisabled(wrapper, 'classification-disabled')).toBe(false);
+  });
+
+  describe('without a classification grant', () => {
+    it('disables every write action including the switch', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('/v1/permissions/')) {
+            return jsonResponse({ resource: 'classification', permissions: [] });
+          }
+          if (url.includes('/api/v1/classifications/')) {
+            return jsonResponse({ id: 'c1', name: 'pii', displayName: 'PII', disabled: false, owners: [] });
+          }
+          if (url.includes('/api/v1/tags')) {
+            return jsonResponse({ data: [] });
+          }
+          return jsonResponse({}, 404);
+        }),
+      );
+      const wrapper = await mountClassification('c1');
+      expect(isDisabled(wrapper, 'edit-classification')).toBe(true);
+      expect(isDisabled(wrapper, 'delete-classification')).toBe(true);
+      expect(isDisabled(wrapper, 'create-tag')).toBe(true);
+      expect(isDisabled(wrapper, 'classification-disabled')).toBe(true);
+    });
   });
 });
 
@@ -110,8 +158,10 @@ describe('ClassificationDetailView per-tag disable toggle (pin ClassificationUti
 
   async function mountWithPermissions(id: string) {
     const wrapper = await mountClassification(id);
-    // The permission fetch starts only after the classification loads,
-    // so it needs its own flush rounds before the toggle gate settles.
+    // By-id permission fetch (pin TagsPage: the classification
+    // permissions come from { id }, not the FQN): it starts at mount,
+    // so the flush rounds only let it resolve before the toggle gate
+    // settles.
     await flushPromises();
     await flushPromises();
     await wrapper.vm.$nextTick();
@@ -141,7 +191,9 @@ describe('ClassificationDetailView per-tag disable toggle (pin ClassificationUti
             owners: [],
           });
         }
-        if (url.includes('/v1/permissions/classification/name/')) {
+        // By-id permission fetch: GET /v1/permissions/classification/<id>
+        // (pin TagsPage passes { id } to useEntityPermissions).
+        if (url.includes('/v1/permissions/classification/') && !url.includes('/name/')) {
           return jsonResponse({
             resource: 'classification',
             permissions: grantEditAll ? [{ operation: 'EditAll', access: 'allow' }] : [],
