@@ -52,6 +52,14 @@ from smartmetadata_ingestion.records import (
 
 logger = logging.getLogger(__name__)
 
+# Log lines stay bounded: bulk responses can carry whole entities, and a
+# fail-closed error embeds the response repr.
+_LOG_TEXT_LIMIT = 500
+
+
+def _truncate_text(text: str, limit: int = _LOG_TEXT_LIMIT) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
 
 # Owner names resolve to EntityReference ids once per run; the cache is
 # bounded so a run with many distinct owners cannot grow it without limit.
@@ -584,12 +592,19 @@ class BulkMetadataRestSink:
         except Exception as exc:
             # The whole group was refused or unrecordable: every payload
             # in it failed, each as its own failure — not one group error.
+            # The refusal itself gets one line naming the group; each
+            # payload's failure is logged by _record_flush_failure.
+            logger.error(
+                "bulk %s flush refused for %d payload(s): %s",
+                kind,
+                len(payloads),
+                exc,
+            )
+            logger.debug("bulk %s flush refusal traceback: %s", kind, traceback.format_exc())
             for payload in payloads:
                 self._record_flush_failure(kind, payload, str(exc), traceback.format_exc())
 
-    def _record_flush_response(
-        self, kind: str, payloads: list[dict], result: Any
-    ) -> None:
+    def _record_flush_response(self, kind: str, payloads: list[dict], result: Any) -> None:
         """Count a bulk response (BulkOperationResult) per record.
 
         ``successRequest`` entries are the records that landed;
@@ -599,14 +614,19 @@ class BulkMetadataRestSink:
         as succeeded (fail closed — an unobservable flush must not
         count as a success).
         """
-        if isinstance(result, dict) and (
-            "successRequest" in result or "failedRequest" in result
-        ):
+        if isinstance(result, dict) and ("successRequest" in result or "failedRequest" in result):
             succeeded = result.get("successRequest") or []
             failed = result.get("failedRequest") or []
             if succeeded:
                 current = self._flush_result.succeeded.get(kind, 0)
                 self._flush_result.succeeded[kind] = current + len(succeeded)
+            logger.info(
+                "bulk %s flush: %d payload(s), %d succeeded, %d failed",
+                kind,
+                len(payloads),
+                len(succeeded),
+                len(failed),
+            )
             for entry in failed:
                 if isinstance(entry, dict):
                     request = entry.get("request")
@@ -618,11 +638,19 @@ class BulkMetadataRestSink:
             return
         # No result lists at all (e.g. an empty-body 200, which
         # RestClient.request() returns as None): fail closed, one
-        # failure per payload and zero succeeded.
+        # failure per payload and zero succeeded. The response shape is
+        # logged once per group — it is the only evidence for whether
+        # the server answered at all — and each payload's failure is
+        # logged by _record_flush_failure with its label.
+        logger.error(
+            "bulk %s flush failed closed for %d payload(s): unexpected %s response: %s",
+            kind,
+            len(payloads),
+            type(result).__name__,
+            _truncate_text(repr(result)),
+        )
         for payload in payloads:
-            self._record_flush_failure(
-                kind, payload, f"unexpected bulk response: {result!r}"
-            )
+            self._record_flush_failure(kind, payload, f"unexpected bulk response: {result!r}")
 
     def _record_flush_failure(
         self,
@@ -631,14 +659,19 @@ class BulkMetadataRestSink:
         error: str,
         stack_trace: str | None = None,
     ) -> None:
-        self._flush_result.failed.append(
-            FlushFailure(
-                kind=kind,
-                payload=dict(payload),
-                error=error,
-                stack_trace=stack_trace,
-            )
+        failure = FlushFailure(
+            kind=kind,
+            payload=dict(payload),
+            error=error,
+            stack_trace=stack_trace,
         )
+        self._flush_result.failed.append(failure)
+        # Per-step failure logging: every failure the workflow counts
+        # gets one log line naming the record and the reason, so a run's
+        # "N failed" is auditable from the log alone. ERROR level, so it
+        # shows with the default logging setup — the live 87.8% run named
+        # no step because failures were only visible in the JSON report.
+        logger.error("sink flush failed: %s: %s", failure.label, _truncate_text(failure.error))
 
 
 
