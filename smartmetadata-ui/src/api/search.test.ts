@@ -423,7 +423,12 @@ describe('search export (D10)', () => {
     const url = new URL(String(fetchMock.mock.calls[0][0]));
     expect(url.pathname).toBe('/api/v1/search/export');
     expect(url.searchParams.get('from')).toBe('0');
-    expect(blob).toBeInstanceOf(Blob);
+    // NOTE: no instanceof check — the Blob comes from the fetch Response
+    // (undici realm), so `instanceof Blob` (jsdom realm) fails on some
+    // runtimes even though the value is a real Blob; assert its tag and
+    // type instead, plus readable text below.
+    expect(Object.prototype.toString.call(blob)).toBe('[object Blob]');
+    expect(blob.type).toBe('text/csv');
     expect(await blob.text()).toContain('svc.db.orders');
   });
 
