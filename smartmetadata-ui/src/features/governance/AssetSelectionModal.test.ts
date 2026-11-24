@@ -19,9 +19,16 @@ const getTagByFqn = vi.fn();
 const addAssetsToTags = vi.fn();
 const getGlossaryTermByFqn = vi.fn();
 const addAssetsToGlossaryTerm = vi.fn();
+const getMetricByFqn = vi.fn();
+const addAssetsToMetric = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
+}));
+
+vi.mock('@/api/metrics', () => ({
+  getMetricByFqn: (...args: unknown[]) => getMetricByFqn(...args),
+  addAssetsToMetric: (...args: unknown[]) => addAssetsToMetric(...args),
 }));
 
 vi.mock('@/api/tags', () => ({
@@ -89,11 +96,15 @@ describe('AssetSelectionModal (pin TagPage add-assets modal)', () => {
     addAssetsToTags.mockReset();
     getGlossaryTermByFqn.mockReset();
     addAssetsToGlossaryTerm.mockReset();
+    getMetricByFqn.mockReset();
+    addAssetsToMetric.mockReset();
     searchAssets.mockResolvedValue({ total: 2, hits: [ORDERS, DASHBOARD], facets: [] });
     getTagByFqn.mockResolvedValue({ id: 'tg1', name: 'Sensitive', fullyQualifiedName: 'PII.Sensitive' });
     addAssetsToTags.mockResolvedValue({ jobId: 'job-1' });
     getGlossaryTermByFqn.mockResolvedValue({ id: 'term1', name: 'term', fullyQualifiedName: 'gloss.term' });
     addAssetsToGlossaryTerm.mockResolvedValue({ numberOfRowsPassed: 1 });
+    getMetricByFqn.mockResolvedValue({ id: 'm1', name: 'mau', fullyQualifiedName: 'kpi.mau' });
+    addAssetsToMetric.mockResolvedValue({ numberOfRowsPassed: 1 });
   });
 
   afterEach(() => {
@@ -302,6 +313,65 @@ describe('AssetSelectionModal (pin GlossaryTermsV1 add-assets modal, B-15 G-1)',
     expect(getGlossaryTermByFqn).toHaveBeenCalledWith('gloss.term');
     await selectFirstAndSave();
     expect(addAssetsToGlossaryTerm).toHaveBeenCalledWith('term1', [
+      expect.objectContaining({ id: 't1' }),
+    ]);
+    expect(wrapper.emitted('save')).toHaveLength(1);
+    wrapper.unmount();
+  });
+});
+
+describe('AssetSelectionModal (pin MetricDetails add-assets modal, B2-G1)', () => {
+  beforeEach(() => {
+    searchAssets.mockReset();
+    getMetricByFqn.mockReset();
+    addAssetsToMetric.mockReset();
+    addAssetsToTags.mockReset();
+    searchAssets.mockResolvedValue({ total: 2, hits: [ORDERS, DASHBOARD], facets: [] });
+    getMetricByFqn.mockResolvedValue({ id: 'm1', name: 'mau', fullyQualifiedName: 'kpi.mau' });
+    addAssetsToMetric.mockResolvedValue({ numberOfRowsPassed: 1 });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function selectFirstAndSave(): Promise<void> {
+    const checkbox = document.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    expect(checkbox).not.toBeNull();
+    checkbox!.checked = true;
+    checkbox!.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+    const okButton = footerButton(true);
+    expect(okButton).not.toBeNull();
+    expect(okButton!.hasAttribute('disabled')).toBe(false);
+    okButton!.click();
+    await flushPromises();
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await flushPromises();
+  }
+
+  it('skips the FQN resolution fetch when entityId is given and saves through the metric endpoint by FQN', async () => {
+    const wrapper = await mountModal({
+      entityFqn: 'kpi.mau',
+      type: 'metric',
+      entityId: 'm1',
+    });
+    expect(getMetricByFqn).not.toHaveBeenCalled();
+    await selectFirstAndSave();
+    expect(addAssetsToMetric).toHaveBeenCalledWith('kpi.mau', [
+      expect.objectContaining({ id: 't1', type: 'table', fullyQualifiedName: 'svc.db.schema.orders' }),
+    ]);
+    expect(addAssetsToTags).not.toHaveBeenCalled();
+    expect(wrapper.emitted('save')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('resolves the metric id by FQN when no entityId is given', async () => {
+    const wrapper = await mountModal({ entityFqn: 'kpi.mau', type: 'metric' });
+    expect(getMetricByFqn).toHaveBeenCalledWith('kpi.mau');
+    await selectFirstAndSave();
+    expect(addAssetsToMetric).toHaveBeenCalledWith('kpi.mau', [
       expect.objectContaining({ id: 't1' }),
     ]);
     expect(wrapper.emitted('save')).toHaveLength(1);

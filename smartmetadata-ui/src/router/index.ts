@@ -242,9 +242,10 @@ export const router = createRouter({
           props: true,
           meta: { guard: 'admin-only' },
         },
-        // G-01 (visual comparison): official EXPLORE '/explore'
-        // (constants.ts:155); the product search lives at /search.
-        { path: 'search', name: 'search', component: SearchView, alias: 'explore' },
+        // D1 (B2-E5b): official EXPLORE '/explore'
+        // (constants.ts:155); '/search' stays as an alias so old links
+        // and stored landing pages keep resolving.
+        { path: 'explore', name: 'search', component: SearchView, alias: 'search' },
         // B-7(c): the aggregate Connections surface (pin
         // ConnectionsPage, RoutePosition.APP) — the retired
         // `ingestion/services` aggregate list lives here now.

@@ -23,10 +23,12 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import { usePermissionStore } from '@/stores/permissions';
 import type { Classification } from '@/types/governance';
 
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const classifications = ref<Classification[]>([]);
@@ -51,6 +53,28 @@ const columns = computed<EntityListColumn[]>(() => [
 
 const hasNext = computed(() => canGoNext(pageAfter.value));
 const hasPrev = computed(() => canGoPrev(cursor.value));
+
+/**
+ * P1 dual line (pin TagsPage.tsx:136-138: createClassificationPermission =
+ * checkPermission(Create, CLASSIFICATION, permissions); delete is the
+ * classification resource Delete op, the same shape as the Metrics
+ * bulk-delete gate — pin's own classification delete lives in the detail
+ * pane, ClassificationDetails.tsx:165, but the product list has a row
+ * delete, so it takes the resource Delete grant). Mirrors
+ * MetricsListView checkPermission: fail-closed — a permission fetch
+ * failure leaves the write flags false; the list itself still loads.
+ */
+const resourceOps = ref<Record<string, boolean>>({});
+const canCreate = computed(() => permissionStore.isAdminUser || resourceOps.value.Create === true);
+const canDelete = computed(() => permissionStore.isAdminUser || resourceOps.value.Delete === true);
+
+async function checkPermission(): Promise<void> {
+  try {
+    resourceOps.value = await permissionStore.getResourcePermission('classification');
+  } catch {
+    resourceOps.value = {};
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -100,6 +124,9 @@ async function onCreate(): Promise<void> {
 }
 
 async function onDelete(record: Classification): Promise<void> {
+  if (!canDelete.value) {
+    return;
+  }
   const confirmed = await confirmDelete({
     title: t('crud.deleteTitle'),
     content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
@@ -119,6 +146,7 @@ async function onDelete(record: Classification): Promise<void> {
 }
 
 onMounted(() => {
+  void checkPermission();
   void load();
 });
 </script>
@@ -134,6 +162,7 @@ onMounted(() => {
     table-test-id="classifications-table"
     show-row-actions
     show-edit-action
+    :show-delete-action="canDelete"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -145,7 +174,7 @@ onMounted(() => {
     @delete="(record) => onDelete(record as Classification)"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-classification" @click="createOpen = true">
+      <Button v-if="canCreate" type="primary" data-testid="create-classification" @click="createOpen = true">
         {{ t('governance.classifications.create') }}
       </Button>
     </template>

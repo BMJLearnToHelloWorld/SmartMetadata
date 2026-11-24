@@ -12,9 +12,11 @@ import NextPrevious from '@/components/shared/NextPrevious.vue';
 import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { searchAssets } from '@/api/search';
+import { removeAssetsFromMetric } from '@/api/metrics';
 import { removeAssetsFromGlossaryTerm } from '@/api/glossaryTerms';
 import { removeAssetsFromTags } from '@/api/tags';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
+import { getMetricAssetsQueryFilter } from '@/catalog/metricAssets';
 import {
   getGlossaryTermAssetsQueryFilter,
 } from '@/catalog/glossaryTermAssets';
@@ -35,17 +37,21 @@ import type { EntityRef, SearchHit } from '@/types/api';
 
 /**
  * Pin AssetsTabs (components/Glossary/GlossaryTerms/tabs/
- * AssetsTabs.component.tsx), TAG + GLOSSARY subsets — the TagPage ASSETS tab
- * (pages/TagPage/TagPage.tsx:632-674) and the GlossaryTerm ASSETS tab
+ * AssetsTabs.component.tsx), TAG + GLOSSARY + METRIC subsets — the TagPage ASSETS tab
+ * (pages/TagPage/TagPage.tsx:632-674), the GlossaryTerm ASSETS tab
  * (utils/Glossary/GlossaryTermUtils.tsx:165-224, buildAssetsTab; the pin
- * component defaults type to GLOSSARY, AssetsTabs.component.tsx:410).
+ * component defaults type to GLOSSARY, AssetsTabs.component.tsx:410),
+ * and the Metric ASSETS tab (components/Metric/MetricAssetsTab/
+ * MetricAssetsTab.tsx, via utils/MetricEntityUtils/MetricUtils.tsx).
  *
  * The `type` prop selects the pin branch: 'tag' keeps the TagPage wiring
  * (getTagAssetsQueryFilter / removeAssetsFromTags), 'glossaryTerm' takes
  * the GlossaryTerm wiring (getGlossaryTermAssetsQueryFilter /
- * removeAssetsFromGlossaryTerm). Quick filters, ES search, paging,
- * preview selection and empty states are shared: pin's GLOSSARY quick
- * filters are the same seven fields as TAG's
+ * removeAssetsFromGlossaryTerm), 'metric' takes the Metric wiring
+ * (getMetricAssetsQueryFilter over the linked asset ids the parent
+ * fetched from GET /v1/metrics/{id}/assets / removeAssetsFromMetric).
+ * Quick filters, ES search, paging, preview selection and empty states
+ * are shared: pin's GLOSSARY quick filters are the same seven fields as TAG's
  * (AdvancedSearch.constants.ts:358-376 vs :392-424).
  *
  * - ES search (`*${value}*`, index ALL) with the tag query filter
@@ -97,10 +103,17 @@ const props = defineProps<{
   /**
    * Pin AssetsOfEntity branch: 'tag' is TagPage (type TAG),
    * 'glossaryTerm' is GlossaryTermUtils buildAssetsTab (pin defaults to
-   * GLOSSARY when the caller omits type). Defaults to 'tag': the Tag tab
-   * landed first.
+   * GLOSSARY when the caller omits type), 'metric' is MetricAssetsTab
+   * (type METRIC). Defaults to 'tag': the Tag tab landed first.
    */
-  type?: 'tag' | 'glossaryTerm';
+  type?: 'tag' | 'glossaryTerm' | 'metric';
+  /**
+   * Linked asset ids for the metric branch (pin MetricAssetsTab:
+   * assetIds from useMetricLinkedAssets, i.e. GET /v1/metrics/{id}/
+   * assets). The tab targets them by document id — see
+   * getMetricAssetsQueryFilter — instead of a field filter.
+   */
+  assetIds?: string[];
   permissions: { Create: boolean; EditAll: boolean };
   /** Tab count from the parent's ES count fetch; the list's own total otherwise. */
   assetCount?: number;
@@ -142,16 +155,23 @@ const showFilterBar = computed(() => tabTotal.value > 0);
 /** Pin showCheckboxes: an active entity and the Create grant. */
 const showCheckboxes = computed(() => Boolean(props.entityId) && props.permissions.Create);
 /**
- * i18n scope for the remove/empty copy: the Tag and GlossaryTerm tabs
- * share the component but not the noun (pin getEntityTypeString(type)).
+ * i18n scope for the remove/empty copy: the Tag, GlossaryTerm and
+ * Metric tabs share the component but not the noun (pin
+ * getEntityTypeString(type)).
  */
 const i18nScope = computed(() =>
-  props.type === 'glossaryTerm' ? 'governance.glossaryTermAssets' : 'governance.tagAssets',
+  props.type === 'glossaryTerm'
+    ? 'governance.glossaryTermAssets'
+    : props.type === 'metric'
+      ? 'governance.metricAssets'
+      : 'governance.tagAssets',
 );
 const entityNoun = computed(() =>
   props.type === 'glossaryTerm'
     ? t('governance.glossaryTermAssets.termNoun')
-    : t('governance.tagAssets.tagNoun'),
+    : props.type === 'metric'
+      ? t('governance.metricAssets.metricNoun')
+      : t('governance.tagAssets.tagNoun'),
 );
 const canRemove = computed(() => props.permissions.EditAll);
 
@@ -186,11 +206,14 @@ async function fetchAssets(): Promise<void> {
   try {
     // Pin queryParamBuilders (AssetsTabs.component.tsx:250-251): the
     // GLOSSARY branch filters on tags.tagFQN, the TAG branch on the
-    // classification-aware aggregation field.
+    // classification-aware aggregation field, the METRIC branch on the
+    // linked asset ids (MetricPureUtils getMetricAssetsQueryFilter).
     const entityFilter =
       props.type === 'glossaryTerm'
         ? getGlossaryTermAssetsQueryFilter(props.entityFqn)
-        : getTagAssetsQueryFilter(props.entityFqn);
+        : props.type === 'metric'
+          ? getMetricAssetsQueryFilter(props.assetIds ?? [])
+          : getTagAssetsQueryFilter(props.entityFqn);
     const queryFilter = combineQueryFilters(
       entityFilter,
       buildTagAssetsQuickFilterQuery(quickFilterSelections.value),
@@ -273,9 +296,14 @@ async function removeHits(targets: SearchHit[]): Promise<void> {
   removing.value = true;
   try {
     // Pin removeAssetsHandlers (AssetsTabs.component.tsx:174-178): the
-    // GLOSSARY branch removes from the term, the TAG branch from the tag.
+    // GLOSSARY branch removes from the term, the TAG branch from the
+    // tag, the METRIC branch from the metric by FQN
+    // (removeMetricTabAssets). The metric remove takes the FQN, not
+    // the id — unlike the tag/term removes.
     if (props.type === 'glossaryTerm') {
       await removeAssetsFromGlossaryTerm(props.entityId, toEntityRefs(targets));
+    } else if (props.type === 'metric') {
+      await removeAssetsFromMetric(props.entityFqn, toEntityRefs(targets));
     } else {
       await removeAssetsFromTags(props.entityId, toEntityRefs(targets));
     }

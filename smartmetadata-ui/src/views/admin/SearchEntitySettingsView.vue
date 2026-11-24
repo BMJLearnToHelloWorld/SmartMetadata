@@ -62,7 +62,7 @@ import type {
 } from '@/types/admin';
 import FieldValueBoostDialog from './FieldValueBoostDialog.vue';
 import FieldValueBoostList from './FieldValueBoostList.vue';
-import SearchEntityIcon from './SearchEntityIcon.vue';
+import SearchEntityIcon from '@/components/shared/SearchEntityIcon.vue';
 import SearchFieldConfiguration, {
   type FieldConfigurationField,
 } from './SearchFieldConfiguration.vue';

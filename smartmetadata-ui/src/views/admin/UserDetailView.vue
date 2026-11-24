@@ -34,7 +34,7 @@ import type { AdminUser } from '@/types/admin';
 import type { SearchHit } from '@/types/api';
 import { splitTransElement } from '@/utils/emptyPlaceholder';
 import { getUserPath } from '@/utils/fqnPaths';
-import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
+import { assetLocation, isDetailWired, lineageLocation, parentTableLocation } from '@/catalog/entityRoutes';
 import MembersAccessTokenCard from './MembersAccessTokenCard.vue';
 import MembersAssetList from './MembersAssetList.vue';
 import UserLeftColumn from './UserLeftColumn.vue';
@@ -306,6 +306,13 @@ function openPreviewAsset(hit: SearchHit): void {
   void router.push(assetLocation(hit.entityType, hit.fullyQualifiedName));
 }
 
+// D25: the preview lineage entry navigates to the lineage page for the hit.
+function openPreviewLineage(hit: SearchHit): void {
+  if (hit.fullyQualifiedName) {
+    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
+  }
+}
+
 watch(effectiveTab, () => {
   previewAsset.value = undefined;
 });
@@ -431,7 +438,7 @@ const noUsernameParts = computed(() => splitTransElement(noUsernameMessage.value
                 />
               </div>
               <div v-if="previewAsset" class="user-detail__assets-preview">
-                <ExplorePreview :hit="previewAsset" @open="openPreviewAsset" />
+                <ExplorePreview :hit="previewAsset" @open="openPreviewAsset" @open-lineage="openPreviewLineage" />
                 <Button size="small" @click="previewAsset = undefined">{{
                   t('label.close')
                 }}</Button>

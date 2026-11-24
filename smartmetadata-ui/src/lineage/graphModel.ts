@@ -7,9 +7,9 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import dagre from 'dagre';
 import { asRecord, asString } from '@/api/json';
 import { attachColumnPorts } from './columnPorts';
+import type { ElkExtendedEdge, ElkNode, LayoutOptions } from './elkLayout';
 import { lineagePathLabel, lineageServiceName, truncateLineageFqn } from './nodeChrome';
 
 export const NODE_WIDTH = 260;
@@ -663,38 +663,56 @@ export function dqHighlight(
   return { nodeIds, edgeIds: [...edgeIds] };
 }
 
-export function layoutLineageGraph(
+/**
+ * Lay the graph out with ELK (pin `getELKLayoutedElements`,
+ * `utils/Lineage/Layout/ElkLayoutUtils.ts`, a3012259ca): nodes are sized
+ * with `lineageNodeSize`, edges are mapped to ELK source/target pairs, and
+ * positions come back from the layered layout flowing right.
+ *
+ * Async like pin: the ELK engine is loaded lazily behind a dynamic import
+ * (pin's lazy boundary — elkjs is ~1.37 MB and this is the only module
+ * that needs it), so callers await the positioned graph instead of
+ * reading it from a computed. On layout failure the error is logged and
+ * the graph comes back empty (no nodes, no edges), as pin does.
+ */
+export async function layoutLineageGraph(
   model: LineageGraphModel,
   expandedNodeIds?: ReadonlySet<string>,
-): PositionedLineageGraph {
+  layoutOptions?: LayoutOptions,
+): Promise<PositionedLineageGraph> {
   if (model.nodes.length === 0) {
     return { ...model, nodes: [] };
   }
 
-  const graph = new dagre.graphlib.Graph();
-  graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: 'LR', nodesep: 56, ranksep: 140, marginx: 16, marginy: 16 });
-  for (const node of model.nodes) {
-    const size = lineageNodeSize(node, expandedNodeIds);
-    graph.setNode(node.id, { width: size.width, height: size.height });
-  }
-  for (const edge of model.edges) {
-    graph.setEdge(edge.source, edge.target);
-  }
-  dagre.layout(graph);
-
-  return {
-    ...model,
-    nodes: model.nodes.map((node) => {
-      const laid = graph.node(node.id);
+  try {
+    const { ELKLayout } = await import('./elkLayout');
+    const elkNodes: ElkNode[] = model.nodes.map((node) => {
       const size = lineageNodeSize(node, expandedNodeIds);
-      return {
-        ...node,
-        position: {
-          x: (laid?.x ?? 0) - size.width / 2,
-          y: (laid?.y ?? 0) - size.height / 2,
-        },
-      };
-    }),
-  };
+      return { id: node.id, width: size.width, height: size.height };
+    });
+    const elkEdges: ElkExtendedEdge[] = model.edges.map((edge) => ({
+      id: edge.id,
+      sources: [edge.source],
+      targets: [edge.target],
+    }));
+    const layoutedGraph = await ELKLayout.layoutGraph(elkNodes, elkEdges, layoutOptions);
+    const layoutedMap = new Map(
+      (layoutedGraph.children ?? []).map((node) => [node.id, node]),
+    );
+    return {
+      ...model,
+      nodes: model.nodes.map((node) => {
+        const laid = layoutedMap.get(node.id);
+        return {
+          ...node,
+          position: { x: laid?.x ?? 0, y: laid?.y ?? 0 },
+        };
+      }),
+    };
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Error occurred while layouting graph:', error);
+
+    return { ...model, nodes: [], edges: [] };
+  }
 }
