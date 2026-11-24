@@ -785,6 +785,11 @@ const SCHEMA_COLUMN_WIDTHS: Record<
   container: { name: 300, dataType: 220, description: 350, tags: 300, glossaryTerms: 300 },
   searchIndex: { name: 220, dataType: 180, description: 320, tags: 250, glossaryTerms: 250 },
   dashboardDataModel: { name: 250, dataType: 100, description: 350, tags: 250, glossaryTerms: 250 },
+  // D-TAB-2 (host lane): pin FileColumnsTable / WorksheetColumnsTable
+  // (a3012259ca) use 300 / 220 / 350 / 300 / 300 for name / type /
+  // description / Tags / Glossary Terms.
+  file: { name: 300, dataType: 220, description: 350, tags: 300, glossaryTerms: 300 },
+  worksheet: { name: 300, dataType: 220, description: 350, tags: 300, glossaryTerms: 300 },
 };
 
 /** Entity types whose detail view renders the D-F2 schema table. */
@@ -2096,8 +2101,34 @@ onMounted(() => {
                mutual-exclusion gate in `widgetLayoutFor` returns null
                there by design (pin ContainerPage mounts the grid on
                SCHEMA then), so the pane is the tab's only content.
-               Empty-data-model Containers mount the grid. -->
-          <template v-else-if="(asset?.schemaRows?.length ?? 0) > 0">
+               Empty-data-model Containers mount the grid.
+               D-TAB-2 (host lane): a Directory's children tab is the
+               same pane — the directory's children arrive in
+               `asset.children` (relatedRefsFor defaults to
+               `body.children`), and a directory has no schema rows, so
+               the container gate alone would render nothing. -->
+          <template v-else-if="entityType === 'directory' || (asset?.schemaRows?.length ?? 0) > 0">
+            <AssetRelatedPanel :asset="asset" />
+          </template>
+      </template>
+      <template v-if="asset" #worksheets>
+          <GenericTab
+            v-if="widgetLayoutFor('worksheets') !== null"
+            :layout="widgetLayoutFor('worksheets') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
+            </template>
+          </GenericTab>
+          <!-- D-TAB-2 (host lane): the Spreadsheet worksheets tab —
+               pin SpreadsheetDetailsUtils renders GenericTab with the
+               WorkflowsTable widget; the product mount gate does not
+               flip drive tabs (see PIN-MEMO.md §1.5), so the default
+               pane is the related-rows table over `asset.children`,
+               which carries the spreadsheet's `worksheets`
+               (relatedRefsFor). -->
+          <template v-else>
             <AssetRelatedPanel :asset="asset" />
           </template>
       </template>
@@ -2137,8 +2168,11 @@ onMounted(() => {
                the unflipped Table tab and for a Container whose data
                model is empty (the mutual-exclusion gate in
                `widgetLayoutFor` returns null there by design); Topic
-               and non-empty-Container schema tabs mount the grid. -->
-          <template v-else-if="entityType === 'table' || entityType === 'container'">
+               and non-empty-Container schema tabs mount the grid.
+               D-TAB-2 (host lane): File and Worksheet schema tabs use
+               the same pane (overview fields + schema table over the
+               `columns` from their detail payloads). -->
+          <template v-else-if="entityType === 'table' || entityType === 'container' || entityType === 'file' || entityType === 'worksheet'">
             <AssetOverviewFields
               v-if="isSplit"
               :asset="asset"

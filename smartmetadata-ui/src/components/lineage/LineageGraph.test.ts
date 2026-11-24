@@ -126,6 +126,11 @@ describe('LineageGraph', () => {
     expect(wrapper.emitted('select-node')).toBeUndefined();
     expect(wrapper.emitted('navigate')).toBeUndefined();
     // The template binding reaches the handler through a real DOM event too.
+    // Nodes arrive from the async ELK layout; wait for the node to render
+    // (same pattern as the first test) before driving the DOM event.
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-node-center-id"]').exists()).toBe(true),
+    );
     await wrapper.get('[data-testid="lineage-node-center-id"]').trigger('contextmenu');
     expect(wrapper.emitted('select-node')).toBeUndefined();
     expect(wrapper.emitted('navigate')).toBeUndefined();

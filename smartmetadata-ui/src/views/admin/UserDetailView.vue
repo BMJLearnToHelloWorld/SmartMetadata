@@ -37,6 +37,7 @@ import { getUserPath } from '@/utils/fqnPaths';
 import { assetLocation, isDetailWired, lineageLocation, parentTableLocation } from '@/catalog/entityRoutes';
 import MembersAccessTokenCard from './MembersAccessTokenCard.vue';
 import MembersAssetList from './MembersAssetList.vue';
+import PlatformSettingsPanel from './PlatformSettingsPanel.vue';
 import UserLeftColumn from './UserLeftColumn.vue';
 import UserPermissionsPanel from './UserPermissionsPanel.vue';
 import { buildFollowingQueryFilter, buildMyDataQueryFilter } from './membersSearchFilters';
@@ -47,6 +48,7 @@ import {
   USER_TAB_FOLLOWING,
   USER_TAB_MY_DATA,
   USER_TAB_PERMISSIONS,
+  USER_TAB_PLATFORM_SETTINGS,
   USER_TAB_TASK,
   getUserTabs,
   resolveEffectiveUserTab,
@@ -131,7 +133,10 @@ watch(username, () => {
 });
 
 // --- Tabs ---
-const tabs = computed(() => getUserTabs(isLoggedInUser.value));
+// D-CFG-3 (host lane): the platform-settings tab is self + admin only
+// (pin profileNavConfig.tsx:219-227 `isVisible: isAdmin` on the own
+// profile); `permissionStore.isAdminUser` is the product's admin line.
+const tabs = computed(() => getUserTabs(isLoggedInUser.value, permissionStore.isAdminUser));
 const effectiveTab = computed(() =>
   resolveEffectiveUserTab(tabParam.value, subTabParam.value, tabs.value),
 );
@@ -144,6 +149,7 @@ const USER_TAB_LABEL_KEYS: Record<string, string> = {
   [USER_TAB_PERMISSIONS]: 'label.permissions',
   [USER_TAB_CUSTOM_PROPERTIES]: 'label.custom-property-plural',
   [USER_TAB_ACCESS_TOKEN]: 'label.access-token',
+  [USER_TAB_PLATFORM_SETTINGS]: 'label.platformSettings',
 };
 
 watch(
@@ -474,6 +480,12 @@ const noUsernameParts = computed(() => splitTransElement(noUsernameMessage.value
               v-if="tab === USER_TAB_ACCESS_TOKEN && effectiveTab === USER_TAB_ACCESS_TOKEN"
               :user="user"
             />
+            <div
+              v-if="tab === USER_TAB_PLATFORM_SETTINGS && effectiveTab === USER_TAB_PLATFORM_SETTINGS"
+              data-testid="platform-settings-tab"
+            >
+              <PlatformSettingsPanel />
+            </div>
           </Tabs.TabPane>
         </Tabs>
       </div>

@@ -3240,3 +3240,166 @@ describe('AssetDetailView description gate (D-3/D-4)', () => {
     wrapper.unmount();
   });
 });
+
+describe('AssetDetailView DriveService detail pages (D-TAB-2)', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  // Scoped stub: only the drive detail payloads are faked; secondary
+  // loads (activity, conversations, custom properties, test cases) answer
+  // empty, and anything else 404s and is caught by the view.
+  function stubDrive(payloads: Record<string, Record<string, unknown>>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        for (const [segment, payload] of Object.entries(payloads)) {
+          if (url.includes(`/api/v1/drives/${segment}/name/`)) {
+            return jsonResponse(payload);
+          }
+        }
+        if (url.includes('/api/v1/permissions/')) {
+          return jsonResponse({
+            resource: 'directory',
+            permissions: [
+              { operation: 'ViewBasic', access: 'allow' },
+              { operation: 'ViewCustomFields', access: 'allow' },
+              { operation: 'EditDescription', access: 'allow' },
+              { operation: 'EditCustomFields', access: 'allow' },
+              { operation: 'EditLineage', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/drives/') && url.includes('/vote') && init?.method === 'PUT') {
+          return jsonResponse({ eventType: 'ENTITY_UPDATED' });
+        }
+        if (
+          url.includes('/api/v1/activity/') ||
+          url.includes('/api/v1/conversations') ||
+          url.includes('/customProperties') ||
+          url.includes('/testCases')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  const directoryPayload = {
+    id: 'dir-1',
+    name: 'docs',
+    fullyQualifiedName: 'drive.shared.docs',
+    description: 'Shared docs',
+    owners: [{ id: 'u1', name: 'alice', type: 'user' }],
+    followers: [],
+    votes: { upVotes: 0, downVotes: 0, upVoters: [], downVoters: [] },
+    tags: [],
+    service: { name: 'drive' },
+    children: [
+      { name: 'report.csv', type: 'file', fullyQualifiedName: 'drive.shared.docs.report.csv' },
+      { name: 'sub', type: 'directory', fullyQualifiedName: 'drive.shared.docs.sub' },
+    ],
+  };
+
+  it('renders a directory with pin tab order, children rows, and no lineage tab yet', async () => {
+    stubDrive({ directories: directoryPayload });
+    const { wrapper } = await mountTypedView('directory', 'drive.shared.docs');
+    expect(wrapper.text()).toContain('Children');
+    expect(wrapper.text()).toContain('Activity feed');
+    expect(wrapper.text()).toContain('Contract');
+    expect(wrapper.text()).toContain('Custom Properties');
+    expect(wrapper.text()).not.toContain('Lineage');
+    expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('report.csv');
+    expect(wrapper.text()).toContain('sub');
+    const call = lastMatchingFetch((url) => url.includes('/api/v1/drives/directories/name/'));
+    expect(call.url).toContain(encodeURIComponent('drive.shared.docs'));
+    expect(call.url).toContain('children');
+  });
+
+  it('sends a directory vote to PUT /v1/drives/directories/{id}/vote', async () => {
+    stubDrive({ directories: directoryPayload });
+    const { wrapper } = await mountTypedView('directory', 'drive.shared.docs');
+    useAuthStore().user = { id: 'u1', name: 'alice' };
+    await wrapper.vm.$nextTick();
+    await flushPromises();
+    await wrapper.find('[data-testid="asset-vote-up"]').trigger('click');
+    await flushPromises();
+    const call = lastMatchingFetch(
+      (url, init) => url.includes('/api/v1/drives/directories/dir-1/vote') && init?.method === 'PUT',
+    );
+    expect(JSON.parse(String(call.init?.body ?? '{}'))).toEqual({ updatedVoteType: 'votedUp' });
+  });
+
+  it('renders a spreadsheet worksheets tab with its worksheet rows', async () => {
+    stubDrive({
+      spreadsheets: {
+        id: 's-1',
+        name: 'budget',
+        fullyQualifiedName: 'drive.shared.budget',
+        owners: [],
+        followers: [],
+        votes: { upVotes: 0, downVotes: 0, upVoters: [], downVoters: [] },
+        tags: [],
+        service: { name: 'drive' },
+        worksheets: [
+          { name: 'Sheet1', type: 'worksheet', fullyQualifiedName: 'drive.shared.budget.Sheet1' },
+          { name: 'Sheet2', type: 'worksheet', fullyQualifiedName: 'drive.shared.budget.Sheet2' },
+        ],
+      },
+    });
+    const { wrapper } = await mountTypedView('spreadsheet', 'drive.shared.budget');
+    expect(wrapper.text()).toContain('Worksheets');
+    expect(wrapper.text()).not.toContain('Lineage');
+    expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Sheet1');
+    expect(wrapper.text()).toContain('Sheet2');
+  });
+
+  it('renders a worksheet schema tab with its columns', async () => {
+    stubDrive({
+      worksheets: {
+        id: 'w-1',
+        name: 'Sheet1',
+        fullyQualifiedName: 'drive.shared.budget.Sheet1',
+        owners: [],
+        followers: [],
+        votes: { upVotes: 0, downVotes: 0, upVoters: [], downVoters: [] },
+        tags: [],
+        service: { name: 'drive' },
+        columns: [{ name: 'amount', dataType: 'DECIMAL' }],
+      },
+    });
+    const { wrapper } = await mountTypedView('worksheet', 'drive.shared.budget.Sheet1');
+    expect(wrapper.text()).toContain('Schema');
+    expect(wrapper.text()).not.toContain('Lineage');
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('amount');
+  });
+
+  it('renders a file overview and schema, and an empty schema for a column-less file', async () => {
+    stubDrive({
+      files: {
+        id: 'f-1',
+        name: 'notes.txt',
+        fullyQualifiedName: 'drive.shared.docs.notes.txt',
+        description: 'Plain notes',
+        owners: [],
+        followers: [],
+        votes: { upVotes: 0, downVotes: 0, upVoters: [], downVoters: [] },
+        tags: [],
+        service: { name: 'drive' },
+        columns: [],
+      },
+    });
+    const { wrapper } = await mountTypedView('file', 'drive.shared.docs.notes.txt');
+    expect(wrapper.text()).toContain('Overview');
+    expect(wrapper.text()).toContain('Schema');
+    expect(wrapper.text()).not.toContain('Lineage');
+    expect(wrapper.find('[data-testid="asset-schema-empty"]').exists()).toBe(true);
+  });
+});

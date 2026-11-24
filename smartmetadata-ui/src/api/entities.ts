@@ -233,6 +233,13 @@ function schemaRowsFor(entityType: string, body: Record<string, unknown>): { row
   if (entityType === 'dashboardDataModel') {
     return { rows: mapColumns(body.columns), label: 'Columns' };
   }
+  // D-TAB-2 (host lane): pin File/Worksheet detail pages request
+  // `columns` in their defaultFields (FileDetailsUtils.tsx,
+  // WorksheetDetailsUtils.tsx) and render them in the schema tab
+  // (FileColumnsTable / WorksheetColumnsTable).
+  if (entityType === 'file' || entityType === 'worksheet') {
+    return { rows: mapColumns(body.columns), label: 'Columns' };
+  }
   return { rows: [], label: 'Schema' };
 }
 
@@ -281,6 +288,12 @@ function relatedRefsFor(entityType: string, body: Record<string, unknown>): Enti
   }
   if (entityType === 'databaseSchema') {
     return mapEntityRefs(body.tables);
+  }
+  // D-TAB-2 (host lane): pin SpreadsheetDetailsUtils requests
+  // `worksheets` in its defaultFields; the spreadsheet's worksheets are
+  // the related rows of its first tab, like a directory's children.
+  if (entityType === 'spreadsheet') {
+    return mapEntityRefs(body.worksheets);
   }
   return mapEntityRefs(body.children);
 }
