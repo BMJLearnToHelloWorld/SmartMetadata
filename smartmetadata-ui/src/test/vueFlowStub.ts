@@ -17,7 +17,7 @@ export const vueFlowStubs = {
         nodes: { type: Array, default: () => [] },
         edges: { type: Array, default: () => [] },
       },
-      emits: ['node-click', 'connect', 'edge-click'],
+      emits: ['node-click', 'node-context-menu', 'connect', 'edge-click'],
       setup(props, { emit, slots, expose }) {
         // Flow API subset LineageGraph/LineageMap use (fitView/getViewport/
         // setViewport); exposed so export flows can be exercised in tests.
@@ -53,6 +53,10 @@ export const vueFlowStubs = {
                   'data-entity-type': node.data.entityType,
                   'data-path-label': node.data.pathLabel || '',
                   onClick: () => emit('node-click', { node }),
+                  // Pin `onNodeContextMenu` (EntityLineagePureUtils.ts:77-82)
+                  // only suppresses the browser menu; the stub forwards the
+                  // DOM event so the handler's preventDefault is observable.
+                  onContextmenu: (event: MouseEvent) => emit('node-context-menu', { event, node }),
                 },
                 [
                   node.data.displayName || node.data.name,

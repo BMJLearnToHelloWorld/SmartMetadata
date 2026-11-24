@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
+import AssetSelectionModal from '@/features/governance/AssetSelectionModal.vue';
 import MetricDetailView from './MetricDetailView.vue';
 
 const confirmDelete = vi.fn();
@@ -48,6 +49,43 @@ async function mountView(extraPermissions: Array<{ operation: string; access: st
       }
       if (url.includes('/api/v1/metrics/async/')) {
         return jsonResponse({ jobId: 'job-1' });
+      }
+      if (url.includes('/api/v1/metrics/m1/assets')) {
+        return jsonResponse({
+          data: [
+            {
+              asset: {
+                id: 'a1',
+                name: 'orders',
+                fullyQualifiedName: 'svc.db.schema.orders',
+                type: 'table',
+              },
+              direction: 'upstream',
+              affectsHealth: true,
+            },
+          ],
+          paging: { total: 1 },
+        });
+      }
+      if (url.includes('/api/v1/search/query')) {
+        return jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'a1',
+                _source: {
+                  id: 'a1',
+                  name: 'orders',
+                  displayName: 'Orders',
+                  fullyQualifiedName: 'svc.db.schema.orders',
+                  entityType: 'table',
+                },
+              },
+            ],
+          },
+          aggregations: {},
+        });
       }
       if (url.includes('/v1/permissions/metric/name/')) {
         // D-4 header gate: the delete flow under test needs Delete.
@@ -254,6 +292,43 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
         if (url.includes('/api/v1/metadata/types/name/metric/customProperties')) {
           return jsonResponse([{ name: 'sensitivity', propertyType: 'string' }]);
         }
+        if (url.includes('/api/v1/metrics/m1/assets')) {
+          return jsonResponse({
+            data: [
+              {
+                asset: {
+                  id: 'a1',
+                  name: 'orders',
+                  fullyQualifiedName: 'svc.db.schema.orders',
+                  type: 'table',
+                },
+                direction: 'upstream',
+                affectsHealth: true,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return jsonResponse({
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _id: 'a1',
+                  _source: {
+                    id: 'a1',
+                    name: 'orders',
+                    displayName: 'Orders',
+                    fullyQualifiedName: 'svc.db.schema.orders',
+                    entityType: 'table',
+                  },
+                },
+              ],
+            },
+            aggregations: {},
+          });
+        }
         if (url.includes('/v1/personas')) {
           return jsonResponse({ data: [persona], paging: { total: 1 } });
         }
@@ -311,14 +386,15 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     expect(tabLabels(wrapper)).toEqual([
       'Overview',
       'Lineage',
-      'Assets',
+      'Assets1',
       'Activity feed',
       'Custom Properties',
     ]);
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-tab-residual"]').text()).toContain(
-      'Metric assets are not served by this console yet.',
-    );
+    // B2-G1: the assets tab is served now — one linked asset, count pill 1.
+    expect(wrapper.find('[data-testid="metric-tab-assets-count"]').text()).toBe('1');
+    expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Orders');
     // The lineage pane embeds the shared canvas (toolbar proves the mount;
     // the graph itself is the canvas component's own concern).
     expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
@@ -431,9 +507,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     // Neither assets nor lineage is the widget-layout tab: no grid mounts.
     // The unlisted overview tab is removed (F-2), so its details pane
     // is gone while the listed non-mount panes stay.
-    expect(wrapper.find('[data-testid="asset-tab-residual"]').text()).toContain(
-      'Metric assets are not served by this console yet.',
-    );
+    expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual([]);
@@ -462,7 +536,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     expect(widgetTestIds(wrapper)).toEqual(['widget-metric-definition']);
     // Every other tab keeps its existing panel.
     expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-tab-residual"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
@@ -508,6 +582,43 @@ describe('MetricDetailView description gate + PATCH save (D-3/D-4)', () => {
         }
         if (url.includes('/api/v1/metadata/types/name/metric/customProperties')) {
           return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/metrics/m1/assets')) {
+          return jsonResponse({
+            data: [
+              {
+                asset: {
+                  id: 'a1',
+                  name: 'orders',
+                  fullyQualifiedName: 'svc.db.schema.orders',
+                  type: 'table',
+                },
+                direction: 'upstream',
+                affectsHealth: true,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return jsonResponse({
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _id: 'a1',
+                  _source: {
+                    id: 'a1',
+                    name: 'orders',
+                    displayName: 'Orders',
+                    fullyQualifiedName: 'svc.db.schema.orders',
+                    entityType: 'table',
+                  },
+                },
+              ],
+            },
+            aggregations: {},
+          });
         }
         return new Response('not found', { status: 404 });
       }),
@@ -566,6 +677,183 @@ describe('MetricDetailView description gate + PATCH save (D-3/D-4)', () => {
     const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body ?? '[]')) as Array<Record<string, unknown>>;
     expect(body.some((op) => op.path === '/description')).toBe(true);
     expect(String(body.find((op) => op.path === '/description')?.value)).toContain('Active users per month');
+    wrapper.unmount();
+  });
+});
+
+describe('MetricDetailView assets tab (B2-G1)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  function linkedAssetsResponse(): Response {
+    return jsonResponse({
+      data: [
+        {
+          asset: {
+            id: 'a1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            type: 'table',
+          },
+          direction: 'upstream',
+          affectsHealth: true,
+        },
+      ],
+      paging: { total: 1 },
+    });
+  }
+
+  function searchResponse(): Response {
+    return jsonResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 'a1',
+            _source: {
+              id: 'a1',
+              name: 'orders',
+              displayName: 'Orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+            },
+          },
+        ],
+      },
+      aggregations: {},
+    });
+  }
+
+  async function mountAssetsView(
+    operations: Array<{ operation: string; access: string }> = [],
+    assetsResponder?: (callCount: number) => Response,
+  ) {
+    let assetsCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/metrics/name/')) {
+          return jsonResponse({
+            id: 'm1',
+            name: 'mau',
+            displayName: 'Monthly Active Users',
+            fullyQualifiedName: 'kpi.mau',
+            description: 'Active users per month',
+            metricType: 'NUMBER',
+            unitOfMeasurement: 'users',
+            granularity: 'MONTHLY',
+            metricExpression: { language: 'SQL', code: 'count(distinct user_id)' },
+            owners: [],
+            tags: [],
+            domains: [],
+          });
+        }
+        if (url.includes('/v1/permissions/metric/name/')) {
+          return jsonResponse({ resource: 'metric', permissions: operations });
+        }
+        if (url.includes('/api/v1/activity/entity/metric/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/metadata/types/name/metric/customProperties')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/metrics/m1/assets')) {
+          assetsCalls += 1;
+          return assetsResponder ? assetsResponder(assetsCalls) : linkedAssetsResponse();
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return searchResponse();
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/metrics', name: 'governance-metrics', component: { template: '<div>list</div>' } },
+        { path: '/governance/metrics/:fqn', name: 'governance-metric', component: MetricDetailView, props: true },
+        { path: '/assets/:entityType/:fqn/versions', name: 'asset-version', component: { template: '<div>versions</div>' } },
+      ],
+    });
+    await router.push('/governance/metrics/kpi.mau');
+    await router.isReady();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(MetricDetailView, {
+      props: { fqn: 'kpi.mau' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  it('lists the linked assets from getMetricAssets with the tab count and the ids filter', async () => {
+    const wrapper = await mountAssetsView();
+    expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="metric-tab-assets-count"]').text()).toBe('1');
+    expect(wrapper.text()).toContain('Orders');
+    const assetsCall = vi
+      .mocked(fetch)
+      .mock.calls.find((call) => String(call[0]).includes('/api/v1/metrics/m1/assets'));
+    expect(assetsCall).toBeDefined();
+    expect(String(assetsCall?.[0])).toContain('limit=1000');
+    const searchCall = vi
+      .mocked(fetch)
+      .mock.calls.find((call) => String(call[0]).includes('/api/v1/search/query'));
+    expect(searchCall).toBeDefined();
+    const filter = JSON.parse(
+      new URL(String(searchCall?.[0])).searchParams.get('query_filter') ?? '{}',
+    ) as unknown;
+    expect(filter).toEqual({
+      query: { bool: { must: [{ ids: { values: ['a1'] } }] } },
+    });
+    wrapper.unmount();
+  });
+
+  it('shows the Add Assets button with EditAll and hides it without', async () => {
+    const withEdit = await mountAssetsView([{ operation: 'EditAll', access: 'allow' }]);
+    expect(withEdit.find('[data-testid="metric-add-assets"]').exists()).toBe(true);
+    withEdit.unmount();
+    const withoutEdit = await mountAssetsView([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(withoutEdit.find('[data-testid="metric-add-assets"]').exists()).toBe(false);
+    withoutEdit.unmount();
+  });
+
+  it('opens the asset picker from the header button', async () => {
+    const wrapper = await mountAssetsView([{ operation: 'EditAll', access: 'allow' }]);
+    await wrapper.get('[data-testid="metric-add-assets"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.findComponent(AssetSelectionModal).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('shows a retry state when the linked-assets fetch fails and recovers on retry', async () => {
+    const wrapper = await mountAssetsView([], (callCount) =>
+      callCount === 1 ? new Response('boom', { status: 500 }) : linkedAssetsResponse(),
+    );
+    expect(wrapper.find('[data-testid="metric-assets-error"]').exists()).toBe(true);
+    // A failed fetch never masquerades as "no assets": no count pill.
+    expect(wrapper.find('[data-testid="metric-tab-assets-count"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="metric-assets-retry"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="metric-assets-error"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="metric-tab-assets-count"]').text()).toBe('1');
     wrapper.unmount();
   });
 });

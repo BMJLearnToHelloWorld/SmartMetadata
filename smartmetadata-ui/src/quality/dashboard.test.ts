@@ -16,6 +16,8 @@ import {
   buildDqIncidentTimeQuery,
   buildDqTestCaseListQuery,
   buildDqTestCaseStatusByDaysQuery,
+  DQ_HEALTH_PIE_SEGMENT_ORDER,
+  DQ_TEST_CASE_PIE_SEGMENT_ORDER,
   filterStateToChartFilters,
   healthFromCoveredCounts,
   initialDqFilterState,
@@ -220,6 +222,21 @@ describe('shared DataQualityDashboard queries', () => {
     expect(query.dataQualityDimension).toBe('Completeness');
     expect(query.testCaseStatus).toBeUndefined();
     expect(query.tags).toEqual(['PII.Sensitive']);
+  });
+
+  it('passes a health-segment status array through (pin BINARY_STATUS_PIE_SEGMENT_ORDER)', () => {
+    const healthy = buildDqTestCaseListQuery({}, { testCaseStatus: ['Success', 'Queued'] });
+    expect(healthy.testCaseStatus).toEqual(['Success', 'Queued']);
+    const unhealthy = buildDqTestCaseListQuery({}, { testCaseStatus: ['Failed', 'Aborted'] });
+    expect(unhealthy.testCaseStatus).toEqual(['Failed', 'Aborted']);
+  });
+
+  it('orders the pie segments like pin (ChartWidgets.constants)', () => {
+    expect(DQ_TEST_CASE_PIE_SEGMENT_ORDER).toEqual(['Success', 'Failed', 'Aborted']);
+    expect(DQ_HEALTH_PIE_SEGMENT_ORDER).toEqual([
+      ['Success', 'Queued'],
+      ['Failed', 'Aborted'],
+    ]);
   });
 
   it('converts initial filters to multi-select state and back, keeping every value', () => {

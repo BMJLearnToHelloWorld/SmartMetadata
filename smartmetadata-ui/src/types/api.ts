@@ -166,6 +166,19 @@ export interface SearchHit {
   serviceName?: string;
   databaseName?: string;
   schemaName?: string;
+  // Parent FQNs for the card breadcrumbs (D18), read from the ES
+  // `_source` nested refs (`service` / `database` / `databaseSchema`
+  // `fullyQualifiedName`). Absent when the source carries no such ref;
+  // never derived by trimming the hit FQN.
+  serviceFqn?: string;
+  databaseFqn?: string;
+  schemaFqn?: string;
+  /**
+   * ES highlight fragments per field (`hit.highlight`), carried through
+   * for the card name/description highlighting (D19) and the Matches
+   * section (D20). Absent when the response carries no highlight node.
+   */
+  highlight?: Record<string, string[]>;
   tier?: string;
   owners: EntityRef[];
   tags: TagRef[];
@@ -208,12 +221,41 @@ export interface SearchHit {
    * source` rule). The percentile display reads weeklyStats only.
    */
   usageSummary?: UsageDetails;
+  /**
+   * Ranking payload (Explore D12), carried only when the search request
+   * asked for it (`explain: true`): the ES `_score`, the `_explanation`
+   * tree, and the `matched_queries` names. Pin's `SearchedData` passes
+   * these to the card only while the ranking-details toggle is on;
+   * without `explain` the server omits them and these stay absent.
+   */
+  score?: number;
+  explanation?: SearchExplanation;
+  matchedQueries?: string[];
+}
+
+/**
+ * One node of an Elasticsearch `_explanation` tree (pin
+ * `SearchExplanation`): the contribution value, the human-readable
+ * description, and the child nodes that sum into it.
+ */
+export interface SearchExplanation {
+  value: number;
+  description: string;
+  details?: SearchExplanation[];
 }
 
 export interface SearchPage {
   total: number;
   hits: SearchHit[];
   facets: SearchFacet[];
+  /**
+   * NLQ echo (Explore D11): pin's SearchResponse carries
+   * `applied_quick_filters` on NLQ responses (a QueryFilterInterface;
+   * only `fieldList` is surfaced — it names the backend-detected
+   * filters). The server only sends it when it detected filters, so it
+   * stays absent on keyword searches and on NLQ searches with none.
+   */
+  appliedQuickFilters?: { fieldList?: string[] };
 }
 
 export interface TablePartitionColumn {

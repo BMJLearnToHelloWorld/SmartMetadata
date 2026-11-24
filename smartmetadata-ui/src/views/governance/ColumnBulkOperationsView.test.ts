@@ -35,16 +35,33 @@ const GRID_PAYLOAD = {
           dataType: 'VARCHAR',
           occurrenceCount: 2,
           occurrences: [
-            { columnFQN: 'svc.db.schema.users.email', entityFQN: 'svc.db.schema.users', entityType: 'table' },
-            { columnFQN: 'svc.db.schema.customers.email', entityFQN: 'svc.db.schema.customers', entityType: 'table' },
+            { columnFQN: 'svc.db.schema.users.email', entityFQN: 'svc.db.schema.users', entityType: 'table', entityDisplayName: 'users', serviceName: 'svc', databaseName: 'db', schemaName: 'schema' },
+            { columnFQN: 'svc.db.schema.customers.email', entityFQN: 'svc.db.schema.customers', entityType: 'table', serviceName: 'svc', databaseName: 'db', schemaName: 'schema' },
           ],
           tags: [{ tagFQN: 'PII.Email', source: 'Tag' }],
         },
       ],
     },
+    {
+      columnName: 'id',
+      hasVariations: false,
+      groups: [
+        {
+          groupId: 'g2',
+          displayName: 'Id',
+          description: 'Row id',
+          dataType: 'INT',
+          occurrenceCount: 1,
+          occurrences: [
+            { columnFQN: 'svc.db.schema.users.id', entityFQN: 'svc.db.schema.users', entityType: 'table', serviceName: 'svc', databaseName: 'db', schemaName: 'schema' },
+          ],
+          tags: [],
+        },
+      ],
+    },
   ],
-  totalOccurrences: 2,
-  totalUniqueColumns: 1,
+  totalOccurrences: 3,
+  totalUniqueColumns: 2,
 };
 
 function mountPage() {
@@ -52,7 +69,10 @@ function mountPage() {
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/govern/column-bulk-ops', name: 'column-bulk-ops', component: ColumnBulkOperationsView }],
+    routes: [
+      { path: '/govern/column-bulk-ops', name: 'column-bulk-ops', component: ColumnBulkOperationsView },
+      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div />' } },
+    ],
   });
   return { pinia, router };
 }
@@ -78,6 +98,13 @@ function modalPrimaryButton(wrapper: ReturnType<typeof mount>, title: string) {
   return modal.find('.ant-modal-footer .ant-btn-primary');
 }
 
+async function expandEmailGroup(wrapper: ReturnType<typeof mount>): Promise<void> {
+  const toggle = wrapper.findAll('button').find((button) => button.text() === '›');
+  expect(toggle).toBeDefined();
+  await toggle!.trigger('click');
+  await flushPromises();
+}
+
 describe('ColumnBulkOperationsView', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -88,44 +115,40 @@ describe('ColumnBulkOperationsView', () => {
     localStorage.clear();
   });
 
-  it('renders grid rows with the deprecated marker and totals', { timeout: 15000 }, async () => {
+  it('renders group rows with the deprecated marker and totals', { timeout: 15000 }, async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRID_PAYLOAD)));
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="column-grid-table"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('email');
-    expect(wrapper.text()).toContain('Email');
+    expect(wrapper.text()).toContain('email (2)');
     expect(wrapper.text()).toContain('Deprecated');
-    expect(wrapper.text()).toContain('1 unique columns');
+    expect(wrapper.text()).toContain('2 unique columns');
+    expect(wrapper.text()).toContain('Pending changes: 0');
+    // Occurrence rows stay hidden until the group expands.
+    expect(wrapper.text()).not.toContain('svc.db.schema.users');
+    // The single-occurrence column is one flat row.
+    expect(wrapper.text()).toContain('id');
   });
 
-  it('edits a group, previews, then applies to every occurrence', { timeout: 15000 }, async () => {
-    const calls: string[] = [];
+  it('expands a group into per-occurrence rows with entity links', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRID_PAYLOAD)));
+    const wrapper = await mountView();
+    await expandEmailGroup(wrapper);
+    const links = wrapper.findAll('[data-testid="column-entity-link"]');
+    expect(links).toHaveLength(3);
+    expect(links[0].attributes('href')).toBe('/assets/table/svc.db.schema.users');
+    expect(links[0].text()).toBe('users');
+    expect(links[1].text()).toBe('customers');
+    expect(links[2].attributes('href')).toBe('/assets/table/svc.db.schema.users');
+    // Pin's asset column shows the entity link, not the
+    // `service / database / schema` path string (that string lives on
+    // the row model only, as in pin's ColumnGridRowData).
+  });
+
+  it('selects occurrence rows and applies the edit straight to bulk-update-async', { timeout: 15000 }, async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: unknown, init?: RequestInit) => {
+      vi.fn(async (input: unknown) => {
         const url = String(input);
-        calls.push(url);
-        if (url.includes('/bulk-update-preview')) {
-          return jsonResponse({
-            columnPreviews: [
-              {
-                columnFQN: 'svc.db.schema.users.email',
-                entityFQN: 'svc.db.schema.users',
-                hasChanges: true,
-                currentValues: { displayName: 'Email' },
-                newValues: { displayName: 'Email Address' },
-              },
-              {
-                columnFQN: 'svc.db.schema.customers.email',
-                entityFQN: 'svc.db.schema.customers',
-                hasChanges: true,
-                currentValues: { displayName: 'Email' },
-                newValues: { displayName: 'Email Address' },
-              },
-            ],
-            totalColumns: 2,
-          });
-        }
         if (url.includes('/bulk-update-async')) {
           return jsonResponse({});
         }
@@ -133,16 +156,22 @@ describe('ColumnBulkOperationsView', () => {
       }),
     );
     const wrapper = await mountView();
-    const editButton = wrapper.findAll('button').find((button) => button.text() === 'Edit');
-    expect(editButton).toBeDefined();
-    await editButton!.trigger('click');
+    await expandEmailGroup(wrapper);
+    const boxes = wrapper.findAll('tbody .ant-checkbox-input');
+    expect(boxes.length).toBeGreaterThanOrEqual(3);
+    // Group checkbox selects both occurrences; the flat row is last.
+    await boxes[0].setValue(true);
+    await flushPromises();
+    expect(wrapper.text()).toContain('View selected (2)');
+    await wrapper.find('[data-testid="column-edit-selected-button"]').trigger('click');
     await flushPromises();
     await wrapper.find('[data-testid="column-edit-display-name"]').setValue('Email Address');
     await modalPrimaryButton(wrapper, 'Edit column metadata').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('2 of 2 columns will change');
-    await modalPrimaryButton(wrapper, 'Preview bulk update').trigger('click');
-    await flushPromises();
+    // Pin's page has no preview step: no preview call, straight to async.
+    expect(
+      vi.mocked(fetch).mock.calls.some((call) => String(call[0]).includes('/bulk-update-preview')),
+    ).toBe(false);
     const applyCall = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('/bulk-update-async'));
     expect(applyCall).toBeDefined();
     const body = JSON.parse(String(applyCall![1]?.body));
@@ -151,7 +180,97 @@ describe('ColumnBulkOperationsView', () => {
       'svc.db.schema.users.email',
       'svc.db.schema.customers.email',
     ]);
-    expect(calls.some((url) => url.includes('/bulk-update-preview'))).toBe(true);
+    expect(body.columnUpdates[0].displayName).toBe('Email Address');
+    expect(wrapper.text()).toContain('Pending changes: 0');
+  });
+
+  it('opens the edit form from a column name with a view-asset link', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRID_PAYLOAD)));
+    const wrapper = await mountView();
+    await expandEmailGroup(wrapper);
+    const nameButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'email');
+    expect(nameButton).toBeDefined();
+    await nameButton!.trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('View selected (1)');
+    const assetLink = wrapper.find('[data-testid="column-view-asset-link"]');
+    expect(assetLink.exists()).toBe(true);
+    expect(assetLink.attributes('href')).toBe('/assets/table/svc.db.schema.users?tab=schema#email');
+    expect(wrapper.find('[data-testid="column-edit-display-name"]').exists()).toBe(true);
+  });
+
+  it('stages edits on the selected rows and discards them on cancel', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRID_PAYLOAD)));
+    const wrapper = await mountView();
+    await expandEmailGroup(wrapper);
+    const boxes = wrapper.findAll('tbody .ant-checkbox-input');
+    await boxes[1].setValue(true);
+    await flushPromises();
+    await wrapper.find('[data-testid="column-edit-selected-button"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="column-edit-description"]').setValue('Updated description');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Pending changes: 1/1');
+    // The staged description renders as a warning tag in the grid (the
+    // deprecated badge is the only other warning tag on the page).
+    expect(wrapper.findAll('.ant-tag-warning')).toHaveLength(2);
+    const modal = wrapper
+      .findAll('.ant-modal')
+      .find((node) => node.text().includes('Edit column metadata'));
+    expect(modal).toBeDefined();
+    await modal!.find('.ant-modal-footer .ant-btn-default').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Pending changes: 0');
+    expect(wrapper.findAll('.ant-tag-warning')).toHaveLength(1);
+    expect(wrapper.text()).not.toContain('Updated description');
+  });
+
+  it('shows the bulk progress indicator while the async apply is in flight', { timeout: 15000 }, async () => {
+    let resolveApply!: (value: Response) => void;
+    const applyPromise = new Promise<Response>((resolve) => {
+      resolveApply = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/bulk-update-async')) {
+          return applyPromise;
+        }
+        return jsonResponse(GRID_PAYLOAD);
+      }),
+    );
+    const wrapper = await mountView();
+    await expandEmailGroup(wrapper);
+    const boxes = wrapper.findAll('tbody .ant-checkbox-input');
+    await boxes[0].setValue(true);
+    await flushPromises();
+    await wrapper.find('[data-testid="column-edit-selected-button"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="column-edit-display-name"]').setValue('Email Address');
+    await modalPrimaryButton(wrapper, 'Edit column metadata').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-update-progress-spinner"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Pending changes: 0/2');
+    resolveApply(jsonResponse({}));
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-update-progress-spinner"]').exists()).toBe(false);
+  });
+
+  it('filters to selected rows with the view-selected toggle', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRID_PAYLOAD)));
+    const wrapper = await mountView();
+    await expandEmailGroup(wrapper);
+    const boxes = wrapper.findAll('tbody .ant-checkbox-input');
+    await boxes[1].setValue(true);
+    await flushPromises();
+    await wrapper.find('[data-testid="column-view-selected-toggle"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1);
+    expect(wrapper.text()).toContain('users');
+    expect(wrapper.text()).not.toContain('customers');
   });
 
   it('shows the forbidden empty on 403', { timeout: 15000 }, async () => {

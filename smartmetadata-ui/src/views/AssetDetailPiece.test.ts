@@ -198,10 +198,13 @@ describe('AssetDetailPiece schema table (D-2 batch 3)', () => {
     wrapper.unmount();
   });
 
-  it('opens the description modal when an editable description is clicked', async () => {
+  it('opens the description modal from the cell edit button', async () => {
+    // Pin TableDescription: the hover edit button (not the description
+    // text) reports the click to the parent, which opens the shared
+    // ColumnDescriptionModal for the row.
     const wrapper = mountPiece('schemaTable', baseContext());
     await tick();
-    const edit = wrapper.find('[data-testid="schema-description-edit"]');
+    const edit = wrapper.find('[data-testid="edit-column-description"]');
     expect(edit.exists()).toBe(true);
     await edit.trigger('click');
     await tick();
@@ -227,7 +230,7 @@ describe('AssetDetailPiece schema table (D-2 batch 3)', () => {
       }),
     );
     await tick();
-    expect(wrapper.find('[data-testid="schema-description-edit"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-column-description"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="schema-display-name-edit"]').exists()).toBe(false);
     wrapper.unmount();
   });

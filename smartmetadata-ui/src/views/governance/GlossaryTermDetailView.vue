@@ -19,7 +19,7 @@ import WidgetWorkflowHistoryCell from '@/components/shared/widgets/WidgetWorkflo
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { usePermissionStore } from '@/stores/permissions';
 import FormModal from '@/components/shared/FormModal.vue';
-import { openSearchHit } from '@/catalog/entityRoutes';
+import { lineageLocation, openSearchHit } from '@/catalog/entityRoutes';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
@@ -257,6 +257,14 @@ function handlePreviewOpen(hit: SearchHit): void {
     previewAsset.value = hit;
   }
 }
+
+// D25: the preview lineage entry navigates to the lineage page for the hit.
+function handlePreviewLineage(hit: SearchHit): void {
+  if (hit.fullyQualifiedName) {
+    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
+  }
+}
+
 /**
  * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
  * `isAdminUser` with the derived flag — never only one. The composable
@@ -906,7 +914,7 @@ onMounted(() => {
               {{ t('crud.close') }}
             </Button>
           </div>
-          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" />
+          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" @open-lineage="handlePreviewLineage" />
         </aside>
       </div>
     </template>
