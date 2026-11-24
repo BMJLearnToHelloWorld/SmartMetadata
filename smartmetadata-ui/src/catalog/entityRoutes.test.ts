@@ -10,11 +10,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   assetLocation,
+  detailLocationForHit,
   encodeFqnForApi,
+  governanceDetailLocation,
+  isLineageCapable,
   lineageLocation,
+  LINEAGE_CAPABLE_ENTITY_TYPES,
   openSearchHit,
   parentTableLocation,
   resolveDetailEndpoint,
+  resolveFollowersPath,
   resolvePatchPath,
   resolveVersionsPath,
   resolveVotePath,
@@ -138,6 +143,37 @@ describe('entityRoutes', () => {
     });
   });
 
+  // D-TAB-2 (host lane): DriveService types map onto the pin driveAPI
+  // segments (a3012259ca rest/driveAPI.ts:34-41, getDriveAssetByFqn
+  // :68-89): GET /v1/drives/{segment}/name/{fqn} with pin's
+  // defaultFields, and the generic write resolvers build the pin
+  // vote/followers/versions/patch paths under the same segments.
+  it('maps DriveService types onto /v1/drives/{segment}/name/{fqn} with pin defaultFields', () => {
+    expect(resolveDetailEndpoint('directory', 'drive.shared.docs')).toEqual({
+      path: `/v1/drives/directories/name/${encodeURIComponent('drive.shared.docs')}`,
+      fields:
+        'owners,children,followers,tags,domains,dataProducts,votes,extension,directoryType,numberOfFiles,numberOfSubDirectories',
+    });
+    expect(resolveDetailEndpoint('file', 'drive.shared.report.csv')).toEqual({
+      path: `/v1/drives/files/name/${encodeURIComponent('drive.shared.report.csv')}`,
+      fields:
+        'owners,followers,tags,domains,dataProducts,votes,extension,fileType,fileExtension,fileVersion,columns,sampleData',
+    });
+    expect(resolveDetailEndpoint('spreadsheet', 'drive.shared.budget')).toEqual({
+      path: `/v1/drives/spreadsheets/name/${encodeURIComponent('drive.shared.budget')}`,
+      fields:
+        'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,createdTime,modifiedTime',
+    });
+    expect(resolveDetailEndpoint('worksheet', 'drive.shared.budget.Sheet1')).toEqual({
+      path: `/v1/drives/worksheets/name/${encodeURIComponent('drive.shared.budget.Sheet1')}`,
+      fields: 'owners,followers,tags,domains,dataProducts,votes,extension,rowCount,columns',
+    });
+    expect(resolvePatchPath('file', 'f-1')).toBe('/v1/drives/files/f-1');
+    expect(resolveVotePath('spreadsheet', 's-1')).toBe('/v1/drives/spreadsheets/s-1/vote');
+    expect(resolveVersionsPath('worksheet', 'w-1')).toBe('/v1/drives/worksheets/w-1/versions');
+    expect(resolveFollowersPath('directory', 'd-1')).toBe('/v1/drives/directories/d-1/followers');
+  });
+
   it('routes tableColumn hits to the parent table only when a table FQN exists (Fix3)', () => {
     expect(parentTableLocation('tableColumn', 'svc.db.schema.orders')).toEqual({
       name: 'asset',
@@ -172,5 +208,89 @@ describe('entityRoutes', () => {
       openSearchHit(push, { entityType: 'unknownThing', fullyQualifiedName: 'x.y' }),
     ).toBe(false);
     expect(pushed).toHaveLength(2);
+  });
+
+  // D26: glossaryTerm / tag / dataProduct route to their governance
+  // detail pages by id — never through the generic asset route, and
+  // never by deriving an id from the FQN.
+  it('routes governance types to their detail pages by id', () => {
+    expect(governanceDetailLocation('glossaryTerm', 'gt-1')).toEqual({
+      name: 'governance-term',
+      params: { id: 'gt-1' },
+    });
+    expect(governanceDetailLocation('tag', 'tag-1')).toEqual({
+      name: 'governance-tag',
+      params: { id: 'tag-1' },
+    });
+    expect(governanceDetailLocation('dataProduct', 'dp-1')).toEqual({
+      name: 'governance-data-product',
+      params: { id: 'dp-1' },
+    });
+  });
+
+  it('never derives a governance id from the FQN: id-less governance hits stay unwired', () => {
+    expect(governanceDetailLocation('glossaryTerm', undefined)).toBeNull();
+    expect(governanceDetailLocation('tag', '')).toBeNull();
+    expect(governanceDetailLocation('table', 'tbl-1')).toBeNull();
+  });
+
+  it('resolves a hit location for parent tables, wired types and governance types', () => {
+    expect(
+      detailLocationForHit({ entityType: 'tableColumn', fullyQualifiedName: 'svc.db.t.c', tableFqn: 'svc.db.t' }),
+    ).toEqual({ name: 'asset', params: { entityType: 'table', fqn: 'svc.db.t' } });
+    expect(
+      detailLocationForHit({ entityType: 'table', fullyQualifiedName: 'svc.db.schema.orders' }),
+    ).toEqual({ name: 'asset', params: { entityType: 'table', fqn: 'svc.db.schema.orders' } });
+    expect(
+      detailLocationForHit({ entityType: 'glossaryTerm', fullyQualifiedName: 'biz.term', id: 'gt-1' }),
+    ).toEqual({ name: 'governance-term', params: { id: 'gt-1' } });
+    expect(
+      detailLocationForHit({ entityType: 'glossaryTerm', fullyQualifiedName: 'biz.term' }),
+    ).toBeNull();
+    expect(
+      detailLocationForHit({ entityType: 'directory', fullyQualifiedName: 'drive.root' }),
+    ).toEqual({ name: 'asset', params: { entityType: 'directory', fqn: 'drive.root' } });
+    expect(
+      detailLocationForHit({ entityType: 'unknownThing', fullyQualifiedName: 'x.y' }),
+    ).toBeNull();
+  });
+
+  it('opens governance hits on their detail page through openSearchHit', () => {
+    const pushed: unknown[] = [];
+    const push = (to: unknown) => {
+      pushed.push(to);
+    };
+    expect(openSearchHit(push, { entityType: 'tag', fullyQualifiedName: 'PII.Email', id: 'tag-1' })).toBe(true);
+    expect(pushed).toEqual([{ name: 'governance-tag', params: { id: 'tag-1' } }]);
+    expect(openSearchHit(push, { entityType: 'dataProduct', fullyQualifiedName: 'dp.one', id: 'dp-1' })).toBe(true);
+    expect(pushed).toHaveLength(2);
+    expect(openSearchHit(push, { entityType: 'tag', fullyQualifiedName: 'PII.Email' })).toBe(false);
+    expect(pushed).toHaveLength(2);
+  });
+
+  // D25: the pin lineage tab set is exactly 11 types
+  // (EntityRightPanelVerticalNav.constants.ts LINEAGE_TABS_SET).
+  it('matches the pin 11-type lineage tab set exactly', () => {
+    expect(LINEAGE_CAPABLE_ENTITY_TYPES).toEqual([
+      'apiEndpoint',
+      'chart',
+      'container',
+      'dashboard',
+      'dashboardDataModel',
+      'directory',
+      'mlmodel',
+      'pipeline',
+      'searchIndex',
+      'table',
+      'topic',
+    ]);
+  });
+
+  it('excludes glossaryTerm, tag, dataProduct, tableColumn and unknown types from lineage', () => {
+    for (const type of ['glossaryTerm', 'tag', 'dataProduct', 'tableColumn', 'unknownThing']) {
+      expect(isLineageCapable(type)).toBe(false);
+    }
+    expect(isLineageCapable('table')).toBe(true);
+    expect(isLineageCapable('directory')).toBe(true);
   });
 });

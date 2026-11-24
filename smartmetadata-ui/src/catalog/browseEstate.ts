@@ -11,18 +11,29 @@
 import type { FacetBucket, SearchFacet } from './searchFacets';
 import type { SearchFilters } from './searchQuery';
 
+export interface EstateStaticChild {
+  entityType: string;
+  titleKey: string;
+}
+
 export interface EstateCategory {
   id: string;
   titleKey: string;
   entityTypes: string[];
   expandable: boolean;
-  residualRoute?: string;
+  /**
+   * Pin getExploreTree static leaves (Governance → Glossaries/Tags/
+   * Metrics, Domains → Data Product, Context Center → Articles):
+   * fixed children, never lazy-loaded, each filtering to its type.
+   */
+  staticChildren?: EstateStaticChild[];
 }
 
 /**
- * Browse Estate roots mirror OM ExploreTree categories. Counts come from
- * entityType aggregations already returned by GET /v1/search/query — no extra
- * browse API. Context Center has no catalog index in this console.
+ * Browse Estate roots mirror OM ExploreTree categories
+ * (SearchClassBase.getExploreTree, pin a3012259ca): 12 roots, in pin
+ * order. Counts come from entityType aggregations already returned by
+ * GET /v1/search/query — no extra browse API.
  */
 export const ESTATE_CATEGORIES: EstateCategory[] = [
   {
@@ -68,24 +79,41 @@ export const ESTATE_CATEGORIES: EstateCategory[] = [
     expandable: true,
   },
   {
+    id: 'apis',
+    titleKey: 'explore.estate.apis',
+    entityTypes: ['apiEndpoint', 'apiCollection'],
+    expandable: true,
+  },
+  {
+    id: 'drive',
+    titleKey: 'explore.estate.drive',
+    entityTypes: ['directory', 'file', 'spreadsheet', 'worksheet'],
+    expandable: true,
+  },
+  {
     id: 'governance',
     titleKey: 'explore.estate.governance',
     entityTypes: ['tag', 'glossaryTerm', 'metric'],
-    expandable: false,
+    expandable: true,
+    staticChildren: [
+      { entityType: 'glossaryTerm', titleKey: 'explore.estate.glossaries' },
+      { entityType: 'tag', titleKey: 'explore.estate.tags' },
+      { entityType: 'metric', titleKey: 'explore.estate.metrics' },
+    ],
   },
   {
     id: 'domains',
     titleKey: 'explore.estate.domains',
-    entityTypes: ['dataProduct', 'domain'],
-    expandable: false,
-    residualRoute: 'governance-domains',
+    entityTypes: ['dataProduct'],
+    expandable: true,
+    staticChildren: [{ entityType: 'dataProduct', titleKey: 'explore.estate.dataProducts' }],
   },
   {
     id: 'contextCenter',
     titleKey: 'explore.estate.contextCenter',
-    entityTypes: [],
-    expandable: false,
-    residualRoute: 'context-center-overview',
+    entityTypes: ['page'],
+    expandable: true,
+    staticChildren: [{ entityType: 'page', titleKey: 'explore.estate.articles' }],
   },
 ];
 
@@ -99,7 +127,6 @@ export interface EstateNode {
   titleKey: string;
   title?: string;
   count: number;
-  residualRoute?: string;
   /**
    * Official ExploreTree rule, mirrored: the expand chevron shows while a
    * node's children are unknown or present, never once it is known to be a
@@ -114,9 +141,12 @@ export function estateCategory(id: string): EstateCategory | undefined {
   return ESTATE_CATEGORIES.find((category) => category.id === id);
 }
 
-export function isResidualEstate(id: string): boolean {
-  const category = estateCategory(id);
-  return Boolean(category && category.entityTypes.length === 0 && category.residualRoute);
+/** Key of a category's static child for an entity type, or '' when it has none. */
+export function staticChildKey(categoryId: string, entityType: string): string {
+  const category = estateCategory(categoryId);
+  return category?.staticChildren?.some((child) => child.entityType === entityType)
+    ? `${categoryId}:static:${entityType}`
+    : '';
 }
 
 export function countForTypes(facets: SearchFacet[], entityTypes: string[]): number {
@@ -209,6 +239,11 @@ export function estateDrill(node: EstateNode): {
   if (!level || !category) {
     return null;
   }
+  // Roots with static children (Governance, Domains, Context Center)
+  // drill no further: their children are the fixed pin leaves.
+  if (category.staticChildren?.length) {
+    return null;
+  }
   const filters: SearchFilters = { entityType: [...category.entityTypes] };
   if (node.service) {
     filters.service = [node.service];
@@ -240,7 +275,9 @@ export function findEstateNode(nodes: EstateNode[], key: string): EstateNode | u
  * children fetched for it; a key present with an empty array means loaded
  * and childless, which turns the node into a leaf, while an absent key means
  * not yet loaded, which keeps the chevron. A rebuild therefore drops loaded
- * children exactly like the official tree does.
+ * children exactly like the official tree does. Static children (pin
+ * getExploreTree leaves) are fixed data on the category, never fetched,
+ * and survive rebuilds.
  */
 export function buildEstateTree(
   facets: SearchFacet[],
@@ -261,8 +298,15 @@ export function buildEstateTree(
       categoryId: category.id,
       titleKey: category.titleKey,
       count: countForTypes(facets, category.entityTypes),
-      residualRoute: category.residualRoute,
       isLeaf: !category.expandable,
+      children: category.staticChildren?.map((child) => ({
+        key: `${category.id}:static:${child.entityType}`,
+        categoryId: category.id,
+        entityType: child.entityType,
+        titleKey: child.titleKey,
+        count: countForTypes(facets, [child.entityType]),
+        isLeaf: true,
+      })),
     }),
   );
 }

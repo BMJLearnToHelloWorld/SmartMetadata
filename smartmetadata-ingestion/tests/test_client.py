@@ -92,6 +92,30 @@ def test_upsert_paths_and_bearer_header() -> None:
     assert all(item[2] == "Bearer bot-token" for item in seen)
 
 
+def test_get_pipeline_by_name() -> None:
+    """GET /v1/pipelines/name/{fqn} — the lookup the sink resolves a
+    pipeline-attributed lineage edge with before writing it (pin's
+    EntityReference requires ["id", "type"])."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(
+            200,
+            json={
+                "id": "11111111-1111-4111-8111-111111111111",
+                "name": "demo_orders_etl",
+                "fullyQualifiedName": "lineage-demo-airflow.demo_orders_etl",
+            },
+        )
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        entity = client.get_pipeline_by_name("lineage-demo-airflow.demo_orders_etl")
+    assert seen == ["/api/v1/pipelines/name/lineage-demo-airflow.demo_orders_etl"]
+    assert entity["id"] == "11111111-1111-4111-8111-111111111111"
+    assert entity["fullyQualifiedName"] == "lineage-demo-airflow.demo_orders_etl"
+
+
 def test_pagination_follows_after_cursor() -> None:
     calls = {"n": 0}
 
