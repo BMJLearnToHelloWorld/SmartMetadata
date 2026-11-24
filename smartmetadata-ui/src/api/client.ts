@@ -126,6 +126,10 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       if (value === undefined) {
         continue;
       }
+      // Repeated params: the server's multi-value form (e.g. the DQ
+      // health drill's testCaseStatus=Success&testCaseStatus=Queued,
+      // TestCaseResource.java:408). A single string stays a single
+      // param; an array appends one param per element.
       if (Array.isArray(value)) {
         for (const item of value) {
           url.searchParams.append(key, String(item));

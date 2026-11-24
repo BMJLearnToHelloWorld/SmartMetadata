@@ -106,9 +106,22 @@ const canDeleteTag = computed(
  * exposes only the named flags it owns; the rest go through its generic
  * `can(op)` escape hatch, which applies the same prioritization and
  * deleted gating (disabled feeds the deleted gate here, see above).
+ *
+ * Owners is the one exception: pin TagPage.tsx:305
+ * (disabledAwarePermissions) reads `tagCanEditAll ||
+ * tagPermissions.EditOwners` — the tag page's owners gate ORs the
+ * tag-level EditAll, so an explicit EditOwners=false does not beat
+ * EditAll there (M-1). Both flags below are already isEditable-gated
+ * by the composable's deleted option, so the OR equals pin's
+ * editable-branch formula.
  */
 const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
-const canEditOwners = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditOwners'));
+const canEditOwners = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    tagPermissions.canEditAll.value ||
+    tagPermissions.can('EditOwners'),
+);
 const canEditDomains = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditDomains'));
 const canEditReviewers = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditReviewers'));
 watch(

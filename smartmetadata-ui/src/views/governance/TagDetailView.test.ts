@@ -12,6 +12,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
 import TagDetailView from './TagDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -140,6 +141,85 @@ describe('TagDetailView header gates without a grant (D-4 fail-closed)', () => {
     const wrapper = await mountTag('t1');
     expect(isDisabled(wrapper, 'edit-tag')).toBe(true);
     expect(isDisabled(wrapper, 'delete-tag')).toBe(true);
+  });
+});
+
+describe('TagDetailView owners gate (M-1 pin TagPage:305 OR)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  // The owners cell only renders inside the overview widget grid, which
+  // needs a customized Tag page entry (docStore) for the active persona —
+  // the same stub shape the B-7 tests use. Without it the grid never
+  // mounts and findAllComponents(WidgetOwnersCell) is empty.
+  async function mountTagWithOwnerGrant(operations: Array<{ operation: string; access: string }>) {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    const doc = {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Tag',
+            tabs: [
+              {
+                id: 'overview',
+                name: 'overview',
+                layout: [{ i: 'KnowledgePanel.Owners', x: 0, y: 0, w: 4, h: 1 }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({ id: 't1', name: 'pii', displayName: 'PII', disabled: false, owners: [] });
+        }
+        if (url.includes('/v1/permissions/tag/name/')) {
+          return jsonResponse({ resource: 'tag', permissions: operations });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return jsonResponse(doc);
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTag('t1');
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  it('lets EditAll grant owners when EditOwners is explicitly denied', async () => {
+    const wrapper = await mountTagWithOwnerGrant([
+      { operation: 'EditOwners', access: 'deny' },
+      { operation: 'EditAll', access: 'allow' },
+    ]);
+    const cells = wrapper.findAllComponents(WidgetOwnersCell);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((cell) => cell.props('hasEditAccess') === true)).toBe(true);
+  });
+
+  it('denies owners when both EditOwners and EditAll are denied', async () => {
+    const wrapper = await mountTagWithOwnerGrant([
+      { operation: 'EditOwners', access: 'deny' },
+      { operation: 'EditAll', access: 'deny' },
+    ]);
+    const cells = wrapper.findAllComponents(WidgetOwnersCell);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((cell) => cell.props('hasEditAccess') === false)).toBe(true);
   });
 });
 
