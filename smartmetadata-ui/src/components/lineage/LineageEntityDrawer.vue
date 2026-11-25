@@ -50,6 +50,16 @@ interface EntitySummary {
 const summary = ref<EntitySummary | null>(null);
 const loading = ref(false);
 
+/**
+ * The canvas/map clear the node on close (`drawerNode = undefined`),
+ * so the drawer briefly renders with empty props while the panel is
+ * still sliding away. vue-router `stringify` treats an empty required
+ * param as missing and throws (`Missing required param "entityType"`),
+ * so the link must not exist until the props can resolve — otherwise
+ * every close via the link throws unhandled rejections (6 in
+ * LineageView.test.ts). A plain title renders instead while closing.
+ */
+const hasDetailLink = computed(() => Boolean(props.entityType && props.fqn));
 const detailLink = computed(() => assetLocation(props.entityType, props.fqn));
 const title = computed(() => props.displayName || props.fqn);
 const serviceName = computed(
@@ -100,9 +110,15 @@ watch(
   >
     <template #title>
       <span class="lineage-entity-drawer__title">
-        <RouterLink :to="detailLink" data-testid="entity-link" @click="emit('close')">
+        <RouterLink
+          v-if="hasDetailLink"
+          :to="detailLink"
+          data-testid="entity-link"
+          @click="emit('close')"
+        >
           {{ title }}
         </RouterLink>
+        <span v-else>{{ title }}</span>
         <Tag class="lineage-entity-drawer__type">{{ entityType }}</Tag>
       </span>
     </template>

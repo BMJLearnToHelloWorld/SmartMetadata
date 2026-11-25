@@ -30,7 +30,7 @@ function mountDrawer(props: Record<string, unknown> = {}) {
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
       {
-        path: '/asset/:entityType/:fqn',
+        path: '/assets/:entityType/:fqn',
         name: 'asset',
         component: { template: '<div>asset</div>' },
       },
@@ -77,7 +77,9 @@ describe('LineageEntityDrawer (pin LineageOverlays)', () => {
       '[data-testid="entity-link"]',
     ) as HTMLElement | null;
     expect(link?.textContent).toBe('orders');
-    expect(link?.getAttribute('href')).toContain('/asset/table/svc.db.sch.orders');
+    // Production asset route is /assets/... (src/router/index.ts),
+    // not /asset/... — the test's route table must match it.
+    expect(link?.getAttribute('href')).toContain('/assets/table/svc.db.sch.orders');
     wrapper.unmount();
   });
 
