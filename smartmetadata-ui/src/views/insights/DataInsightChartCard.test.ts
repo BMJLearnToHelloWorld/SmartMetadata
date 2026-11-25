@@ -48,14 +48,16 @@ function mountCard(props: Record<string, unknown> = {}) {
         label: 'Services with description',
         value: '62.5%',
         progress: 62.5,
-        changeText: '+15.00% over the last 7 days',
+        changeText: '+15.00 pp over the last 7 days',
         showProgress: true,
         target: 80,
         targetSuffix: '%',
       },
       loading: false,
+      failed: false,
       testId: 'insights-service-description',
       emptyText: 'No service coverage data in the selected window.',
+      errorText: 'Service coverage charts failed to load',
       ...props,
     },
     global: {
@@ -75,7 +77,7 @@ describe('DataInsightChartCard', () => {
   it('renders the headline, change, target, 500px line chart and descending rows', () => {
     const wrapper = mountCard();
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('62.5%');
-    expect(wrapper.text()).toContain('+15.00% over the last 7 days');
+    expect(wrapper.text()).toContain('+15.00 pp over the last 7 days');
     const target = wrapper.get('[data-testid="insights-service-description-target"]');
     expect(target.text()).toBe('80%');
     expect(target.attributes('style')).toContain('left: 80%');
@@ -90,56 +92,24 @@ describe('DataInsightChartCard', () => {
     expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(false);
   });
 
-  it('lays the headline out as pin CustomStatistic: label + value left, change right-aligned', () => {
-    const wrapper = mountCard();
-    const headline = wrapper.get('[data-testid="insights-service-description-headline"]');
-    const main = headline.find('.di-chart-card__headline-main');
-    expect(main.exists()).toBe(true);
-    const change = headline.find('.di-chart-card__headline-change');
-    expect(change.exists()).toBe(true);
-    expect(change.text()).toContain('+15.00% over the last 7 days');
-    // The change sits in the right column, not stacked under the value.
-    expect(change.element.parentElement).toBe(main.element);
-    expect(headline.find('.di-chart-card__headline-value').text()).toBe('62.5%');
-  });
-
-  it('hides the right headline column when there is no change line', () => {
-    const wrapper = mountCard({
-      headline: { label: 'Services with description', value: '40%', progress: 40, showProgress: true },
-    });
-    expect(wrapper.find('.di-chart-card__headline-change').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('40%');
-  });
-
-  it('passes the percentage flag to the chart tooltip formatter (pin getDataInsightTooltip)', () => {
-    const wrapper = mountCard({ isPercentage: true });
-    const option = chartOption(wrapper);
-    const formatter = (option.tooltip as Record<string, unknown>).formatter as (
-      params: Array<{ axisValue: string; seriesName: string; value: number; marker: string }>,
-    ) => string;
-    expect(typeof formatter).toBe('function');
-    const html = formatter([
-      { axisValue: '2026-01-07', seriesName: 'Postgres', value: 80, marker: '' },
-      { axisValue: '2026-01-07', seriesName: 'MySQL', value: 62.5, marker: '' },
-    ]);
-    expect(html).toContain('Jan 7, 2026');
-    expect(html).toContain('80%');
-    expect(html).toContain('62.5%');
-    const absolute = mountCard({ isPercentage: false });
-    const absoluteFormatter = (chartOption(absolute).tooltip as Record<string, unknown>).formatter as (
-      params: Array<{ axisValue: string; seriesName: string; value: number; marker: string }>,
-    ) => string;
-    const absoluteHtml = absoluteFormatter([
-      { axisValue: '2026-01-07', seriesName: 'Postgres', value: 80, marker: '' },
-    ]);
-    expect(absoluteHtml).toContain('Jan 7, 2026');
-    expect(absoluteHtml).toContain('80');
-    expect(absoluteHtml).not.toContain('80%');
-  });
-
   it('hides the built-in legend: the right panel is the legend (pin HIDDEN_CHART_LEGEND)', () => {
     const wrapper = mountCard();
     expect(chartOption(wrapper).legend).toEqual({ show: false });
+  });
+
+  it('suffixes the y-axis ticks with % only for percentage cards (pin axisTickFormatter)', () => {
+    // Pin DataInsightChartCard.tsx:600-608: isPercentageGraph gates the
+    // '%' y-axis formatter; the tier/total cards keep bare ticks.
+    const percentage = mountCard({ isPercentage: true });
+    const percentageAxis = chartOption(percentage).yAxis as {
+      axisLabel: { formatter: (value: number) => string };
+    };
+    expect(percentageAxis.axisLabel.formatter(100)).toBe('100%');
+    expect(percentageAxis.axisLabel.formatter(80)).toBe('80%');
+    const total = mountCard({ isPercentage: false });
+    expect(chartOption(total).yAxis as Record<string, unknown>).not.toHaveProperty('axisLabel');
+    const unset = mountCard();
+    expect(chartOption(unset).yAxis as Record<string, unknown>).not.toHaveProperty('axisLabel');
   });
 
   it('lays each row out 12/12 at >=768px: name + value left, bar right (pin EntitySummaryProgressBar)', () => {
@@ -158,7 +128,7 @@ describe('DataInsightChartCard', () => {
       headline: { label: 'Services with description', value: '40%', progress: 40, showProgress: true },
     });
     expect(wrapper.find('[data-testid="insights-service-description-target"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('over the last 7 days');
+    expect(wrapper.text()).not.toContain('pp over the last');
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('40%');
   });
 
@@ -168,6 +138,46 @@ describe('DataInsightChartCard', () => {
     const rows = wrapper.findAll('[data-testid="insights-service-description-row"]');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text()).toContain('MySQL');
+  });
+
+  // Pin R-P2-10 (DataInsightChartCard.tsx:442-443): the row search
+  // matches the raw entity key case-insensitively, so `storedProcedure`
+  // hits even though the display name carries a space ("Stored
+  // Procedure"). The display-name match is kept alongside it, so a
+  // Chinese display name stays searchable (multilingual exception).
+  it('matches the raw row key as well as the display name when searching (pin R-P2-10)', async () => {
+    const wrapper = mountCard({
+      series: [
+        {
+          name: 'storedProcedure',
+          points: [{ label: '2026-01-07', value: 48 }],
+        },
+        {
+          name: 'table',
+          points: [{ label: '2026-01-07', value: 150 }],
+        },
+      ],
+      rows: [
+        { key: 'storedProcedure', name: 'Stored Procedure', label: '48', percent: 48, color: '#E57373' },
+        { key: 'table', name: 'Table', label: '150', percent: 100, color: '#E57373' },
+      ],
+    });
+    const search = wrapper.find('input[placeholder="Search"]');
+    // Raw key, no space: only the key match can hit this.
+    await search.setValue('storedprocedure');
+    let rows = wrapper.findAll('[data-testid="insights-service-description-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text()).toContain('Stored Procedure');
+    // Case-insensitive raw key.
+    await search.setValue('STOREDPROCEDURE');
+    rows = wrapper.findAll('[data-testid="insights-service-description-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text()).toContain('Stored Procedure');
+    // Display-name match is kept: "procedure" still hits.
+    await search.setValue('procedure');
+    rows = wrapper.findAll('[data-testid="insights-service-description-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text()).toContain('Stored Procedure');
   });
 
   it('dims the other rows when one is picked, filters the chart to it, and clears the pick', async () => {
@@ -201,40 +211,38 @@ describe('DataInsightChartCard', () => {
     expect(left[1].lineStyle).toEqual({ opacity: 1 });
   });
 
-  it('shows the empty state only when the fetch succeeded with no points', () => {
+  it('shows pin\'s empty placeholder only when the fetch succeeded with no points (pin R-P2-11)', () => {
     const wrapper = mountCard({ series: [], rows: [], headline: undefined });
-    expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(true);
+    const empty = wrapper.get('[data-testid="insights-service-description-empty"]');
     expect(wrapper.find('[data-testid="insights-service-description"]').exists()).toBe(false);
-    // Pin DataInsightChartCard.tsx:533: a failed fetch only toasts — the
-    // card has no error state at all, so no data always means empty.
-    expect(wrapper.find('[data-testid="insights-service-description-error"]').exists()).toBe(false);
+    // Pin EmptyGraphPlaceholder.tsx:27-58: database icon + pin wording +
+    // docs link (only the word "docs" is the link).
+    expect(empty.text()).toContain('Adding a new Data Insight is easy, just give it a spin!');
+    expect(empty.text()).toContain('Still need help? Refer to our docs for more information.');
+    const link = empty.get('a[href="https://docs.open-metadata.org/latest/how-to-guides/data-insights"]');
+    expect(link.text()).toBe('docs');
+    expect(link.attributes('target')).toBe('_blank');
+    expect(empty.find('.ant-empty').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('No service coverage data in the selected window.');
   });
 
-  it('renders a provided #empty slot instead of the plain SmState empty text', () => {
-    const wrapper = mount(DataInsightChartCard, {
-      props: {
-        id: 'page_views_by_entities',
-        title: 'Page Views by Data Assets',
-        subTitle: 'Displays the number of times a dataset type was viewed.',
-        series: [],
-        rows: [],
-        loading: false,
-        testId: 'insights-page-views',
-        emptyText: 'Adding a new Data Insight is easy, just give it a spin!',
-      },
-      slots: { empty: '<div data-testid="custom-empty">placeholder</div>' },
-      global: {
-        plugins: [Antd, createTestI18n()],
-        stubs: { RouterLink: ROUTER_LINK_STUB },
-      },
-    });
-    expect(wrapper.find('[data-testid="custom-empty"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="insights-page-views-empty"]').exists()).toBe(false);
+  it('shows the error state, not the empty state, when the fetch failed', () => {
+    const wrapper = mountCard({ failed: true });
+    expect(wrapper.find('[data-testid="insights-service-description-error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(false);
   });
 
-  it('shows loading while fetching', () => {
+  it('keeps the title visible while loading and shows a 4-row skeleton, not a whole-card spinner (pin R-P2-11)', () => {
+    // Pin DataInsightChartCard.tsx:620-645: the loading shell keeps the
+    // PageHeader and renders SkeletonParagraph rows={4}.
     const wrapper = mountCard({ loading: true });
-    expect(wrapper.find('[data-testid="insights-service-description-loading"]').exists()).toBe(true);
+    const loading = wrapper.get('[data-testid="insights-service-description-loading"]');
+    expect(loading.text()).toContain('Services with description');
+    expect(loading.text()).toContain('Share of services with a description, by service.');
+    expect(loading.find('.ant-skeleton').exists()).toBe(true);
+    expect(loading.findAll('.ant-skeleton-paragraph li')).toHaveLength(4);
+    expect(loading.find('.ant-spin').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="insights-service-description"]').exists()).toBe(false);
   });
 
   it('renders no show-info text element and no show-info class: with showInfo off antd reserves no text space, so no outer/text overrides are needed', () => {
@@ -261,7 +269,7 @@ describe('DataInsightChartCard', () => {
     const wrapper = mountCard({ listAssets: 'description' });
     const link = wrapper.find('[data-testid="insights-service-description-explore-link"]');
     expect(link.exists()).toBe(true);
-    expect(wrapper.text()).toContain('View data assets without a description');
+    expect(wrapper.text()).toContain('Explore Assets with No description');
     const to = JSON.parse(link.attributes('data-to') ?? '{}') as {
       name?: string;
       query?: Record<string, string>;
@@ -277,7 +285,7 @@ describe('DataInsightChartCard', () => {
     const wrapper = mountCard({ listAssets: 'owner' });
     const link = wrapper.find('[data-testid="insights-service-description-explore-link"]');
     expect(link.exists()).toBe(true);
-    expect(wrapper.text()).toContain('View data assets without an owner');
+    expect(wrapper.text()).toContain('Explore Assets with No Owner');
     const to = JSON.parse(link.attributes('data-to') ?? '{}') as {
       query?: Record<string, string>;
     };

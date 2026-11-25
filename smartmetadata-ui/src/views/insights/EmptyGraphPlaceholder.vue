@@ -3,46 +3,75 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { DatabaseOutlined } from '@ant-design/icons-vue';
+import { Typography } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
-import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
 
 /**
- * Pin EmptyGraphPlaceholder (openmetadata-ui components/DataInsight/
- * EmptyGraphPlaceholder.tsx): the empty state of every Data Insight
- * chart and web table — "Adding a new Data Insight is easy, just give
- * it a spin!" plus a docs footer. The docs link is pin's
- * DATA_INSIGHT_DOCS (constants/docs.constants.ts ->
- * utils/DocumentationLinksClassBase.ts:52, docs base
- * https://docs.open-metadata.org/latest/).
+ * Pin components/DataInsight/EmptyGraphPlaceholder.tsx:27-58: a database
+ * icon, "Adding a new Data Insight is easy, just give it a spin!", and a
+ * "Still need help? Refer to our docs for more information." footer whose
+ * docs word links to DATA_INSIGHT_DOCS. Shown when a Data Insight card
+ * has no data — both while its siblings load and after a fetch that
+ * returns nothing (pin DataInsightChartCard.tsx:620-645 renders
+ * SkeletonParagraph while loading, this placeholder otherwise).
  */
+withDefaults(defineProps<{ testId?: string }>(), { testId: 'empty-graph-placeholder' });
 const { t } = useI18n();
 
-const DATA_INSIGHT_DOCS_URL = 'https://docs.open-metadata.org/latest/how-to-guides/data-insights';
-
-const emptyText = computed(() =>
-  t('query.addingNewEasy', { entity: t('insights.dataInsight') }),
-);
+/**
+ * Pin docs.constants.ts via DocumentationLinksClassBase: the default docs
+ * base (https://docs.open-metadata.org/latest/) + 'how-to-guides/data-insights'.
+ */
+const DATA_INSIGHT_DOCS = 'https://docs.open-metadata.org/latest/how-to-guides/data-insights';
 </script>
 
 <template>
-  <div class="empty-graph-placeholder">
-    <NoDataPlaceholder test-id="no-data-placeholder" :description="emptyText">
-      <template #footer>
-        <p>
-          {{ t('query.referToDocsBefore') }}<a :href="DATA_INSIGHT_DOCS_URL" target="_blank" rel="noopener noreferrer">{{ t('query.docs') }}</a>{{ t('query.referToDocsAfter') }}
-        </p>
-      </template>
-    </NoDataPlaceholder>
+  <div class="empty-graph-placeholder" :data-testid="testId">
+    <DatabaseOutlined class="empty-graph-placeholder__icon" />
+    <Typography.Paragraph class="empty-graph-placeholder__text">
+      {{ t('insights.pipelineEmpty') }}
+    </Typography.Paragraph>
+    <Typography.Paragraph class="empty-graph-placeholder__docs">
+      <i18n-t keypath="insights.emptyDocs" tag="span">
+        <template #docs>
+          <a
+            :aria-label="t('insights.emptyDocsLink')"
+            :href="DATA_INSIGHT_DOCS"
+            rel="noreferrer"
+            target="_blank"
+          >
+            {{ t('insights.emptyDocsLink') }}
+          </a>
+        </template>
+      </i18n-t>
+    </Typography.Paragraph>
   </div>
 </template>
 
 <style scoped>
-/* Pin `tw:min-h-60` (15rem) on the placeholder shell. */
+/* Pin EmptyGraphPlaceholder: min-h-60 (240px) rounded surface; the
+ * NoDataPlaceholder content is centred inside it. */
 .empty-graph-placeholder {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 240px;
+  padding: 24px 16px;
+  text-align: center;
+}
+.empty-graph-placeholder__icon {
+  margin-bottom: 12px;
+  font-size: 32px;
+  /* Muted icon tone via the product token (tokens.test.ts forbids raw
+   * hex in scoped styles); same token as EmptyPlaceholder's icon. */
+  color: var(--sm-text-tertiary);
+}
+.empty-graph-placeholder__text {
+  margin-bottom: 4px;
+}
+.empty-graph-placeholder__docs {
+  margin-bottom: 0;
 }
 </style>

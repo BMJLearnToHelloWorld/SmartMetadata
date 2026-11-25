@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SM_CHART_COLORS, SM_COLOR_PRIMARY, SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
-import { buildChartOption, formatInsightTooltip, formatInsightTooltipValue } from './option';
+import { buildChartOption } from './option';
 
 describe('buildChartOption', () => {
   it('uses OM categorical tokens instead of default antd chart hues', () => {
@@ -91,79 +91,112 @@ describe('buildChartOption', () => {
     );
   });
 
-  it('keeps a rank-fixed series colour however the visible array is ordered (pin dataInsightColor)', () => {
-    // The visible set after hover + filter is [table, schema]: without a
-    // fixed colour, schema would take the palette colour of index 1
-    // (purple) instead of its rank colour (blue). The series carry the
-    // rank colour, so the option must pin it per series.
+  it('formats ISO date x-axis ticks as pin MMM dd and leaves other labels alone', () => {
+    // Pin DataInsightChartCard.tsx:593-598: customFormatDateTime(value, 'MMM dd').
     const series = [
-      { name: 'table', points: [{ label: '2026-01-01', value: 5 }], color: '#FFD54F' },
-      { name: 'databaseSchema', points: [{ label: '2026-01-01', value: 3 }], color: '#64B5F6' },
+      {
+        name: 'table',
+        points: [
+          { label: '2026-11-19', value: 3 },
+          { label: '2026-11-20', value: 4 },
+        ],
+      },
     ];
-    const option = buildChartOption('line', series, SM_DATA_INSIGHT_COLORS, {
-      hideLegend: true,
-      dimmedNames: new Set(['table']),
-    });
-    const lineSeries = option.series as Array<Record<string, unknown>>;
-    expect(lineSeries[0].id).toBe('table');
-    expect(lineSeries[1].id).toBe('databaseSchema');
-    expect(lineSeries[0].lineStyle).toEqual({ color: '#FFD54F', opacity: 0.3 });
-    expect(lineSeries[1].lineStyle).toEqual({ color: '#64B5F6', opacity: 1 });
-    expect(lineSeries[0].itemStyle).toEqual({ color: '#FFD54F' });
-    expect(lineSeries[1].itemStyle).toEqual({ color: '#64B5F6' });
+    const option = buildChartOption('line', series);
+    const xAxis = option.xAxis as { axisLabel: { formatter: (value: string) => string } };
+    expect(xAxis.axisLabel.formatter('2026-11-19')).toBe('Nov 19');
+    expect(xAxis.axisLabel.formatter('2026-11-20')).toBe('Nov 20');
+    expect(xAxis.axisLabel.formatter('Tier.Gold')).toBe('Tier.Gold');
   });
 
-  it('keeps the palette-by-index fallback for series without a fixed colour', () => {
+  it('renders the tooltip header as pin DATE_MED and keeps the value rows at ECharts default', () => {
+    // Pin DataInsightChartUtils.tsx:104 + DateTimeUtils.ts:132-141:
+    // header formatDate -> "Nov 22, 2026". Value rows are NOT reformatted
+    // here (no %, no rounding) — that is #343 P1-3's range.
     const series = [
-      { name: 'A', points: [{ label: '2026-01-01', value: 1 }] },
-      { name: 'B', points: [{ label: '2026-01-01', value: 2 }] },
+      { name: 'table', points: [{ label: '2026-11-22', value: 52.4271844601942 }] },
+      { name: 'storedProcedure', points: [{ label: '2026-11-22', value: 1187 }] },
     ];
-    const option = buildChartOption('line', series, undefined, { dimmedNames: new Set(['B']) });
+    const option = buildChartOption('line', series);
+    const tooltip = option.tooltip as {
+      formatter: (params: Array<Record<string, unknown>>) => string;
+    };
+    const html = tooltip.formatter([
+      { axisValue: '2026-11-22', marker: '<span>M</span>', seriesName: 'table', value: 52.4271844601942 },
+      { axisValue: '2026-11-22', marker: '<span>M</span>', seriesName: 'storedProcedure', value: 1187 },
+    ]);
+    expect(html).toContain('Nov 22, 2026');
+    expect(html).not.toContain('2026-11-22');
+    expect(html).toContain('table');
+    expect(html).toContain('storedProcedure');
+    // Default rendering: full precision kept, thousands grouped, no % added.
+    expect(html).toContain('52.4271844601942');
+    expect(html).toContain('1,187');
+    expect(html).not.toContain('%');
+    // A non-date axis value passes through as the header.
+    const plain = tooltip.formatter([
+      { axisValue: 'Tier.Gold', marker: '', seriesName: 'tier', value: 7 },
+    ]);
+    expect(plain).toContain('Tier.Gold');
+    expect(plain).toContain('tier');
+  });
+
+  it('leaves a gap (null) for a series missing a day instead of plotting 0 (pin R-P2-12)', () => {
+    // Pin DataInsightChartCard.tsx:396-413: graphData only carries keys
+    // the day actually has; a missing day is a gap, not a 0. ECharts'
+    // default connectNulls is false, so no connectNulls is set here.
+    const series = [
+      {
+        name: 'table',
+        points: [
+          { label: '2026-11-19', value: 100 },
+          { label: '2026-11-20', value: 110 },
+          { label: '2026-11-21', value: 120 },
+        ],
+      },
+      {
+        name: 'storedProcedure',
+        points: [
+          { label: '2026-11-19', value: 50 },
+          // No 2026-11-20 point: the line must break, not dive to 0.
+          { label: '2026-11-21', value: 60 },
+        ],
+      },
+    ];
+    const option = buildChartOption('line', series);
     const lineSeries = option.series as Array<Record<string, unknown>>;
-    expect(lineSeries[0].lineStyle).toEqual({ opacity: 1 });
-    expect(lineSeries[0].itemStyle).toBeUndefined();
+    expect(lineSeries[0].data).toEqual([100, 110, 120]);
+    expect(lineSeries[1].data).toEqual([50, null, 60]);
+    for (const item of lineSeries) {
+      expect(item).not.toHaveProperty('connectNulls');
+    }
+    // The tooltip must not show the missing value as 0 either: the
+    // current formatter renders a null row as '-' (pin's chartTooltipRows
+    // drops null rows outright; #343 P1-3's formatter takes that over).
+    const tooltip = option.tooltip as {
+      formatter: (params: Array<Record<string, unknown>>) => string;
+    };
+    const html = tooltip.formatter([
+      { axisValue: '2026-11-20', marker: '<span>M</span>', seriesName: 'table', value: 110 },
+      { axisValue: '2026-11-20', marker: '<span>M</span>', seriesName: 'storedProcedure', value: null },
+    ]);
+    expect(html).toContain('storedProcedure');
+    expect(html).toContain('>-<');
+    expect(html).not.toContain('>0<');
   });
 
-  it('formats insight tooltip values like pin getEntryFormattedValue', () => {
-    expect(formatInsightTooltipValue(52, true)).toBe('52%');
-    expect(formatInsightTooltipValue(52.4271844601942, true)).toBe('52.43%');
-    expect(formatInsightTooltipValue(52.4271844601942, false)).toBe('52.43');
-    expect(formatInsightTooltipValue(0, true)).toBe('0%');
-    expect(formatInsightTooltipValue(undefined, true)).toBe('');
-  });
-
-  it('renders the insight tooltip with a DATE_MED header, startCase names and no null rows (pin getDataInsightTooltip)', () => {
-    const html = formatInsightTooltip(
-      [
-        { axisValue: '2026-11-22', seriesName: 'table', value: 52.4271844601942, marker: '<i>t</i>' },
-        { axisValue: '2026-11-22', seriesName: 'storedProcedure', value: 0, marker: '<i>s</i>' },
-        { axisValue: '2026-11-22', seriesName: 'databaseSchema', value: null, marker: '<i>d</i>' },
-      ],
-      { isPercentage: true, locale: 'en-US' },
-    );
-    expect(html).toContain('Nov 22, 2026');
-    expect(html).toContain('Table');
-    expect(html).toContain('52.43%');
-    expect(html).toContain('Stored Procedure');
-    expect(html).toContain('0%');
-    expect(html).not.toContain('52.4271844601942');
-    expect(html).not.toContain('Database Schema');
-  });
-
-  it('wires the insight tooltip formatter only when the card asks for it', () => {
-    const series = [{ name: 'table', points: [{ label: '2026-11-22', value: 52 }] }];
-    const withTooltip = buildChartOption('line', series, undefined, {
-      tooltip: { isPercentage: true, locale: 'en-US' },
-    });
-    expect(typeof (withTooltip.tooltip as Record<string, unknown>).formatter).toBe('function');
-    const html = (
-      (withTooltip.tooltip as Record<string, unknown>).formatter as (
-        params: unknown,
-      ) => string
-    )([{ axisValue: '2026-11-22', seriesName: 'table', value: 52, marker: '' }]);
-    expect(html).toContain('Nov 22, 2026');
-    expect(html).toContain('52%');
-    const plain = buildChartOption('line', series);
-    expect(plain.tooltip).toEqual({ trigger: 'axis' });
+  it('suffixes percentage y-axis ticks with % and leaves total ticks bare (pin axisTickFormatter)', () => {
+    // Pin DataInsightChartCard.tsx:600-608 + ChartUtils.tsx:21-23:
+    // axisTickFormatter(value, '%') -> `${value}%`, verbatim.
+    const series = [{ name: 'A', points: [{ label: '2026-01-01', value: 80 }] }];
+    const percentage = buildChartOption('line', series, undefined, { percentageYAxis: true });
+    const percentageAxis = percentage.yAxis as {
+      axisLabel: { formatter: (value: number) => string };
+    };
+    expect(percentageAxis.axisLabel.formatter(100)).toBe('100%');
+    expect(percentageAxis.axisLabel.formatter(80)).toBe('80%');
+    expect(percentageAxis.axisLabel.formatter(1)).toBe('1%');
+    const total = buildChartOption('line', series);
+    expect(total.yAxis as Record<string, unknown>).not.toHaveProperty('axisLabel');
   });
 });
