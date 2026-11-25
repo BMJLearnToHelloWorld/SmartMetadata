@@ -32,7 +32,7 @@ export interface DataInsightChartHeadline {
   value: string;
   /** Bar width when showProgress (the numeric headline value). */
   progress: number;
-  /** Preformatted change line, e.g. "+15.00 pp over the last 7 days". */
+  /** Preformatted change line, e.g. "+15.00% over the last 7 days". */
   changeText?: string;
   /** Pin DataInsightProgressBar showProgress: only the percentage cards show the bar. */
   showProgress: boolean;
@@ -63,14 +63,18 @@ const props = defineProps<{
   rows: DataInsightChartRow[];
   headline?: DataInsightChartHeadline;
   loading: boolean;
-  failed: boolean;
   testId: string;
   emptyText: string;
-  errorText: string;
   listAssets?: 'description' | 'owner';
+  /**
+   * Pin `isPercentageGraph` (DataInsightChartCard.tsx): the tooltip
+   * formats values with a `%` suffix on the percentage graphs only.
+   * The total and tier cards are absolute counts.
+   */
+  isPercentage?: boolean;
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const search = ref('');
 const selected = ref<string[]>([]);
@@ -210,18 +214,16 @@ const exploreLink = computed(() =>
 <template>
   <Card size="small" :id="id" :data-testid="`${testId}-card`" class="di-chart-card">
     <SmState v-if="loading" state="loading" :test-id="`${testId}-loading`" />
-    <SmState
-      v-else-if="failed"
-      state="error"
-      :test-id="`${testId}-error`"
-      :error-text="errorText"
-    />
-    <SmState
-      v-else-if="!hasData"
-      state="empty"
-      :test-id="`${testId}-empty`"
-      :empty-text="emptyText"
-    />
+    <!-- Pin DataInsightChartCard.tsx:533: a failed fetch only toasts —
+      there is no card error state, the card falls back to empty.
+      Pin's empty state is EmptyGraphPlaceholder (DataInsightChartCard.tsx:640);
+      callers that need it pass the `#empty` slot, everyone else keeps the
+      plain SmState empty text. -->
+    <template v-else-if="!hasData">
+      <slot name="empty">
+        <SmState state="empty" :test-id="`${testId}-empty`" :empty-text="emptyText" />
+      </slot>
+    </template>
     <Row v-else :gutter="32">
       <Col :xs="24" :lg="16">
         <Typography.Title :level="5" class="di-chart-card__title">{{ title }}</Typography.Title>
@@ -234,18 +236,31 @@ const exploreLink = computed(() =>
           :height="500"
           hide-legend
           :dimmed-names="dimmedNames"
+          :tooltip-percentage="isPercentage ?? false"
+          :tooltip-locale="locale"
           :empty="emptyText"
         />
       </Col>
       <Col :xs="24" :lg="8">
         <div v-if="headline" :data-testid="`${testId}-headline`" class="di-chart-card__headline">
-          <Typography.Paragraph type="secondary" class="di-chart-card__headline-label">
-            {{ headline.label }}
-          </Typography.Paragraph>
-          <Typography.Title :level="4" class="di-chart-card__headline-value">{{ headline.value }}</Typography.Title>
-          <Typography.Paragraph v-if="headline.changeText" type="secondary">
-            {{ headline.changeText }}
-          </Typography.Paragraph>
+          <!-- Pin CustomStatistic.tsx:34-66: label + value left, the
+            change right-aligned — never stacked. The change text itself
+            (value + unit wording) is untouched. -->
+          <div class="di-chart-card__headline-main">
+            <div class="di-chart-card__headline-left">
+              <Typography.Paragraph type="secondary" class="di-chart-card__headline-label">
+                {{ headline.label }}
+              </Typography.Paragraph>
+              <Typography.Title :level="4" class="di-chart-card__headline-value">{{ headline.value }}</Typography.Title>
+            </div>
+            <Typography.Paragraph
+              v-if="headline.changeText"
+              type="secondary"
+              class="di-chart-card__headline-change"
+            >
+              {{ headline.changeText }}
+            </Typography.Paragraph>
+          </div>
           <div v-if="headline.showProgress" class="di-chart-card__progress">
             <Progress
               :percent="clamp(headline.progress)"
@@ -323,6 +338,20 @@ const exploreLink = computed(() =>
 }
 .di-chart-card__sub {
   margin-bottom: 12px;
+}
+.di-chart-card__headline-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.di-chart-card__headline-left {
+  min-width: 0;
+}
+.di-chart-card__headline-change {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  text-align: right;
 }
 .di-chart-card__headline-label {
   margin-bottom: 0;

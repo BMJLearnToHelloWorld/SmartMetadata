@@ -41,11 +41,25 @@ const props = withDefaults(
      * stays at full opacity. Only the DataInsight card passes this.
      */
     dimmedNames?: readonly string[];
+    /**
+     * Pin `getDataInsightTooltip` (P1-3): when set, the axis tooltip
+     * is the formatted one (DATE_MED header, startCase names, rounded
+     * values, `%` on percentage graphs). Only the DataInsight card
+     * passes this; every other chart keeps the default tooltip.
+     * `tooltipLocale` is the app locale the card already carries.
+     */
+    tooltipPercentage?: boolean;
+    tooltipLocale?: string;
   }>(),
   {
     height: 240,
     testId: 'sm-chart',
     segmentClickable: false,
+    // Absent on purpose: Vue casts an absent Boolean prop to `false`,
+    // which would be indistinguishable from an explicit `false`. The
+    // `undefined` default keeps "no insight tooltip" distinct from
+    // "insight tooltip, absolute values".
+    tooltipPercentage: undefined,
   },
 );
 
@@ -59,10 +73,18 @@ const option = computed(() =>
     ? buildChartOption(props.kind, props.series, props.colors, {
         hideLegend: props.hideLegend,
         dimmedNames: props.dimmedNames ? new Set(props.dimmedNames) : undefined,
+        tooltip:
+          props.tooltipPercentage !== undefined
+            ? { isPercentage: props.tooltipPercentage, locale: props.tooltipLocale }
+            : undefined,
       })
     : buildChartOption(props.kind, props.series, undefined, {
         hideLegend: props.hideLegend,
         dimmedNames: props.dimmedNames ? new Set(props.dimmedNames) : undefined,
+        tooltip:
+          props.tooltipPercentage !== undefined
+            ? { isPercentage: props.tooltipPercentage, locale: props.tooltipLocale }
+            : undefined,
       }),
 );
 
