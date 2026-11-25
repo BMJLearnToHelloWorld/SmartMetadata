@@ -186,7 +186,10 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('crud.descriptionHelp');
     expect(keys).toContain('crud.deleteTitle');
     expect(keys).toContain('explore.clearFiltersHelp');
-    expect(keys).toContain('lineage.reloadHelp');
+    // 2026-11-25 lineage-controls: Reload deleted (pin's only manual refresh
+    // is the error placeholder's retry); lineage.reloadHelp went with it.
+    // The error/retry surface now uses lineage.loadFailed.
+    expect(keys).toContain('lineage.loadFailed');
     expect(keys).toContain('admin.users.passwordHelp');
     expect(keys).toContain('ingestion.pipelines.scheduleHelp');
     expect(keys).toContain('observability.incidents.statusAck');
