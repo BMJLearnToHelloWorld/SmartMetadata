@@ -43,25 +43,6 @@ export function formatChartAxisDate(label: string): string {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date);
 }
 
-/**
- * Pin DataInsightChartUtils.tsx:104 + DateTimeUtils.ts:132-141: the
- * tooltip header is formatDate(...) — Luxon DATE_MED, "Nov 22, 2026".
- * Same display-only rule as formatChartAxisDate; the two formats differ
- * on purpose (axis "Nov 19", header "Nov 22, 2026").
- */
-export function formatChartTooltipDate(label: string): string {
-  const date = parseIsoDateLabel(label);
-  if (!date) {
-    return label;
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(date);
-}
-
 export function collapseByLabel(points: ChartPoint[]): ChartPoint[] {
   const sums = new Map<string, number>();
   for (const point of points) {
@@ -171,6 +152,7 @@ export function testResultsToTimeline(
 export function insightResultsToSeries(
   chartName: string,
   results: Array<{ count?: number; day?: number; group?: string; term?: string; metric?: string }>,
+  options: { rankedKeys?: readonly string[]; colors?: readonly string[] } = {},
 ): ChartSeries[] {
   const byGroup = new Map<string, ChartPoint[]>();
   for (const result of results) {
@@ -186,8 +168,40 @@ export function insightResultsToSeries(
     points.push({ label, value: result.count });
     byGroup.set(group, points);
   }
-  return [...byGroup.entries()].map(([name, points]) => ({
-    name,
-    points: collapseByLabel(points),
-  }));
+  const entries = [...byGroup.entries()];
+  if (options.rankedKeys) {
+    // Pin DataInsightChartCard.tsx:395-413: the rank is the latest value,
+    // descending. Series follow the ranked keys, never the API's
+    // first-appearance order — the row bars already use this order
+    // (DataAssetsView progressColor), so the two stay in sync. A group
+    // missing from the rank keeps its first-appearance order after the
+    // ranked ones.
+    const rank = new Map(options.rankedKeys.map((key, index) => [key, index]));
+    entries.sort((a, b) => {
+      const rankA = rank.get(a[0]);
+      const rankB = rank.get(b[0]);
+      if (rankA !== undefined && rankB !== undefined) {
+        return rankA - rankB;
+      }
+      if (rankA !== undefined) {
+        return -1;
+      }
+      if (rankB !== undefined) {
+        return 1;
+      }
+      return 0;
+    });
+  }
+  return entries.map(([name, points], index) => {
+    const rank = options.rankedKeys ? options.rankedKeys.indexOf(name) : index;
+    const color =
+      options.colors && rank >= 0
+        ? options.colors[rank % options.colors.length]
+        : undefined;
+    return {
+      name,
+      points: collapseByLabel(points),
+      ...(color ? { color } : {}),
+    };
+  });
 }

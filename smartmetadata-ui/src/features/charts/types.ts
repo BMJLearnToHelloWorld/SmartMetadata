@@ -18,6 +18,13 @@ export interface ChartPoint {
 export interface ChartSeries {
   name: string;
   points: ChartPoint[];
+  /**
+   * Fixed colour for this series, by its rank (pin dataInsightColor /
+   * getDataInsightLineSeries: colour follows the ranked key order, never
+   * the series' position in the currently visible array). Absent, the
+   * chart falls back to the palette-by-index colouring.
+   */
+  color?: string;
 }
 
 export const DEFAULT_SERIES_DAYS = 30;

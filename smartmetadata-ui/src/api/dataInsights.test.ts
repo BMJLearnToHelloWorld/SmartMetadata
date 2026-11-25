@@ -214,9 +214,11 @@ describe('data insights API', () => {
     ).toBeCloseTo(15, 10);
   });
 
-  it('aligns the absolute values to the totals first/last day, unordered rows included', () => {
-    // Totals define the window (day 2 → day 5); the absolute series has no
-    // day-2 row, so the first-day absolute counts as 0: (90/300 − 0) × 100 = 30.
+  it('takes the absolute values from their own first/last day, never the totals days (pin computeDefaultChange)', () => {
+    // Totals define their own window (day 2 → day 5, 300 each day); the
+    // absolute series starts on day 3, so pin reads its first value on
+    // day 3: (90/300 − 60/300) × 100 = 10. Aligning the absolute values
+    // to the totals' first day would count day 2 as 0 and give 30.
     expect(
       computeChangeInPercentagePoints(
         [
@@ -224,9 +226,12 @@ describe('data insights API', () => {
           { count: 100, day: 2, group: 'table' },
           { count: 200, day: 2, group: 'topic' },
         ],
-        [{ count: 90, day: 5 }],
+        [
+          { count: 60, day: 3 },
+          { count: 90, day: 5 },
+        ],
       ),
-    ).toBeCloseTo(30, 10);
+    ).toBeCloseTo(10, 10);
     expect(computeChangeInPercentagePoints([], [{ count: 5, day: 1 }])).toBe(0);
     expect(
       computeChangeInPercentagePoints(

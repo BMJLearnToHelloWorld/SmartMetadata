@@ -8,65 +8,66 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { SM_CHART_COLORS, SM_FONT_FAMILY } from '@/theme/tokens';
+import { formatMediumDate } from '@/utils/dates';
+import { startCase } from '@/utils/text';
 import type { ChartKind, ChartSeries } from './types';
-import { formatChartAxisDate, formatChartTooltipDate } from './series';
+import { formatChartAxisDate } from './series';
 
 const COLORS = [...SM_CHART_COLORS];
 
-interface AxisTooltipParam {
-  axisValue?: unknown;
-  marker?: string;
+/**
+ * Pin `getEntryFormattedValue` (utils/DataInsightPureUtils.ts:22-40):
+ * integers as-is, non-integers rounded to 2, a `%` suffix on percentage
+ * graphs, `''` for an absent value.
+ */
+export function formatInsightTooltipValue(value: number | string | null | undefined, isPercentage: boolean): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const suffix = isPercentage ? '%' : '';
+  if (typeof value === 'string') {
+    return `${value}${suffix}`;
+  }
+  if (Number.isInteger(value)) {
+    return `${value}${suffix}`;
+  }
+  return `${Math.round(value * 100) / 100}${suffix}`;
+}
+
+export interface InsightTooltipParam {
+  /** Axis value: the ISO `YYYY-MM-DD` day label. */
+  axisValue?: string | number;
   seriesName?: string;
-  value?: unknown;
-}
-
-function escapeTooltipHtml(text: string): string {
-  return text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+  value?: number | string | null;
+  /** ECharts' coloured marker HTML for the series. */
+  marker?: string;
+  color?: string;
 }
 
 /**
- * ECharts' default value rendering (makeValueReadable in echarts 6):
- * a finite number keeps full precision with a thousands separator
- * (52.4271844601942 stays, 1187 becomes "1,187"); anything else is
- * shown as-is when it is a non-blank string, "-" otherwise.
+ * Pin `getDataInsightTooltip` (utils/DataInsightChartUtils.tsx:92-110)
+ * + `DQTooltipContent` / `chartTooltipRows`
+ * (utils/DataQuality/CustomDQTooltip.component.tsx:44-96): the header is
+ * `formatDate` (DATE_MED, "Nov 22, 2026"), each row shows the series
+ * name through `startCase` with its colour marker and the formatted
+ * value, and rows with a null value are dropped.
  */
-function readableTooltipValue(value: unknown): string {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const [whole, fraction] = String(value).split('.');
-    const grouped = (whole ?? '').replace(/(\d{1,3})(?=(?:\d{3})+(?!\d))/g, '$1,');
-    return fraction === undefined ? grouped : `${grouped}.${fraction}`;
-  }
-  if (typeof value === 'string' && value.trim()) {
-    return value;
-  }
-  if (typeof value === 'boolean') {
-    return String(value);
-  }
-  return '-';
-}
-
-/**
- * Pin DataInsightChartUtils.tsx:104: the tooltip header is formatDate(...)
- * ("Nov 22, 2026"); the value rows are NOT reformatted here — that is
- * #343 P1-3's getEntryFormattedValue range (round 2, %, startCase).
- * This formatter only swaps the header and replays ECharts' default
- * rows (marker + series name + value), so the values render exactly
- * as the default tooltip would until P1-3 replaces it.
- */
-function axisTooltipFormatter(params: AxisTooltipParam | AxisTooltipParam[]): string {
+export function formatInsightTooltip(
+  params: InsightTooltipParam | InsightTooltipParam[],
+  options: { isPercentage?: boolean; locale?: string } = {},
+): string {
   const items = Array.isArray(params) ? params : [params];
-  const header = formatChartTooltipDate(String(items[0]?.axisValue ?? ''));
+  const header = formatMediumDate(items[0]?.axisValue ?? '', options.locale);
   const rows = items
-    .map(
-      (item) =>
-        `<div>${item.marker ?? ''}<span style="margin-left:2px">${escapeTooltipHtml(String(item.seriesName ?? ''))}</span><span style="float:right;margin-left:20px">${escapeTooltipHtml(readableTooltipValue(item.value))}</span><div style="clear:both"></div></div>`,
-    )
+    .filter((item) => item.value !== null && item.value !== undefined)
+    .map((item) => {
+      const marker =
+        item.marker ??
+        `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.color ?? 'transparent'}"></span>`;
+      return `<div style="display:flex;justify-content:space-between;gap:24px;line-height:20px;"><span>${marker} ${startCase(item.seriesName ?? '')}</span><span style="font-weight:500">${formatInsightTooltipValue(item.value, options.isPercentage ?? false)}</span></div>`;
+    })
     .join('');
-  return `${header}${rows}`;
+  return `<div><div style="font-weight:500;font-size:12px;line-height:18px;">${header}</div><div style="border-top:1px dashed;margin:8px 0;"></div>${rows}</div>`;
 }
 
 /**
@@ -88,6 +89,14 @@ export function buildChartOption(
   options: {
     hideLegend?: boolean;
     dimmedNames?: ReadonlySet<string>;
+    /**
+    /**
+     * Pin `getDataInsightTooltip`: a custom axis tooltip (DATE_MED
+     * header, startCase series names, formatted values). Only the
+     * DataInsight card passes this; every other chart keeps the
+     * default ECharts tooltip.
+     */
+    tooltip?: { isPercentage?: boolean; locale?: string };
     /**
      * Pin DataInsightChartCard.tsx:600-608 + ChartUtils.tsx:21-23:
      * percentage graphs render the y-axis ticks as `${value}%`
@@ -131,7 +140,13 @@ export function buildChartOption(
   return {
     color: palette,
     textStyle: { fontFamily: SM_FONT_FAMILY },
-    tooltip: { trigger: 'axis', formatter: axisTooltipFormatter },
+    tooltip: options.tooltip
+      ? {
+          trigger: 'axis',
+          formatter: (params: InsightTooltipParam | InsightTooltipParam[]) =>
+            formatInsightTooltip(params, options.tooltip),
+        }
+      : { trigger: 'axis' },
     legend: options.hideLegend
       ? { show: false }
       : series.length > 1
@@ -155,14 +170,31 @@ export function buildChartOption(
     },
     series: series.map((item) => ({
       type: echartsKind,
+      // Pin getDataInsightLineSeries `key`: the fixed series identity,
+      // so a merged setOption never leaves a stale series behind when
+      // the visible set changes (hover + filter).
+      id: item.name,
       name: item.name,
       smooth: kind === 'line' || kind === 'area',
       ...(kind === 'area' ? { areaStyle: {} } : {}),
+      // Pin dataInsightColor: a series with a rank-fixed colour keeps
+      // it however the visible array is reordered (hover preview after
+      // a filter must stay its rank colour, not the colour of its
+      // current index). Without one, the palette-by-index fallback
+      // applies as before.
+      ...(item.color ? { itemStyle: { color: item.color } } : {}),
       // Pin getDataInsightLineSeries always sends lineStyle.opacity:
       // ECharts deep-merges a series that keeps its id, so an omitted
       // opacity would leave the previous dimmed value in place.
-      ...(options.dimmedNames
-        ? { lineStyle: { opacity: options.dimmedNames.has(item.name) ? 0.3 : 1 } }
+      ...(options.dimmedNames || item.color
+        ? {
+            lineStyle: {
+              ...(item.color ? { color: item.color } : {}),
+              ...(options.dimmedNames
+                ? { opacity: options.dimmedNames.has(item.name) ? 0.3 : 1 }
+                : {}),
+            },
+          }
         : {}),
       // Pin DataInsightChartCard.tsx:396-413: a series missing a day
       // simply has no key for it — the gap stays a gap, never a 0.

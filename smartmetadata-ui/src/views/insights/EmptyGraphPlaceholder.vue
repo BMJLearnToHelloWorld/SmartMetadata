@@ -15,6 +15,10 @@ import { useI18n } from 'vue-i18n';
  * has no data — both while its siblings load and after a fetch that
  * returns nothing (pin DataInsightChartCard.tsx:620-645 renders
  * SkeletonParagraph while loading, this placeholder otherwise).
+ *
+ * Rebase note: #343's version wrapped the shared NoDataPlaceholder;
+ * the merged component renders pin's markup directly, with the testid
+ * and i18n keys from P2 (`insights.pipelineEmpty` / `insights.emptyDocs*`).
  */
 withDefaults(defineProps<{ testId?: string }>(), { testId: 'empty-graph-placeholder' });
 const { t } = useI18n();
@@ -50,8 +54,7 @@ const DATA_INSIGHT_DOCS = 'https://docs.open-metadata.org/latest/how-to-guides/d
 </template>
 
 <style scoped>
-/* Pin EmptyGraphPlaceholder: min-h-60 (240px) rounded surface; the
- * NoDataPlaceholder content is centred inside it. */
+/* Pin EmptyGraphPlaceholder: min-h-60 (240px) rounded surface. */
 .empty-graph-placeholder {
   display: flex;
   flex-direction: column;

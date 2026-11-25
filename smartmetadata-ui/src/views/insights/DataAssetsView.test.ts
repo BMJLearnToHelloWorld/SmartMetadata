@@ -9,17 +9,20 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd, { Select } from 'ant-design-vue';
+import dayjs from 'dayjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
 import DataAssetsView from './DataAssetsView.vue';
 
 const listSystemChartData = vi.fn();
-const getAggregateChartData = vi.fn();
 const getTeamByName = vi.fn();
 const listTeams = vi.fn();
 const listTags = vi.fn();
 const listKpis = vi.fn();
+const listKpiResults = vi.fn();
+const getLatestKpiResult = vi.fn();
 const getResourcePermission = vi.fn();
 const fetchLoggedInUser = vi.fn();
 
@@ -28,9 +31,9 @@ vi.mock('@/api/dataInsights', async () => {
   return {
     ...actual,
     listSystemChartData: (...args: unknown[]) => listSystemChartData(...args),
-    getAggregateChartData: (...args: unknown[]) => getAggregateChartData(...args),
   };
 });
+
 
 vi.mock('@/api/teams', () => ({
   getTeamByName: (...args: unknown[]) => getTeamByName(...args),
@@ -41,6 +44,8 @@ vi.mock('@/api/tags', () => ({
 }));
 vi.mock('@/api/kpi', () => ({
   listKpis: (...args: unknown[]) => listKpis(...args),
+  listKpiResults: (...args: unknown[]) => listKpiResults(...args),
+  getLatestKpiResult: (...args: unknown[]) => getLatestKpiResult(...args),
 }));
 vi.mock('@/api/permissions', () => ({
   getResourcePermission: (...args: unknown[]) => getResourcePermission(...args),
@@ -126,6 +131,7 @@ async function mountView(options: { attach?: boolean; locale?: 'en-US' | 'zh-CN'
     history: createMemoryHistory(),
     routes: [
       { path: '/insights/data-assets', name: 'insights-data-assets', component: DataAssetsView },
+      { path: '/insights/kpis/add', name: 'insights-kpis-add', component: { template: '<div />' } },
       { path: '/explore', name: 'search', component: { template: '<div />' } },
     ],
   });
@@ -144,8 +150,6 @@ async function mountView(options: { attach?: boolean; locale?: 'en-US' | 'zh-CN'
 describe('DataAssetsView', () => {
   beforeEach(() => {
     listSystemChartData.mockReset();
-    getAggregateChartData.mockReset();
-    getAggregateChartData.mockResolvedValue([]);
     getTeamByName.mockReset();
     getTeamByName.mockResolvedValue({ id: 'org', name: 'Organization', displayName: 'Acme Org' });
     listTeams.mockReset();
@@ -154,6 +158,10 @@ describe('DataAssetsView', () => {
     listTags.mockResolvedValue({ data: [] });
     listKpis.mockReset();
     listKpis.mockResolvedValue({ data: [] });
+    listKpiResults.mockReset();
+    listKpiResults.mockResolvedValue([]);
+    getLatestKpiResult.mockReset();
+    getLatestKpiResult.mockResolvedValue(undefined);
     getResourcePermission.mockReset();
     getResourcePermission.mockResolvedValue({
       resource: 'dataInsightChart',
@@ -241,7 +249,10 @@ describe('DataAssetsView', () => {
     routeChartCalls();
     const wrapper = await mountView();
     const cards = wrapper.findAll('[data-testid$="-card"]').map((el) => el.attributes('data-testid'));
+    // The KPI section (pin id="kpi-charts") sits between the summary and
+    // the six system cards; with no KPIs it renders no chart.
     expect(cards).toEqual([
+      'insights-kpi-card',
       'insights-total-card',
       'insights-asset-description-card',
       'insights-asset-owner-card',
@@ -301,28 +312,111 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-total"]').attributes('data-points')).toBe('1');
   });
 
-  it('renders web activity aggregates for users, daily actives and page views', async () => {
-    getAggregateChartData.mockImplementation(async (options: { dataInsightChartName: string }) => {
-      if (options.dataInsightChartName === 'MostActiveUsers') {
-        return [{ chartType: 'MostActiveUsers', data: [{ userName: 'alice', sessions: 5 }] }];
-      }
-      if (options.dataInsightChartName === 'DailyActiveUsers') {
-        return [{ chartType: 'DailyActiveUsers', data: [{ timestamp: Date.UTC(2026, 0, 2), activeUsers: 3 }] }];
-      }
-      return [{ chartType: 'PageViewsByEntities', data: [{ entityFqn: 'svc.db.schema.orders', pageViews: 9 }] }];
-    });
-    const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-web-users"]').text()).toContain('alice');
-    expect(wrapper.find('[data-testid="insights-web-daily-active"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-web-entities"]').text()).toContain('svc.db.schema.orders');
-  });
-
   it('defaults the chart window to the 7-day preset', async () => {
     routeChartCalls();
     await mountView();
     expect(listSystemChartData).toHaveBeenCalledTimes(2);
     const [, startTs, endTs] = listSystemChartData.mock.calls[0] as [unknown, number, number];
     expect(endTs - startTs).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it('offers the pin date presets only (yesterday + 3/7/14/30/60 days + custom) and shows the selected range as text', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    const selects = wrapper.findAllComponents(Select);
+    const dateSelect = selects[2];
+    expect(dateSelect?.exists()).toBe(true);
+    const options = dateSelect?.props('options') as Array<{ value: string; label: string }>;
+    expect(options.map((option) => option.value)).toEqual([
+      'yesterday',
+      'last3days',
+      'last7days',
+      'last14days',
+      'last30days',
+      'last60days',
+      'customRange',
+    ]);
+    expect(options.map((option) => option.label)).toEqual([
+      'Yesterday',
+      'Last 3 days',
+      'Last 7 days',
+      'Last 14 days',
+      'Last 30 days',
+      'Last 60 days',
+      'Custom range',
+    ]);
+    // Pin DataInsightHeader.component.tsx:125-142: the selected range as
+    // DATE_MED text beside the picker.
+    expect(wrapper.get('[data-testid="insights-date-range"]').text()).toMatch(
+      /^[A-Z][a-z]{2} \d{1,2}, \d{4} - [A-Z][a-z]{2} \d{1,2}, \d{4}$/,
+    );
+    expect(wrapper.find('[data-testid="insights-date-range-picker"]').exists()).toBe(false);
+  });
+
+  it('fetches a 1-day window for the Yesterday preset', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    const dateSelect = wrapper.findAllComponents(Select)[2];
+    listSystemChartData.mockClear();
+    await dateSelect?.vm.$emit('change', 'yesterday');
+    await flushPromises();
+    expect(listSystemChartData).toHaveBeenCalled();
+    const [, startTs, endTs] = listSystemChartData.mock.calls[0] as [unknown, number, number];
+    expect(endTs - startTs).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it('fetches the picked days for a custom range (pin DatePickerMenu custom range)', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    const dateSelect = wrapper.findAllComponents(Select)[2];
+    await dateSelect?.vm.$emit('change', 'customRange');
+    await flushPromises();
+    // Picking the custom entry only opens the picker; nothing refetches
+    // until a range is picked.
+    expect(wrapper.find('[data-testid="insights-date-range-picker"]').exists()).toBe(true);
+    const callsBefore = listSystemChartData.mock.calls.length;
+    const picker = wrapper.findComponent({ name: 'ARangePicker' });
+    expect(picker.exists()).toBe(true);
+    await picker.vm.$emit('change', [dayjs(DAY_1), dayjs(DAY_7)]);
+    await flushPromises();
+    expect(listSystemChartData.mock.calls.length).toBeGreaterThan(callsBefore);
+    const [, startTs, endTs] = listSystemChartData.mock.calls.at(-1) as [unknown, number, number];
+    expect(startTs).toBe(dayjs(DAY_1).startOf('day').valueOf());
+    expect(endTs).toBe(dayjs(DAY_7).endOf('day').valueOf());
+    // The picked span is 7 days, so the change line still reports 7 days.
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('over the last 7 days');
+  });
+
+  it('colours the total-card lines by latest-value rank, not by first appearance (pin dataInsightColor)', async () => {
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return {
+        ...systemPayload,
+        total_data_assets: [
+          { count: 100, day: DAY_1, group: 'table' },
+          { count: 50, day: DAY_1, group: 'topic' },
+          { count: 60, day: DAY_7, group: 'table' },
+          { count: 90, day: DAY_7, group: 'topic' },
+        ],
+      };
+    });
+    const wrapper = await mountView();
+    // First appearance is [table, topic]; the latest values rank topic
+    // (90) above table (60) — the lines must follow the rank.
+    const chart = wrapper.findAllComponents({ name: 'VChart' })[0];
+    const option = chart?.props('option') as Record<string, unknown>;
+    const series = option.series as Array<{ name: string; lineStyle: { color: string } }>;
+    expect(series.map((item) => item.name)).toEqual(['topic', 'table']);
+    expect(series.map((item) => item.lineStyle.color)).toEqual([
+      SM_DATA_INSIGHT_COLORS[0],
+      SM_DATA_INSIGHT_COLORS[1],
+    ]);
+    const rows = wrapper.findAll('[data-testid="insights-total-row"]');
+    expect(rows[0]?.get('[data-testid="insights-total-row-name"]').text()).toContain('Topic');
+    expect(rows[0]?.get('[data-testid="insights-total-row-value"]').text()).toBe('90');
+    expect(rows[1]?.get('[data-testid="insights-total-row-name"]').text()).toContain('Table');
   });
 
   it('renders the org-named summary cards from the global summary values', async () => {
@@ -339,6 +433,9 @@ describe('DataAssetsView', () => {
     // percentage series' latest point (42.5% / 80%) — the D-D-1 correction.
     expect(wrapper.get('[data-testid="insights-summary-description"]').text()).toContain('62.5%');
     expect(wrapper.get('[data-testid="insights-summary-owner"]').text()).toContain('75%');
+    // Fourth summary card (pin ENTITIES_SUMMARY_LIST): the tier summary
+    // card's latest value with a % suffix.
+    expect(wrapper.get('[data-testid="insights-summary-tier"]').text()).toContain('20%');
     // Pin R-P2-2 (RIGHT_SIDE_PANEL_LABEL_CONFIG): headline labels are not
     // the card titles — "Completed Description %" / "Assigned Owner %".
     expect(wrapper.get('[data-testid="insights-asset-description-headline"]').text()).toContain(
@@ -370,8 +467,9 @@ describe('DataAssetsView', () => {
   // Pin DataInsightChartCard.tsx:717 renders tier group names through
   // startCase, so the untiered group displays as "No Tier". The stored
   // chart data has been seen both as the canonical `NoTier` (server
-  // TierStep.java:48) and as lowercase `notier`; both spellings map to
-  // the "No Tier" display name.
+  // TierStep.java:48) and as lowercase `notier`; load() normalises the
+  // lowercase spelling to pin's `NoTier` at the boundary, so both spellings
+  // map to the "No Tier" display name.
   it.each(['notier', 'NoTier'])('labels the untiered tier group %s as "No Tier"', async (group) => {
     const tierPayload = {
       ...systemPayload,
@@ -448,9 +546,10 @@ describe('DataAssetsView', () => {
       };
     });
     const wrapper = await mountView();
-    // Tiered share: 7/200 = 3.50% -> 7/300 = 2.33%, change -1.17pp.
+    // Tiered share: 7/200 = 3.50% -> 7/300 = 2.33%, change -1.17%.
+    // Pin CustomStatistic always writes "%", even for pp changes.
     expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain(
-      '-1.17 pp over the last 7 days',
+      '-1.17% over the last 7 days',
     );
     // Pin R-P2-2: tier headline label "Assigned Tier" (no % suffix — the
     // tier card is not a percentage graph in pin).
@@ -468,11 +567,12 @@ describe('DataAssetsView', () => {
       const card = document.getElementById('total_data_assets');
       expect(card).not.toBeNull();
       const scrollIntoView = vi.fn();
-      card!.scrollIntoView = (() => {
-        scrollIntoView();
-      }) as Element['scrollIntoView'];
+      card!.scrollIntoView = scrollIntoView as Element['scrollIntoView'];
       await wrapper.get('[data-testid="insights-summary-total"]').trigger('click');
       expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      // Pin DataInsightPage.component.tsx:90: centred, smooth — the card
+      // clears the 64px sticky header instead of parking under it.
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
     } finally {
       wrapper.unmount();
     }
@@ -547,8 +647,8 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-service-owner-headline"]').text()).toContain(
       'Assigned Owner %',
     );
-    expect(wrapper.text()).toContain('+15.00 pp over the last 7 days');
-    expect(wrapper.text()).toContain('+30.00 pp over the last 7 days');
+    expect(wrapper.text()).toContain('+15.00% over the last 7 days');
+    expect(wrapper.text()).toContain('+30.00% over the last 7 days');
     // The KPI target renders as a marker on the headline bar, not as text.
     expect(wrapper.get('[data-testid="insights-service-description-target"]').text()).toBe('80%');
     expect(wrapper.get('[data-testid="insights-service-description-target"]').attributes('style')).toContain(
@@ -564,6 +664,24 @@ describe('DataAssetsView', () => {
     expect(rows[1]?.text()).toContain('My SQL');
     expect(rows[1]?.text()).toContain('60%');
   });
+
+  it('toasts and falls back to empty states, with no warning, when the system fetch fails (pin DataInsightChartCard fetchData)', async () => {
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      throw new Error('system charts missing');
+    });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="insights-system-load-warning"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="insights-total-error"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="insights-total-empty"]').exists()).toBe(true);
+  });
+
+  // Rebase note: the pre-#343 warning/error-state test is dropped —
+  // #343 reverted deviation #3 to pin literal (toast + empty states,
+  // no warning, no card error state), locked by the two toast tests
+  // above. The R-P2-7 startCase tests below are kept unchanged.
 
   // Pin R-P2-13 (DataInsightChartCard.tsx:457-476): the KPI target only
   // matches a KPI whose dataInsightChart name is the `_kpi` chart name.
@@ -585,13 +703,12 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-service-description-target"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="insights-asset-description-target"]').exists()).toBe(false);
   });
-
   // Pin R-P2-7 (DataInsightChartCard.tsx:717): entity row names are
   // startCase of the entity key. The product keeps its i18n display name
   // and only normalises the casing — "Stored procedure" -> "Stored
-  // Procedure". Note `databaseSchema` stays "Schema": that is the i18n
-  // label's wording (pin shows "Database Schema"), a content gap outside
-  // this casing item, not something startCase can fix.
+  // Procedure". Note `databaseSchema` renders "Database Schema": the
+  // shared i18n copy was changed to the pin wording per the 2026-11-25
+  // ruling (a); zh-CN stays '模式'.
   it('renders entity row names through startCase (pin R-P2-7)', async () => {
     listSystemChartData.mockImplementation(async (names: readonly string[]) => {
       if (names.includes('percentage_of_service_with_description')) {
@@ -614,7 +731,7 @@ describe('DataAssetsView', () => {
     expect(totalRows).toHaveLength(3);
     expect(totalRows[0]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Table');
     expect(totalRows[1]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Stored Procedure');
-    expect(totalRows[2]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Schema');
+    expect(totalRows[2]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Database Schema');
     const descriptionRows = wrapper.findAll('[data-testid="insights-asset-description-row"]');
     expect(descriptionRows).toHaveLength(1);
     expect(
@@ -670,27 +787,6 @@ describe('DataAssetsView', () => {
     const totalRows = wrapper.findAll('[data-testid="insights-total-row"]');
     expect(totalRows).toHaveLength(2);
     expect(totalRows[1]?.get('[data-testid="insights-total-row-name"]').text()).toBe('存储过程');
-  });
-
-  it('shows a warning and error states, not empty states, when the service fetch fails', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      listSystemChartData.mockImplementation(async (names: readonly string[]) => {
-        if (names.includes('percentage_of_service_with_description')) {
-          throw new Error('chart missing');
-        }
-        return systemPayload;
-      });
-      const wrapper = await mountView();
-      expect(wrapper.find('[data-testid="insights-service-load-warning"]').exists()).toBe(true);
-      expect(wrapper.find('[data-testid="insights-service-description-error"]').exists()).toBe(true);
-      expect(wrapper.find('[data-testid="insights-service-owner-error"]').exists()).toBe(true);
-      expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(false);
-      expect(wrapper.find('[data-testid="insights-service-owner-empty"]').exists()).toBe(false);
-      expect(warn).toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
   });
 
   it('shows the no-permission placeholder and issues no chart requests without ViewAll', async () => {
@@ -755,5 +851,79 @@ describe('DataAssetsView', () => {
         },
       },
     });
+  });
+
+  it('renders the KPI section between the summary and the six cards and plots two lines (pin KPIChart)', async () => {
+    routeChartCalls();
+    listKpis.mockResolvedValue({
+      data: [
+        {
+          name: 'Description_Coverage',
+          displayName: 'Description Coverage',
+          fullyQualifiedName: 'Description_Coverage',
+          metricType: 'PERCENTAGE',
+          targetValue: 80,
+          startDate: DAY_1,
+          endDate: Date.now() + 5 * 86_400_000,
+          dataInsightChart: { name: 'percentage_of_data_asset_with_description_kpi', type: 'dataInsightChart' },
+          owners: [],
+        },
+        {
+          name: 'Owner_Coverage',
+          displayName: 'Owner Coverage',
+          fullyQualifiedName: 'Owner_Coverage',
+          metricType: 'PERCENTAGE',
+          targetValue: 70,
+          startDate: DAY_1,
+          endDate: Date.now() + 5 * 86_400_000,
+          dataInsightChart: { name: 'percentage_of_data_asset_with_owner_kpi', type: 'dataInsightChart' },
+          owners: [],
+        },
+      ],
+    });
+    listKpiResults.mockImplementation(async (name: string) => {
+      if (name === 'Description_Coverage') {
+        return [
+          { count: 50, day: DAY_1 },
+          { count: 60, day: DAY_7 },
+        ];
+      }
+      return [
+        { count: 40, day: DAY_1 },
+        { count: 70, day: DAY_7 },
+      ];
+    });
+    getLatestKpiResult.mockImplementation(async (name: string) => ({
+      kpiFqn: name,
+      timestamp: DAY_7,
+      targetResult: [{ name: 'result', value: name === 'Description_Coverage' ? '60' : '70', targetMet: false }],
+    }));
+    const wrapper = await mountView();
+    const kpiCard = wrapper.get('#kpi-charts');
+    expect(kpiCard.text()).toContain('Key Performance Indicators');
+    // Section order: summary, KPI chart, then the six system cards.
+    const cards = wrapper.findAll('[data-testid$="-card"]').map((el) => el.attributes('data-testid'));
+    expect(cards.indexOf('insights-kpi-card')).toBeLessThan(cards.indexOf('insights-total-card'));
+    const charts = wrapper.findAllComponents({ name: 'VChart' });
+    expect(charts).toHaveLength(7);
+    const kpiChart = charts.find((chart) => {
+      const option = chart.props('option') as Record<string, unknown>;
+      const series = option.series as Array<{ name: string }>;
+      return series.some((item) => item.name === 'Description_Coverage');
+    });
+    expect(kpiChart?.exists()).toBe(true);
+    const kpiOption = kpiChart?.props('option') as Record<string, unknown>;
+    const kpiSeries = kpiOption.series as Array<{ name: string }>;
+    expect(kpiSeries.map((item) => item.name)).toEqual(['Description_Coverage', 'Owner_Coverage']);
+    expect(wrapper.find('[data-testid="insights-kpi-latest-Description_Coverage"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="insights-kpi-latest-Owner_Coverage"]').exists()).toBe(true);
+  });
+
+  it('shows the KPI no-data state with an Add KPI button when the catalog has no KPIs', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="insights-kpi-empty"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('No KPIs are available. Click on the Add KPI button to add one.');
+    expect(wrapper.find('[data-testid="insights-kpi-add"]').exists()).toBe(true);
   });
 });

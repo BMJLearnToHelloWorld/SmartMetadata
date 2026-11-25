@@ -13,7 +13,6 @@ import {
   columnNullPoints,
   countByLabel,
   formatChartAxisDate,
-  formatChartTooltipDate,
   formatChartTs,
   insightResultsToSeries,
   profilesToRowCountPoints,
@@ -93,7 +92,45 @@ describe('chart series mapping', () => {
     ]);
   });
 
-  it('groups data-insight results by group and uses term or day labels', () => {
+  it('orders data-insight series by rank and fixes their colour to the rank (pin dataInsightColor)', () => {
+    // First-appearance order is [table, storedProcedure]; the latest
+    // values rank storedProcedure first. The rows use the same rank, so
+    // the line colours must follow it, not first appearance.
+    const day1 = Date.UTC(2026, 0, 1);
+    const day7 = Date.UTC(2026, 0, 7);
+    const palette = ['#E57373', '#BA68C8', '#64B5F6'];
+    expect(
+      insightResultsToSeries(
+        'percentage_of_data_asset_with_description',
+        [
+          { count: 10, day: day1, group: 'table' },
+          { count: 20, day: day1, group: 'storedProcedure' },
+          { count: 30, day: day7, group: 'table' },
+          { count: 90, day: day7, group: 'storedProcedure' },
+        ],
+        { rankedKeys: ['storedProcedure', 'table'], colors: palette },
+      ),
+    ).toEqual([
+      {
+        name: 'storedProcedure',
+        points: [
+          { label: '2026-01-01', value: 20 },
+          { label: '2026-01-07', value: 90 },
+        ],
+        color: '#E57373',
+      },
+      {
+        name: 'table',
+        points: [
+          { label: '2026-01-01', value: 10 },
+          { label: '2026-01-07', value: 30 },
+        ],
+        color: '#BA68C8',
+      },
+    ]);
+  });
+
+  it('keeps first-appearance order and no fixed colour without a rank', () => {
     expect(
       insightResultsToSeries('total_data_assets', [
         { count: 4, day: Date.UTC(2026, 0, 1), group: 'table' },
@@ -121,13 +158,5 @@ describe('chart series mapping', () => {
     expect(formatChartAxisDate('table')).toBe('table');
     expect(formatChartAxisDate('')).toBe('');
     expect(formatChartAxisDate('2026-13-40')).toBe('2026-13-40');
-  });
-
-  it('formats ISO date labels for the tooltip header as pin DATE_MED and leaves other labels alone', () => {
-    // Pin DataInsightChartUtils.tsx:104 + DateTimeUtils.ts:132-141: formatDate -> "Nov 22, 2026".
-    expect(formatChartTooltipDate('2026-11-22')).toBe('Nov 22, 2026');
-    expect(formatChartTooltipDate('2026-01-07')).toBe('Jan 7, 2026');
-    expect(formatChartTooltipDate('Tier.Gold')).toBe('Tier.Gold');
-    expect(formatChartTooltipDate('')).toBe('');
   });
 });

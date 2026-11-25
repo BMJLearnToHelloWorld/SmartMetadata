@@ -20,8 +20,13 @@ describe('EmptyGraphPlaceholder', () => {
     const wrapper = mount(EmptyGraphPlaceholder, {
       global: { plugins: [Antd, createTestI18n()] },
     });
+    // Rebase note: #343's version wrapped the shared NoDataPlaceholder
+    // (test-id "no-data-placeholder"); the merged component renders pin's
+    // markup directly, so the testid is the component's own default.
+    expect(wrapper.find('[data-testid="empty-graph-placeholder"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Adding a new Data Insight is easy, just give it a spin!');
     expect(wrapper.text()).toContain('Still need help? Refer to our docs for more information.');
+    expect(wrapper.text()).not.toContain('residual');
     const link = wrapper.get(`a[href="${DOCS_HREF}"]`);
     expect(link.text()).toBe('docs');
     expect(link.attributes('target')).toBe('_blank');
