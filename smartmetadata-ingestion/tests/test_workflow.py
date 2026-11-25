@@ -12,6 +12,7 @@ import logging
 
 import pytest
 
+from smartmetadata_ingestion.connectors.constraints import DeferredTableConstraints
 from smartmetadata_ingestion.errors import (
     RestError,
     WorkflowExecutionError,
@@ -20,9 +21,11 @@ from smartmetadata_ingestion.errors import (
 )
 from smartmetadata_ingestion.progress import CollectingHook
 from smartmetadata_ingestion.records import (
+    ColumnRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
     SchemaRecord,
+    TableConstraintRecord,
     TableRecord,
 )
 from smartmetadata_ingestion.runner import run_workflow
@@ -1087,3 +1090,214 @@ def test_reconcile_empty_listing_counts_as_sink_warning_in_writeback(
         "/v1/tables",
         "/v1/databaseSchemas",
     ]
+
+
+class _DeferredFkSource(RecordingSource):
+    """A database source whose child table's foreign key waits for the patch."""
+
+    def __init__(self, events: list[str], *, deferred, table_count: int = 2) -> None:
+        super().__init__(events)
+        self._deferred = deferred
+        self._table_count = table_count
+
+    def produce(self):
+        self.events.append("source.produce")
+        yield DatabaseServiceRecord(name="svc", service_type="Mysql")
+        yield DatabaseRecord(name="default", service="svc")
+        yield SchemaRecord(name="public", database="svc.default")
+        yield TableRecord(
+            name="a_orders",
+            database_schema="svc.default.public",
+            columns=[ColumnRecord(name="customer_id", data_type="INT")],
+        )
+        for index in range(1, self._table_count):
+            yield TableRecord(
+                name=f"t{index:02d}",
+                database_schema="svc.default.public",
+                columns=[ColumnRecord(name="id", data_type="INT")],
+            )
+        yield TableRecord(
+            name="z_customers",
+            database_schema="svc.default.public",
+            columns=[ColumnRecord(name="id", data_type="INT")],
+        )
+
+    def deferred_table_constraints(self):
+        return self._deferred
+
+
+class _PatchCatalogClient(StatusClient):
+    def __init__(self, events: list[str], statuses: list, tables: dict) -> None:
+        super().__init__(events, statuses)
+        self.tables = tables
+        self.patches: list[tuple[str, object]] = []
+        self.fail_patch = False
+
+    def get_table_by_name(self, fqn: str, *, fields: str | None = None):
+        table = self.tables.get(fqn)
+        if table is None:
+            raise RestError(f"table not found: {fqn}", status_code=404)
+        return dict(table)
+
+    def patch(self, path: str, *, json=None, headers=None):
+        self.events.append(f"patch:{path}")
+        self.patches.append((path, json))
+        if self.fail_patch:
+            raise RestError("patch failed", status_code=500)
+        return {"ok": True}
+
+
+def _orders_fk() -> DeferredTableConstraints:
+    return DeferredTableConstraints(
+        table_fqn="svc.default.public.a_orders",
+        constraints=(
+            TableConstraintRecord(
+                constraint_type="FOREIGN_KEY",
+                columns=["customer_id"],
+                referred_columns=["svc.default.public.z_customers.id"],
+            ),
+        ),
+    )
+
+
+def test_workflow_patches_deferred_foreign_keys_after_scan(workflow_config) -> None:
+    # ADR:2026-11-25-fk-deferral: the child lands without its key, the
+    # parent lands later in the same run, and the patch adds the key
+    # after the close flush — the run ends success, not partialSuccess.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    client = _PatchCatalogClient(
+        events,
+        statuses,
+        {
+            "svc.default.public.a_orders": {"id": "t-a", "tableConstraints": []},
+            "svc.default.public.z_customers": {"id": "t-z", "tableConstraints": []},
+        },
+    )
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=_DeferredFkSource(events, deferred=[_orders_fk()]),
+        sink=RecordingSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.ok()
+    assert [item["pipelineState"] for item in statuses] == ["running", "success"]
+    assert len(client.patches) == 1
+    path, ops = client.patches[0]
+    assert path == "/v1/tables/t-a"
+    assert ops == [
+        {
+            "op": "add",
+            "path": "/tableConstraints",
+            "value": [
+                {
+                    "constraintType": "FOREIGN_KEY",
+                    "columns": ["customer_id"],
+                    "referredColumns": ["svc.default.public.z_customers.id"],
+                }
+            ],
+        }
+    ]
+    # The patch runs after the close flush, never mid-stream.
+    assert events.index("sink.flush") < events.index("patch:/v1/tables/t-a")
+
+
+def test_workflow_patch_skips_missing_parent_with_warning(workflow_config) -> None:
+    # The parent was filtered out of the run: the key is skipped with
+    # one sink-step warning and the run still ends success.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    client = _PatchCatalogClient(
+        events,
+        statuses,
+        {"svc.default.public.a_orders": {"id": "t-a", "tableConstraints": []}},
+    )
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=_DeferredFkSource(events, deferred=[_orders_fk()]),
+        sink=RecordingSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.ok()
+    assert [item["pipelineState"] for item in statuses] == ["running", "success"]
+    assert client.patches == []
+    assert workflow.sink_status.warnings == 1
+
+
+def test_workflow_patch_phase_skipped_for_non_metadata_workflows(
+    workflow_config,
+) -> None:
+    # A profiler run enumerates the same database source but writes no
+    # tables: the patch must never run there.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.type = "profiler"
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    client = _PatchCatalogClient(
+        events,
+        statuses,
+        {
+            "svc.default.public.a_orders": {"id": "t-a", "tableConstraints": []},
+            "svc.default.public.z_customers": {"id": "t-z", "tableConstraints": []},
+        },
+    )
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=_DeferredFkSource(events, deferred=[_orders_fk()]),
+        sink=RecordingSink(events),
+    )
+
+    workflow.execute()
+
+    assert client.patches == []
+    assert [item["pipelineState"] for item in statuses] == ["running", "success"]
+
+
+def test_workflow_patch_failure_feeds_threshold_as_partial_success(
+    workflow_config,
+) -> None:
+    # Twenty tables land and one table's patch fails: the failure is a
+    # recorded sink-step failure and the threshold verdict is
+    # partialSuccess — the run returns its report, it does not raise.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    tables = {
+        f"svc.default.public.t{index:02d}": {
+            "id": f"t-{index:02d}",
+            "tableConstraints": [],
+        }
+        for index in range(1, 20)
+    }
+    tables["svc.default.public.a_orders"] = {"id": "t-a", "tableConstraints": []}
+    tables["svc.default.public.z_customers"] = {"id": "t-z", "tableConstraints": []}
+    client = _PatchCatalogClient(events, statuses, tables)
+    client.fail_patch = True
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=_DeferredFkSource(events, deferred=[_orders_fk()], table_count=20),
+        sink=RecordingSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert [item["pipelineState"] for item in statuses] == [
+        "running",
+        "partialSuccess",
+    ]
+    assert len(report.failures) == 1
+    assert report.failures[0].label == "table:svc.default.public.a_orders"

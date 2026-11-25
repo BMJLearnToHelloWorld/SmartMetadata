@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from smartmetadata_ingestion.config import SourceConfig
+from smartmetadata_ingestion.connectors.constraints import ConstraintRow
 from smartmetadata_ingestion.connectors.mysql import (
     ColumnRow,
     CursorCatalogReader,
@@ -622,3 +623,83 @@ def test_mysql_profiler_sampler_quality_usage_data_diff(tmp_path) -> None:
     assert param["dialect"] == "mysql"
     diff = MysqlDataDiff(fetch_keys=lambda side: [1] if side["table"] == "orders" else [1, 2])
     assert diff.compare(param, {**param, "table": "other"})["extraRight"] == 1
+
+
+def test_mysql_source_holds_foreign_keys_back_from_create_requests() -> None:
+    # ADR:2026-11-25-fk-deferral: the child sorts before its parent
+    # (ORDER BY table_name), so under the old shape its create carried
+    # the foreign key and the server rejected it whole. Now the create
+    # carries no foreign key and the key waits for the post-scan patch.
+    reader = SequenceCatalogReader(
+        schemas=[SchemaRow("app")],
+        tables=[
+            TableRow("app", "a_orders", "BASE TABLE"),
+            TableRow("app", "z_customers", "BASE TABLE"),
+        ],
+        columns=[
+            ColumnRow("app", "a_orders", "customer_id", "int", 1),
+            ColumnRow("app", "z_customers", "id", "int", 1, is_nullable=False),
+            ColumnRow("app", "z_customers", "tenant", "varchar", 2, is_nullable=False),
+        ],
+        constraints=[
+            ConstraintRow(
+                schema_name="app",
+                table_name="a_orders",
+                constraint_name="a_orders_customer_fk",
+                constraint_type="FOREIGN KEY",
+                column_name="customer_id",
+                ordinal_position=1,
+                referred_schema="app",
+                referred_table="z_customers",
+                referred_column="id",
+            ),
+            ConstraintRow(
+                schema_name="app",
+                table_name="z_customers",
+                constraint_name="z_customers_pkey",
+                constraint_type="PRIMARY KEY",
+                column_name="id",
+                ordinal_position=1,
+            ),
+            ConstraintRow(
+                schema_name="app",
+                table_name="z_customers",
+                constraint_name="z_customers_pkey",
+                constraint_type="PRIMARY KEY",
+                column_name="tenant",
+                ordinal_position=2,
+            ),
+        ],
+    )
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={
+                "hostPort": "localhost:3306",
+                "username": "u",
+                "databaseName": "shop",
+            },
+            include_schemas=["app"],
+        ),
+        reader=reader,
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    # The child really does come first: the real reader orders by name.
+    assert [table.name for table in tables] == ["a_orders", "z_customers"]
+    assert tables[0].table_constraints == []
+    # A non-foreign constraint is untouched by the deferral.
+    assert [item.constraint_type for item in tables[1].table_constraints] == [
+        "PRIMARY_KEY"
+    ]
+    assert tables[1].table_constraints[0].columns == ["id", "tenant"]
+    deferred = source.deferred_table_constraints()
+    assert len(deferred) == 1
+    assert deferred[0].table_fqn == "oltp.shop.app.a_orders"
+    assert [item.constraint_type for item in deferred[0].constraints] == [
+        "FOREIGN_KEY"
+    ]
+    assert deferred[0].constraints[0].columns == ["customer_id"]
+    assert deferred[0].constraints[0].referred_columns == [
+        "oltp.shop.app.z_customers.id"
+    ]

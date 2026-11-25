@@ -21,6 +21,8 @@ from smartmetadata_ingestion.connectors import (
 )
 from smartmetadata_ingestion.connectors.constraints import (
     ConstraintRow,
+    DeferredForeignKeys,
+    DeferredTableConstraints,
     SchemaConstraints,
     column_constraint_from_nullable,
     nullable_flag,
@@ -57,7 +59,11 @@ from smartmetadata_ingestion.connectors.snowflake import (
 from smartmetadata_ingestion.connectors.snowflake import (
     SequenceCatalogReader as SnowSequenceReader,
 )
-from smartmetadata_ingestion.records import ColumnRecord, TableRecord
+from smartmetadata_ingestion.records import (
+    ColumnRecord,
+    TableConstraintRecord,
+    TableRecord,
+)
 from smartmetadata_ingestion.sinks.metadata_rest import _table_payload
 
 
@@ -515,15 +521,24 @@ def test_postgres_source_emits_constraints_and_column_kinds() -> None:
         None,
         None,
     ]
-    # TEST-BUG RETARGET (D-L1): the old assertion required the
-    # single-column PRIMARY_KEY and UNIQUE groups as table constraints
-    # alongside the column tags — the server-rejected shape. Only the
-    # foreign key shapes a table constraint now.
-    assert [item.constraint_type for item in table.table_constraints] == ["FOREIGN_KEY"]
-    payload = _table_payload(table)
-    assert payload["tableConstraints"][0]["referredColumns"] == [
+    # FK DEFERRAL RETARGET (ADR:2026-11-25-fk-deferral): the foreign key
+    # no longer shapes the create request — the server rejects a create
+    # whose referred table is not cataloged yet, and the referred table
+    # may land later in this run. The create carries no table
+    # constraints; the key is held back and lands in the post-scan
+    # patch, with the same referred columns.
+    assert table.table_constraints == []
+    deferred = source.deferred_table_constraints()
+    assert len(deferred) == 1
+    assert deferred[0].table_fqn == "warehouse.analytics.public.orders"
+    assert [item.constraint_type for item in deferred[0].constraints] == [
+        "FOREIGN_KEY"
+    ]
+    assert deferred[0].constraints[0].referred_columns == [
         "warehouse.analytics.public.customers.id"
     ]
+    payload = _table_payload(table)
+    assert "tableConstraints" not in payload
     assert payload["columns"][0]["constraint"] == "PRIMARY_KEY"
     assert "constraint" not in payload["columns"][2]
 
@@ -560,3 +575,87 @@ def test_source_without_constraint_reader_still_derives_not_null() -> None:
     tables = [record for record in source.produce() if isinstance(record, TableRecord)]
     assert tables[0].columns[0].constraint == "NOT_NULL"
     assert tables[0].table_constraints == []
+
+
+def _fk_record(
+    columns: tuple[str, ...] = ("customer_id",),
+    referred: tuple[str, ...] | None = ("svc.db.public.customers.id",),
+) -> TableConstraintRecord:
+    return TableConstraintRecord(
+        constraint_type="FOREIGN_KEY",
+        columns=list(columns),
+        referred_columns=list(referred) if referred is not None else None,
+    )
+
+
+def test_deferred_store_holds_only_foreign_keys() -> None:
+    # The create keeps everything but foreign keys: a composite primary
+    # key and a composite unique stay, the foreign key is held back.
+    store = DeferredForeignKeys()
+    kept = store.hold_foreign_keys(
+        "svc.db.public.orders",
+        [
+            TableConstraintRecord(
+                constraint_type="PRIMARY_KEY", columns=["id", "tenant"]
+            ),
+            _fk_record(),
+            TableConstraintRecord(
+                constraint_type="UNIQUE", columns=["email", "tenant"]
+            ),
+        ],
+    )
+    assert [record.constraint_type for record in kept] == [
+        "PRIMARY_KEY",
+        "UNIQUE",
+    ]
+    assert store.deferred_tables() == [
+        DeferredTableConstraints(
+            table_fqn="svc.db.public.orders",
+            constraints=(_fk_record(),),
+        )
+    ]
+    assert bool(store) is True
+
+
+def test_deferred_store_groups_by_table_in_first_seen_order() -> None:
+    store = DeferredForeignKeys()
+    store.hold_foreign_keys("svc.db.public.b", [_fk_record()])
+    store.hold_foreign_keys("svc.db.public.a", [_fk_record()])
+    store.hold_foreign_keys(
+        "svc.db.public.b",
+        [_fk_record(columns=("other_id",), referred=("svc.db.public.o.id",))],
+    )
+    assert [item.table_fqn for item in store.deferred_tables()] == [
+        "svc.db.public.b",
+        "svc.db.public.a",
+    ]
+    assert len(store.deferred_tables()[0].constraints) == 2
+
+
+def test_deferred_store_empty_without_foreign_keys() -> None:
+    store = DeferredForeignKeys()
+    kept = store.hold_foreign_keys(
+        "svc.db.public.t",
+        [TableConstraintRecord(constraint_type="PRIMARY_KEY", columns=["id", "x"])],
+    )
+    assert kept[0].constraint_type == "PRIMARY_KEY"
+    assert store.deferred_tables() == []
+    assert bool(store) is False
+
+
+def test_deferred_store_drops_key_with_unknown_referred_columns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A foreign key with no referred columns has no target to resolve
+    # to: it is dropped with a warning, never stored and never emitted
+    # (ADR:2026-11-25-fk-deferral D-F3).
+    store = DeferredForeignKeys()
+    with caplog.at_level(logging.WARNING):
+        kept = store.hold_foreign_keys(
+            "svc.db.public.t", [_fk_record(referred=None)]
+        )
+    assert kept == []
+    assert store.deferred_tables() == []
+    assert any(
+        "dropping foreign key" in record.message for record in caplog.records
+    )

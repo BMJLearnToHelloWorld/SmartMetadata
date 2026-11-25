@@ -19,6 +19,8 @@ from typing import Any
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import mariadb_common as mariadb
 from smartmetadata_ingestion.connectors.constraints import (
+    DeferredForeignKeys,
+    DeferredTableConstraints,
     column_constraint_from_nullable,
     schema_constraints_for_schema,
 )
@@ -74,6 +76,12 @@ class MariaDBSource:
         self._reader = reader or (
             mariadb.CursorCatalogReader(connect) if connect is not None else None
         )
+        self._deferred = DeferredForeignKeys()
+
+    def deferred_table_constraints(self) -> list[DeferredTableConstraints]:
+        """Foreign keys held back from create requests, for the post-scan
+        patch (ADR:2026-11-25-fk-deferral)."""
+        return self._deferred.deferred_tables()
 
     def prepare(self) -> None:
         mariadb.run_connection_test(self._config.connection or {})
@@ -123,6 +131,15 @@ class MariaDBSource:
                     continue
                 columns = self._columns(reader, table)
                 constraints.apply(table.name, columns)
+                # Foreign keys stay out of the create request: the server
+                # rejects a create whose referred table is not cataloged
+                # yet, and the referred table may land later in this run
+                # (ADR:2026-11-25-fk-deferral). The held-back keys are
+                # patched on after the scan, once every table has landed.
+                table_fqn = f"{schema_fqn}.{quote_name(table.name)}"
+                table_constraints = self._deferred.hold_foreign_keys(
+                    table_fqn, constraints.for_table(table.name)
+                )
                 ddl = table_ddl_for_schema(
                     reader,
                     "MariaDB",
@@ -152,7 +169,7 @@ class MariaDBSource:
                     table_type=table_type,
                     description=table.comment,
                     columns=columns,
-                    table_constraints=constraints.for_table(table.name),
+                    table_constraints=table_constraints,
                     owner_names=owner_names,
                     schema_definition=ddl,
                     life_cycle=life_cycle_from_ms(table.created_ms, table.updated_ms),

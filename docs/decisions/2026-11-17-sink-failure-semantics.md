@@ -1,7 +1,7 @@
 # Sink failures are recorded values, not aborts: one shared buffer, hierarchy-ordered flush, and a post-scan success-threshold verdict
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-11-17 (initial)
+- **Revisions:** v1 2026-11-17 (initial) · v2 2026-11-25 (FK premise corrected by ADR:2026-11-25-fk-deferral)
 - **Deciders:** Bai (2026-11-17: option A — align with official, no FK topological sort; design v2 approved on the recommended answers to Q1–Q5; the AutoPilot trigger-button fix rides in the same batch)
 - **Guard:** `smartmetadata-ingestion/tests/test_bulk_sink.py` (single buffer, group order, group isolation); `smartmetadata-ingestion/tests/test_workflow.py` and `test_pipeline_status.py` (record-and-continue, threshold boundaries, close-flush); `smartmetadata-airflow-apis/tests/test_translation.py` (no `failFast` emission); `smartmetadata-ui/src/views/ingestion/ServiceDetailView.test.ts` (request hits `/permissions/app`, button renders) — assertions added or rewritten by this batch
 - **Related:** upstream pin `a3012259ca`; design v2 `~/workspace/work/sink-failure-semantics/DESIGN.md` (not in-repo, sole authority for this batch); ADR:2026-11-16-live-issues-batch-parity (the batch whose main this defect surfaced on); ADR:2026-11-17-dl2c-binding-context (D-L2c Phase 2 untouched by this batch)
@@ -285,3 +285,19 @@ query-log data is a normal result, not a defect.
   through the operator and let the failure callback overwrite
   `partialSuccess` with `failed`. The shared threshold determination
   owns the raise decision for usage runs too.
+
+## Amendment
+
+**v2 2026-11-25 (FK premise corrected).** The "the pin has no FK
+topological sort either" finding stands, and B-11/D-S9 still exclude
+topological sort. What is corrected is the inference drawn from it:
+the pin defers a foreign key whose referred table is not cataloged
+yet and patches it on after every table has landed
+(`yield_table_constraints`), so an official first run does not fail
+on foreign keys — it converges in one round. The consequence
+"first-run FK failures still occur until convergence — that is the
+expected official behavior" is therefore withdrawn, and the guard
+"no new per-kind buffer or parent-first patch may be added" does not
+cover the post-scan PATCH stage added by ADR:2026-11-25-fk-deferral
+(the single shared buffer and the hierarchy-depth flush order are
+unchanged). Everything else in this record stands.
