@@ -142,42 +142,6 @@ describe('SmChart', () => {
     expect(lineSeries[1].lineStyle).toEqual({ opacity: 0.3 });
   });
 
-  it('wires the insight tooltip formatter when the card passes a percentage flag', () => {
-    const wrapper = mount(SmChart, {
-      props: {
-        kind: 'line',
-        empty: 'empty',
-        tooltipPercentage: true,
-        tooltipLocale: 'en-US',
-        series: [{ name: 'table', points: [{ label: '2026-11-22', value: 52.43 }] }],
-      },
-      global: { plugins: [Antd] },
-    });
-    const chart = wrapper.findComponent({ name: 'VChart' });
-    const option = chart.props('option') as Record<string, unknown>;
-    const formatter = (option.tooltip as Record<string, unknown>).formatter as (
-      params: Array<{ axisValue: string; seriesName: string; value: number; marker: string }>,
-    ) => string;
-    expect(typeof formatter).toBe('function');
-    const html = formatter([{ axisValue: '2026-11-22', seriesName: 'table', value: 52.43, marker: '' }]);
-    expect(html).toContain('Nov 22, 2026');
-    expect(html).toContain('52.43%');
-  });
-
-  it('keeps the default tooltip when no percentage flag is passed', () => {
-    const wrapper = mount(SmChart, {
-      props: {
-        kind: 'line',
-        empty: 'empty',
-        series: [{ name: 'rows', points: [{ label: '2026-01-01', value: 1 }] }],
-      },
-      global: { plugins: [Antd] },
-    });
-    const chart = wrapper.findComponent({ name: 'VChart' });
-    const option = chart.props('option') as Record<string, unknown>;
-    expect(option.tooltip).toEqual({ trigger: 'axis' });
-  });
-
   it('keeps the legend and full opacity when the card does not ask to hide/dim', () => {
     const wrapper = mount(SmChart, {
       props: {

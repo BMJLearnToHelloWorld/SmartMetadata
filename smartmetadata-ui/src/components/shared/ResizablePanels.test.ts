@@ -69,17 +69,6 @@ describe('ResizablePanels (pin common/ResizablePanels)', () => {
     wrapper.unmount();
   });
 
-  it('collapses the left panel when collapseSide is first (pin ResizableLeftPanels)', async () => {
-    const wrapper = mountPanels({ collapseSide: 'first' });
-    await wrapper.find('[data-testid="sidebar-collapse"]').trigger('click');
-    expect(wrapper.text()).not.toContain('FORM');
-    expect(wrapper.text()).toContain('DOCS');
-    expect(wrapper.find('[data-testid="sidebar-toggle"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="sidebar-toggle"]').trigger('click');
-    expect(wrapper.text()).toContain('FORM');
-    wrapper.unmount();
-  });
-
   it('hides the second panel and splitter when hideSecondPanel', () => {
     const wrapper = mountPanels({ hideSecondPanel: true });
     expect(wrapper.text()).not.toContain('DOCS');

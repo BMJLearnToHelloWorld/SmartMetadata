@@ -247,16 +247,12 @@ export function latestSummaryCount(
  * global percentage points between the first and last day of the window,
  * `(last-day absolute / last-day total − first-day absolute / first-day
  * total) × 100`. Totals are summed across groups per day; the first and
- * last days are taken from the totals series. The absolute values are
- * taken on the absolute series' OWN first and last days
- * (`sortBy(absoluteValuesResults, 'day')` then `first` / `last`) — pin
- * never aligns them to the totals' days, so neither does this function.
- * (AbsoluteValuesResult rows are `{count, day}` with no group, so pin's
- * first/last-row reduce is the day's count; the per-day sum below is
- * identical in the single-row-per-day case.) A day with no absolute row
- * counts as 0; a day with a 0 total counts as 0%. Returns 0 when the
- * totals series has no day at all — callers hide the change line in that
- * case instead of showing a computed 0.
+ * last days are taken from the totals series and the absolute values are
+ * read on those same days, so the two fractions are never taken from
+ * different days (review condition 2). A day with no absolute row counts
+ * as 0; a day with a 0 total counts as 0%. Returns 0 when the totals
+ * series has no day at all — callers hide the change line in that case
+ * instead of showing a computed 0.
  */
 export function computeChangeInPercentagePoints(
   totalAssets: readonly InsightResultPoint[],
@@ -285,12 +281,8 @@ export function computeChangeInPercentagePoints(
     }
     absoluteByDay.set(point.day, (absoluteByDay.get(point.day) ?? 0) + point.count);
   }
-  // Pin computeDefaultChange: the absolute series' own first/last days.
-  const absoluteDays = [...absoluteByDay.keys()].sort((a, b) => a - b);
-  const firstAbsolute = absoluteDays.length ? (absoluteByDay.get(absoluteDays[0] as number) ?? 0) : 0;
-  const lastAbsolute = absoluteDays.length
-    ? (absoluteByDay.get(absoluteDays[absoluteDays.length - 1] as number) ?? 0)
-    : 0;
+  const firstAbsolute = absoluteByDay.get(firstDay) ?? 0;
+  const lastAbsolute = absoluteByDay.get(lastDay) ?? 0;
 
   const firstPercent = firstTotal ? (firstAbsolute / firstTotal) * 100 : 0;
   const lastPercent = lastTotal ? (lastAbsolute / lastTotal) * 100 : 0;
@@ -304,14 +296,11 @@ export function computeChangeInPercentagePoints(
  * against DataInsightChartResource.java:511-580: dataInsightChartName
  * (DataInsightChartType enum) and dataReportIndex (DataReportIndex enum)
  * are required; startTs/endTs/size/from/queryFilter/tier/team optional.
- * The four App Analytics charts are MostViewedEntities,
- * PageViewsByEntities, DailyActiveUsers and MostActiveUsers
- * (pin AppAnalyticsTab.component.tsx:24-46 + DataInsightSummary.tsx
- * fetchMostActiveUser/fetchWebChartData).
+ * The summary uses MostActiveUsers + PageViewsByEntities + DailyActiveUsers
+ * (WEB_CHARTS in official DataInsight.constants.ts).
  */
 export const DATA_INSIGHT_CHART_TYPES = [
   'MostActiveUsers',
-  'MostViewedEntities',
   'PageViewsByEntities',
   'DailyActiveUsers',
 ] as const;
@@ -322,20 +311,6 @@ export const DATA_REPORT_INDEXES = {
   webAnalyticUserActivity: 'web_analytic_user_activity_report_data_index',
   webAnalyticEntityView: 'web_analytic_entity_view_report_data_index',
 } as const;
-
-/**
- * Pin WEB_CHARTS (openmetadata-ui constants/DataInsight.constants.ts:48-55):
- * the two web charts behind the App Analytics summary row —
- * PageViewsByEntities on the entity-view index, DailyActiveUsers on the
- * user-activity index. MostActiveUsers is not a WEB_CHARTS member: pin
- * fetches it separately for the Most Active User summary card
- * (DataInsightSummary.tsx fetchMostActiveUser), and MostViewedEntities
- * feeds the TopViewEntities table, not the summary.
- */
-export const WEB_CHARTS = [
-  { chart: 'PageViewsByEntities', index: DATA_REPORT_INDEXES.webAnalyticEntityView },
-  { chart: 'DailyActiveUsers', index: DATA_REPORT_INDEXES.webAnalyticUserActivity },
-] as const;
 
 export interface DataInsightAggregateRow {
   timestamp?: number;

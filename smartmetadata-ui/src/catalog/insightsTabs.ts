@@ -20,8 +20,8 @@ import {
  * Stage 5 qualityTabs. Keys follow the official DataInsightTabs
  * (data-assets / app-analytics / kpis); online-users is the official
  * OnlineUsersPage, registered here as its own page so the Insights nav
- * can reach it. All four tabs are built; a tab that is not built yet
- * would be marked `supported: false` rather than hidden.
+ * can reach it. A `supported: false` entry is an honest residual, never
+ * a hidden page: the view renders SmState with `residualReason`.
  */
 export interface InsightsTab {
   key: string;
@@ -30,6 +30,7 @@ export interface InsightsTab {
   titleKey: string;
   leadKey: string;
   supported: boolean;
+  residualReason?: string;
 }
 
 export const INSIGHTS_TABS: InsightsTab[] = [
@@ -46,8 +47,9 @@ export const INSIGHTS_TABS: InsightsTab[] = [
     routeName: 'insights-app-analytics',
     path: '/insights/app-analytics',
     titleKey: 'insights.tabs.appAnalytics',
-    leadKey: 'insights.appAnalyticsLead',
-    supported: true,
+    leadKey: 'insights.appAnalyticsEmpty',
+    supported: false,
+    residualReason: 'insights.appAnalyticsEmpty',
   },
   {
     key: 'kpis',
@@ -73,13 +75,21 @@ export function insightsTabFromKey(key: string | undefined): InsightsTab {
   return INSIGHTS_TABS.find((tab) => tab.key === key) ?? INSIGHTS_TABS[0];
 }
 
-/** Pin CUSTOM_DATE_RANGE_KEY (utils/DatePickerMenuUtils.tsx:15). */
-export const CUSTOM_DATE_RANGE_KEY = 'customRange';
+/** Official AppAnalytics blocks, all residual: no web report index surface. */
+export interface InsightsResidualBlock {
+  key: string;
+  titleKey: string;
+  reasonKey: string;
+}
 
-/** DataInsight date presets. Pin PROFILER_FILTER_RANGE
- * (constants/profiler.constant.ts:72-111): yesterday (1 day) and the
- * last 3/7/14/30/60 days — no 90-day preset exists in pin. Default 7
- * matches the official default window
+export const APP_ANALYTICS_BLOCKS: InsightsResidualBlock[] = [
+  { key: 'top-view-entities', titleKey: 'insights.appAnalytics.topViewEntities', reasonKey: 'insights.appAnalyticsEmpty' },
+  { key: 'page-views-by-entities', titleKey: 'insights.appAnalytics.pageViewsByEntities', reasonKey: 'insights.appAnalyticsEmpty' },
+  { key: 'daily-active-users', titleKey: 'insights.appAnalytics.dailyActiveUsers', reasonKey: 'insights.appAnalyticsEmpty' },
+  { key: 'top-active-users', titleKey: 'insights.appAnalytics.topActiveUsers', reasonKey: 'insights.appAnalyticsEmpty' },
+] as const;
+
+/** DataInsight date presets. Default 7 matches the official default window
  * (openmetadata-ui constants/profiler.constant.ts DEFAULT_SELECTED_RANGE). */
 export interface InsightsDatePreset {
   key: string;
@@ -88,22 +98,13 @@ export interface InsightsDatePreset {
 }
 
 export const INSIGHT_DATE_PRESETS: InsightsDatePreset[] = [
-  { key: 'yesterday', days: 1, labelKey: 'insights.datePresets.yesterday' },
-  { key: 'last3days', days: 3, labelKey: 'insights.datePresets.last3days' },
-  { key: 'last7days', days: 7, labelKey: 'insights.datePresets.last7days' },
-  { key: 'last14days', days: 14, labelKey: 'insights.datePresets.last14days' },
-  { key: 'last30days', days: 30, labelKey: 'insights.datePresets.last30days' },
-  { key: 'last60days', days: 60, labelKey: 'insights.datePresets.last60days' },
+  { key: 'last7', days: 7, labelKey: 'insights.datePresets.last7' },
+  { key: 'last30', days: 30, labelKey: 'insights.datePresets.last30' },
+  { key: 'last90', days: 90, labelKey: 'insights.datePresets.last90' },
 ] as const;
 
 export function insightsDatePresetFromKey(key: string | undefined): InsightsDatePreset {
-  // Unknown keys fall back to the pin default (Last 7 days), not to the
-  // first preset — the list now starts with Yesterday.
-  return (
-    INSIGHT_DATE_PRESETS.find((preset) => preset.key === key) ??
-    INSIGHT_DATE_PRESETS.find((preset) => preset.days === 7) ??
-    INSIGHT_DATE_PRESETS[0]
-  );
+  return INSIGHT_DATE_PRESETS.find((preset) => preset.key === key) ?? INSIGHT_DATE_PRESETS[0];
 }
 
 /** Official OnlineUsers time windows in minutes; 0 means all time. */

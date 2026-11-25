@@ -10,7 +10,6 @@ import { Alert, Button, Descriptions, Spin, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import DataInsightLayout from './DataInsightLayout.vue';
 import { deleteKpi, listKpis } from '@/api/kpi';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import type { Kpi } from '@/types/kpi';
@@ -123,7 +122,6 @@ onMounted(() => {
 </script>
 
 <template>
-  <DataInsightLayout tab-key="kpis">
   <PageLayout test-id="kpi-list-layout">
     <PageHeader :header="t('insights.tabs.kpis')" :sub-header="t('insights.kpisLead')" />
     <Spin :spinning="loading || deleting">
@@ -180,7 +178,6 @@ onMounted(() => {
       </Descriptions>
     </Spin>
   </PageLayout>
-  </DataInsightLayout>
 </template>
 
 <style scoped>

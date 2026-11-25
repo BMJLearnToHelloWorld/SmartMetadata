@@ -23,16 +23,8 @@ const props = withDefaults(
     secondPanel: AppResizablePanelConfig;
     hideSecondPanel?: boolean;
     className?: string;
-    /**
-     * Which panel the splitter button collapses. Pin has two components
-     * here: ResizablePanels collapses the right panel, while
-     * ResizableLeftPanels (the one DataInsightPage uses) collapses the
-     * left panel. Default 'second' keeps the original behaviour for all
-     * existing callers; pass 'first' for a pin ResizableLeftPanels shape.
-     */
-    collapseSide?: 'first' | 'second';
   }>(),
-  { hideSecondPanel: false, className: undefined, collapseSide: 'second' },
+  { hideSecondPanel: false, className: undefined },
 );
 
 const { t } = useI18n();
@@ -41,25 +33,21 @@ const { t } = useI18n();
  * Official ResizablePanels (components/common/ResizablePanels/
  * ResizablePanels.tsx, pin a3012259ca), side-by-side subset: two
  * panels sized by flex fractions with pixel min-widths, a drag
- * splitter, and a collapsible panel. `wrapInCard` defaults to
+ * splitter, and a collapsible right panel. `wrapInCard` defaults to
  * true for both panels. The expand button keeps pin's `sidebar-toggle`
  * testid and `label.expand` tooltip; the collapse button is the Vue
  * affordance that makes the collapsed state reachable (pin's state
  * toggles only from its own expand button). `onStopResize` receives
  * the first panel's new flex fraction when a drag ends. The panel
  * testids carry the panel className, as in pin; the container carries
- * pin's `resizable-panels` testid. `collapseSide` picks which panel the
- * splitter button collapses: 'second' is pin ResizablePanels, 'first'
- * is pin ResizableLeftPanels (the Data Insight page shape).
+ * pin's `resizable-panels` testid.
  */
 const SPLITTER_WIDTH = 8;
 
 const firstFlex = computed(() => props.firstPanel.flex ?? 1);
 const secondFlex = computed(() => props.secondPanel.flex ?? 1);
 const fraction = ref(firstFlex.value / (firstFlex.value + secondFlex.value));
-const isCollapsed = ref(false);
-const isFirstCollapsed = computed(() => isCollapsed.value && props.collapseSide === 'first');
-const isSecondCollapsed = computed(() => isCollapsed.value && props.collapseSide === 'second');
+const isRightPanelCollapsed = ref(false);
 const containerRef = ref<HTMLElement | null>(null);
 
 const firstWrapInCard = computed(() => props.firstPanel.wrapInCard ?? true);
@@ -78,7 +66,7 @@ function clampFraction(next: number, containerWidth: number): number {
 let dragging = false;
 
 function onSplitterPointerDown(event: PointerEvent): void {
-  if (isCollapsed.value) {
+  if (isRightPanelCollapsed.value) {
     return;
   }
   if ((event.target as HTMLElement).closest('button')) {
@@ -116,7 +104,7 @@ function onSplitterPointerUp(): void {
 }
 
 function toggleCollapse(): void {
-  isCollapsed.value = !isCollapsed.value;
+  isRightPanelCollapsed.value = !isRightPanelCollapsed.value;
 }
 </script>
 
@@ -134,27 +122,20 @@ function toggleCollapse(): void {
       :data-testid="firstPanel.className"
       :style="{
         flex:
-          hideSecondPanel || isSecondCollapsed
+          hideSecondPanel || isRightPanelCollapsed
             ? '1 1 100%'
-            : isFirstCollapsed
-              ? '0 0 0px'
-              : `0 0 calc(${(fraction * 100).toFixed(2)}% - ${(SPLITTER_WIDTH * fraction).toFixed(2)}px)`,
-        minWidth:
-          hideSecondPanel || isSecondCollapsed
-            ? undefined
-            : isFirstCollapsed
-              ? '0px'
-              : `${firstPanel.minWidth}px`,
-        overflowY: isFirstCollapsed ? 'hidden' : firstPanel.allowScroll ? 'auto' : undefined,
+            : `0 0 calc(${(fraction * 100).toFixed(2)}% - ${(SPLITTER_WIDTH * fraction).toFixed(2)}px)`,
+        minWidth: hideSecondPanel || isRightPanelCollapsed ? undefined : `${firstPanel.minWidth}px`,
+        overflowY: firstPanel.allowScroll ? 'auto' : undefined,
       }"
     >
       <Card
-        v-if="firstWrapInCard && !isFirstCollapsed"
+        v-if="firstWrapInCard"
         :style="{ height: firstPanel.allowScroll ? undefined : '100%', overflowY: firstPanel.allowScroll ? undefined : 'auto' }"
       >
         <slot name="first" />
       </Card>
-      <slot v-else-if="!isFirstCollapsed" name="first" />
+      <slot v-else name="first" />
     </div>
 
     <div
@@ -169,7 +150,7 @@ function toggleCollapse(): void {
       "
       @pointerdown="onSplitterPointerDown"
     >
-      <Tooltip v-if="isCollapsed" :title="t('label.expand')" placement="right">
+      <Tooltip v-if="isRightPanelCollapsed" :title="t('label.expand')" placement="right">
         <button
           data-testid="sidebar-toggle"
           style="background: transparent; border: none; cursor: pointer; padding: 4px"
@@ -196,17 +177,17 @@ function toggleCollapse(): void {
       :class="secondPanel.className"
       :data-testid="secondPanel.className"
       :style="{
-        flex: isSecondCollapsed ? '0 0 0px' : '1 1 auto',
-        minWidth: isSecondCollapsed ? '0px' : `${secondPanel.minWidth}px`,
-        overflow: isSecondCollapsed ? 'hidden' : undefined,
+        flex: isRightPanelCollapsed ? '0 0 0px' : '1 1 auto',
+        minWidth: isRightPanelCollapsed ? '0px' : `${secondPanel.minWidth}px`,
+        overflow: isRightPanelCollapsed ? 'hidden' : undefined,
       }"
     >
-      <Card v-if="secondWrapInCard && !isSecondCollapsed" style="height: 100%">
+      <Card v-if="secondWrapInCard && !isRightPanelCollapsed" style="height: 100%">
         <div style="min-height: 0; flex: 1; overflow: auto">
           <slot name="second" />
         </div>
       </Card>
-      <slot v-else-if="!isSecondCollapsed" name="second" />
+      <slot v-else-if="!isRightPanelCollapsed" name="second" />
     </div>
   </div>
 </template>

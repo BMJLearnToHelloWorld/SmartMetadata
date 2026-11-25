@@ -190,13 +190,6 @@ const ICONS: Record<string, Component> = {
   'entity-user': UserOutlined,
   'entity-worksheet': FileTextOutlined,
   'entity-admin': CrownOutlined,
-  // Data Insight left-panel tabs (Lane C, R-P0-3). Pin uses custom SVGs
-  // (data-asset.svg / app-analytics.svg / kpi.svg, DataInsightClassBase);
-  // the product has no such assets, so the tabs resolve through this Ant
-  // bridge like every other view icon — same transition status as SmIcon.
-  'insights-data-assets': DatabaseOutlined,
-  'insights-app-analytics': BarChartOutlined,
-  'insights-kpis': LineChartOutlined,
   'settings-services': AppstoreOutlined,
   'settings-apps': AppstoreOutlined,
   'settings-notifications': BellOutlined,
