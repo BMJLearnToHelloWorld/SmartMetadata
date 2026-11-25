@@ -265,11 +265,17 @@ describe('LineageHomeView (platform lineage page)', () => {
     expect(String(sceneCall?.[0])).toContain('lens=service');
   });
 
-  it('shows export and config actions once and opens the config modal', async () => {
+  it('shows icon-only export and config actions once and opens the config modal', async () => {
     vi.stubGlobal('fetch', vi.fn(routeFetch));
     const { wrapper } = await mountPage();
-    expect(wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-config"]').exists()).toBe(true);
+    const exportButton = wrapper.find('[data-testid="export-button"]');
+    expect(exportButton.exists()).toBe(true);
+    expect(exportButton.text()).toBe('');
+    expect(exportButton.attributes('aria-label')).toBe('Export as PNG');
+    const configButton = wrapper.find('[data-testid="lineage-config"]');
+    expect(configButton.exists()).toBe(true);
+    expect(configButton.text()).toBe('');
+    expect(wrapper.find('.lineage-page__actions').exists()).toBe(true);
     // Pin PlatformLineage: export lives once in the page header — the map
     // has no export button of its own — and the platform page is a
     // viewport-height flex column so the canvas fills the screen.
@@ -323,6 +329,9 @@ describe('LineageHomeView (platform lineage page)', () => {
       wrapper.find('[data-testid="lineage-entity-search-input"]').attributes('placeholder'),
     ).toBe('svc.db.schema.orders');
     expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(true);
+    // The focused view's export/config live in the canvas header; the
+    // page toolbar actions are hidden.
+    expect(wrapper.find('.lineage-page__actions').exists()).toBe(false);
   });
 
   it('writes a scene request change into the URL and updates the title', async () => {
@@ -338,26 +347,9 @@ describe('LineageHomeView (platform lineage page)', () => {
     expect(wrapper.text()).toContain('Domain Lineage');
   });
 
-  it('opens the asset detail page from a scene node', async () => {
-    vi.stubGlobal('fetch', vi.fn(routeFetch));
-    const { wrapper, router } = await mountPage();
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-svc1"]').exists()).toBe(true));
-    wrapper.findComponent(LineageMap).vm.$emit('navigate', {
-      band: 'LAYER',
-      id: 'svc1',
-      label: 'svc1',
-      levelKind: 'service',
-      entityType: 'table',
-      fullyQualifiedName: 'svc.db.schema.orders',
-    });
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('asset');
-    expect(router.currentRoute.value.params).toEqual({
-      entityType: 'table',
-      fqn: 'svc.db.schema.orders',
-    });
-  });
-
+  // The map no longer emits `navigate`: pin has no "Open asset" button
+  // on the platform canvas; the node name button opens the entity
+  // drawer instead (covered by LineageMap's drawer test).
   it('wraps the Spin in a native div so the flex height chain reaches the map', async () => {
     vi.stubGlobal('fetch', vi.fn(routeFetch));
     const { wrapper } = await mountPage();

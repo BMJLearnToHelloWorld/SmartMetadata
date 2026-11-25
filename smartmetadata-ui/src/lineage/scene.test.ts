@@ -38,6 +38,7 @@ import {
   getSemanticZoomDirection,
   hasSeenLineageMapOnboarding,
   isContainerSceneNode,
+  isDeeperBand,
   isEditableSceneEdge,
   isEditableSceneNode,
   isSceneNodeDrillable,
@@ -226,6 +227,15 @@ describe('scene rail and drill', () => {
     expect(getRailStopLabelKey('LAYER', 'domain')).toBe('lineage.mapDomain');
     expect(getRailStopLabelKey('ASSET', 'service')).toBe('lineage.mapAssetLevel');
     expect(getRailStopLabelKey('FIELD', 'service')).toBe('lineage.mapFieldLevel');
+  });
+
+  it('orders bands LAYER < ASSET < FIELD for the rail disabled rule', () => {
+    expect(isDeeperBand('LAYER', 'ASSET')).toBe(true);
+    expect(isDeeperBand('LAYER', 'FIELD')).toBe(true);
+    expect(isDeeperBand('ASSET', 'FIELD')).toBe(true);
+    expect(isDeeperBand('ASSET', 'LAYER')).toBe(false);
+    expect(isDeeperBand('FIELD', 'ASSET')).toBe(false);
+    expect(isDeeperBand('ASSET', 'ASSET')).toBe(false);
   });
 
   it('picks the empty state from scene / loading / error, in that order', () => {

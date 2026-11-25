@@ -147,7 +147,7 @@ function fetchUrls(fetchMock: ReturnType<typeof vi.fn>): string[] {
   return fetchMock.mock.calls.map((call) => String(call[0]));
 }
 
-async function mountTable(query: Record<string, string> = {}) {
+async function mountTable(query: Record<string, string> = {}, props: Record<string, unknown> = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -160,7 +160,7 @@ async function mountTable(query: Record<string, string> = {}) {
   await router.push({ name: 'lineage', params: { entityType: 'table', fqn: CENTER_FQN }, query });
   await router.isReady();
   const wrapper = mount(LineageTable, {
-    props: { entityType: 'table', fqn: CENTER_FQN },
+    props: { entityType: 'table', fqn: CENTER_FQN, ...props },
     global: {
       plugins: [pinia, router, Antd, createTestI18n()],
     },
@@ -202,6 +202,16 @@ describe('LineageTable', () => {
     expect(text).toContain('BusinessTerm');
     // The downstream direction badge carries the paging-info count.
     expect(wrapper.find('[data-testid="lineage-impact-downstream"]').text()).toContain('1');
+  });
+
+  it('renders no depth, search or CSV controls in its header (they live in the canvas header)', async () => {
+    const { wrapper } = await mountTable();
+    expect(wrapper.find('[data-testid="lineage-impact-depth"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-impact-search"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-impact-export-csv"]').exists()).toBe(false);
+    // Pin's extraTableFilters: direction toggle + impact-on dropdown only.
+    expect(wrapper.find('[data-testid="lineage-impact-downstream"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="impact-on-dropdown"]').exists()).toBe(true);
   });
 
   it('requests pagination info only once while the fetch shape is unchanged', async () => {
@@ -270,14 +280,11 @@ describe('LineageTable', () => {
     expect(text).toContain('Sensitive');
   });
 
-  it('debounces the search term into a query_filter wildcard', async () => {
+  it('applies the search value prop into a query_filter wildcard', async () => {
     const fetchMock = vi.mocked(fetch);
-    const { wrapper } = await mountTable();
-    // antd puts the data-testid on the <input> itself.
-    const input = wrapper.find('[data-testid="lineage-impact-search"]');
-    await input.setValue('mart');
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    await flushPromises();
+    // The search input lives in the canvas header now (debounced there);
+    // the table receives the debounced value as a prop.
+    const { wrapper } = await mountTable({}, { searchValue: 'mart' });
     const lastUrl = fetchUrls(fetchMock).filter((url) => url.includes('getLineageByEntityCount')).at(-1) ?? '';
     expect(lastUrl).toContain('query_filter=');
     const params = new URL(lastUrl, 'http://test').searchParams;
@@ -286,6 +293,13 @@ describe('LineageTable', () => {
     };
     expect(JSON.stringify(filter)).toContain('*mart*');
     expect(wrapper.text()).toContain('Mart Orders');
+  });
+
+  it('emits the depth options for the canvas header dropdown', async () => {
+    const { wrapper } = await mountTable();
+    // The immediate watcher first emits the fallback (the current depth
+    // alone, before paging info arrives), then the paging-info options.
+    expect(wrapper.emitted('update:depth-options')).toEqual([[[3]], [[0, 1]]]);
   });
 
   it('recovers pagination info from getPaginationInfo when the count response omits it', async () => {
@@ -317,13 +331,17 @@ describe('LineageTable', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountTable();
     expect(wrapper.find('[data-testid="no-data-placeholder"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-impact-export-csv"]').attributes('disabled')).toBeDefined();
+    // The CSV button lives in the canvas header now; it disables off the
+    // exposed hasRows, which is false here.
+    expect((wrapper.vm as unknown as { hasRows: boolean }).hasRows).toBe(false);
   });
 
   it('exports CSV through the count export endpoint and claims the job', async () => {
     const fetchMock = vi.mocked(fetch);
     const { wrapper } = await mountTable();
-    await wrapper.find('[data-testid="lineage-impact-export-csv"]').trigger('click');
+    // The CSV item lives in the canvas header export dropdown and calls
+    // the table's exposed exportCsv through the ref.
+    await (wrapper.vm as unknown as { exportCsv: () => Promise<void> }).exportCsv();
     await flushPromises();
     const exportUrl = fetchUrls(fetchMock).find((url) => url.includes('exportByEntityCountAsync')) ?? '';
     expect(exportUrl).toContain('direction=Downstream');

@@ -63,7 +63,7 @@ describe('LineageGraph', () => {
     );
   });
 
-  it('renders MiniMap, node search, and denser node fields from the mapped model', async () => {
+  it('renders MiniMap, the zoom cluster and denser node fields from the mapped model', async () => {
     const wrapper = mount(LineageGraph, {
       props: { model: MODEL },
       global: { plugins: [Antd, createTestI18n()] },
@@ -75,29 +75,94 @@ describe('LineageGraph', () => {
     );
     expect(wrapper.get('[data-testid="lineage-graph"]').classes()).toContain('lineage-graph--om-chrome');
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
+    // The find-node Select, Reset layout and fullscreen buttons are gone:
+    // search lives in the canvas header, fullscreen is a URL param.
+    expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-fullscreen"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-reset-layout"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-controls"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-zoom-controls"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="zoom-level"]').text()).toBe('100%');
     expect(wrapper.get('[data-testid="lineage-connect-hint"]').text()).toContain('Drag from a node handle');
-    expect(wrapper.find('[data-testid="lineage-fullscreen"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="lineage-fullscreen"]').attributes('aria-label')).toBe(
-      'Expand the canvas',
-    );
-    expect(wrapper.get('[data-testid="lineage-reset-layout"]').attributes('aria-label')).toBe(
-      'Reset node positions',
-    );
     expect(wrapper.get('[data-testid="lineage-node-center-id"]').attributes('data-path-label')).toBe(
       'svc / db / schema',
     );
     expect(wrapper.get('[data-testid="lineage-node-center-id"]').text()).toContain('Orders');
   });
 
-  it('toggles fullscreen class without leaving the canvas', async () => {
+  it('toggles the minimap from the zoom cluster', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="toggle-mind-map"]').trigger('click');
+    expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="toggle-mind-map"]').trigger('click');
+    expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('zooms and fits through the zoom cluster', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const zoomIn = flow.vm.zoomIn as unknown as ReturnType<typeof vi.fn>;
+    const zoomOut = flow.vm.zoomOut as unknown as ReturnType<typeof vi.fn>;
+    await wrapper.get('[data-testid="zoom-in"]').trigger('click');
+    await wrapper.get('[data-testid="zoom-out"]').trigger('click');
+    expect(zoomIn).toHaveBeenCalledTimes(1);
+    expect(zoomOut).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('applies the fullscreen class from the prop (URL param), not a local toggle', async () => {
     const wrapper = mount(LineageGraph, {
       props: { model: MODEL },
       global: { plugins: [Antd, createTestI18n()] },
     });
     expect(wrapper.get('[data-testid="lineage-graph"]').classes()).not.toContain('lineage-graph--fullscreen');
-    await wrapper.get('[data-testid="lineage-fullscreen"]').trigger('click');
+    await wrapper.setProps({ fullscreen: true });
     expect(wrapper.get('[data-testid="lineage-graph"]').classes()).toContain('lineage-graph--fullscreen');
+    wrapper.unmount();
+  });
+
+  it('opens the drawer on node click and keeps the delete-key selection', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-node-center-id"]').exists()).toBe(true),
+    );
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const flowNode = (flow.props('nodes') as { id: string; data: unknown }[]).find(
+      (entry) => entry.id === 'center-id',
+    );
+    await flow.vm.$emit('node-click', { node: flowNode });
+    const data = (flowNode as { data: unknown }).data;
+    expect(wrapper.emitted('open-node')?.[0]?.[0]).toEqual(data);
+    expect(wrapper.emitted('select-node')?.[0]?.[0]).toEqual(data);
+    wrapper.unmount();
+  });
+
+  it('exposes centerOnNode for the canvas search', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-node-center-id"]').exists()).toBe(true),
+    );
+    const graph = wrapper.vm as unknown as { centerOnNode: (id: string) => boolean };
+    expect(graph.centerOnNode('center-id')).toBe(true);
+    expect(graph.centerOnNode('missing')).toBe(false);
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const setCenter = flow.vm.setCenter as unknown as ReturnType<typeof vi.fn>;
+    expect(setCenter).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
   });
 
   it('renders the Layers panel bottom-left and hides the connect hint when editing is off', () => {

@@ -109,6 +109,7 @@ const LineageGraphStub = defineComponent({
     'delete-edge',
     'change-active-layer',
     'change-platform-view',
+    'open-node',
   ],
   setup(props, { emit }) {
     return () =>
@@ -493,7 +494,15 @@ describe('LineageCanvas (L3)', () => {
     const refreshed = vi.fn();
     window.addEventListener(CSV_JOBS_REFRESH_EVENT, refreshed);
     try {
-      await wrapper.find('[data-testid="lineage-export-csv"]').trigger('click');
+      // The CSV item lives in the header export dropdown (pin
+      // CustomControls: the lineage tab offers PNG + CSV).
+      await wrapper.find('[data-testid="export-button"]').trigger('click');
+      await flushPromises();
+      const csvItem = [...document.body.querySelectorAll<HTMLElement>('.ant-dropdown-menu-item')].find(
+        (el) => el.textContent?.includes('Export CSV'),
+      );
+      expect(csvItem).not.toBeUndefined();
+      csvItem!.click();
       await flushPromises();
     } finally {
       window.removeEventListener(CSV_JOBS_REFRESH_EVENT, refreshed);
@@ -502,21 +511,24 @@ describe('LineageCanvas (L3)', () => {
     expect(exports).toHaveLength(1);
     expect(exports[0].url).toContain('fqn=svc.db.schema.orders');
     expect(refreshed).toHaveBeenCalled();
+    wrapper.unmount();
+    document.body.innerHTML = '';
   });
 
-  it('keeps config and PNG export once per variant: page hides its own copies, tab keeps them', async () => {
+  it('shows the header controls in both variants; tab adds the open-full-page link', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRAPH)));
-    // Pin PlatformLineage: on the /lineage page both actions live once in
-    // the page header; the canvas's own config button and PNG button are
-    // duplicates there (CSV is not duplicated and stays).
+    // Pin CustomControls renders the same header on the page and the
+    // tab: filters, search, tabs, time filter, export, config, fullscreen.
     const page = await mountCanvas();
-    expect(page.wrapper.find('[data-testid="lineage-config-open"]').exists()).toBe(false);
-    expect(page.wrapper.find('[data-testid="lineage-export-png"]').exists()).toBe(false);
-    expect(page.wrapper.find('[data-testid="lineage-export-csv"]').exists()).toBe(true);
+    expect(page.wrapper.find('[data-testid="lineage-config"]').exists()).toBe(true);
+    expect(page.wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
+    expect(page.wrapper.find('[data-testid="lineage-fullscreen"]').exists()).toBe(true);
+    expect(page.wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(false);
     page.wrapper.unmount();
     const tab = await mountCanvas({}, { variant: 'tab' });
-    expect(tab.wrapper.find('[data-testid="lineage-config-open"]').exists()).toBe(true);
-    expect(tab.wrapper.find('[data-testid="lineage-export-png"]').exists()).toBe(true);
+    expect(tab.wrapper.find('[data-testid="lineage-config"]').exists()).toBe(true);
+    expect(tab.wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
+    expect(tab.wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
     tab.wrapper.unmount();
   });
 
@@ -647,5 +659,138 @@ describe('LineageCanvas (L6)', () => {
       '/api/v1/lineage/table/name/svc.db.schema.raw_orders/table/name/svc.db.schema.orders',
     );
     expect(JSON.parse(String((putCall?.[1] as RequestInit).body))).toEqual({ source: 'Manual' });
+  });
+});
+
+describe('LineageCanvas (controls)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('offers exactly two views, diagram and impact; the table view and old header controls are gone', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const tabs = wrapper.findComponent(DetailTabs).props('tabs') as { key: string }[];
+    expect(tabs.map((tab) => tab.key)).toEqual(['diagram', 'impact']);
+    expect(wrapper.find('[data-testid="lineage-card-table"]').exists()).toBe(false);
+    for (const testId of [
+      'lineage-reload',
+      'lineage-open-asset',
+      'upstream-depth',
+      'downstream-depth',
+      'upstream-depth-dec',
+      'upstream-depth-inc',
+      'downstream-depth-dec',
+      'downstream-depth-inc',
+      'lineage-config-open',
+    ]) {
+      expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(false);
+    }
+    wrapper.unmount();
+  });
+
+  it('shows the node search on the diagram tab and the table search on the impact tab', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    expect(wrapper.find('[data-testid="lineage-search-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-impact-search"]').exists()).toBe(false);
+    wrapper.findComponent(DetailTabs).vm.$emit('change', 'impact');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="lineage-search-select"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-impact-search"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('toggles fullscreen through the URL param', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper, router } = await mountCanvas();
+    expect(router.currentRoute.value.query.fullscreen).toBeUndefined();
+    await wrapper.find('[data-testid="lineage-fullscreen"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.fullscreen).toBe('true');
+    await wrapper.find('[data-testid="lineage-fullscreen"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.fullscreen).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it('expands filters on the filters button: quick filters plus a single Clear all', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    expect(wrapper.find('[data-testid="lineage-filters-section"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="filters-button"]').trigger('click');
+    expect(wrapper.find('[data-testid="lineage-filters-section"]').exists()).toBe(true);
+    // Diagram tab: no depth dropdown in the expansion.
+    expect(wrapper.find('[data-testid="lineage-impact-depth-select"]').exists()).toBe(false);
+    // No quick filters yet: Clear all is disabled.
+    expect(wrapper.find('[data-testid="lineage-clear-all"]').attributes('disabled')).toBeDefined();
+    useLineageStore().setQuickFilters([{ key: 'tag', values: ['PII.Sensitive'] }]);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="lineage-clear-all"]').attributes('disabled')).toBeUndefined();
+    await wrapper.find('[data-testid="lineage-clear-all"]').trigger('click');
+    await flushPromises();
+    expect(useLineageStore().quickFilters).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('shows the depth dropdown in the filter expansion on the impact tab only', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({ mode: 'impact_analysis' });
+    await wrapper.find('[data-testid="filters-button"]').trigger('click');
+    expect(wrapper.find('[data-testid="lineage-impact-depth-select"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('offers PNG + CSV in the export menu on the diagram tab', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    await wrapper.find('[data-testid="export-button"]').trigger('click');
+    await flushPromises();
+    const items = [...document.body.querySelectorAll('.ant-dropdown-menu-item')].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(items).toEqual(['Export PNG', 'Export CSV']);
+    wrapper.unmount();
+  });
+
+  it('offers CSV only in the export menu on the impact tab', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas({ mode: 'impact_analysis' });
+    await wrapper.find('[data-testid="export-button"]').trigger('click');
+    await flushPromises();
+    const items = [...document.body.querySelectorAll('.ant-dropdown-menu-item')].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(items).toEqual(['Export CSV']);
+    wrapper.unmount();
+  });
+
+  it('opens the node detail drawer on open-node from the graph', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountCanvas();
+    const stub = wrapper.findComponent(LineageGraphStub);
+    stub.vm.$emit('open-node', UP_NODE);
+    await flushPromises();
+    // The drawer teleports to document.body.
+    expect(document.body.querySelector('[data-testid="lineage-entity-panel"]')).not.toBeNull();
+    expect(
+      (document.body.querySelector('[data-testid="entity-link"]') as HTMLElement | null)
+        ?.textContent,
+    ).toBe('raw_orders');
+    wrapper.unmount();
   });
 });

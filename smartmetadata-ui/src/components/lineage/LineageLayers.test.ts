@@ -88,3 +88,42 @@ describe('LineageLayers', () => {
     wrapper.unmount();
   });
 });
+
+describe('LineageLayers scene mode (pin LineageLayers scene menu)', () => {
+  function mountScene(props: Record<string, unknown> = {}) {
+    return mount(LineageLayers, {
+      props: { sceneLens: 'service', sceneLevelLabelKey: 'lineage.mapServiceLevelView', ...props },
+      global: { plugins: [Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+  }
+
+  it('shows the scene level label on the trigger and the three lenses in the menu', async () => {
+    const wrapper = mountScene();
+    expect(wrapper.find('[data-testid="lineage-layer-btn"]').text()).toContain(
+      'Service Level View',
+    );
+    await openMenu(wrapper);
+    const items = [...document.body.querySelectorAll('[data-testid^="lineage-layer-lens-"]')].map(
+      (item) => item.getAttribute('data-testid'),
+    );
+    expect(items).toEqual([
+      'lineage-layer-lens-service',
+      'lineage-layer-lens-domain',
+      'lineage-layer-lens-dataProduct',
+    ]);
+    expect(document.body.textContent).toContain('Lineage Layer');
+    expect(document.body.textContent).toContain('Across systems and connectors');
+    wrapper.unmount();
+  });
+
+  it('emits change-scene-lens on lens click', async () => {
+    const wrapper = mountScene();
+    await openMenu(wrapper);
+    const domain = [...document.body.querySelectorAll('[data-testid="lineage-layer-lens-domain"]')];
+    (domain.at(-1) as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.emitted('change-scene-lens')).toEqual([['domain']]);
+    wrapper.unmount();
+  });
+});

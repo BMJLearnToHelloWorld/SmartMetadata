@@ -61,9 +61,17 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('asset.tabs.quality');
     expect(keys).toContain('lineage.title');
     expect(keys).toContain('lineage.searchPlaceholder');
-    expect(keys).toContain('lineage.findNode');
-    expect(keys).toContain('lineage.columnsLead');
-    expect(keys).toContain('lineage.depthHelp');
+    // 2026-11-25 lineage-controls: find-node moved to the entity tab-header
+    // search (LineageSearchSelect, key lineage.impactSearch); lineage.findNode
+    // was removed with the old canvas toolbar.
+    expect(keys).toContain('lineage.impactSearch');
+    // 2026-11-25 lineage-controls: the standalone column-lineage table was
+    // deleted per B-7(c) (its lead key lineage.columnsLead went with it);
+    // column mappings now render in node cards under lineage.mappedColumns.
+    expect(keys).toContain('lineage.mappedColumns');
+    // ...and the old toolbar depth help (lineage.depthHelp) went with the
+    // toolbar; the relocated depth dropdown uses lineage.impactNodeDepth.
+    expect(keys).toContain('lineage.impactNodeDepth');
     expect(keys).toContain('ingestion.services.connectionJsonHelp');
     expect(keys).toContain('crud.refresh');
     expect(keys).toContain('crud.next');
@@ -178,7 +186,10 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('crud.descriptionHelp');
     expect(keys).toContain('crud.deleteTitle');
     expect(keys).toContain('explore.clearFiltersHelp');
-    expect(keys).toContain('lineage.reloadHelp');
+    // 2026-11-25 lineage-controls: Reload deleted (pin's only manual refresh
+    // is the error placeholder's retry); lineage.reloadHelp went with it.
+    // The error/retry surface now uses lineage.loadFailed.
+    expect(keys).toContain('lineage.loadFailed');
     expect(keys).toContain('admin.users.passwordHelp');
     expect(keys).toContain('ingestion.pipelines.scheduleHelp');
     expect(keys).toContain('observability.incidents.statusAck');

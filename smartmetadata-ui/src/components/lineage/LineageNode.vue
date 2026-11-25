@@ -16,6 +16,12 @@ export interface LineageNodeData extends LineageGraphNode {
   highlighted?: boolean;
   highlightedColumns?: string[];
   onToggleColumns?: () => void;
+  /**
+   * Pin `LineageNodeLabelV1:180-191`: the entity name is a link-style
+   * button opening the node detail drawer. Present only when the canvas
+   * wires the drawer; otherwise the name stays plain text.
+   */
+  onOpenEntity?: () => void;
   /** Edges in each direction exist (pin ExpandCollapseHandles visibility). */
   hasUpstream?: boolean;
   hasDownstream?: boolean;
@@ -106,6 +112,12 @@ function onToggle(event: Event): void {
   props.data.onToggleColumns?.();
 }
 
+function onOpenEntity(event: Event): void {
+  event.stopPropagation();
+  event.preventDefault();
+  props.data.onOpenEntity?.();
+}
+
 function onToggleLineageOnly(event: Event): void {
   event.stopPropagation();
   event.preventDefault();
@@ -179,7 +191,16 @@ function columnClass(fqn: string): string {
       />
     </div>
     <div class="lineage-node__body">
-    <div class="lineage-node__name">{{ data.displayName || data.name }}</div>
+    <button
+      v-if="data.onOpenEntity"
+      type="button"
+      class="lineage-node__name lineage-node__name--link"
+      :data-testid="`lineage-node-open-${data.id}`"
+      @click="onOpenEntity"
+    >
+      {{ data.displayName || data.name }}
+    </button>
+    <div v-else class="lineage-node__name">{{ data.displayName || data.name }}</div>
     <div v-if="data.pathLabel" class="lineage-node__path">{{ data.pathLabel }}</div>
     <div class="lineage-node__fqn">{{ data.truncatedFqn || data.fullyQualifiedName || '—' }}</div>
     <div v-if="visibleColumns.length" class="lineage-node__columns" data-testid="lineage-node-columns">
@@ -300,6 +321,17 @@ function columnClass(fqn: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lineage-node__name--link {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--sm-color-primary);
+  cursor: pointer;
+  text-align: left;
+  font-size: inherit;
 }
 .lineage-node__path,
 .lineage-node__fqn {

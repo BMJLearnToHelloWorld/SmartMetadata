@@ -28,14 +28,13 @@ function nodeData(partial: Partial<LineageMapNodeData> & { sceneNode: LineageSce
     pathLabel: 'svc / db',
     truncatedFqn: 'svc.db.orders',
     columns: [],
-    drillable: false,
     ...partial,
   };
 }
 
 describe('LineageMapNode', () => {
-  it('renders a container node with subtitle, count pill and drill affordance', async () => {
-    const onDrill = vi.fn();
+  it('renders a container node with subtitle, count pill and a name button that opens the drawer', async () => {
+    const onOpenEntity = vi.fn();
     const sceneNode: LineageSceneNode = {
       band: 'LAYER',
       id: 'svc1',
@@ -55,8 +54,7 @@ describe('LineageMapNode', () => {
           sceneNode,
           subtitle: 'Postgres · service',
           countLabel: '3 tables',
-          drillable: true,
-          onDrill,
+          onOpenEntity,
         }),
       },
       global: { plugins: [Antd, createTestI18n()] },
@@ -64,11 +62,14 @@ describe('LineageMapNode', () => {
     expect(wrapper.get('[data-testid="lineage-map-node-svc1"]').text()).toContain('Svc One');
     expect(wrapper.get('[data-testid="lineage-map-node-count"]').text()).toBe('3 tables');
     expect(wrapper.text()).toContain('Postgres · service');
-    await wrapper.get('[data-testid="lineage-map-drill-svc1"]').trigger('click');
-    expect(onDrill).toHaveBeenCalledWith(sceneNode);
+    // Pin has no Drill button on the card: the body click drills, the
+    // name button opens the drawer.
+    expect(wrapper.find('[data-testid="lineage-map-drill-svc1"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="lineage-map-node-open-svc1"]').trigger('click');
+    expect(onOpenEntity).toHaveBeenCalledTimes(1);
   });
 
-  it('de-emphasizes ghost container nodes and hides the drill button when not drillable', () => {
+  it('de-emphasizes ghost container nodes and renders a plain name without a drawer callback', () => {
     const wrapper = mount(LineageMapNode, {
       props: {
         data: nodeData({
@@ -83,7 +84,6 @@ describe('LineageMapNode', () => {
             levelKind: 'service',
             isGhost: true,
           },
-          drillable: false,
         }),
       },
       global: { plugins: [Antd, createTestI18n()] },
@@ -91,7 +91,8 @@ describe('LineageMapNode', () => {
     expect(wrapper.get('[data-testid="lineage-map-node-svc1"]').classes()).toContain(
       'lineage-map-node--ghost',
     );
-    expect(wrapper.find('[data-testid="lineage-map-drill-svc1"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-map-node-open-svc1"]').exists()).toBe(false);
+    expect(wrapper.find('.lineage-map-node__name').exists()).toBe(true);
   });
 
   it('renders an asset node through the shared LineageNode with its columns', () => {

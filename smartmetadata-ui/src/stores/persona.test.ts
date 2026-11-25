@@ -22,7 +22,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe('persona store', () => {
   beforeEach(() => {
+    // The store persists in sessionStorage (pin); localStorage holds
+    // only the one-time legacy seed, so both must be cleared for a
+    // hermetic test — a leftover session value would otherwise make
+    // the fallback test pass for the wrong reason.
     localStorage.clear();
+    sessionStorage.clear();
     persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
     setActivePinia(createPinia());
   });
@@ -30,6 +35,7 @@ describe('persona store', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   it('selects the stored persona and persists a new selection', async () => {
@@ -51,7 +57,11 @@ describe('persona store', () => {
     await store.ensureLoaded();
     expect(store.selectedPersona?.id).toBe('p1');
     await store.selectPersona('p2');
-    expect(localStorage.getItem(PERSONA_STORAGE_KEY)).toBe('p2');
+    // 2026-11-25 nav-domain-persona: the selection persists in
+    // sessionStorage (pin), not localStorage; the legacy localStorage
+    // seed was adopted into sessionStorage and cleared at hydrate.
+    expect(sessionStorage.getItem(PERSONA_STORAGE_KEY)).toBe('p2');
+    expect(localStorage.getItem(PERSONA_STORAGE_KEY)).toBeNull();
     expect(store.selectedPersona?.id).toBe('p2');
   });
 
@@ -82,7 +92,11 @@ describe('persona store', () => {
     const store = usePersonaStore();
     await store.ensureLoaded();
     expect(store.selectedPersona).toBeNull();
+    // The dropped id must not linger in either storage: the legacy
+    // seed was adopted and cleared at hydrate, and persist() removes
+    // the session key when there is no selection.
     expect(localStorage.getItem(PERSONA_STORAGE_KEY)).toBeNull();
+    expect(sessionStorage.getItem(PERSONA_STORAGE_KEY)).toBeNull();
   });
 
   it('loads and normalizes the selected persona document, tolerating 404', async () => {
@@ -240,7 +254,9 @@ describe('persona store', () => {
     expect(pageDoc?.data.pages).toHaveLength(1);
     expect(pageDoc?.data.pages?.[0]?.pageType).toBe('Table');
     expect(store.selectedPersona?.id).toBe('p1');
-    expect(localStorage.getItem(PERSONA_STORAGE_KEY)).toBe('p1');
+    // loadDocumentForPersona must not touch the persisted selection
+    // (sessionStorage now holds it, per the 2026-11-25 nav change).
+    expect(sessionStorage.getItem(PERSONA_STORAGE_KEY)).toBe('p1');
     expect(store.document?.fullyQualifiedName).toBe('persona.Analyst');
   });
 

@@ -19,10 +19,15 @@ import type { Persona, PersonaDocument } from '@/types/persona';
 /**
  * Selected-persona slice, mirroring the official useApplicationStore
  * selectedPersona + usePersonaDocument pair: the selection is
- * persisted locally (like the domain scope), initialized from the
- * user's defaultPersona when nothing is stored, and validated against
- * the live list — a stored id that no longer exists falls back to
- * the default persona, never to a stale selection.
+ * persisted in sessionStorage (pin `utils/PersonaSessionUtils.ts` —
+ * a short-lived, per-tab selection), initialized from the user's
+ * defaultPersona when nothing is stored, and validated against the
+ * live list — a stored id that no longer exists falls back to
+ * the default persona, never to a stale selection. A pre-upgrade
+ * localStorage value is adopted once into sessionStorage on hydrate
+ * and the legacy key cleared, so existing users keep their persona
+ * across the upgrade without a second source of truth
+ * (ADR:2026-11-25-nav-domain-persona).
  */
 export const PERSONA_STORAGE_KEY = 'sm.persona.v1';
 
@@ -49,15 +54,27 @@ export const usePersonaStore = defineStore('persona', () => {
   );
 
   function hydrate(): void {
-    const stored = window.localStorage.getItem(PERSONA_STORAGE_KEY);
+    // A pre-upgrade localStorage value is adopted first and cleared:
+    // reading the legacy key before sessionStorage keeps a freshly
+    // seeded selection working when a stale session value is also
+    // present, and in production the two keys can only disagree
+    // before the first post-upgrade hydrate clears the legacy one.
+    const legacy = window.localStorage.getItem(PERSONA_STORAGE_KEY);
+    if (legacy) {
+      selectedPersonaId.value = legacy;
+      window.sessionStorage.setItem(PERSONA_STORAGE_KEY, legacy);
+      window.localStorage.removeItem(PERSONA_STORAGE_KEY);
+      return;
+    }
+    const stored = window.sessionStorage.getItem(PERSONA_STORAGE_KEY);
     selectedPersonaId.value = stored ? stored : null;
   }
 
   function persist(): void {
     if (selectedPersonaId.value) {
-      window.localStorage.setItem(PERSONA_STORAGE_KEY, selectedPersonaId.value);
+      window.sessionStorage.setItem(PERSONA_STORAGE_KEY, selectedPersonaId.value);
     } else {
-      window.localStorage.removeItem(PERSONA_STORAGE_KEY);
+      window.sessionStorage.removeItem(PERSONA_STORAGE_KEY);
     }
   }
 

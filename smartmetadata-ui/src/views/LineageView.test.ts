@@ -6,12 +6,13 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { flushPromises, mount } from '@vue/test-utils';
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import LineageGraph from '@/components/lineage/LineageGraph.vue';
 import LineageView from './LineageView.vue';
 
 vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
@@ -89,6 +90,9 @@ describe('LineageView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    // The drawer and config modal teleport to document.body; clear
+    // them so a stale panel cannot leak into the next test's queries.
+    document.body.innerHTML = '';
   });
 
   it('renders nodes from GET /v1/lineage/getLineage and shows column mappings', async () => {
@@ -97,13 +101,30 @@ describe('LineageView', () => {
       vi.fn(async () => jsonResponse(GRAPH)),
     );
     const { wrapper } = await mountLineage();
+    // ELK layout is async: node buttons render only once positions resolve.
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-up-id"]').exists()).toBe(true));
     expect(wrapper.text()).toContain('raw_orders');
     expect(wrapper.text()).toContain('orders');
     expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="column-lineage-table"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('raw_orders.id');
+    // 2026-11-25 lineage-controls: find-node moved to the canvas search
+    // select (LineageSearchSelect); the standalone column-lineage table
+    // was deleted per B-7(c) — column mappings now render inside the
+    // node card. The vue-flow stub renders plain node buttons, never
+    // the card, so the mapping is asserted where it lands in the
+    // rendered graph: the upstream node's columns carry the edge's
+    // from-column. (Card rendering itself is covered by
+    // LineageNode.test.ts.)
+    expect(wrapper.find('[data-testid="lineage-search-select"]').exists()).toBe(true);
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const flowNodes = flow.props('nodes') as {
+      id: string;
+      data: { columns?: { fqn: string }[] };
+    }[];
+    const upNode = flowNodes.find((node) => node.id === 'up-id');
+    expect(upNode?.data.columns?.map((column) => column.fqn)).toContain(
+      'svc.db.schema.raw_orders.id',
+    );
     const lineageCall = vi
       .mocked(fetch)
       .mock.calls.find((call) => String(call[0]).includes('/api/v1/lineage/getLineage'));
@@ -136,12 +157,35 @@ describe('LineageView', () => {
     expect(wrapper.text()).toContain('lineage not found');
   });
 
-  it('navigates to asset detail when a supported node is clicked', async () => {
+  it('opens the node detail drawer from the node name and navigates to asset detail from its link', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(GRAPH)));
     const { wrapper, router } = await mountLineage();
     // ELK layout is async: node buttons render only once positions resolve.
     await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-up-id"]').exists()).toBe(true));
-    await wrapper.get('[data-testid="lineage-node-up-id"]').trigger('click');
+    // 2026-11-25 lineage-controls (pin): a node body click drills into
+    // the node's own lineage instead of opening the asset; the asset
+    // path is now node name button -> detail drawer -> header link.
+    // The vue-flow stub renders plain node buttons, never the card's
+    // name button, so drive the graph->canvas contract the way
+    // LineageCanvas.test.ts does: emit open-node on the graph.
+    const graph = wrapper.findComponent(LineageGraph);
+    graph.vm.$emit('open-node', {
+      id: 'up-id',
+      entityType: 'table',
+      name: 'raw_orders',
+      displayName: 'raw_orders',
+      fullyQualifiedName: 'svc.db.schema.raw_orders',
+      isCenter: false,
+    });
+    await flushPromises();
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[data-testid="lineage-entity-panel"]')).not.toBeNull(),
+    );
+    const link = document.body.querySelector(
+      '[data-testid="entity-link"]',
+    ) as HTMLElement | null;
+    expect(link?.getAttribute('href')).toContain('/assets/table/svc.db.schema.raw_orders');
+    link?.click();
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset');
     expect(router.currentRoute.value.params).toEqual({
@@ -164,10 +208,35 @@ describe('LineageView', () => {
       String(call[0]).includes('/api/v1/lineage/getLineage'),
     );
     expect(String(firstLineageCall?.[0])).toContain('upstreamDepth=3');
-    await wrapper.get('[data-testid="upstream-depth-dec"]').trigger('click');
-    await flushPromises();
-    const lastUrl = String(fetchMock.mock.calls.at(-1)?.[0]);
-    expect(lastUrl).toContain('upstreamDepth=2');
+    // 2026-11-25 lineage-controls: the toolbar depth stepper is gone;
+    // upstream depth is now set in the canvas config modal, which
+    // teleports to document.body — so the input is read off the body
+    // like LineageConfigModal.test.ts does (findComponent cannot see
+    // teleported content by testid).
+    await wrapper.get('[data-testid="lineage-config"]').trigger('click');
+    // antd InputNumber forwards data-testid onto the inner <input>
+    // itself (verified by probe), so there is no descendant input
+    // to select — the testid element IS the input.
+    await vi.waitFor(() =>
+      expect(
+        document.body.querySelector('[data-testid="lineage-config-upstream"]'),
+      ).not.toBeNull(),
+    );
+    const upstreamInput = document.body.querySelector(
+      '[data-testid="lineage-config-upstream"]',
+    ) as HTMLInputElement;
+    await new DOMWrapper(upstreamInput).setValue('2');
+    const okButton = document.body.querySelector(
+      '.ant-modal-footer .ant-btn-primary',
+    ) as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton?.click();
+    await vi.waitFor(() => {
+      const lineageCalls = fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes('/api/v1/lineage/getLineage'),
+      );
+      expect(String(lineageCalls.at(-1)?.[0])).toContain('upstreamDepth=2');
+    });
   });
 
   it('connect stub PUTs lineage edge then reloads GET', async () => {
@@ -239,7 +308,12 @@ describe('LineageView', () => {
       String(call[0]).includes('/api/v1/lineage/getLineage'),
     );
     expect(String(firstLineageCall?.[0])).not.toContain('startTime=');
-    const preset = wrapper.findAllComponents({ name: 'ASelect' })[0];
+    // 2026-11-25 lineage-controls: the header now has several selects
+    // (entity search first), so the time preset must be found inside
+    // its own filter instead of taking the first ASelect on the page.
+    const preset = wrapper
+      .find('[data-testid="lineage-time-filter"]')
+      .findComponent({ name: 'ASelect' });
     preset.vm.$emit('update:value', 'customRange');
     await flushPromises();
     await wrapper.get('[data-testid="lineage-time-custom-start"]').setValue('2026-01-05');
@@ -255,7 +329,11 @@ describe('LineageView', () => {
     const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
     vi.stubGlobal('fetch', fetchMock);
     const { wrapper } = await mountLineage();
-    const preset = wrapper.findAllComponents({ name: 'ASelect' })[0];
+    // Same scoping as the custom-range test: the preset is the select
+    // inside the time filter, not the first ASelect on the page.
+    const preset = wrapper
+      .find('[data-testid="lineage-time-filter"]')
+      .findComponent({ name: 'ASelect' });
     preset.vm.$emit('update:value', 'pointInTime');
     await flushPromises();
     await wrapper.get('[data-testid="lineage-time-point"]').setValue('2026-01-07');

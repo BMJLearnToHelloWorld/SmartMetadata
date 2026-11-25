@@ -419,9 +419,11 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     expect(wrapper.find('[data-testid="metric-tab-assets-count"]').text()).toBe('1');
     expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Orders');
-    // The lineage pane embeds the shared canvas (toolbar proves the mount;
-    // the graph itself is the canvas component's own concern).
-    expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
+    // The lineage pane embeds the shared canvas (header export button proves
+    // the mount; the graph itself is the canvas component's own concern).
+    // 2026-11-25 lineage-controls: the old toolbar depth control
+    // (upstream-depth) moved into the filter area per pin CustomControls.
+    expect(wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
   });
@@ -533,7 +535,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     // The unlisted overview tab is removed (F-2), so its details pane
     // is gone while the listed non-mount panes stay.
     expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
@@ -561,7 +563,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual(['widget-metric-definition']);
     // Every other tab keeps its existing panel.
-    expect(wrapper.find('[data-testid="upstream-depth"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="export-button"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="metric-assets-tab"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();

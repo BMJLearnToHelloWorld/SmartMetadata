@@ -504,6 +504,15 @@ export const getRailStopLabelKey = (stop: LineageBand, lens: LineageLens): strin
   }
 };
 
+/**
+ * Pin `isDeeperBand` (`LineageMap.component.tsx:418`): a stop is deeper
+ * than the active one when it sits further down the rail order
+ * (LAYER < ASSET < FIELD). The rail disables a deeper stop when nothing
+ * on the scene can be drilled into.
+ */
+export const isDeeperBand = (currentBand: LineageBand, nextBand: LineageBand): boolean =>
+  LINEAGE_MAP_RAIL_STOPS.indexOf(nextBand) > LINEAGE_MAP_RAIL_STOPS.indexOf(currentBand);
+
 export const isSceneNodeDrillable = (
   node?: LineageSceneNode,
 ): node is LineageSceneNode & { fullyQualifiedName: string; entityType: string } =>

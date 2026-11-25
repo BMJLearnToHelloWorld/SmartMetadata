@@ -5,16 +5,14 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Modal, Space, Tooltip, message } from 'ant-design-vue';
-import { MarkerType, VueFlow } from '@vue-flow/core';
+import { Button, Modal, message } from 'ant-design-vue';
+import { MarkerType, Panel, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
-import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import type { Edge, Node, NodeTypesObject } from '@vue-flow/core';
 import { asRecord, asString } from '@/api/json';
 import { getLineageEdgeDetails, getLineageScene } from '@/api/lineage';
 import SmState from '@/components/shared/SmState.vue';
-import { LINEAGE_PLATFORM_LENSES } from '@/lineage/config';
 import { clampLineageDepth } from '@/lineage/depth';
 import { captureLineagePng, lineagePngFileName } from '@/lineage/exportPng';
 import { layoutLineageGraph, lineageNodeSize, type LineageGraphModel, type PositionedLineageGraph } from '@/lineage/graphModel';
@@ -25,12 +23,10 @@ import {
   getDrillBand,
   getDrilledRootBreadcrumb,
   getEndpointNodeId,
-  getLensRootLabelKey,
   getLineageMapEmptyState,
   getParentSceneRequest,
   getRailDrillFallbackNode,
   getRailStop,
-  getRailStopLabelKey,
   getRealEntityRef,
   getSceneCacheKey,
   getSceneLevelLabelKey,
@@ -39,7 +35,6 @@ import {
   getSemanticZoomDirection,
   hasSeenLineageMapOnboarding,
   isSceneNodeDrillable,
-  LINEAGE_MAP_RAIL_STOPS,
   LineageSceneCache,
   mapSceneToGraphModel,
   markLineageMapOnboardingSeen,
@@ -48,16 +43,20 @@ import {
   type LineageLens,
   type LineageScene,
   type LineageSceneBreadcrumb,
-  type LineageSceneEdge,
   type LineageSceneFocus,
   type LineageSceneNode,
   type LineageSceneRequest,
   type SceneTranslator,
 } from '@/lineage/scene';
+import LineageEntityDrawer from './LineageEntityDrawer.vue';
+import LineageLayers from './LineageLayers.vue';
+import LineageMapBreadcrumbs from './LineageMapBreadcrumbs.vue';
 import LineageMapNode, { type LineageMapNodeData } from './LineageMapNode.vue';
+import LineageMapRail from './LineageMapRail.vue';
+import LineageMapStatusPanel from './LineageMapStatusPanel.vue';
+import LineageZoomControls from './LineageZoomControls.vue';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
-import '@vue-flow/controls/dist/style.css';
 import '@vue-flow/minimap/dist/style.css';
 
 // The platform map is view and export only; lineage is edited on asset
@@ -143,9 +142,6 @@ const emit = defineEmits<{
   'update:band': [band: LineageBand];
   'update:focus': [focus: LineageSceneFocus];
   'request-change': [request: LineageSceneRequest];
-  'select-node': [node: LineageSceneNode];
-  'select-edge': [edge: LineageSceneEdge];
-  navigate: [node: LineageSceneNode];
   'scene-loaded': [scene: LineageScene];
   'scene-error': [error: unknown];
 }>();
@@ -173,11 +169,12 @@ const loading = ref(true);
 const sceneError = ref<unknown>();
 const requestId = ref(0);
 const cache = new LineageSceneCache();
-const selectedNodeId = ref<string | undefined>();
 const selectedEdgeId = ref<string | undefined>();
 const edgeDetails = ref<unknown>();
 const edgeDetailsLoading = ref(false);
 const miniMapVisible = ref(true);
+const zoom = ref(1);
+const drawerNode = ref<LineageSceneNode | undefined>();
 const showOnboarding = ref(false);
 const expandedIds = ref<string[]>([]);
 const restingZoom = ref<number | undefined>();
@@ -280,12 +277,17 @@ const nodes = computed<Node<LineageMapNodeData>[]>(() => {
         },
         subtitle: sceneNode ? getSceneNodeTypeSubtitle(sceneNode, translate) : undefined,
         countLabel: count ? `${count.count} ${count.entity}` : undefined,
-        drillable: isSceneNodeDrillable(sceneNode),
         expanded: isFieldBand ? true : expandedSet.value.has(node.id),
-        highlighted: selectedNodeId.value === node.id,
         highlightedColumns: [],
         onToggleColumns: () => toggleExpand(node.id),
-        onDrill: (target) => drillInto(target),
+        // Pin `LineageNodeLabelV1:180-191`: the node name is a link-style
+        // button that opens the node detail drawer; the body click
+        // drills in (`onNodeClick`).
+        onOpenEntity: sceneNode
+          ? () => {
+              drawerNode.value = sceneNode;
+            }
+          : undefined,
       },
     };
   });
@@ -330,9 +332,10 @@ const railStop = computed(() =>
   scene.value ? getRailStop(scene.value) : currentRequest.value.band,
 );
 
-const selectedNode = computed(() =>
-  selectedNodeId.value ? sceneNodeById.value.get(selectedNodeId.value) : undefined,
-);
+/** Pin `canDrillScene` (`LineageMap.component.tsx:2047`): the rail
+ * disables a deeper stop when no scene node can be drilled into. */
+const canDrill = computed(() => (scene.value?.nodes ?? []).some(isSceneNodeDrillable));
+
 const selectedEdge = computed(() =>
   selectedEdgeId.value
     ? scene.value?.edges.find((edge) => edge.id === selectedEdgeId.value)
@@ -393,7 +396,6 @@ async function loadScene(request: LineageSceneRequest, refresh = false): Promise
       return;
     }
     scene.value = next;
-    selectedNodeId.value = undefined;
     selectedEdgeId.value = undefined;
     edgeDetails.value = undefined;
     emit('scene-loaded', next);
@@ -473,25 +475,24 @@ function drillInto(node: LineageSceneNode): void {
   });
 }
 
-function showFields(): void {
-  updateRequest({ ...currentRequest.value, band: 'FIELD' });
-}
-
 function reload(): void {
   void loadScene(currentRequest.value, true);
 }
 
-function onNodeClick(payload: { node: Node<LineageMapNodeData> }): void {
-  const sceneNode = payload.node.data?.sceneNode;
-  if (!sceneNode) {
+/**
+ * Pin `handleNodeClick` (`LineageMap.component.tsx:1896-1908`): a node
+ * body click drills directly into the node. Clicks on controls inside
+ * the card — buttons, inputs, links, handles, the column list — are
+ * excluded so they keep their own actions (the name button opens the
+ * drawer via `onOpenEntity` and stops propagation there).
+ */
+function onNodeClick(payload: { event?: Event; node: Node<LineageMapNodeData> }): void {
+  const target = payload.event?.target as HTMLElement | undefined;
+  if (
+    target?.closest?.('button, input, a, .vue-flow__handle, .lineage-node__columns')
+  ) {
     return;
   }
-  selectedNodeId.value = sceneNode.id;
-  selectedEdgeId.value = undefined;
-  emit('select-node', sceneNode);
-}
-
-function onNodeDoubleClick(payload: { node: Node<LineageMapNodeData> }): void {
   const sceneNode = payload.node.data?.sceneNode;
   if (sceneNode) {
     drillInto(sceneNode);
@@ -504,9 +505,7 @@ async function onEdgeClick(payload: { edge: Edge }): Promise<void> {
     return;
   }
   selectedEdgeId.value = sceneEdge.id;
-  selectedNodeId.value = undefined;
   edgeDetails.value = undefined;
-  emit('select-edge', sceneEdge);
   // Hydrate a single concrete edge with its details; rollups and edges
   // without real entity refs keep the scene edge's own fields.
   const nodeById = sceneNodeById.value;
@@ -634,14 +633,17 @@ function onMoveEnd(payload: unknown): void {
   const now = Date.now();
   if (now < semanticZoomSuppressedUntil.value) {
     restingZoom.value = viewport.zoom;
+    zoom.value = viewport.zoom;
     return;
   }
   if (now - lastSemanticZoomAt.value < SEMANTIC_ZOOM_COOLDOWN) {
     restingZoom.value = viewport.zoom;
+    zoom.value = viewport.zoom;
     return;
   }
   const previous = restingZoom.value;
   restingZoom.value = viewport.zoom;
+  zoom.value = viewport.zoom;
   if (previous === undefined) {
     return;
   }
@@ -660,11 +662,43 @@ function handleOnboardingClose(): void {
 type FlowApi = {
   getViewport: () => { x: number; y: number; zoom: number };
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void;
-  fitView: (options?: { padding?: number }) => Promise<boolean>;
+  fitView: (options?: { padding?: number; maxZoom?: number }) => Promise<boolean>;
+  zoomIn: (options?: { duration?: number }) => Promise<boolean>;
+  zoomOut: (options?: { duration?: number }) => Promise<boolean>;
   $el: HTMLElement;
 };
 
 const flowRef = ref<FlowApi | null>(null);
+
+/**
+ * Pin `LineageControlButtons` actions: zoom in/out on the flow
+ * instance, fit view with `fitView({ padding: 0.2, maxZoom: 1 })`.
+ * The fit suppresses semantic zoom first (a programmatic fit must not
+ * trigger a band change), and the zoom readout is re-synced after
+ * each action.
+ */
+function syncZoom(): void {
+  const viewport = flowRef.value?.getViewport?.();
+  if (viewport) {
+    zoom.value = viewport.zoom;
+  }
+}
+
+async function onZoomIn(): Promise<void> {
+  await flowRef.value?.zoomIn?.();
+  syncZoom();
+}
+
+async function onZoomOut(): Promise<void> {
+  await flowRef.value?.zoomOut?.();
+  syncZoom();
+}
+
+async function onFitView(): Promise<void> {
+  suppressSemanticZoom();
+  await flowRef.value?.fitView?.({ padding: 0.2, maxZoom: 1 });
+  syncZoom();
+}
 
 async function exportPng(): Promise<void> {
   const flow = flowRef.value;
@@ -732,77 +766,6 @@ const nodeTypes = {
 
 <template>
   <div class="lineage-map" data-testid="lineage-map">
-    <div class="lineage-map__toolbar">
-      <Space wrap align="center">
-        <span class="lineage-map__lens-label">{{ t('lineage.mapLensLabel') }}</span>
-        <span class="lineage-map__lens-group" role="group" :aria-label="t('lineage.mapLensLabel')">
-          <Button
-            v-for="lens in LINEAGE_PLATFORM_LENSES"
-            :key="lens.value"
-            :type="currentRequest.lens === lens.value ? 'primary' : 'default'"
-            :data-testid="`lineage-layer-${lens.value}-btn`"
-            :aria-pressed="currentRequest.lens === lens.value"
-            @click="onLensChange(lens.value)"
-          >
-            {{ t(lens.labelKey) }}
-          </Button>
-        </span>
-        <span class="lineage-map__rail" role="group" :aria-label="t('lineage.mapLayerView')">
-          <Button
-            v-for="stop in LINEAGE_MAP_RAIL_STOPS"
-            :key="stop"
-            :type="railStop === stop ? 'primary' : 'default'"
-            :data-testid="`lineage-map-rail-${stop.toLowerCase()}`"
-            :aria-pressed="railStop === stop"
-            @click="onRailStopSelect(stop)"
-          >
-            {{ t(getRailStopLabelKey(stop, currentRequest.lens)) }}
-          </Button>
-        </span>
-        <Tooltip :title="t('lineage.reloadHelp')">
-          <Button data-testid="lineage-map-reload" :aria-label="t('lineage.reloadHelp')" @click="reload">
-            {{ t('lineage.reload') }}
-          </Button>
-        </Tooltip>
-        <Tooltip :title="miniMapVisible ? t('lineage.mapHideMiniMap') : t('lineage.mapShowMiniMap')">
-          <Button
-            data-testid="lineage-map-toggle-minimap"
-            :aria-label="miniMapVisible ? t('lineage.mapHideMiniMap') : t('lineage.mapShowMiniMap')"
-            @click="miniMapVisible = !miniMapVisible"
-          >
-            {{ miniMapVisible ? t('lineage.mapHideMiniMap') : t('lineage.mapShowMiniMap') }}
-          </Button>
-        </Tooltip>
-      </Space>
-      <div class="lineage-map__view-only" data-testid="lineage-map-view-only">
-        {{ t('lineage.mapViewOnly') }}
-      </div>
-    </div>
-    <nav
-      v-if="breadcrumbs.length"
-      class="lineage-map__breadcrumbs"
-      data-testid="lineage-map-breadcrumbs"
-      :aria-label="t(getLensRootLabelKey(currentRequest.lens))"
-    >
-      <template v-for="(crumb, index) in breadcrumbs" :key="crumb.id">
-        <span v-if="index > 0" class="lineage-map__crumb-separator" aria-hidden="true">/</span>
-        <button
-          type="button"
-          class="lineage-map__crumb"
-          :class="{ 'lineage-map__crumb--current': index === breadcrumbs.length - 1 }"
-          :data-testid="`lineage-map-crumb-${crumb.id}`"
-          @click="onBreadcrumbFocus(crumb)"
-        >
-          {{ crumb.label }}
-        </button>
-      </template>
-    </nav>
-    <div v-if="scene && levelLabelKey" class="lineage-map__level" data-testid="lineage-map-level">
-      {{ t(levelLabelKey) }}
-      <span v-if="scene.hiddenNodeCount" class="lineage-map__hidden">
-        {{ t('lineage.mapHiddenNodes', { count: scene.hiddenNodeCount }) }}
-      </span>
-    </div>
     <div class="lineage-map__canvas" data-testid="lineage-map-canvas">
       <SmState
         v-if="!showGraph"
@@ -824,41 +787,45 @@ const nodeTypes = {
         :min-zoom="MAP_MIN_ZOOM"
         :max-zoom="MAP_MAX_ZOOM"
         @node-click="onNodeClick"
-        @node-double-click="onNodeDoubleClick"
         @edge-click="onEdgeClick"
         @move-end="onMoveEnd"
       >
         <Background :gap="18" :size="1" />
-        <Controls />
-        <MiniMap v-if="miniMapVisible" pannable zoomable />
+        <LineageMapBreadcrumbs
+          :breadcrumbs="breadcrumbs"
+          :lens="currentRequest.lens"
+          @focus="onBreadcrumbFocus"
+        />
+        <LineageMapStatusPanel
+          :node-count="scene?.nodes.length ?? 0"
+          :hidden-node-count="scene?.hiddenNodeCount ?? 0"
+          :sampled="scene?.sampled ?? false"
+        />
+        <LineageMapRail
+          :active-stop="railStop"
+          :lens="currentRequest.lens"
+          :can-drill="canDrill"
+          @select-stop="onRailStopSelect"
+        />
+        <Panel position="bottom-left">
+          <LineageLayers
+            :scene-lens="currentRequest.lens"
+            :scene-level-label-key="levelLabelKey"
+            @change-scene-lens="onLensChange"
+          />
+        </Panel>
+        <Panel position="bottom-right">
+          <LineageZoomControls
+            :mini-map-visible="miniMapVisible"
+            :zoom="zoom"
+            @toggle-mini-map="miniMapVisible = !miniMapVisible"
+            @zoom-in="onZoomIn"
+            @zoom-out="onZoomOut"
+            @fit-view="onFitView"
+          />
+        </Panel>
+        <MiniMap v-if="miniMapVisible" pannable zoomable position="bottom-right" />
       </VueFlow>
-    </div>
-    <div
-      v-if="selectedNode"
-      class="lineage-map__selection"
-      data-testid="lineage-map-selection"
-    >
-      <span class="lineage-map__selection-name">{{ selectedNode.displayName || selectedNode.label }}</span>
-      <Space>
-        <Button
-          v-if="isSceneNodeDrillable(selectedNode)"
-          data-testid="lineage-map-drill"
-          :aria-label="t('lineage.mapDrillHelp')"
-          @click="drillInto(selectedNode)"
-        >
-          {{ t('lineage.mapDrill') }}
-        </Button>
-        <Button
-          v-if="currentRequest.band !== 'FIELD'"
-          data-testid="lineage-map-show-fields"
-          @click="showFields"
-        >
-          {{ t('lineage.mapShowFields') }}
-        </Button>
-        <Button data-testid="lineage-map-open-asset" @click="emit('navigate', selectedNode)">
-          {{ t('lineage.openAsset') }}
-        </Button>
-      </Space>
     </div>
     <div
       v-if="selectedEdge && selectedEdgeInfo"
@@ -880,6 +847,13 @@ const nodeTypes = {
       </span>
       <span v-if="edgeDetailsLoading" class="lineage-map__edge-field">{{ t('shared.loading') }}</span>
     </div>
+    <LineageEntityDrawer
+      :open="Boolean(drawerNode)"
+      :entity-type="drawerNode?.entityType ?? ''"
+      :fqn="drawerNode?.fullyQualifiedName ?? ''"
+      :display-name="drawerNode?.displayName || drawerNode?.label"
+      @close="drawerNode = undefined"
+    />
     <Modal
       v-if="showOnboarding"
       :open="true"
@@ -940,54 +914,6 @@ const nodeTypes = {
   border-radius: var(--sm-radius-card);
   background: var(--sm-content-bg);
 }
-.lineage-map__toolbar {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--sm-border-secondary);
-  background: var(--sm-bg-container);
-}
-.lineage-map__lens-label {
-  color: var(--sm-text-tertiary);
-  font-size: 12px;
-}
-.lineage-map__view-only {
-  margin-top: 6px;
-  color: var(--sm-text-tertiary);
-  font-size: 12px;
-}
-.lineage-map__breadcrumbs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px 0;
-}
-.lineage-map__crumb {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--sm-color-primary);
-  cursor: pointer;
-  font-size: 12px;
-}
-.lineage-map__crumb--current {
-  color: var(--sm-text-primary);
-  cursor: default;
-  font-weight: 600;
-}
-.lineage-map__crumb-separator {
-  color: var(--sm-text-quaternary);
-}
-.lineage-map__level {
-  padding: 8px 10px 0;
-  color: var(--sm-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-.lineage-map__hidden {
-  margin-inline-start: 8px;
-  color: var(--sm-text-tertiary);
-  font-weight: 400;
-}
 .lineage-map__canvas {
   display: flex;
   flex: 1 1 auto;
@@ -1017,18 +943,17 @@ const nodeTypes = {
 .lineage-map__canvas :deep(.lineage-map-node--ghost) {
   opacity: 0.45;
 }
-.lineage-map__canvas :deep(.vue-flow__controls) {
-  overflow: hidden;
-  border: 1px solid var(--sm-border-secondary);
-  border-radius: var(--sm-border-radius);
-  box-shadow: var(--sm-shadow-card);
-}
 .lineage-map__canvas :deep(.vue-flow__minimap) {
   overflow: hidden;
   border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius);
 }
-.lineage-map__selection,
+/* The minimap panel sits above the bottom-right zoom cluster, not
+   beside it: 15px panel margin + ~52px cluster height + 8px gap,
+   minus the 15px margin the panel itself carries. */
+.lineage-map__canvas :deep(.vue-flow__panel.bottom.right:has(.vue-flow__minimap)) {
+  bottom: 60px;
+}
 .lineage-map__edge {
   display: flex;
   flex-wrap: wrap;

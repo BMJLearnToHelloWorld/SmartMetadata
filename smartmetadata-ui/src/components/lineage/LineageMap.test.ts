@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { getLineageEdgeDetails, getLineageScene } from '@/api/lineage';
 import { ELKLayout } from '@/lineage/elkLayout';
 import { captureLineagePng } from '@/lineage/exportPng';
@@ -162,9 +163,18 @@ async function mountMap(
   mockedGetLineageScene.mockImplementation(
     async (options) => scenes[options.band] ?? LAYER_SCENE,
   );
+  // The node drawer renders a RouterLink; the map itself needs no
+  // router, but the drawer test opens it from the map.
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'home', component: { template: '<div/>' } },
+      { path: '/asset/:entityType/:fqn', name: 'asset', component: { template: '<div/>' } },
+    ],
+  });
   const wrapper = mount(LineageMap, {
     props: { isPlatformLineage: true, ...props },
-    global: { plugins: [Antd, createTestI18n()] },
+    global: { plugins: [router, Antd, createTestI18n()] },
     attachTo: document.body,
   });
   await flushPromises();
@@ -202,21 +212,35 @@ describe('LineageMap', () => {
     clearOnboardingCookie();
   });
 
-  it('renders the layer scene with lens buttons, band rail, breadcrumbs and the view-only note', async () => {
+  it('renders the layer scene with the layers trigger, band rail, breadcrumbs, zoom cluster and minimap', async () => {
     const wrapper = await mountMap();
-    expect(wrapper.find('[data-testid="lineage-layer-service-btn"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-layer-domain-btn"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-layer-dataProduct-btn"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-map-rail-layer"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-map-rail-asset"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="lineage-map-rail-field"]').exists()).toBe(true);
+    // Pin LineageLayers scene menu: the trigger names the scene level.
+    expect(wrapper.find('[data-testid="lineage-layer-btn"]').text()).toContain('Service Level');
+    expect(wrapper.find('[data-testid="lineage-map-band-LAYER"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-map-band-ASSET"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-map-band-FIELD"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="lineage-map-crumb-root"]').text()).toBe('All services');
-    expect(wrapper.get('[data-testid="lineage-map-level"]').text()).toContain('Service Level');
-    expect(wrapper.get('[data-testid="lineage-map-view-only"]').text()).toContain(
-      'view and export only',
-    );
+    // The top toolbar, view-only badge and level row are gone with the
+    // overlay layout; the zoom cluster replaces the generic Controls.
+    expect(wrapper.find('[data-testid="lineage-map-view-only"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-map-level"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-controls"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-zoom-controls"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="zoom-level"]').text()).toBe('100%');
     expect(wrapper.find('[data-testid="lineage-node-svc2"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('shows the truncated status pill when the scene hides nodes', async () => {
+    const wrapper = await mountMap(
+      {},
+      { LAYER: { ...LAYER_SCENE, hiddenNodeCount: 3 } },
+      'lineage-map-truncated-notice',
+    );
+    expect(wrapper.get('[data-testid="lineage-map-truncated-notice"]').text()).toContain(
+      'Showing 2 of 5 assets',
+    );
     wrapper.unmount();
   });
 
@@ -267,16 +291,22 @@ describe('LineageMap', () => {
     wrapper.unmount();
   });
 
-  it('switches lens to the new lens root and switches band from the rail', async () => {
+  it('switches lens from the layers menu and switches band from the rail', async () => {
     const wrapper = await mountMap();
-    await wrapper.get('[data-testid="lineage-layer-domain-btn"]').trigger('click');
+    await wrapper.get('[data-testid="lineage-layer-btn"]').trigger('click');
+    await flushPromises();
+    const domain = [
+      ...document.body.querySelectorAll<HTMLElement>('[data-testid="lineage-layer-lens-domain"]'),
+    ].at(-1);
+    expect(domain).not.toBeUndefined();
+    domain!.click();
     await flushPromises();
     expect(mockedGetLineageScene).toHaveBeenCalledWith(
       expect.objectContaining({ lens: 'domain', band: 'LAYER' }),
     );
     expect(wrapper.emitted('update:lens')).toEqual([['domain']]);
     expect(wrapper.emitted('request-change')?.[0][0]).toMatchObject({ lens: 'domain', band: 'LAYER' });
-    await wrapper.get('[data-testid="lineage-map-rail-field"]').trigger('click');
+    await wrapper.get('[data-testid="lineage-map-band-FIELD"]').trigger('click');
     await vi.waitFor(() =>
       expect(wrapper.find('[data-testid="lineage-column-svc1.db.a.id"]').exists()).toBe(true),
     );
@@ -286,12 +316,12 @@ describe('LineageMap', () => {
     wrapper.unmount();
   });
 
-  it('selects a node, drills into it, and returns via the root breadcrumb from cache', async () => {
+  it('drills into a node on plain click and returns via the root breadcrumb from cache', async () => {
     const wrapper = await mountMap();
+    // Pin: the node body click drills directly; there is no selection
+    // bar and no separate Drill button.
+    expect(wrapper.find('[data-testid="lineage-map-selection"]').exists()).toBe(false);
     await wrapper.get('[data-testid="lineage-node-svc1"]').trigger('click');
-    expect(wrapper.find('[data-testid="lineage-map-selection"]').exists()).toBe(true);
-    expect(wrapper.emitted('select-node')?.[0][0]).toMatchObject({ id: 'svc1' });
-    await wrapper.get('[data-testid="lineage-map-drill"]').trigger('click');
     await flushPromises();
     expect(mockedGetLineageScene).toHaveBeenCalledWith(
       expect.objectContaining({ band: 'ASSET', focusFqn: 'svc1', entityType: 'databaseService' }),
@@ -308,12 +338,21 @@ describe('LineageMap', () => {
     wrapper.unmount();
   });
 
-  it('opens the asset for the selected node without navigating on plain node click', async () => {
+  it('opens the node detail drawer from the node name button', async () => {
     const wrapper = await mountMap();
-    await wrapper.get('[data-testid="lineage-node-svc1"]').trigger('click');
-    expect(wrapper.emitted('navigate')).toBeUndefined();
-    await wrapper.get('[data-testid="lineage-map-open-asset"]').trigger('click');
-    expect(wrapper.emitted('navigate')?.[0][0]).toMatchObject({ id: 'svc1' });
+    const vueFlow = wrapper.findComponent({ name: 'VueFlow' });
+    const node = vueFlow.props('nodes').find((entry: { id: string }) => entry.id === 'svc1') as {
+      data: { onOpenEntity: () => void };
+    };
+    node.data.onOpenEntity();
+    await flushPromises();
+    // The drawer teleports to document.body; its panel testid is on
+    // the native body div inside it (antd drops fallthrough attrs).
+    expect(document.body.querySelector('[data-testid="lineage-entity-panel"]')).not.toBeNull();
+    expect(
+      (document.body.querySelector('[data-testid="entity-link"]') as HTMLElement | null)
+        ?.textContent,
+    ).toBe('Svc One');
     wrapper.unmount();
   });
 
@@ -325,7 +364,6 @@ describe('LineageMap', () => {
     });
     const wrapper = await mountMap();
     await wrapper.get('[data-testid="lineage-node-svc1"]').trigger('click');
-    await wrapper.get('[data-testid="lineage-map-drill"]').trigger('click');
     await flushPromises();
     await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-a"]').exists()).toBe(true));
     await wrapper.get('[data-testid="vue-flow-edge-stub"]').trigger('click');
@@ -340,7 +378,6 @@ describe('LineageMap', () => {
   it('is view-only: a drag-connect emits nothing and fetches nothing', async () => {
     const wrapper = await mountMap();
     await wrapper.get('[data-testid="lineage-node-svc1"]').trigger('click');
-    await wrapper.get('[data-testid="lineage-map-drill"]').trigger('click');
     await flushPromises();
     await vi.waitFor(() => expect(wrapper.find('[data-testid="lineage-node-a"]').exists()).toBe(true));
     await vi.waitFor(() => expect(mockedGetLineageScene.mock.calls.length).toBeGreaterThanOrEqual(5));
@@ -352,7 +389,7 @@ describe('LineageMap', () => {
     wrapper.unmount();
   });
 
-  it('exposes PNG export for the page toolbar, has no map export button, and toggles the mini map', async () => {
+  it('exposes PNG export for the page toolbar, has no map export button, and toggles the minimap from the zoom cluster', async () => {
     const wrapper = await mountMap();
     // Pin PlatformLineage renders Export PNG exactly once, in the page
     // header; the map has no export button of its own.
@@ -364,8 +401,10 @@ describe('LineageMap', () => {
     expect(mockedCapturePng).toHaveBeenCalled();
     expect(mockedCapturePng.mock.calls[0][1]).toBe('lineage-map-service-layer.png');
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
-    await wrapper.get('[data-testid="lineage-map-toggle-minimap"]').trigger('click');
+    await wrapper.get('[data-testid="toggle-mind-map"]').trigger('click');
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="toggle-mind-map"]').trigger('click');
+    expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
