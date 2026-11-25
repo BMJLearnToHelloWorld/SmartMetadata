@@ -6,12 +6,13 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { flushPromises, mount } from '@vue/test-utils';
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import LineageGraph from '@/components/lineage/LineageGraph.vue';
 import LineageView from './LineageView.vue';
 
 vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
@@ -109,15 +110,20 @@ describe('LineageView', () => {
     // 2026-11-25 lineage-controls: find-node moved to the canvas search
     // select (LineageSearchSelect); the standalone column-lineage table
     // was deleted per B-7(c) — column mappings now render inside the
-    // node card, collapsed until the node's columns toggle is clicked.
+    // node card. The vue-flow stub renders plain node buttons, never
+    // the card, so the mapping is asserted where it lands in the
+    // rendered graph: the upstream node's columns carry the edge's
+    // from-column. (Card rendering itself is covered by
+    // LineageNode.test.ts.)
     expect(wrapper.find('[data-testid="lineage-search-select"]').exists()).toBe(true);
-    await wrapper
-      .get('[data-testid="lineage-node-svc.db.schema.raw_orders"] [data-testid="lineage-node-toggle-columns"]')
-      .trigger('click');
-    await vi.waitFor(() =>
-      expect(
-        wrapper.find('[data-testid="lineage-column-svc.db.schema.raw_orders.id"]').exists(),
-      ).toBe(true),
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const flowNodes = flow.props('nodes') as {
+      id: string;
+      data: { columns?: { fqn: string }[] };
+    }[];
+    const upNode = flowNodes.find((node) => node.id === 'up-id');
+    expect(upNode?.data.columns?.map((column) => column.fqn)).toContain(
+      'svc.db.schema.raw_orders.id',
     );
     const lineageCall = vi
       .mocked(fetch)
@@ -159,7 +165,19 @@ describe('LineageView', () => {
     // 2026-11-25 lineage-controls (pin): a node body click drills into
     // the node's own lineage instead of opening the asset; the asset
     // path is now node name button -> detail drawer -> header link.
-    await wrapper.get('[data-testid="lineage-node-open-up-id"]').trigger('click');
+    // The vue-flow stub renders plain node buttons, never the card's
+    // name button, so drive the graph->canvas contract the way
+    // LineageCanvas.test.ts does: emit open-node on the graph.
+    const graph = wrapper.findComponent(LineageGraph);
+    graph.vm.$emit('open-node', {
+      id: 'up-id',
+      entityType: 'table',
+      name: 'raw_orders',
+      displayName: 'raw_orders',
+      fullyQualifiedName: 'svc.db.schema.raw_orders',
+      isCenter: false,
+    });
+    await flushPromises();
     await vi.waitFor(() =>
       expect(document.body.querySelector('[data-testid="lineage-entity-panel"]')).not.toBeNull(),
     );
@@ -191,12 +209,20 @@ describe('LineageView', () => {
     );
     expect(String(firstLineageCall?.[0])).toContain('upstreamDepth=3');
     // 2026-11-25 lineage-controls: the toolbar depth stepper is gone;
-    // upstream depth is now set in the canvas config modal.
+    // upstream depth is now set in the canvas config modal, which
+    // teleports to document.body — so the input is read off the body
+    // like LineageConfigModal.test.ts does (findComponent cannot see
+    // teleported content by testid).
     await wrapper.get('[data-testid="lineage-config"]').trigger('click');
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const upstreamInput = wrapper.findComponent('[data-testid="lineage-config-upstream"]');
-    expect(upstreamInput.exists()).toBe(true);
-    await upstreamInput.vm.$emit('update:value', 2);
+    await vi.waitFor(() =>
+      expect(
+        document.body.querySelector('[data-testid="lineage-config-upstream"] input'),
+      ).not.toBeNull(),
+    );
+    const upstreamInput = document.body.querySelector(
+      '[data-testid="lineage-config-upstream"] input',
+    ) as HTMLInputElement;
+    await new DOMWrapper(upstreamInput).setValue('2');
     const okButton = document.body.querySelector(
       '.ant-modal-footer .ant-btn-primary',
     ) as HTMLElement | null;
