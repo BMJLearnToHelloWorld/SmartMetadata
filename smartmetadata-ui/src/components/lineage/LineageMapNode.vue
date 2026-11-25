@@ -4,7 +4,6 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useI18n } from 'vue-i18n';
 import { Handle, Position } from '@vue-flow/core';
 import type { LineageGraphNode } from '@/lineage/graphModel';
 import { isContainerSceneNode, type LineageSceneNode } from '@/lineage/scene';
@@ -19,28 +18,30 @@ export interface LineageMapNodeData extends LineageGraphNode {
   sceneNode: LineageSceneNode;
   subtitle?: string;
   countLabel?: string;
-  drillable: boolean;
   expanded?: boolean;
   highlighted?: boolean;
   highlightedColumns?: string[];
   onToggleColumns?: () => void;
-  onDrill?: (node: LineageSceneNode) => void;
+  /**
+   * Pin `LineageNodeLabelV1:180-191`: the container name is a
+   * link-style button opening the node detail drawer. The body click
+   * drills in; there is no separate Drill button (pin has none).
+   */
+  onOpenEntity?: () => void;
 }
 
 const props = defineProps<{
   data: LineageMapNodeData;
 }>();
 
-const { t } = useI18n();
-
 const isContainer = computed(() => isContainerSceneNode(props.data.sceneNode));
 
 const nodeData = computed<LineageNodeData>(() => props.data);
 
-function onDrill(event: Event): void {
+function onOpenEntity(event: Event): void {
   event.stopPropagation();
   event.preventDefault();
-  props.data.onDrill?.(props.data.sceneNode);
+  props.data.onOpenEntity?.();
 }
 </script>
 
@@ -58,23 +59,21 @@ function onDrill(event: Event): void {
     <template v-if="isContainer">
       <Handle type="target" :position="Position.Left" />
       <div class="lineage-map-node__head">
-        <span class="lineage-map-node__name">{{ data.displayName || data.name }}</span>
+        <button
+          v-if="data.onOpenEntity"
+          type="button"
+          class="lineage-map-node__name lineage-map-node__name--link"
+          :data-testid="`lineage-map-node-open-${data.id}`"
+          @click="onOpenEntity"
+        >
+          {{ data.displayName || data.name }}
+        </button>
+        <span v-else class="lineage-map-node__name">{{ data.displayName || data.name }}</span>
         <span v-if="data.countLabel" class="lineage-map-node__count" data-testid="lineage-map-node-count">
           {{ data.countLabel }}
         </span>
       </div>
       <div v-if="data.subtitle" class="lineage-map-node__subtitle">{{ data.subtitle }}</div>
-      <div v-if="data.drillable" class="lineage-map-node__actions">
-        <button
-          type="button"
-          class="lineage-map-node__drill"
-          :data-testid="`lineage-map-drill-${data.id}`"
-          :aria-label="t('lineage.mapDrillHelp')"
-          @click="onDrill"
-        >
-          {{ t('lineage.mapDrill') }}
-        </button>
-      </div>
       <Handle type="source" :position="Position.Right" />
     </template>
     <LineageNode v-else :data="nodeData" />
@@ -110,6 +109,15 @@ function onDrill(event: Event): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.lineage-map-node__name--link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--sm-color-primary);
+  cursor: pointer;
+  text-align: left;
+  font-size: inherit;
+}
 .lineage-map-node__count {
   flex: none;
   padding: 0 8px;
@@ -127,18 +135,5 @@ function onDrill(event: Event): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.lineage-map-node__actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 10px 8px;
-}
-.lineage-map-node__drill {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--sm-color-primary);
-  cursor: pointer;
-  font-size: 11px;
 }
 </style>

@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { defineComponent, h } from 'vue';
+import { vi } from 'vitest';
 
 export const vueFlowStubs = {
   '@vue-flow/core': () => ({
@@ -20,11 +21,18 @@ export const vueFlowStubs = {
       emits: ['node-click', 'node-context-menu', 'connect', 'edge-click'],
       setup(props, { emit, slots, expose }) {
         // Flow API subset LineageGraph/LineageMap use (fitView/getViewport/
-        // setViewport); exposed so export flows can be exercised in tests.
+        // setViewport/zoomIn/zoomOut/setCenter); exposed so export, zoom
+        // and centering flows can be exercised in tests. The zoom/center
+        // spies are fresh per mount (the factory builds a new component
+        // definition per `vi.mock` call), so tests read them off the
+        // mounted stub instance.
         expose({
           getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
           setViewport: () => undefined,
           fitView: async () => true,
+          zoomIn: vi.fn(async () => true),
+          zoomOut: vi.fn(async () => true),
+          setCenter: vi.fn(() => undefined),
         });
         // Read props inside the render function, not once in setup: the
         // parent replaces the nodes/edges arrays when the scene changes,
@@ -102,6 +110,11 @@ export const vueFlowStubs = {
       },
     }),
     Handle: defineComponent({ name: 'Handle', setup: () => () => h('div') }),
+    Panel: defineComponent({
+      name: 'Panel',
+      props: { position: { type: String, default: '' } },
+      setup: (_, { slots }) => () => h('div', { class: 'vue-flow-panel-stub' }, slots.default?.()),
+    }),
     MarkerType: { ArrowClosed: 'arrowclosed' },
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   }),

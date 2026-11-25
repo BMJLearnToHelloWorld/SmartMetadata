@@ -5,11 +5,10 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Select, Space, Tooltip, message } from 'ant-design-vue';
+import { Button, Space, message } from 'ant-design-vue';
 import { SM_COLOR_WARNING, SM_SURFACES } from '@/theme/tokens';
-import { MarkerType, VueFlow } from '@vue-flow/core';
+import { MarkerType, Panel, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
-import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import type { Connection, Edge, Node, NodeComponent, NodeMouseEvent, NodeTypesObject } from '@vue-flow/core';
 import { columnBelongsToNode, columnLineageEdges } from '@/lineage/columnPorts';
@@ -18,11 +17,11 @@ import {
   type LineageEntityContext,
   type LineagePlatformView,
 } from '@/lineage/layers';
-import { filterCanvasNodes } from '@/lineage/nodeChrome';
 import {
   layoutLineageGraph,
   lineageNodeNeighbors,
   lineageNodeSide,
+  lineageNodeSize,
   type LineageGraphEdge,
   type LineageGraphModel,
   type LineageGraphNode,
@@ -30,10 +29,10 @@ import {
 } from '@/lineage/graphModel';
 import LineageLayers from './LineageLayers.vue';
 import LineageNode, { type LineageNodeData } from './LineageNode.vue';
+import LineageZoomControls from './LineageZoomControls.vue';
 import { captureLineagePng, lineagePngFileName } from '@/lineage/exportPng';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
-import '@vue-flow/controls/dist/style.css';
 import '@vue-flow/minimap/dist/style.css';
 
 const props = withDefaults(
@@ -67,6 +66,12 @@ const props = withDefaults(
     /** Layers-panel state, from the lineage store. */
     activeLayer?: LineageLayer[];
     platformView?: LineagePlatformView;
+    /**
+     * Fullscreen, driven by the canvas header (pin `Lineage.tsx`: the
+     * `fullscreen` URL param). The graph no longer owns a fullscreen
+     * toggle of its own.
+     */
+    fullscreen?: boolean;
   }>(),
   {
     variant: 'page',
@@ -84,11 +89,13 @@ const props = withDefaults(
     entityContext: undefined,
     activeLayer: () => [],
     platformView: 'None',
+    fullscreen: false,
   },
 );
 
 const emit = defineEmits<{
-  navigate: [node: LineageGraphNode];
+  /** Pin `Lineage.tsx:1599-1621`: a node click opens the drawer. */
+  'open-node': [node: LineageGraphNode];
   'select-node': [node: LineageGraphNode];
   connect: [payload: { from: LineageGraphNode; to: LineageGraphNode }];
   'expand-children': [payload: { node: LineageGraphNode; direction: 'upstream' | 'downstream' }];
@@ -114,8 +121,8 @@ const { t } = useI18n();
 const expandedIds = ref<string[]>([]);
 const selectedNodeId = ref<string | undefined>();
 const selectedEdge = ref<LineageEdgeSelection | undefined>();
-const fullscreen = ref(false);
-const layoutNonce = ref(0);
+const zoom = ref(1);
+const miniMapVisible = ref(true);
 /** Per-node "columns with lineage only" filter (pin nodeFilterState). */
 const columnsLineageOnlyIds = ref<string[]>([]);
 
@@ -158,7 +165,7 @@ async function runLayout(fitAfter: boolean): Promise<void> {
 }
 
 watch(
-  [() => props.model, expandedSet, layoutNonce],
+  [() => props.model, expandedSet],
   () => {
     const centerChanged = props.model.centerId !== lastLayoutCenterId;
     if (centerChanged) {
@@ -203,6 +210,9 @@ const nodes = computed<Node<LineageNodeData>[]>(() =>
         onToggleColumnsLineageOnly: () => toggleColumnsLineageOnly(node.id),
         isNodeEditable: props.canEdit,
         canDeleteNode: props.canEdit && !node.isCenter,
+        // Pin `LineageNodeLabelV1:180-191`: the node name is a link-style
+        // button that opens the node detail drawer.
+        onOpenEntity: () => openNode(node),
         onEditLineage: (direction, columnFqn) =>
           emit('edit-lineage', { node, direction, ...(columnFqn ? { columnFqn } : {}) }),
         onDeleteNode: () => emit('delete-node', node),
@@ -302,18 +312,29 @@ const edges = computed<Edge[]>(() => {
   return [...entityEdges, ...columnEdges];
 });
 
-const nodeOptions = computed(() =>
-  filterCanvasNodes(props.model.nodes, '').map((node) => ({
-    value: node.id,
-    label: node.displayName || node.name,
-  })),
-);
+/**
+ * Pin `Lineage.tsx:1599-1621` (`onNodeClick`): a node click opens the
+ * node detail drawer. The click also keeps the canvas selection (it
+ * drives Delete/Backspace), and clicks on controls inside the card —
+ * buttons, inputs, links, handles, the column list — are excluded so
+ * they keep their own actions (the name button opens the drawer via
+ * `onOpenEntity` and stops propagation there).
+ */
+function openNode(node: LineageGraphNode): void {
+  selectedNodeId.value = node.id;
+  emit('select-node', node);
+  emit('open-node', node);
+}
 
-function onNodeClick(payload: { node: Node<LineageNodeData> }): void {
+function onNodeClick(payload: { event?: Event; node: Node<LineageNodeData> }): void {
+  const target = payload.event?.target as HTMLElement | undefined;
+  if (
+    target?.closest?.('button, input, a, .vue-flow__handle, .lineage-node__columns')
+  ) {
+    return;
+  }
   if (payload.node.data) {
-    selectedNodeId.value = payload.node.data.id;
-    emit('select-node', payload.node.data);
-    emit('navigate', payload.node.data);
+    openNode(payload.node.data);
   }
 }
 
@@ -400,35 +421,76 @@ function onConnect(connection: Connection): void {
   emit('connect', { from, to });
 }
 
-function onFindNode(value: unknown): void {
-  const id = typeof value === 'string' ? value : '';
-  const node = props.model.nodes.find((item) => item.id === id);
-  selectedNodeId.value = id || undefined;
-  if (node) {
-    emit('select-node', node);
-  }
-}
-
-function resetLayout(): void {
-  expandedIds.value = [];
-  layoutNonce.value += 1;
-}
-
-function toggleFullscreen(): void {
-  fullscreen.value = !fullscreen.value;
-}
-
 // Structural subset of the VueFlow instance API (fitView/getViewport/
-// setViewport are exposed by @vue-flow/core's VueFlow component); typed
-// structurally so this file does not depend on the component's full type.
+// setViewport/zoomIn/zoomOut/setCenter are exposed by @vue-flow/core's
+// VueFlow component); typed structurally so this file does not depend on
+// the component's full type.
 type FlowApi = {
   getViewport: () => { x: number; y: number; zoom: number };
   setViewport: (viewport: { x: number; y: number; zoom: number }) => void;
-  fitView: (options?: { padding?: number }) => Promise<boolean>;
+  fitView: (options?: { padding?: number; maxZoom?: number }) => Promise<boolean>;
+  zoomIn: (options?: { duration?: number }) => Promise<boolean>;
+  zoomOut: (options?: { duration?: number }) => Promise<boolean>;
+  setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
   $el: HTMLElement;
 };
 
 const flowRef = ref<FlowApi | null>(null);
+
+function syncZoom(): void {
+  const viewport = flowRef.value?.getViewport?.();
+  if (viewport) {
+    zoom.value = viewport.zoom;
+  }
+}
+
+async function onZoomIn(): Promise<void> {
+  await flowRef.value?.zoomIn?.();
+  syncZoom();
+}
+
+async function onZoomOut(): Promise<void> {
+  await flowRef.value?.zoomOut?.();
+  syncZoom();
+}
+
+/**
+ * Pin `LineageControlButtons` fit: `fitView({ padding: 0.2,
+ * maxZoom: 1 })` (`EntityLineageCanvas.tsx:72`).
+ */
+async function onFitView(): Promise<void> {
+  await flowRef.value?.fitView?.({ padding: 0.2, maxZoom: 1 });
+  syncZoom();
+}
+
+function onMoveEnd(payload: unknown): void {
+  const record = payload as { flowTransform?: { zoom?: number }; zoom?: number } | null;
+  const nextZoom = record?.flowTransform?.zoom ?? record?.zoom;
+  if (typeof nextZoom === 'number') {
+    zoom.value = nextZoom;
+  }
+}
+
+/**
+ * Pin `LineageSearchSelect` centering: `setCenter` on the node's
+ * rendered center (`ZOOM_TRANSITION_DURATION` 800ms) at the current
+ * zoom. Returns false when the node is not on the canvas. Exposed
+ * for the tab-header search.
+ */
+function centerOnNode(nodeId: string): boolean {
+  const flow = flowRef.value;
+  const positionedNode = positioned.value?.nodes.find((item) => item.id === nodeId);
+  if (!flow || !positionedNode) {
+    return false;
+  }
+  const size = lineageNodeSize(positionedNode, expandedSet.value);
+  flow.setCenter(
+    positionedNode.position.x + size.width / 2,
+    positionedNode.position.y + size.height / 2,
+    { zoom: flow.getViewport().zoom, duration: 800 },
+  );
+  return true;
+}
 
 /**
  * Full-graph PNG export, exposed to LineageCanvas. Mirrors the official
@@ -458,7 +520,7 @@ async function exportPng(entityType: string, fqn: string): Promise<void> {
   }
 }
 
-defineExpose({ exportPng });
+defineExpose({ exportPng, centerOnNode });
 
 watch(
   () => props.model.centerId,
@@ -499,35 +561,10 @@ watch(
     ]"
     data-testid="lineage-graph"
   >
-    <div class="lineage-graph__toolbar">
+    <div v-if="canEdit" class="lineage-graph__toolbar">
       <Space wrap align="center">
-        <span v-if="canEdit" class="lineage-graph__hint" data-testid="lineage-connect-hint">{{ t('lineage.connectHelp') }}</span>
-        <Select
-          :value="selectedNodeId"
-          allow-clear
-          show-search
-          option-filter-prop="label"
-          class="lineage-graph__find"
-          data-testid="lineage-find-node"
-          :options="nodeOptions"
-          :placeholder="t('lineage.findNode')"
-          @update:value="onFindNode"
-        />
-        <Tooltip :title="t('lineage.resetLayoutHelp')">
-          <Button data-testid="lineage-reset-layout" :aria-label="t('lineage.resetLayoutHelp')" @click="resetLayout">
-            {{ t('lineage.resetLayout') }}
-          </Button>
-        </Tooltip>
-        <Tooltip :title="t('lineage.fullscreenHelp')">
-          <Button
-            data-testid="lineage-fullscreen"
-            :aria-label="t('lineage.fullscreenHelp')"
-            @click="toggleFullscreen"
-          >
-            {{ fullscreen ? t('lineage.exitFullscreen') : t('lineage.fullscreen') }}
-          </Button>
-        </Tooltip>
-        <template v-if="selectedEdge && canEdit">
+        <span class="lineage-graph__hint" data-testid="lineage-connect-hint">{{ t('lineage.connectHelp') }}</span>
+        <template v-if="selectedEdge">
           <span class="lineage-graph__hint" data-testid="lineage-selected-edge">{{ selectedEdgeLabel }}</span>
           <Button
             danger
@@ -546,16 +583,26 @@ watch(
       :node-types="nodeTypes"
       :nodes-draggable="true"
       :nodes-connectable="canEdit"
-      :min-zoom="0.3"
-      :max-zoom="2"
+      :min-zoom="0.1"
+      :max-zoom="2.5"
       @node-click="onNodeClick"
       @node-context-menu="onNodeContextMenu"
       @edge-click="onEdgeClick"
       @connect="onConnect"
+      @move-end="onMoveEnd"
     >
       <Background :color="SM_SURFACES.borderSecondary" :gap="18" :size="1" />
-      <Controls position="top-right" />
-      <MiniMap pannable zoomable />
+      <Panel position="bottom-right">
+        <LineageZoomControls
+          :mini-map-visible="miniMapVisible"
+          :zoom="zoom"
+          @toggle-mini-map="miniMapVisible = !miniMapVisible"
+          @zoom-in="onZoomIn"
+          @zoom-out="onZoomOut"
+          @fit-view="onFitView"
+        />
+      </Panel>
+      <MiniMap v-if="miniMapVisible" pannable zoomable position="bottom-right" />
       <div class="lineage-graph__layers">
         <LineageLayers
           :entity-type="entityType"
@@ -605,17 +652,13 @@ watch(
   border-bottom: 1px solid var(--sm-border-secondary);
   background: var(--sm-bg-container);
 }
-/* Pin's Layers panel sits bottom-left on the canvas; the zoom controls
- * moved to top-right so the two never overlap (minimap stays
- * bottom-right). */
+/* Pin's Layers panel sits bottom-left on the canvas; the zoom cluster
+ * sits bottom-right, with the minimap above it. */
 .lineage-graph__layers {
   position: absolute;
   left: 12px;
   bottom: 12px;
   z-index: 5;
-}
-.lineage-graph__find {
-  min-width: 220px;
 }
 .lineage-graph__hint {
   color: var(--sm-text-tertiary);
@@ -634,24 +677,15 @@ watch(
 .lineage-graph :deep(.lineage-edge--column .vue-flow__edge-path) {
   stroke: var(--sm-color-primary);
 }
-.lineage-graph :deep(.vue-flow__controls) {
-  overflow: hidden;
-  border: 1px solid var(--sm-border-secondary);
-  border-radius: var(--sm-border-radius);
-  box-shadow: var(--sm-shadow-card);
-}
-.lineage-graph :deep(.vue-flow__controls-button) {
-  width: 28px;
-  height: 28px;
-  border-color: var(--sm-border-secondary);
-  background: var(--sm-bg-container);
-}
-.lineage-graph :deep(.vue-flow__controls-button:hover) {
-  background: var(--sm-color-primary-bg);
-}
 .lineage-graph :deep(.vue-flow__minimap) {
   overflow: hidden;
   border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius);
+}
+/* The minimap panel sits above the bottom-right zoom cluster: 15px
+   panel margin + ~52px cluster height + 8px gap, minus the 15px
+   margin the panel itself carries. */
+.lineage-graph :deep(.vue-flow__panel.bottom.right:has(.vue-flow__minimap)) {
+  bottom: 60px;
 }
 </style>

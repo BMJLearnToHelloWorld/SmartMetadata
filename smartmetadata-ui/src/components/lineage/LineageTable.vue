@@ -3,16 +3,14 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import {
   Badge,
   Button,
   Dropdown,
-  Input,
   Menu,
-  Select,
   Space,
   Tag,
   message,
@@ -66,19 +64,30 @@ import LineageTableDescription from './LineageTableDescription.vue';
  * `dir`/`depth`/`currentPage`/`pageSize` from the route query and
  * writes `dir`/`depth`/paging back with `router.replace` (pin's
  * `updateURLParams`); config depths and quick filters come from the
- * shared lineage store, exactly like pin's `useLineageStore`. It emits
- * nothing — the URL is the interface.
+ * shared lineage store, exactly like pin's `useLineageStore`. The
+ * search term arrives as a prop from the canvas header (pin's
+ * `CustomControls` search bar, debounced there); the table reports its
+ * depth options upward (`update:depth-options`) for the header's
+ * depth dropdown, and exposes `exportCsv` + `hasRows` for the header's
+ * impact-tab CSV item.
  *
- * Header scope: the canvas already renders the config button, time
- * filter, quick filters and export panel above the tabs, so this table
- * renders only its own header (pin `extraTableFilters` + the impact
- * parts of `CustomControlsComponent`): direction toggle, level
- * dropdown, depth select, search, CSV export. The full tab control
- * (lineage ↔ impact_analysis writing `mode`) is L6's wiring.
+ * Header scope: pin's table header is only `extraTableFilters`
+ * (`LineageTable.tsx:459-520`) — the direction toggle and the
+ * impact-on dropdown. The depth select, search input and CSV export
+ * live in the canvas header (`CustomControls`), not here.
  */
-const props = defineProps<{
-  entityType: string;
-  fqn: string;
+const props = withDefaults(
+  defineProps<{
+    entityType: string;
+    fqn: string;
+    /** Impact search term from the canvas header (already debounced). */
+    searchValue?: string;
+  }>(),
+  { searchValue: '' },
+);
+
+const emit = defineEmits<{
+  'update:depth-options': [options: number[]];
 }>();
 
 const route = useRoute();
@@ -87,8 +96,8 @@ const { t } = useI18n();
 const lineageStore = useLineageStore();
 
 const level = ref<LineageImpactLevel>('table');
-const searchInput = ref('');
-const searchValue = ref('');
+/** Search term from the canvas header (debounced there, 300ms). */
+const searchValue = computed(() => props.searchValue ?? '');
 const loading = ref(false);
 const exporting = ref(false);
 const tableRows = ref<LineageTableRow[]>([]);
@@ -127,6 +136,18 @@ const depthOptions = computed(() => {
   const values = options.length > 0 ? options : [nodeDepth.value];
   return values.map((depth) => ({ value: depth, label: String(depth) }));
 });
+
+/** The canvas header owns the depth dropdown; it needs these options. */
+watch(
+  depthOptions,
+  (options) => {
+    emit(
+      'update:depth-options',
+      options.map((option) => option.value),
+    );
+  },
+  { immediate: true },
+);
 
 const displayedColumnRows = computed(() =>
   columnRows.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value),
@@ -198,22 +219,7 @@ watch(urlParams, (next) => {
   }
 });
 
-// Pin's impact search bar debounces 300ms (`typingInterval={300}`).
-let searchTimer: ReturnType<typeof setTimeout> | undefined;
-watch(searchInput, (next) => {
-  if (searchTimer !== undefined) {
-    clearTimeout(searchTimer);
-  }
-  searchTimer = setTimeout(() => {
-    searchValue.value = next;
-  }, 300);
-});
 watch(searchValue, () => resetPage());
-onBeforeUnmount(() => {
-  if (searchTimer !== undefined) {
-    clearTimeout(searchTimer);
-  }
-});
 
 async function loadTableLevel(): Promise<void> {
   const paginationKey = JSON.stringify({
@@ -352,15 +358,6 @@ function onLevelChange(next: LineageImpactLevel): void {
   writePagingToUrl();
 }
 
-function onDepthChange(value: unknown): void {
-  const depth = Number(value);
-  if (!Number.isFinite(depth) || depth < 0 || depth === nodeDepth.value) {
-    return;
-  }
-  currentPage.value = 1;
-  writeQuery({ depth: String(Math.trunc(depth)), currentPage: '1' });
-}
-
 type TableChangePagination = Parameters<NonNullable<TableProps['onChange']>>[0];
 
 function onTableChange(pagination: TableChangePagination): void {
@@ -410,6 +407,9 @@ function asColumnRow(record: unknown): LineageTableColumnRow {
 function entityLink(ref: LineageTableEntityRef): string {
   return lastFqnSegment(ref.fullyQualifiedName);
 }
+
+/** The canvas header's impact-tab CSV item calls through here. */
+defineExpose({ exportCsv: onExportCsv, hasRows });
 </script>
 
 <template>
@@ -448,28 +448,6 @@ function entityLink(ref: LineageTableEntityRef): string {
           </Menu>
         </template>
       </Dropdown>
-      <span>{{ t('lineage.impactNodeDepth') }}</span>
-      <Select
-        :value="nodeDepth"
-        data-testid="lineage-impact-depth"
-        :options="depthOptions"
-        :aria-label="t('lineage.impactNodeDepth')"
-        @change="(value: unknown) => onDepthChange(value)"
-      />
-      <Input.Search
-        v-model:value="searchInput"
-        data-testid="lineage-impact-search"
-        :placeholder="t('lineage.impactSearch')"
-        allow-clear
-      />
-      <Button
-        data-testid="lineage-impact-export-csv"
-        :loading="exporting"
-        :disabled="!hasRows"
-        @click="onExportCsv"
-      >
-        {{ t('lineage.exportCsv') }}
-      </Button>
     </Space>
     <NoDataPlaceholder
       v-if="!loading && displayedRows.length === 0"

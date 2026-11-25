@@ -156,4 +156,28 @@ describe('LineageNode', () => {
     expect(onEdit).toHaveBeenCalledWith('upstream', 'svc.db.schema.orders.id');
     wrapper.unmount();
   });
+
+  it('renders the name as a link button opening the drawer when onOpenEntity is wired', async () => {
+    const onOpenEntity = vi.fn();
+    const wrapper = mount(LineageNode, {
+      props: { data: nodeData({ onOpenEntity }) },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const button = wrapper.find('[data-testid="lineage-node-open-center-id"]');
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toBe('Orders');
+    await button.trigger('click');
+    expect(onOpenEntity).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('renders the name as plain text when no drawer callback is wired', () => {
+    const wrapper = mount(LineageNode, {
+      props: { data: nodeData() },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="lineage-node-open-center-id"]').exists()).toBe(false);
+    expect(wrapper.find('.lineage-node__name').text()).toBe('Orders');
+    wrapper.unmount();
+  });
 });

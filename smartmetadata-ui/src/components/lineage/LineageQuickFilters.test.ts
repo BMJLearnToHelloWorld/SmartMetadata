@@ -34,14 +34,7 @@ describe('LineageQuickFilters', () => {
     ]);
   });
 
-  it('shows and emits clear when selections exist', async () => {
-    const wrapper = mount(LineageQuickFilters, {
-      props: { value: [{ key: 'owners', values: ['alice'] }] },
-      global: { plugins: [Antd, createTestI18n()] },
-    });
-    const clear = wrapper.find('[data-testid="lineage-quick-filter-clear"]');
-    expect(clear.exists()).toBe(true);
-    await clear.trigger('click');
-    expect(wrapper.emitted('change')?.at(-1)).toEqual([[]]);
-  });
+  // The component owns no clear button anymore: the single Clear all
+  // lives in the canvas filter section (pin CustomControls), covered
+  // by LineageCanvas's filter-section tests.
 });

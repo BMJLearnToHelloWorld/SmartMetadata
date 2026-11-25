@@ -3,9 +3,9 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue';
+import { reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Select, Space, Tooltip } from 'ant-design-vue';
+import { Select, Space, Tooltip } from 'ant-design-vue';
 import {
   LINEAGE_QUICK_FILTER_FIELDS,
   normalizeLineageQuickFilters,
@@ -42,10 +42,6 @@ function syncFromProps(next: LineageQuickFilterSelection[]): void {
 
 watch(() => props.value, syncFromProps, { immediate: true, deep: true });
 
-const hasAny = computed(() =>
-  LINEAGE_QUICK_FILTER_FIELDS.some((field) => draft[field.key].length > 0),
-);
-
 function onFieldChange(key: LineageQuickFilterKey, values: unknown): void {
   draft[key] = Array.isArray(values)
     ? values.filter((item): item is string => typeof item === 'string')
@@ -56,13 +52,6 @@ function onFieldChange(key: LineageQuickFilterKey, values: unknown): void {
       LINEAGE_QUICK_FILTER_FIELDS.map((field) => ({ key: field.key, values: draft[field.key] })),
     ),
   );
-}
-
-function onClear(): void {
-  for (const field of LINEAGE_QUICK_FILTER_FIELDS) {
-    draft[field.key] = [];
-  }
-  emit('change', []);
 }
 </script>
 
@@ -84,14 +73,6 @@ function onClear(): void {
         :aria-label="t(field.labelKey)"
         @update:value="(values: unknown) => onFieldChange(field.key, values)"
       />
-      <Button
-        v-if="hasAny"
-        data-testid="lineage-quick-filter-clear"
-        type="link"
-        @click="onClear"
-      >
-        {{ t('lineage.clearFilters') }}
-      </Button>
     </Space>
   </div>
 </template>

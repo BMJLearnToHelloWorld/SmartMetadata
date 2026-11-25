@@ -15,6 +15,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { LOCALE_STORAGE_KEY } from '@/i18n/localePreference';
 import { useAuthStore } from '@/stores/auth';
 import { useGuardDecisionStore } from '@/stores/guardDecision';
+import { usePersonaStore } from '@/stores/persona';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import { createTestI18n } from '@/test/i18n';
 import AppShell from './AppShell.vue';
@@ -88,12 +89,14 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
 describe('AppShell', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     getInboxCounts.mockReset();
     getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
   });
 
   afterEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   it('renders the custom logo URL and falls back to the bundled logo on error', async () => {
@@ -162,12 +165,16 @@ describe('AppShell', () => {
     );
     expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
     // dev_ui shell composition: the old header widgets (real notifications,
-    // domain scope, version tag, AppMode marker) are not rendered by the
-    // redesigned shell; the bell is the inbox button (B5-3). The help
-    // menu is rendered (B-8, pin HELP_ITEMS).
+    // version tag, AppMode marker) are not rendered by the redesigned
+    // shell; the bell is the inbox button (B5-3). The help menu is
+    // rendered (B-8, pin HELP_ITEMS). The domain scope IS rendered now
+    // (pin NavBar domainScopeSelector, button trigger `domain-dropdown`,
+    // ADR:2026-11-25-nav-domain-persona); the standalone top-bar persona
+    // Select is gone — persona switching lives in the user menu.
     expect(wrapper.find('[data-testid="notification-box-button"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="domain-select"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="domain-dropdown"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="persona-switcher"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="app-version"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="app-mode-residual"]').exists()).toBe(false);
     expect(wrapper.find('.shell__sider').classes().join(' ')).not.toContain('ant-layout-sider-dark');
@@ -357,6 +364,7 @@ describe('AppShell', () => {
 describe('AppShell help menu (B-8, pin HELP_ITEMS)', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     getInboxCounts.mockReset();
     getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
   });
@@ -364,6 +372,7 @@ describe('AppShell help menu (B-8, pin HELP_ITEMS)', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   async function openHelpMenu(version?: string) {
@@ -498,6 +507,7 @@ describe('AppShell persona sidebar (C-4)', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     getInboxCounts.mockReset();
     getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
   });
@@ -505,6 +515,7 @@ describe('AppShell persona sidebar (C-4)', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   it('renders the saved navigation order and hides hidden items', async () => {
@@ -647,5 +658,131 @@ describe('AppShell persona sidebar (C-4)', () => {
       expect(contentText(wrapper)).toContain('search');
       wrapper.unmount();
     });
+  });
+});
+
+describe('AppShell user menu persona section (pin UserProfileIcon "Switch persona")', () => {
+  const personas = [
+    { id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst', displayName: 'Analyst' },
+    { id: 'p2', name: 'Steward', fullyQualifiedName: 'Steward', displayName: 'Steward' },
+    { id: 'p3', name: 'Zebra', fullyQualifiedName: 'Zebra', displayName: 'Zebra' },
+    { id: 'p4', name: 'Mango', fullyQualifiedName: 'Mango', displayName: 'Mango' },
+  ];
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  function stubShellFetch() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: personas, paging: { total: personas.length } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return new Response('not found', { status: 404 });
+        }
+        if (url.includes('/v1/domains')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function openUserMenu() {
+    const { wrapper } = await mountShell();
+    useAuthStore().user = {
+      id: 'u1',
+      name: 'alice',
+      displayName: 'Alice',
+      defaultPersona: { id: 'p1', name: 'Analyst', type: 'persona' },
+    };
+    await flushPromises();
+    await flushPromises();
+    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
+    await flushPromises();
+    return wrapper;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    getInboxCounts.mockReset();
+    getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('shows the current persona name on the trigger, or Default with no selection', async () => {
+    sessionStorage.setItem('sm.persona.v1', 'p2');
+    stubShellFetch();
+    const wrapper = await openUserMenu();
+    expect(wrapper.find('[data-testid="user-menu-trigger"]').text()).toContain('Steward');
+    wrapper.unmount();
+  });
+
+  it('shows Default on the trigger when no personas exist', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/domains')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountShell();
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="user-menu-trigger"]').text()).toContain('Default');
+    wrapper.unmount();
+  });
+
+  it('lists 2 personas + more in the menu, keeps the menu open when expanding', async () => {
+    sessionStorage.setItem('sm.persona.v1', 'p2');
+    stubShellFetch();
+    const wrapper = await openUserMenu();
+    expect(wrapper.find('[data-testid="user-menu"]').text()).toContain('Switch persona');
+    expect(wrapper.find('[data-testid="user-menu-persona-p1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="user-menu-persona-p2"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="user-menu-persona-more"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="user-menu-persona-p4"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="user-menu-persona-more"]').trigger('click');
+    await flushPromises();
+    // Pin's shouldCloseOnSelect={false}: the menu stays open and the
+    // full list is visible without reopening.
+    expect((wrapper.vm as unknown as { userMenuOpen: boolean }).userMenuOpen).toBe(true);
+    expect(wrapper.find('[data-testid="user-menu-persona-p4"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="user-menu-persona-p3"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('switches the persona from the menu and closes the menu', async () => {
+    sessionStorage.setItem('sm.persona.v1', 'p2');
+    stubShellFetch();
+    const wrapper = await openUserMenu();
+    // Mango sits behind "more": expand first, then pick it.
+    await wrapper.find('[data-testid="user-menu-persona-more"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="user-menu-persona-p4"]').trigger('click');
+    await flushPromises();
+    expect(usePersonaStore().selectedPersonaId).toBe('p4');
+    expect(wrapper.find('[data-testid="user-menu-trigger"]').text()).toContain('Mango');
+    expect((wrapper.vm as unknown as { userMenuOpen: boolean }).userMenuOpen).toBe(false);
+    wrapper.unmount();
   });
 });

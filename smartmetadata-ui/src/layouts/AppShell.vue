@@ -3,10 +3,11 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import PersonaSwitcher from '@/layouts/PersonaSwitcher.vue';
+import DomainSelect from '@/components/shared/DomainSelect.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import { getInboxCounts } from '@/api/inbox';
 import TourOverlay from '@/components/shared/TourOverlay.vue';
@@ -62,6 +63,11 @@ const guardDenied = computed(() =>
 const collapsed = ref(false);
 const openKeys = ref<string[]>(defaultOpenNavKeys());
 
+// The user menu is controlled so the "Switch persona" section's "more"
+// row can keep it open after expanding (pin's
+// shouldCloseOnSelect={false}); every other pick closes it.
+const userMenuOpen = ref(false);
+
 // With-origin highlight (DESIGN §6.7 row 7 / §10.6(4)): a create-user
 // visit highlights by its navigation origin, carried in router state
 // as breadcrumbData[0].url (official `getSidebarPathname`), not by its
@@ -107,6 +113,20 @@ const flushContent = computed(() => route.meta.flush === true);
 const hideHeaderSearch = computed(() => route.name === 'home');
 
 const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
+
+/**
+ * Pin `UserProfileIcon.component.tsx:270-300`: the user-menu trigger
+ * shows the avatar, the user name, and the current persona name — or
+ * "Default" when nothing is selected. The persona document load is
+ * kicked off with the shell so the name is available without opening
+ * the menu.
+ */
+const currentPersonaLabel = computed(
+  () =>
+    personaStore.selectedPersona?.displayName ||
+    personaStore.selectedPersona?.name ||
+    t('chrome.defaultPersona'),
+);
 
 /**
  * Brand image (pin BrandImage.tsx:40-51): a non-empty custom URL wins,
@@ -241,6 +261,11 @@ onMounted(() => {
   if (auth.isAuthenticated) {
     void auth.refreshUser().catch(() => undefined);
   }
+  // The user-menu trigger shows the current persona name, so the
+  // persona list loads with the shell (PersonaSwitcher also calls
+  // ensureLoaded on mount; the loaded guard makes the second call a
+  // no-op).
+  void personaStore.ensureLoaded();
   void loadInboxCounts();
 });
 
@@ -336,6 +361,21 @@ function onUserMenu({ key }: { key: string | number }): void {
     void router.push({ name: 'user-detail', params: { fqn: profileUserName.value } });
     return;
   }
+  // Persona rows switch the selection inside PersonaSwitcher; the
+  // shell only owns the menu open state here: a persona pick closes
+  // the menu, the "more" row keeps it open (pin's
+  // shouldCloseOnSelect={false} — re-opened on the next tick because
+  // the dropdown's own close fires first).
+  if (action.startsWith('persona:')) {
+    userMenuOpen.value = false;
+    return;
+  }
+  if (action === 'persona-more') {
+    void nextTick(() => {
+      userMenuOpen.value = true;
+    });
+    return;
+  }
   // D-9: the user menu carries no Settings entry — the left sidebar
   // footer is the only Settings entry, as officially. (The `settings`
   // branch and menu item were removed here; the footer entry in
@@ -343,6 +383,10 @@ function onUserMenu({ key }: { key: string | number }): void {
   if (action === 'logout') {
     void onLogout();
   }
+}
+
+function onUserMenuOpenChange(open: boolean): void {
+  userMenuOpen.value = open;
 }
 
 async function onLogout(): Promise<void> {
@@ -442,8 +486,8 @@ async function onLogout(): Promise<void> {
         </button>
         <GlobalSearchBar v-if="!hideHeaderSearch" />
         <div v-else class="shell__search-spacer" />
+        <DomainSelect trigger-variant="button" test-id="domain-dropdown" />
         <div class="shell__toolbar">
-          <PersonaSwitcher />
           <button
             type="button"
             data-testid="locale-switcher"
@@ -506,19 +550,25 @@ async function onLogout(): Promise<void> {
           <Dropdown
             :trigger="['click']"
             :get-popup-container="popupParent"
+            :open="userMenuOpen"
+            @open-change="onUserMenuOpenChange"
           >
             <button type="button" data-testid="user-menu-trigger" class="shell__user" :aria-label="t('chrome.userMenu')">
               <span class="shell__avatar">{{ avatarLetter }}</span>
               <span class="shell__user-copy">
                 <span class="shell__user-name">{{ displayName }}</span>
-                <span class="shell__user-role">{{ t('chrome.defaultPersona') }}</span>
+                <span class="shell__user-role">{{ currentPersonaLabel }}</span>
               </span>
+              <SmIcon icon-key="action-chevron-down" class="shell__user-caret" />
             </button>
             <template #overlay>
               <Menu data-testid="user-menu" @click="onUserMenu">
                 <Menu.Item v-if="profileUserName" key="profile" data-testid="user-profile-item">
                   {{ t('chrome.viewProfile') }}
                 </Menu.Item>
+                <Menu.Divider v-if="personaStore.personas.length > 0" />
+                <PersonaSwitcher />
+                <Menu.Divider v-if="personaStore.personas.length > 0" />
                 <Menu.Item key="logout" data-testid="logout-button">
                   {{ t('chrome.logout') }}
                 </Menu.Item>
@@ -987,6 +1037,11 @@ async function onLogout(): Promise<void> {
   color: var(--sm-text-tertiary);
   font-size: 12px;
   font-weight: 400;
+}
+.shell__user-caret {
+  flex: none;
+  font-size: 10px;
+  color: var(--sm-text-tertiary);
 }
 .shell__search-spacer {
   flex: 1;

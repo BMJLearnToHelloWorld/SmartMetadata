@@ -9,14 +9,24 @@ import { useRoute, useRouter } from 'vue-router';
 import {
   Alert,
   Button,
+  Dropdown,
   Empty,
-  InputNumber,
+  Input,
+  Menu,
+  Select,
   Space,
   Spin,
   Tooltip,
   Typography,
   message,
 } from 'ant-design-vue';
+import type { SelectValue } from 'ant-design-vue/es/select';
+import {
+  DownloadOutlined,
+  FilterOutlined,
+  FullscreenOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue';
 import { apiRequest } from '@/api/client';
 import {
   deleteEntityLineageByName,
@@ -26,14 +36,8 @@ import {
   searchLineage,
 } from '@/api/lineage';
 import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
-import { assetLocation, isDetailWired, lineageLocation, resolveDetailEndpoint } from '@/catalog/entityRoutes';
+import { isDetailWired, lineageLocation, resolveDetailEndpoint } from '@/catalog/entityRoutes';
 import { highlightForColumn } from '@/lineage/columnPorts';
-import {
-  clampLineageDepth,
-  LINEAGE_DEPTH_MAX,
-  LINEAGE_DEPTH_MIN,
-  LINEAGE_SESSION_DEPTH_DEFAULT,
-} from '@/lineage/depth';
 import {
   collapseLineageModel,
   dqHighlight,
@@ -44,6 +48,7 @@ import {
   type LineageGraphModel,
   type LineageGraphNode,
 } from '@/lineage/graphModel';
+import { impactEntityRows } from '@/lineage/impact';
 import type { LineageCanvasConfig, LineageLayer } from '@/lineage/config';
 import { resolveLineageTimeRange } from '@/lineage/config';
 import { getDeleteKeyAction } from '@/lineage/deleteKey';
@@ -60,18 +65,18 @@ import {
   type LineagePlatformView,
 } from '@/lineage/layers';
 import { buildLineageQueryFilter } from '@/lineage/quickFilters';
-import { isImpactAnalysisMode } from '@/lineage/lineageTable';
+import { isImpactAnalysisMode, parseLineageTableUrlParams } from '@/lineage/lineageTable';
 import { useLineageStore } from '@/stores/lineage';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
-import SmTable from '@/components/shared/SmTable.vue';
 import AddLineagePopover, { type AddLineageSubmission } from './AddLineagePopover.vue';
 import LineageConfigModal from './LineageConfigModal.vue';
-import LineageExportPanel from './LineageExportPanel.vue';
+import LineageEntityDrawer from './LineageEntityDrawer.vue';
 import LineageGraph, { type LineageEdgeSelection } from './LineageGraph.vue';
 import LineageNodeDeleteModal from './LineageNodeDeleteModal.vue';
 import LineageQuickFilters from './LineageQuickFilters.vue';
+import LineageSearchSelect from './LineageSearchSelect.vue';
 import LineageTable from './LineageTable.vue';
 import LineageTimeFilter from './LineageTimeFilter.vue';
 
@@ -107,8 +112,6 @@ const errorMessage = ref('');
  */
 const denialMessage = ref('');
 const graph = ref<LineageGraphModel | null>(null);
-const upstreamDepth = ref(LINEAGE_SESSION_DEPTH_DEFAULT);
-const downstreamDepth = ref(LINEAGE_SESSION_DEPTH_DEFAULT);
 const highlightedColumnFqns = ref<string[]>([]);
 const highlightedNodeIds = ref<string[]>([]);
 const highlightedEdgeIds = ref<string[]>([]);
@@ -129,6 +132,14 @@ const exportIdentity = computed(() => ({ entityType: props.entityType, fqn: prop
 
 const lineageStore = useLineageStore();
 const shellConfig = useShellConfigStore();
+
+/**
+ * Pin's depth editor is the config modal (store): the fetch depths read
+ * the store directly, like pin's directional config depth. The old
+ * local depth refs + header steppers are gone with the steppers.
+ */
+const upstreamDepth = computed(() => lineageStore.config.upstreamDepth);
+const downstreamDepth = computed(() => lineageStore.config.downstreamDepth);
 
 /** Focus entity context for the Layers panel (service/domains/data products). */
 const entityContext = ref<LineageEntityContext | undefined>();
@@ -206,8 +217,8 @@ const activeView = ref(isImpactAnalysisMode(route.query) ? 'impact' : 'diagram')
  * render the lineage/impact tabs and write the param back
  * (CustomControls.component.tsx:233-236 read, :259-270 handleTabChange
  * writes `params['mode'] = key`). Both variants mirror that round-trip
- * here. The `table` view is a product-only extra pin's tab does not
- * offer; selecting it strips the mode param like the diagram does.
+ * here. Pin has exactly two tabs; the product-only `table` view is
+ * deleted (pin's Impact tab itself is the LineageTable).
  */
 const LINEAGE_MODE_PARAM = 'mode';
 const LINEAGE_IMPACT_MODE = 'impact_analysis';
@@ -219,14 +230,7 @@ function modeViewFromRoute(): 'impact' | 'diagram' {
 watch(
   () => route.query[LINEAGE_MODE_PARAM],
   () => {
-    const next = modeViewFromRoute();
-    // Only URL-driven moves touch the view: a navigation into impact mode,
-    // or out of it while the impact view is showing. A user-picked `table`
-    // view must not be forced back to diagram when the change handler
-    // below strips the mode param.
-    if (next === 'impact' || activeView.value === 'impact') {
-      activeView.value = next;
-    }
+    activeView.value = modeViewFromRoute();
   },
 );
 
@@ -242,6 +246,10 @@ function onViewChange(key: string): void {
     delete query[LINEAGE_MODE_PARAM];
     void router.replace({ query }).catch(() => undefined);
   }
+  if (key !== 'impact') {
+    impactSearchInput.value = '';
+    impactSearchValue.value = '';
+  }
 }
 
 /** Mirrors the export panel's png-available rule so the page button agrees with it. */
@@ -249,9 +257,13 @@ const canExportPng = computed(
   () => Boolean(graph.value && !empty.value && !errorMessage.value && activeView.value === 'diagram'),
 );
 
-// Ref to the mounted LineageGraph (diagram view only); the export panel
-// calls through here so no document.querySelector is needed to find the flow.
-const graphRef = ref<{ exportPng: (entityType: string, fqn: string) => Promise<void> } | null>(null);
+// Ref to the mounted LineageGraph (diagram view only); the header
+// export/search actions call through here so no document.querySelector
+// is needed to find the flow.
+const graphRef = ref<{
+  exportPng: (entityType: string, fqn: string) => Promise<void>;
+  centerOnNode: (nodeId: string) => boolean;
+} | null>(null);
 
 async function onExportPng(): Promise<void> {
   const graphApi = graphRef.value;
@@ -279,30 +291,26 @@ defineExpose({ exportPng: onExportPng, openConfig, canExportPng });
 
 const viewTabs = computed(() => [
   { key: 'diagram', label: t('lineage.viewDiagram') },
-  { key: 'table', label: t('lineage.viewTable') },
   { key: 'impact', label: t('lineage.viewImpact') },
 ]);
 
-const edgeRows = computed(() =>
-  (graph.value?.edges ?? []).map((edge) => {
-    const from = graph.value?.nodes.find((node) => node.id === edge.source);
-    const to = graph.value?.nodes.find((node) => node.id === edge.target);
-    return {
-      key: edge.id,
-      fromEntity: from?.displayName || from?.name || edge.source,
-      toEntity: to?.displayName || to?.name || edge.target,
-      pipelineName: edge.pipelineName || '',
-      source: edge.sourceKind || '',
-    };
-  }),
-);
-
-const edgeColumns = computed(() => [
-  { title: t('lineage.edgeFrom'), dataIndex: 'fromEntity', key: 'fromEntity' },
-  { title: t('lineage.edgeTo'), dataIndex: 'toEntity', key: 'toEntity' },
-  { title: t('lineage.edgePipeline'), dataIndex: 'pipelineName', key: 'pipelineName' },
-  { title: t('lineage.edgeSource'), dataIndex: 'source', key: 'source' },
-]);
+/**
+ * The CSV export's disabled rule, carried over from the deleted
+ * LineageExportPanel: rows are the center entity plus the impact
+ * rows in both directions; the CSV button is disabled when there is
+ * nothing to export.
+ */
+const exportRowsCount = computed(() => {
+  if (!graph.value) {
+    return 0;
+  }
+  const centerRow = graph.value.nodes.some((node) => node.id === graph.value?.centerId) ? 1 : 0;
+  return (
+    centerRow +
+    impactEntityRows(graph.value, 'upstream').length +
+    impactEntityRows(graph.value, 'downstream').length
+  );
+});
 
 function applyShellDefaults(): void {
   const settings = shellConfig.lineageSettings;
@@ -315,16 +323,12 @@ function applyShellDefaults(): void {
     layer: settings.lineageLayer,
     pipelineViewMode: settings.pipelineViewMode,
   });
-  upstreamDepth.value = lineageStore.config.upstreamDepth;
-  downstreamDepth.value = lineageStore.config.downstreamDepth;
 }
 
 function onConfigSave(next: LineageCanvasConfig): void {
   configModalOpen.value = false;
   const previousLayer = lineageStore.config.layer;
   lineageStore.update(next);
-  upstreamDepth.value = lineageStore.config.upstreamDepth;
-  downstreamDepth.value = lineageStore.config.downstreamDepth;
   // Pin's `defaultLineageConfig` effect re-seeds the overlay when the
   // settings layer changes; the config modal is the product's settings
   // path, so a layer change here re-seeds the panel the same way.
@@ -339,11 +343,146 @@ watch(
   { immediate: true },
 );
 
-const columnColumns = computed(() => [
-  { title: t('lineage.fromColumns'), dataIndex: 'fromColumns', key: 'fromColumns' },
-  { title: t('lineage.toColumn'), dataIndex: 'toColumn', key: 'toColumn' },
-  { title: t('lineage.function'), dataIndex: 'function', key: 'function', width: 160 },
-]);
+/**
+ * Pin `CustomControls.component.tsx:535-595` (header) + `:460-535`
+ * (filter expansion): the filters button opens an expansion holding
+ * the depth dropdown (impact tab only), the quick filters and a single
+ * Clear all; the time filter and quick filters are no longer always
+ * visible. Pin's filter-open side effect — forcing fullscreen — is
+ * deliberately not ported: the expansion renders inline with room, so
+ * forcing the view fullscreen would only hide the canvas.
+ */
+const filtersOpen = ref(false);
+const hasQuickFilterValues = computed(() => lineageStore.quickFilters.length > 0);
+
+/** Pin `Lineage.tsx:561-566`: fullscreen is a URL param (`fullscreen=true`). */
+const LINEAGE_FULLSCREEN_PARAM = 'fullscreen';
+const isFullscreen = computed(() => route.query[LINEAGE_FULLSCREEN_PARAM] === 'true');
+
+function toggleFullscreen(): void {
+  const query = { ...route.query };
+  if (isFullscreen.value) {
+    delete query[LINEAGE_FULLSCREEN_PARAM];
+  } else {
+    query[LINEAGE_FULLSCREEN_PARAM] = 'true';
+  }
+  void router.replace({ query }).catch(() => undefined);
+}
+
+/**
+ * Impact-tab search, owned by the canvas (pin `CustomControls`
+ * renders the impact `Searchbar` in the header, 300ms debounce, and
+ * the table unmounts on tab switch so the search resets with it).
+ * The input is debounced into `impactSearchValue`, passed to the
+ * table as a prop; leaving the impact tab clears both.
+ */
+const impactSearchInput = ref('');
+const impactSearchValue = ref('');
+let impactSearchTimer: number | undefined;
+
+watch(impactSearchInput, (value) => {
+  window.clearTimeout(impactSearchTimer);
+  impactSearchTimer = window.setTimeout(() => {
+    impactSearchValue.value = value;
+  }, 300);
+});
+
+/** Depth options the table reports, for the header depth dropdown. */
+const impactDepthOptions = ref<number[]>([]);
+const impactNodeDepth = computed(
+  () => parseLineageTableUrlParams(route.query, upstreamDepth.value, downstreamDepth.value).nodeDepth,
+);
+
+function onImpactDepthChange(value: SelectValue): void {
+  // The depth options are numbers; normalise the antd SelectValue
+  // (RawValue | LabeledValue) the same way MetricCreateDrawer does.
+  const raw =
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? value.value
+      : value;
+  const depth = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(depth)) {
+    return;
+  }
+  const query = { ...route.query, depth: String(depth), currentPage: '1' };
+  void router.replace({ query }).catch(() => undefined);
+}
+
+function onClearAllFilters(): void {
+  lineageStore.setQuickFilters([]);
+  // Pin's `onPageReset` on the impact tab: a filter change resets the
+  // table to page 1.
+  if (activeView.value === 'impact') {
+    const query = { ...route.query, currentPage: '1' };
+    void router.replace({ query }).catch(() => undefined);
+  }
+}
+
+/**
+ * The export dropdown mirrors pin `CustomControls.handleExportClick`
+ * option sets: the lineage tab offers PNG + CSV, the impact tab CSV
+ * only (invoked on the table through its ref). The PNG item follows
+ * `canExportPng`; the CSV items follow the row counts.
+ */
+const tableRef = ref<{ exportCsv: () => Promise<void>; hasRows: boolean } | null>(null);
+
+const exportMenuItems = computed(() => {
+  if (activeView.value === 'impact') {
+    return [
+      {
+        key: 'csv',
+        label: t('lineage.exportCsv'),
+        disabled: !(tableRef.value?.hasRows ?? false),
+      },
+    ];
+  }
+  return [
+    { key: 'png', label: t('lineage.exportPng'), disabled: !canExportPng.value },
+    { key: 'csv', label: t('lineage.exportCsv'), disabled: exportRowsCount.value === 0 },
+  ];
+});
+
+async function onExportMenuClick(payload: { key: string | number }): Promise<void> {
+  if (payload.key === 'png') {
+    await onExportPng();
+    return;
+  }
+  if (activeView.value === 'impact') {
+    await tableRef.value?.exportCsv();
+    return;
+  }
+  await onExportCsv();
+}
+
+/** Node detail drawer (pin `LineageOverlays`: 576px Slideout). */
+const drawerNode = ref<LineageGraphNode | undefined>();
+
+function onOpenNode(node: LineageGraphNode): void {
+  drawerNode.value = node;
+}
+
+/**
+ * Pin `LineageSearchSelect` selection: a node opens the drawer and is
+ * centered on the canvas; a column is highlighted (its from-columns
+ * come from the graph's column mappings).
+ */
+function onSearchSelectNode(node: LineageGraphNode): void {
+  drawerNode.value = node;
+  graphRef.value?.centerOnNode(node.id);
+}
+
+function onSearchSelectColumn(columnFqn: string): void {
+  if (!graph.value || !columnFqn) {
+    return;
+  }
+  const fromColumns = (graph.value.columnMappings ?? [])
+    .filter((mapping) => mapping.toColumn === columnFqn)
+    .flatMap((mapping) => mapping.fromColumns);
+  const next = highlightForColumn(graph.value, columnFqn);
+  highlightedColumnFqns.value = [columnFqn, ...fromColumns];
+  highlightedNodeIds.value = next.nodeIds;
+  highlightedEdgeIds.value = next.edgeIds;
+}
 
 
 function clearHighlight(): void {
@@ -501,17 +640,6 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
   }
-}
-
-function openAsset(node: LineageGraphNode): void {
-  if (!node.entityType || !node.fullyQualifiedName) {
-    return;
-  }
-  void router.push(assetLocation(node.entityType, node.fullyQualifiedName));
-}
-
-function openCenterDetail(): void {
-  void router.push(assetLocation(props.entityType, props.fqn));
 }
 
 function openFullPage(): void {
@@ -838,26 +966,10 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 onMounted(() => window.addEventListener('keydown', onKeyDown));
-onUnmounted(() => window.removeEventListener('keydown', onKeyDown));
-
-function bumpDepth(side: 'upstream' | 'downstream', delta: number): void {
-  if (side === 'upstream') {
-    upstreamDepth.value = clampLineageDepth(upstreamDepth.value + delta);
-    return;
-  }
-  downstreamDepth.value = clampLineageDepth(downstreamDepth.value + delta);
-}
-
-function highlightRow(row: { fromColumns: string; toColumn: string }): void {
-  if (!graph.value) {
-    return;
-  }
-  const columnFqn = row.toColumn || row.fromColumns.split(',')[0]?.trim() || '';
-  const next = highlightForColumn(graph.value, columnFqn);
-  highlightedColumnFqns.value = [columnFqn, ...row.fromColumns.split(',').map((item) => item.trim()).filter(Boolean)];
-  highlightedNodeIds.value = next.nodeIds;
-  highlightedEdgeIds.value = next.edgeIds;
-}
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown);
+  window.clearTimeout(impactSearchTimer);
+});
 
 /**
  * Load-on-expand, mirroring pin `loadChildNodesHandler` (Lineage.tsx:
@@ -968,58 +1080,85 @@ watch(
       <Typography.Paragraph v-else type="secondary">
         {{ t('lineage.tabLead', { type: entityType, fqn }) }}
       </Typography.Paragraph>
-      <Space wrap align="center">
-        <slot name="search" />
-        <Tooltip :title="t('lineage.depthHelp')" placement="top">
-          <span>{{ t('lineage.upstreamDepth') }}</span>
+      <!--
+        Pin `CustomControls.component.tsx:535-595` (header row): left —
+        filters button + entity search; right — Lineage/Impact tabs,
+        time filter, export icon button, config gear, fullscreen icon
+        button. The diagram tab's search is the node search
+        (`LineageSearchSelect`); the impact tab's is the table search.
+        The open-full-page link is product tab/page navigation glue with
+        no pin equivalent, kept after the fullscreen button.
+      -->
+      <Space wrap align="center" class="lineage-canvas__header">
+        <Tooltip :title="t('lineage.filters')">
+          <Button
+            data-testid="filters-button"
+            :type="filtersOpen ? 'primary' : 'default'"
+            :aria-label="t('lineage.filters')"
+            :aria-pressed="filtersOpen ? 'true' : 'false'"
+            @click="filtersOpen = !filtersOpen"
+          >
+            <template #icon><FilterOutlined /></template>
+          </Button>
         </Tooltip>
-        <Tooltip :title="t('lineage.depthDecHelp')">
-          <Button data-testid="upstream-depth-dec" :aria-label="t('lineage.depthDecHelp')" @click="bumpDepth('upstream', -1)">−</Button>
-        </Tooltip>
-        <InputNumber
-          v-model:value="upstreamDepth"
-          data-testid="upstream-depth"
-          :min="LINEAGE_DEPTH_MIN"
-          :max="LINEAGE_DEPTH_MAX"
+        <LineageSearchSelect
+          v-if="activeView === 'diagram' && graph"
+          :nodes="graph.nodes"
+          @select-node="onSearchSelectNode"
+          @select-column="onSearchSelectColumn"
         />
-        <Tooltip :title="t('lineage.depthIncHelp')">
-          <Button data-testid="upstream-depth-inc" :aria-label="t('lineage.depthIncHelp')" @click="bumpDepth('upstream', 1)">+</Button>
-        </Tooltip>
-        <Tooltip :title="t('lineage.depthHelp')" placement="top">
-          <span>{{ t('lineage.downstreamDepth') }}</span>
-        </Tooltip>
-        <Tooltip :title="t('lineage.depthDecHelp')">
-          <Button data-testid="downstream-depth-dec" :aria-label="t('lineage.depthDecHelp')" @click="bumpDepth('downstream', -1)">−</Button>
-        </Tooltip>
-        <InputNumber
-          v-model:value="downstreamDepth"
-          data-testid="downstream-depth"
-          :min="LINEAGE_DEPTH_MIN"
-          :max="LINEAGE_DEPTH_MAX"
+        <Input
+          v-else-if="activeView === 'impact'"
+          v-model:value="impactSearchInput"
+          data-testid="lineage-impact-search"
+          :placeholder="t('lineage.impactSearch')"
+          allow-clear
         />
-        <Tooltip :title="t('lineage.depthIncHelp')">
-          <Button data-testid="downstream-depth-inc" :aria-label="t('lineage.depthIncHelp')" @click="bumpDepth('downstream', 1)">+</Button>
+        <DetailTabs
+          :tabs="viewTabs"
+          :active-key="activeView"
+          test-id="lineage-view-tabs"
+          @change="onViewChange"
+        />
+        <LineageTimeFilter
+          :value="lineageStore.config.timePreset"
+          :custom-start-date="lineageStore.config.customStartDate"
+          :custom-end-date="lineageStore.config.customEndDate"
+          :point-date="lineageStore.config.pointDate"
+          @change="(preset) => lineageStore.update({ timePreset: preset })"
+          @apply-custom="(dates) => lineageStore.update({ timePreset: 'customRange', customStartDate: dates.startDate, customEndDate: dates.endDate })"
+          @apply-point="(date) => lineageStore.update({ timePreset: 'pointInTime', pointDate: date })"
+        />
+        <Dropdown :trigger="['click']">
+          <Tooltip :title="t('lineage.export')">
+            <Button data-testid="export-button" :aria-label="t('lineage.export')">
+              <template #icon><DownloadOutlined /></template>
+            </Button>
+          </Tooltip>
+          <template #overlay>
+            <Menu :items="exportMenuItems" @click="onExportMenuClick" />
+          </template>
+        </Dropdown>
+        <Tooltip :title="t('lineage.config')">
+          <Button
+            data-testid="lineage-config"
+            :aria-label="t('lineage.config')"
+            @click="configModalOpen = true"
+          >
+            <template #icon><SettingOutlined /></template>
+          </Button>
         </Tooltip>
-        <Tooltip :title="t('lineage.reloadHelp')">
-          <Button data-testid="lineage-reload" :aria-label="t('lineage.reloadHelp')" @click="load">{{ t('lineage.reload') }}</Button>
+        <Tooltip :title="isFullscreen ? t('lineage.exitFullscreen') : t('lineage.fullscreen')">
+          <Button
+            data-testid="lineage-fullscreen"
+            :aria-label="isFullscreen ? t('lineage.exitFullscreen') : t('lineage.fullscreen')"
+            @click="toggleFullscreen"
+          >
+            <template #icon><FullscreenOutlined /></template>
+          </Button>
         </Tooltip>
         <Button
-          v-if="variant !== 'page'"
-          data-testid="lineage-config-open"
-          @click="configModalOpen = true"
-        >
-          {{ t('lineage.config') }}
-        </Button>
-        <Button
-          v-if="variant === 'page'"
-          data-testid="lineage-open-asset"
-          type="link"
-          @click="openCenterDetail"
-        >
-          {{ t('lineage.openAsset') }}
-        </Button>
-        <Button
-          v-else
+          v-if="variant === 'tab'"
           data-testid="lineage-open-full-page"
           type="link"
           @click="openFullPage"
@@ -1027,35 +1166,37 @@ watch(
           {{ t('lineage.openFullPage') }}
         </Button>
       </Space>
-      <LineageTimeFilter
-        :value="lineageStore.config.timePreset"
-        :custom-start-date="lineageStore.config.customStartDate"
-        :custom-end-date="lineageStore.config.customEndDate"
-        :point-date="lineageStore.config.pointDate"
-        @change="(preset) => lineageStore.update({ timePreset: preset })"
-        @apply-custom="(dates) => lineageStore.update({ timePreset: 'customRange', customStartDate: dates.startDate, customEndDate: dates.endDate })"
-        @apply-point="(date) => lineageStore.update({ timePreset: 'pointInTime', pointDate: date })"
-      />
-      <LineageQuickFilters
-        :value="lineageStore.quickFilters"
-        @change="(selections) => lineageStore.setQuickFilters(selections)"
-      />
-      <DetailTabs
-        :tabs="viewTabs"
-        :active-key="activeView"
-        test-id="lineage-view-tabs"
-        @change="onViewChange"
-      />
-      <LineageExportPanel
-        :model="graph"
-        :entity-type="exportIdentity.entityType"
-        :fqn="exportIdentity.fqn"
-        :png-available="Boolean(graph && !empty && !errorMessage && activeView === 'diagram')"
-        :show-png-button="variant !== 'page'"
-        :on-export-png="onExportPng"
-        :on-export-csv="onExportCsv"
-        :exporting-csv="exportingCsv"
-      />
+      <!--
+        Pin `CustomControls.component.tsx:460-535` (filter expansion):
+        depth dropdown (impact tab only) + quick filters + a single
+        Clear all. The time filter and quick filters no longer sit
+        always visible below the header.
+      -->
+      <div v-if="filtersOpen" class="lineage-canvas__filters" data-testid="lineage-filters-section">
+        <Select
+          v-if="activeView === 'impact'"
+          :value="impactNodeDepth"
+          data-testid="lineage-impact-depth-select"
+          :options="
+            impactDepthOptions.map((depth) => ({
+              value: depth,
+              label: `${t('lineage.impactNodeDepth')}: ${depth}`,
+            }))
+          "
+          @change="onImpactDepthChange"
+        />
+        <LineageQuickFilters
+          :value="lineageStore.quickFilters"
+          @change="(selections) => lineageStore.setQuickFilters(selections)"
+        />
+        <Button
+          data-testid="lineage-clear-all"
+          :disabled="!hasQuickFilterValues"
+          @click="onClearAllFilters"
+        >
+          {{ t('lineage.clearAll') }}
+        </Button>
+      </div>
       <!--
         The alerts live inside a stable wrapper div on purpose: toggling a
         v-if sibling ahead of the graph would shift the parent's child
@@ -1097,7 +1238,8 @@ watch(
           :entity-context="entityContext"
           :active-layer="effectiveLayers"
           :platform-view="lineageStore.platformView"
-          @navigate="openAsset"
+          :fullscreen="isFullscreen"
+          @open-node="onOpenNode"
           @select-node="(node) => { selectedNode = node; }"
           @connect="onConnectEdge"
           @expand-children="onExpandChildren"
@@ -1109,43 +1251,26 @@ watch(
           @change-active-layer="onChangeActiveLayer"
           @change-platform-view="onChangePlatformView"
         />
-        <template v-if="graph?.hasColumnLineage">
-          <Typography.Title :level="5">{{ t('lineage.columnsTitle') }}</Typography.Title>
-          <Typography.Paragraph type="secondary">{{ t('lineage.columnsLead') }}</Typography.Paragraph>
-          <SmTable
-            row-key="key"
-            size="small"
-            :pagination="false"
-            :columns="columnColumns"
-            :data-source="
-              graph.columnMappings.map((row, index) => ({
-                ...row,
-                key: `${row.fromColumns.join(',')}→${row.toColumn}:${index}`,
-                fromColumns: row.fromColumns.join(', '),
-              }))
-            "
-            test-id="column-lineage-table"
-            :custom-row="
-              (row: { fromColumns: string; toColumn: string }) => ({
-                onClick: () => highlightRow(row),
-              })
-            "
-          />
-        </template>
-      </template>
-      <template v-else-if="activeView === 'table'">
-        <Typography.Title :level="5">{{ t('lineage.edgeTableTitle') }}</Typography.Title>
-        <SmTable
-          test-id="lineage-edge-table"
-          :columns="edgeColumns"
-          :data-source="edgeRows"
-          row-key="key"
-        />
       </template>
       <!-- Impact view (pin EntityLineageTab ?mode=impact_analysis): the
            server-backed LineageTable (L5); the mode wiring above selects
            this branch from the URL. -->
-      <LineageTable v-else :entity-type="entityType" :fqn="fqn" />
+      <LineageTable
+        v-else
+        ref="tableRef"
+        :entity-type="entityType"
+        :fqn="fqn"
+        :search-value="impactSearchValue"
+        @update:depth-options="(options) => { impactDepthOptions = options; }"
+      />
+      <LineageEntityDrawer
+        :open="Boolean(drawerNode)"
+        :entity-type="drawerNode?.entityType ?? ''"
+        :fqn="drawerNode?.fullyQualifiedName ?? ''"
+        :display-name="drawerNode?.displayName || drawerNode?.name"
+        :path-label="drawerNode?.pathLabel"
+        @close="drawerNode = undefined"
+      />
       <LineageConfigModal
         :open="configModalOpen"
         :config="lineageStore.config"
@@ -1193,5 +1318,18 @@ watch(
 <style scoped>
 .lineage-canvas {
   width: 100%;
+}
+.lineage-canvas__header {
+  width: 100%;
+}
+.lineage-canvas__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
 }
 </style>

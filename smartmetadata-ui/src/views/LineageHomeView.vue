@@ -7,8 +7,9 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, message, Spin, Tooltip } from 'ant-design-vue';
+import { DownloadOutlined, SettingOutlined } from '@ant-design/icons-vue';
 import { getDerivedPermissionFlags } from '@/api/permissions';
-import { assetLocation, lineageLocation } from '@/catalog/entityRoutes';
+import { lineageLocation } from '@/catalog/entityRoutes';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
 import LineageConfigModal from '@/components/lineage/LineageConfigModal.vue';
 import LineageEntitySearch from '@/components/lineage/LineageEntitySearch.vue';
@@ -20,7 +21,6 @@ import {
   getLensLabelKey,
   getSceneRequestFromSearch,
   getSceneSearch,
-  type LineageSceneNode,
   type LineageSceneRequest,
 } from '@/lineage/scene';
 import { useLineageStore } from '@/stores/lineage';
@@ -82,13 +82,6 @@ const title = computed(() =>
 function onSceneRequestChange(request: LineageSceneRequest): void {
   sceneRequest.value = request;
   void router.replace(`${route.path}${getSceneSearch(currentSearch(), request)}`);
-}
-
-function openSceneAsset(node: LineageSceneNode): void {
-  if (!node.entityType || !node.fullyQualifiedName) {
-    return;
-  }
-  void router.push(assetLocation(node.entityType, node.fullyQualifiedName));
 }
 
 // Pin pageTitle: the focused variant names the entity it is centred on
@@ -154,39 +147,26 @@ watch(permissionsError, (value) => {
   }
 });
 
-// The page buttons delegate to whichever graph is mounted, mirroring
-// pin's page-level actions: pin PlatformLineage renders Export PNG and
+// The page buttons delegate to the platform map, mirroring pin's
+// page-level actions: pin PlatformLineage renders Export PNG and
 // Lineage configuration exactly once, in the page header (a3012259ca
 // `pages/PlatformLineage/PlatformLineage.tsx:214,218-224`), and the map
-// itself has no export button — so the page toolbar is the single place
-// for both. The focused view keeps the canvas's modal; the platform view
-// renders the same modal at page level because the canvas is not mounted
-// there.
-const canvasRef = ref<{
-  exportPng: () => Promise<void>;
-  openConfig: () => void;
-} | null>(null);
+// itself has no export button. The focused view's export/config live in
+// the canvas header (pin `CustomControls`), so the page toolbar hides
+// its actions there and the canvas ref is gone.
 const mapRef = ref<{ exportPng: () => Promise<void> } | null>(null);
 const configModalOpen = ref(false);
 
 async function onExportPng(): Promise<void> {
   try {
-    if (focused.value) {
-      await canvasRef.value?.exportPng();
-    } else {
-      await mapRef.value?.exportPng();
-    }
+    await mapRef.value?.exportPng();
   } catch {
     message.error(t('lineage.exportPngFailed'));
   }
 }
 
 function onOpenConfig(): void {
-  if (focused.value) {
-    canvasRef.value?.openConfig();
-  } else {
-    configModalOpen.value = true;
-  }
+  configModalOpen.value = true;
 }
 
 function onConfigSave(next: LineageCanvasConfig): void {
@@ -209,15 +189,15 @@ function openTarget(target: { entityType: string; fqn: string }): void {
         <div data-testid="search-entity-select">
           <LineageEntitySearch :placeholder="focused ? fqn : undefined" @select="openTarget" />
         </div>
-        <div class="lineage-page__actions">
+        <div v-if="!focused" class="lineage-page__actions">
           <Tooltip :title="t('lineage.exportAsPng')" placement="top">
             <Button data-testid="export-button" :aria-label="t('lineage.exportAsPng')" @click="onExportPng">
-              {{ t('lineage.exportPng') }}
+              <template #icon><DownloadOutlined /></template>
             </Button>
           </Tooltip>
           <Tooltip :title="t('lineage.config')" placement="top">
             <Button data-testid="lineage-config" :aria-label="t('lineage.config')" @click="onOpenConfig">
-              {{ t('lineage.config') }}
+              <template #icon><SettingOutlined /></template>
             </Button>
           </Tooltip>
         </div>
@@ -240,11 +220,9 @@ function openTarget(target: { entityType: string; fqn: string }): void {
             :upstream-depth="lineageStore.config.upstreamDepth"
             :downstream-depth="lineageStore.config.downstreamDepth"
             @request-change="onSceneRequestChange"
-            @navigate="openSceneAsset"
           />
           <LineageCanvas
             v-else
-            ref="canvasRef"
             :entity-type="entityType"
             :fqn="fqn"
             :show-header="false"
