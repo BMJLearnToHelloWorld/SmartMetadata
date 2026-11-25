@@ -14,9 +14,15 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from smartmetadata_ingestion.client.rest import RestClient
+from smartmetadata_ingestion.client.rest import (
+    TABLES_PATH,
+    RestClient,
+    encode_path_segment,
+)
 from smartmetadata_ingestion.config import WorkflowConfig
+from smartmetadata_ingestion.connectors.constraints import DeferredTableConstraints
 from smartmetadata_ingestion.errors import RestError, WorkflowError
+from smartmetadata_ingestion.fqn import parent_fqn
 from smartmetadata_ingestion.topology import SeenSet
 from smartmetadata_ingestion.records import (
     ChartRecord,
@@ -1159,6 +1165,190 @@ def _table_payload(
     if record.extension is not None:
         payload["extension"] = dict(record.extension)
     return payload
+
+
+@dataclass
+class TableConstraintPatchOutcome:
+    """The outcome of the post-scan foreign-key patch.
+
+    ``patched`` counts tables that received a PATCH; ``already_present``
+    counts tables whose deferred keys were all already stored, so no
+    PATCH was sent (a second run is a no-op); ``skipped`` counts
+    foreign keys not applied because the child table or the referred
+    table is not cataloged; ``failures`` carries one entry per table
+    whose patch did not land.
+    """
+
+    patched: int = 0
+    already_present: int = 0
+    skipped: int = 0
+    failures: list[FlushFailure] = field(default_factory=list)
+
+
+def _constraint_key(payload: dict[str, Any]) -> tuple[Any, ...]:
+    """A stored-or-new constraint's identity for merge dedupe.
+
+    Two constraints are the same key when they constrain the same
+    columns to the same referred columns under the same type; the
+    server stores no constraint name, so there is nothing else to
+    compare. Stored payloads come back with the same camelCase keys
+    the sink sends.
+    """
+    return (
+        payload.get("constraintType"),
+        tuple(payload.get("columns") or []),
+        tuple(payload.get("referredColumns") or []),
+        payload.get("relationshipType"),
+    )
+
+
+def patch_deferred_table_constraints(
+    client: Any,
+    deferred: list[DeferredTableConstraints],
+) -> TableConstraintPatchOutcome:
+    """Apply foreign keys held back from create requests, after the scan.
+
+    Behavior spec (ADR:2026-11-25-fk-deferral; pin
+    ``yield_table_constraints``, clean-room): one PATCH per table; the
+    table is fetched with ``fields=tableConstraints`` first so the
+    patch merges with — never replaces — the constraints already
+    stored; a key already present is not sent again; a key whose child
+    or referred table is still not cataloged is skipped with a
+    warning, never a failure; any other error is recorded per table
+    and never raised, so one table's patch cannot stop the rest.
+    """
+    outcome = TableConstraintPatchOutcome()
+    # Referred-table lookups are memoized for the run — bounded by the
+    # distinct referred tables in the deferred set — so a parent shared
+    # by many keys is fetched once.
+    parent_cataloged: dict[str, bool] = {}
+    for item in deferred:
+        try:
+            _patch_one_table_constraints(client, item, parent_cataloged, outcome)
+        except Exception as exc:
+            logger.error(
+                "deferred foreign-key patch failed for %s: %s",
+                item.table_fqn,
+                exc,
+            )
+            logger.debug(
+                "deferred foreign-key patch failure traceback for %s: %s",
+                item.table_fqn,
+                traceback.format_exc(),
+            )
+            outcome.failures.append(
+                FlushFailure(
+                    kind="table",
+                    payload={"fullyQualifiedName": item.table_fqn},
+                    error=str(exc),
+                    stack_trace=traceback.format_exc(),
+                    # Explicit: the label derives from databaseSchema+name,
+                    # which this payload does not carry — and the shape
+                    # must match TableRecord.label() for the run history.
+                    label=f"table:{item.table_fqn}",
+                )
+            )
+    return outcome
+
+
+def _patch_one_table_constraints(
+    client: Any,
+    item: DeferredTableConstraints,
+    parent_cataloged: dict[str, bool],
+    outcome: TableConstraintPatchOutcome,
+) -> None:
+    """PATCH one table's deferred foreign keys onto its stored constraints."""
+    try:
+        table = client.get_table_by_name(item.table_fqn, fields="tableConstraints")
+    except RestError as exc:
+        if exc.status_code == 404:
+            # The table's create never landed (rejected earlier in the
+            # run): its keys have nowhere to attach. The next run
+            # re-defers them; this run only warns.
+            logger.warning(
+                "skipping deferred foreign keys for %s: table is not cataloged",
+                item.table_fqn,
+            )
+            outcome.skipped += len(item.constraints)
+            return
+        raise
+    if not isinstance(table, dict) or not table.get("id"):
+        logger.warning(
+            "skipping deferred foreign keys for %s: table lookup returned no id",
+            item.table_fqn,
+        )
+        outcome.skipped += len(item.constraints)
+        return
+    resolvable: list[TableConstraintRecord] = []
+    for constraint in item.constraints:
+        if _constraint_parents_cataloged(
+            client, item.table_fqn, constraint, parent_cataloged
+        ):
+            resolvable.append(constraint)
+        else:
+            outcome.skipped += 1
+    if not resolvable:
+        return
+    stored = table.get("tableConstraints") or []
+    stored_keys = {
+        _constraint_key(entry) for entry in stored if isinstance(entry, dict)
+    }
+    merged = list(stored)
+    fresh: list[dict[str, Any]] = []
+    for constraint in resolvable:
+        payload = _table_constraint_payload(constraint)
+        if _constraint_key(payload) in stored_keys:
+            continue
+        stored_keys.add(_constraint_key(payload))
+        merged.append(payload)
+        fresh.append(payload)
+    if not fresh:
+        outcome.already_present += 1
+        return
+    # One PATCH per table, replacing the list with the merged one:
+    # "add" on an existing member replaces it, so the stored
+    # constraints survive untouched and only the fresh keys are added.
+    client.patch(
+        f"{TABLES_PATH}/{encode_path_segment(str(table['id']))}",
+        json=[{"op": "add", "path": "/tableConstraints", "value": merged}],
+    )
+    outcome.patched += 1
+
+
+def _constraint_parents_cataloged(
+    client: Any,
+    table_fqn: str,
+    constraint: TableConstraintRecord,
+    parent_cataloged: dict[str, bool],
+) -> bool:
+    """Whether every table this key refers to is cataloged.
+
+    Each referred column names its parent table; a key whose parent
+    is still missing is skipped with a warning — the pin re-resolves
+    the key at patch time and drops it the same way — while the
+    table's other keys still patch.
+    """
+    for referred_column in constraint.referred_columns or []:
+        parent = parent_fqn(referred_column)
+        known = parent_cataloged.get(parent)
+        if known is None:
+            try:
+                client.get_table_by_name(parent)
+            except RestError as exc:
+                if exc.status_code != 404:
+                    raise
+                known = False
+            else:
+                known = True
+            parent_cataloged[parent] = known
+        if not known:
+            logger.warning(
+                "skipping foreign key on %s: referred table %s is not cataloged",
+                table_fqn,
+                parent,
+            )
+            return False
+    return True
 
 
 def _stored_procedure_payload(

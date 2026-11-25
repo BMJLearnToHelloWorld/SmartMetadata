@@ -216,6 +216,75 @@ class SchemaConstraints:
                 column.constraint = kind
 
 
+@dataclass(frozen=True, slots=True)
+class DeferredTableConstraints:
+    """One table's foreign keys held back from its create request.
+
+    ``constraints`` are the table's FOREIGN_KEY groups only, in
+    catalog order; the create request carries everything else.
+    """
+
+    table_fqn: str
+    constraints: tuple[TableConstraintRecord, ...]
+
+
+class DeferredForeignKeys:
+    """Per-run store of foreign keys held back from create requests.
+
+    Behavior spec (ADR:2026-11-25-fk-deferral; pin
+    ``common_db_source`` / ``yield_table_constraints``, no pin code):
+    a foreign key is withheld from its table's create request and
+    retried after every table has landed, because the server rejects
+    a create whose referred table is not cataloged yet. The store is
+    one table's keys per entry, in first-seen table order, and holds
+    only what the run itself produced — it is not a cache and never
+    outlives the run.
+    """
+
+    def __init__(self) -> None:
+        self._by_table: dict[str, list[TableConstraintRecord]] = {}
+
+    def hold_foreign_keys(
+        self, table_fqn: str, records: list[TableConstraintRecord]
+    ) -> list[TableConstraintRecord]:
+        """Split FOREIGN_KEY groups out of a table's create-time constraints.
+
+        Returns the constraints the create request keeps (everything
+        but foreign keys). Foreign keys with a resolvable referred side
+        are stored for the post-scan patch. A foreign key whose
+        referred columns are unknown is dropped with a warning, never
+        stored and never emitted: the server would accept it without a
+        target, and the pin drops such keys instead of landing a
+        targetless constraint. The referred side comes from the source
+        catalog and cannot resolve later, so deferring it would only
+        postpone the same drop.
+        """
+        kept: list[TableConstraintRecord] = []
+        for record in records:
+            if record.constraint_type != "FOREIGN_KEY":
+                kept.append(record)
+                continue
+            if record.referred_columns is None:
+                logger.warning(
+                    "dropping foreign key on %s: referred columns are "
+                    "unknown, so the key has no target to resolve to",
+                    table_fqn,
+                )
+                continue
+            self._by_table.setdefault(table_fqn, []).append(record)
+        return kept
+
+    def deferred_tables(self) -> list[DeferredTableConstraints]:
+        """The held-back keys, one entry per table, in first-seen order."""
+        return [
+            DeferredTableConstraints(table_fqn=fqn, constraints=tuple(group))
+            for fqn, group in self._by_table.items()
+        ]
+
+    def __bool__(self) -> bool:
+        return bool(self._by_table)
+
+
 def column_constraint_from_nullable(is_nullable: bool | None) -> ColumnConstraint | None:
     """A column's constraint from nullability alone.
 

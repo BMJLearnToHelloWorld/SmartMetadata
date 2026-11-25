@@ -116,6 +116,12 @@ class StepStatus:
            it), and one sink-step warning per entity whose computed
            tags did not land (a PATCH that exhausted its retries or
            failed — a failed PATCH warns, never fails the run).
+        7. Deferred foreign-key skips, on the sink step: one per key
+           held back from a create request whose child or referred
+           table is still not cataloged at patch time (the parent was
+           filtered out or never ingested). A skipped key is scope,
+           not failure; a patch that fails for any other reason is a
+           sink-step failure, never a warning.
 
         Deliberately NOT counted (log-only): malformed query-log rows
         and unreadable CSV files, per-view/per-procedure outcome skips

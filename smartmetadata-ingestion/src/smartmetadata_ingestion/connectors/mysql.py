@@ -18,6 +18,8 @@ from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import mysql_common
 from smartmetadata_ingestion.connectors.constraints import (
     ConstraintRow,
+    DeferredForeignKeys,
+    DeferredTableConstraints,
     column_constraint_from_nullable,
     nullable_flag,
     schema_constraints_for_schema,
@@ -328,6 +330,12 @@ class MysqlSource:
     ) -> None:
         self._config = config
         self._reader = reader or (CursorCatalogReader(connect) if connect is not None else None)
+        self._deferred = DeferredForeignKeys()
+
+    def deferred_table_constraints(self) -> list[DeferredTableConstraints]:
+        """Foreign keys held back from create requests, for the post-scan
+        patch (ADR:2026-11-25-fk-deferral)."""
+        return self._deferred.deferred_tables()
 
     def prepare(self) -> None:
         return None
@@ -377,6 +385,15 @@ class MysqlSource:
                     continue
                 columns = self._columns(reader, table)
                 constraints.apply(table.name, columns)
+                # Foreign keys stay out of the create request: the server
+                # rejects a create whose referred table is not cataloged
+                # yet, and the referred table may land later in this run
+                # (ADR:2026-11-25-fk-deferral). The held-back keys are
+                # patched on after the scan, once every table has landed.
+                table_fqn = f"{schema_fqn}.{quote_name(table.name)}"
+                table_constraints = self._deferred.hold_foreign_keys(
+                    table_fqn, constraints.for_table(table.name)
+                )
                 ddl = table_ddl_for_schema(
                     reader,
                     "Mysql",
@@ -406,7 +423,7 @@ class MysqlSource:
                     table_type=table_type,
                     description=table.comment,
                     columns=columns,
-                    table_constraints=constraints.for_table(table.name),
+                    table_constraints=table_constraints,
                     owner_names=owner_names,
                     schema_definition=ddl,
                     life_cycle=life_cycle_from_ms(table.created_ms, table.updated_ms),

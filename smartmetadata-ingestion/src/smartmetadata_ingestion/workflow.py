@@ -117,7 +117,12 @@ from smartmetadata_ingestion.records import (
     UsageRecord,
     WorkflowRecord,
 )
-from smartmetadata_ingestion.sinks.metadata_rest import FlushResult, Sink, build_sink
+from smartmetadata_ingestion.sinks.metadata_rest import (
+    FlushResult,
+    Sink,
+    build_sink,
+    patch_deferred_table_constraints,
+)
 from smartmetadata_ingestion.topology import SeenSet, order_records
 
 logger = logging.getLogger(__name__)
@@ -254,6 +259,22 @@ class MetadataWorkflow:
             if pending is None:
                 pending = exc
         if pending is None:
+            # Foreign keys held back from create requests land now, after
+            # the close flush put every table (and every referred table)
+            # in the catalog (ADR:2026-11-25-fk-deferral). The patch runs
+            # only when the record run completed: an escaping exception
+            # means the listing was cut short, and patching against
+            # that partial catalog would drop keys whose parents the
+            # run never reached. A patch failure is a recorded
+            # sink-step failure (D-S1), never a raise: the threshold
+            # verdict decides the run.
+            try:
+                self._patch_deferred_table_constraints()
+            except Exception as exc:
+                failure = self._record_failure(self.sink_status, "Sink", "sink", exc)
+                self.report.failures.append(failure)
+                pending = exc
+        if pending is None:
             # Reconcile runs when no exception escaped the record run:
             # the listing then ran to completion, so the seen set is
             # complete even when individual records failed (their
@@ -370,6 +391,50 @@ class MetadataWorkflow:
         before the final status writeback.
         """
         return None
+
+    def _patch_deferred_table_constraints(self) -> None:
+        """Apply foreign keys held back from create requests.
+
+        Metadata runs only: profiler runs enumerate the same database
+        sources but write no tables, so a patch there would write
+        metadata a non-metadata run must never write. Sources without
+        deferred keys expose no ``deferred_table_constraints`` and are
+        skipped by the getattr guard — the same optional-capability
+        pattern as the profiler settings reader in prepare().
+        Patch failures are values in the sink step (D-S1): each failed
+        table becomes its own failure in the report, and the threshold
+        verdict decides the run. Skipped keys (child or referred table
+        not cataloged) are warnings on the sink step, folded here —
+        the counted set's item 7 (``progress.StepStatus.warn``).
+        """
+        if self.config.workflow.type != "metadata":
+            return
+        deferred = getattr(self._source, "deferred_table_constraints", None)
+        if not callable(deferred):
+            return
+        tables = deferred()
+        if not tables:
+            return
+        outcome = patch_deferred_table_constraints(self._client, tables)
+        for failure in outcome.failures:
+            record_failure = RecordFailure(
+                label=failure.label,
+                kind=failure.kind,
+                message=failure.error,
+                stack_trace=failure.stack_trace,
+            )
+            self.sink_status.failures.append(record_failure)
+            self.report.failures.append(record_failure)
+        if outcome.skipped:
+            self.sink_status.warn(outcome.skipped)
+        logger.info(
+            "deferred foreign-key patch: %d table(s) patched, %d already "
+            "present, %d key(s) skipped, %d table(s) failed",
+            outcome.patched,
+            outcome.already_present,
+            outcome.skipped,
+            len(outcome.failures),
+        )
 
     def _reconcile_if_configured(self) -> None:
         if not self.config.workflow.reconcile_stale:

@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
+from smartmetadata_ingestion.connectors.constraints import DeferredTableConstraints
 from smartmetadata_ingestion.errors import RestError
 from smartmetadata_ingestion.records import (
     ChartRecord,
@@ -20,10 +23,14 @@ from smartmetadata_ingestion.records import (
     PipelineRecord,
     SchemaRecord,
     StoredProcedureRecord,
+    TableConstraintRecord,
     TableRecord,
     TopicRecord,
 )
-from smartmetadata_ingestion.sinks.metadata_rest import BulkMetadataRestSink
+from smartmetadata_ingestion.sinks.metadata_rest import (
+    BulkMetadataRestSink,
+    patch_deferred_table_constraints,
+)
 
 
 class FakeClient:
@@ -692,3 +699,269 @@ def test_bulk_sink_partial_flush_logs_only_failed_record(caplog) -> None:
         if record.name == _SINK_LOGGER and record.levelno == logging.INFO
     ]
     assert summaries == ["bulk table flush: 3 payload(s), 2 succeeded, 1 failed"]
+
+
+class _CatalogClient:
+    """In-memory catalog for the deferred-key patch: tables by FQN."""
+
+    def __init__(self, tables: dict) -> None:
+        self.tables = tables
+        self.get_calls: list[str] = []
+        self.patches: list[tuple[str, object]] = []
+        self.fail_patch = False
+
+    def get_table_by_name(self, fqn: str, *, fields: str | None = None):
+        # (fqn, fields): a child fetch carries fields="tableConstraints",
+        # a parent lookup carries none — the distinction matters for the
+        # memoization assertions below.
+        self.get_calls.append((fqn, fields))
+        table = self.tables.get(fqn)
+        if table is None:
+            raise RestError(f"table not found: {fqn}", status_code=404)
+        return dict(table)
+
+    def patch(self, path: str, *, json=None, headers=None):
+        self.patches.append((path, json))
+        if self.fail_patch:
+            raise RestError("patch failed", status_code=500)
+        return {"ok": True}
+
+
+def _fk(columns, referred) -> TableConstraintRecord:
+    return TableConstraintRecord(
+        constraint_type="FOREIGN_KEY",
+        columns=list(columns),
+        referred_columns=list(referred),
+    )
+
+
+def _catalog_table(table_id: str, constraints: list | None = None) -> dict:
+    return {"id": table_id, "tableConstraints": list(constraints or [])}
+
+
+def test_patch_deferred_keys_merges_with_stored_constraints() -> None:
+    # The child and the parent are both cataloged; the child's stored
+    # primary key survives the patch and the foreign key is appended.
+    client = _CatalogClient(
+        {
+            "svc.db.public.orders": _catalog_table(
+                "t-orders",
+                [
+                    {
+                        "constraintType": "PRIMARY_KEY",
+                        "columns": ["id", "tenant"],
+                    }
+                ],
+            ),
+            "svc.db.public.customers": _catalog_table("t-customers"),
+        }
+    )
+    outcome = patch_deferred_table_constraints(
+        client,
+        [
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.orders",
+                constraints=(_fk(["customer_id"], ["svc.db.public.customers.id"]),),
+            )
+        ],
+    )
+    assert outcome.patched == 1
+    assert outcome.already_present == 0
+    assert outcome.skipped == 0
+    assert outcome.failures == []
+    assert len(client.patches) == 1
+    path, ops = client.patches[0]
+    assert path == "/v1/tables/t-orders"
+    assert ops == [
+        {
+            "op": "add",
+            "path": "/tableConstraints",
+            "value": [
+                {"constraintType": "PRIMARY_KEY", "columns": ["id", "tenant"]},
+                {
+                    "constraintType": "FOREIGN_KEY",
+                    "columns": ["customer_id"],
+                    "referredColumns": ["svc.db.public.customers.id"],
+                },
+            ],
+        }
+    ]
+    # The parent lookup is memoized: one GET per distinct parent.
+    assert [
+        fqn for fqn, fields in client.get_calls if fields is None
+    ].count("svc.db.public.customers") == 1
+
+
+def test_patch_skips_missing_parent_and_patches_the_rest() -> None:
+    # One key's parent was filtered out of the run; that key is skipped
+    # with a warning while the table's other key still lands.
+    client = _CatalogClient(
+        {
+            "svc.db.public.orders": _catalog_table("t-orders"),
+            "svc.db.public.customers": _catalog_table("t-customers"),
+        }
+    )
+    outcome = patch_deferred_table_constraints(
+        client,
+        [
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.orders",
+                constraints=(
+                    _fk(["customer_id"], ["svc.db.public.customers.id"]),
+                    _fk(["gone_id"], ["svc.db.public.gone.id"]),
+                ),
+            )
+        ],
+    )
+    assert outcome.patched == 1
+    assert outcome.skipped == 1
+    assert outcome.failures == []
+    _, ops = client.patches[0]
+    assert ops[0]["value"] == [
+        {
+            "constraintType": "FOREIGN_KEY",
+            "columns": ["customer_id"],
+            "referredColumns": ["svc.db.public.customers.id"],
+        }
+    ]
+
+
+def test_patch_skips_table_that_never_landed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # The child's create was rejected earlier in the run: its keys have
+    # nowhere to attach. Warning only — the next run re-defers them.
+    client = _CatalogClient({"svc.db.public.customers": _catalog_table("t-c")})
+    with caplog.at_level(logging.WARNING):
+        outcome = patch_deferred_table_constraints(
+            client,
+            [
+                DeferredTableConstraints(
+                    table_fqn="svc.db.public.orders",
+                    constraints=(_fk(["customer_id"], ["svc.db.public.customers.id"]),),
+                )
+            ],
+        )
+    assert outcome.patched == 0
+    assert outcome.skipped == 1
+    assert outcome.failures == []
+    assert client.patches == []
+    assert any(
+        "not cataloged" in record.message for record in caplog.records
+    )
+
+
+def test_patch_is_idempotent_on_second_run() -> None:
+    # The key is already stored (previous run patched it): no PATCH is
+    # sent and the outcome says so.
+    client = _CatalogClient(
+        {
+            "svc.db.public.orders": _catalog_table(
+                "t-orders",
+                [
+                    {
+                        "constraintType": "FOREIGN_KEY",
+                        "columns": ["customer_id"],
+                        "referredColumns": ["svc.db.public.customers.id"],
+                    }
+                ],
+            ),
+            "svc.db.public.customers": _catalog_table("t-customers"),
+        }
+    )
+    outcome = patch_deferred_table_constraints(
+        client,
+        [
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.orders",
+                constraints=(_fk(["customer_id"], ["svc.db.public.customers.id"]),),
+            )
+        ],
+    )
+    assert outcome.patched == 0
+    assert outcome.already_present == 1
+    assert outcome.failures == []
+    assert client.patches == []
+
+
+def test_patch_failure_is_recorded_and_isolates_remaining_tables() -> None:
+    # A 500 on one table's PATCH becomes that table's failure, never a
+    # raise, and the next table still patches.
+    client = _CatalogClient(
+        {
+            "svc.db.public.a": _catalog_table("t-a"),
+            "svc.db.public.b": _catalog_table("t-b"),
+            "svc.db.public.customers": _catalog_table("t-customers"),
+        }
+    )
+    client.fail_patch = True
+    outcome = patch_deferred_table_constraints(
+        client,
+        [
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.a",
+                constraints=(_fk(["c_id"], ["svc.db.public.customers.id"]),),
+            ),
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.b",
+                constraints=(_fk(["c_id"], ["svc.db.public.customers.id"]),),
+            ),
+        ],
+    )
+    assert outcome.patched == 0
+    assert len(outcome.failures) == 2
+    assert [failure.label for failure in outcome.failures] == [
+        "table:svc.db.public.a",
+        "table:svc.db.public.b",
+    ]
+
+
+def test_patch_handles_composite_and_cross_schema_keys() -> None:
+    # A composite key patches as one constraint; a key into another
+    # schema resolves its parent there.
+    client = _CatalogClient(
+        {
+            "svc.db.public.lines": _catalog_table("t-lines"),
+            "svc.db.public.orders": _catalog_table("t-orders"),
+            "svc.db.audit.events": _catalog_table("t-events"),
+        }
+    )
+    outcome = patch_deferred_table_constraints(
+        client,
+        [
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.lines",
+                constraints=(
+                    _fk(
+                        ["order_id", "tenant"],
+                        [
+                            "svc.db.public.orders.id",
+                            "svc.db.public.orders.tenant",
+                        ],
+                    ),
+                ),
+            ),
+            DeferredTableConstraints(
+                table_fqn="svc.db.public.orders",
+                constraints=(_fk(["event_id"], ["svc.db.audit.events.id"]),),
+            ),
+        ],
+    )
+    assert outcome.patched == 2
+    assert outcome.failures == []
+    parent_lookups = [
+        fqn for fqn, fields in client.get_calls if fields is None
+    ]
+    assert parent_lookups.count("svc.db.public.orders") == 1
+    assert parent_lookups.count("svc.db.audit.events") == 1
+    _, ops = client.patches[0]
+    assert ops[0]["value"] == [
+        {
+            "constraintType": "FOREIGN_KEY",
+            "columns": ["order_id", "tenant"],
+            "referredColumns": [
+                "svc.db.public.orders.id",
+                "svc.db.public.orders.tenant",
+            ],
+        }
+    ]
