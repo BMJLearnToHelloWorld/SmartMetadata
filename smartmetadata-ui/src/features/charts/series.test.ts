@@ -12,6 +12,7 @@ import {
   bucketsToPoints,
   columnNullPoints,
   countByLabel,
+  formatChartAxisDate,
   formatChartTs,
   insightResultsToSeries,
   profilesToRowCountPoints,
@@ -147,5 +148,15 @@ describe('chart series mapping', () => {
     expect(hasChartPoints([{ name: 'x', points: [] }])).toBe(false);
     expect(countByLabel([undefined, ''])).toEqual([]);
     expect(formatChartTs(undefined)).toBe('');
+  });
+
+  it('formats ISO date labels for the axis as pin MMM dd and leaves other labels alone', () => {
+    // Pin DataInsightChartCard.tsx:593-598: customFormatDateTime(value, 'MMM dd').
+    expect(formatChartAxisDate('2026-11-19')).toBe('Nov 19');
+    expect(formatChartAxisDate('2026-01-07')).toBe('Jan 7');
+    expect(formatChartAxisDate('Tier.Gold')).toBe('Tier.Gold');
+    expect(formatChartAxisDate('table')).toBe('table');
+    expect(formatChartAxisDate('')).toBe('');
+    expect(formatChartAxisDate('2026-13-40')).toBe('2026-13-40');
   });
 });

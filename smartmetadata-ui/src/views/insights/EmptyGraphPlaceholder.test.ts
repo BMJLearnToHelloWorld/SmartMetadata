@@ -13,14 +13,32 @@ import { describe, expect, it } from 'vitest';
 import { createTestI18n } from '@/test/i18n';
 import EmptyGraphPlaceholder from './EmptyGraphPlaceholder.vue';
 
+const DOCS_HREF = 'https://docs.open-metadata.org/latest/how-to-guides/data-insights';
+
 describe('EmptyGraphPlaceholder', () => {
-  it('renders the pin empty copy with a Data Insight docs link, never "residual"', () => {
-    const wrapper = mount(EmptyGraphPlaceholder, { global: { plugins: [Antd, createTestI18n()] } });
-    expect(wrapper.find('[data-testid="no-data-placeholder"]').exists()).toBe(true);
+  it('renders pin wording with the docs link (pin EmptyGraphPlaceholder.tsx:27-58)', () => {
+    const wrapper = mount(EmptyGraphPlaceholder, {
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    // Rebase note: #343's version wrapped the shared NoDataPlaceholder
+    // (test-id "no-data-placeholder"); the merged component renders pin's
+    // markup directly, so the testid is the component's own default.
+    expect(wrapper.find('[data-testid="empty-graph-placeholder"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Adding a new Data Insight is easy, just give it a spin!');
+    expect(wrapper.text()).toContain('Still need help? Refer to our docs for more information.');
     expect(wrapper.text()).not.toContain('residual');
-    const link = wrapper.find('a[href="https://docs.open-metadata.org/latest/how-to-guides/data-insights"]');
-    expect(link.exists()).toBe(true);
+    const link = wrapper.get(`a[href="${DOCS_HREF}"]`);
     expect(link.text()).toBe('docs');
+    expect(link.attributes('target')).toBe('_blank');
+    expect(link.attributes('rel')).toBe('noreferrer');
+  });
+
+  it('renders the Chinese wording in a zh-CN locale', () => {
+    const wrapper = mount(EmptyGraphPlaceholder, {
+      global: { plugins: [Antd, createTestI18n('zh-CN')] },
+    });
+    expect(wrapper.text()).toContain('添加新的 Data Insight 很容易，试试吧！');
+    expect(wrapper.text()).toContain('还需要帮助？请参考我们的文档了解更多。');
+    expect(wrapper.get(`a[href="${DOCS_HREF}"]`).text()).toBe('文档');
   });
 });

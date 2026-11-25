@@ -277,7 +277,11 @@ describe('AppAnalyticsView', () => {
     expect(link.exists()).toBe(true);
     expect(link.text()).toBe('docs');
     // One placeholder per card: two tables + two line charts.
-    expect(wrapper.findAll('[data-testid="no-data-placeholder"]')).toHaveLength(4);
+    // Rebase note: the merged EmptyGraphPlaceholder renders its default
+    // testid 'empty-graph-placeholder' (the #343 NoDataPlaceholder
+    // 'no-data-placeholder' id is gone with the merge); same count, same
+    // strength.
+    expect(wrapper.findAll('[data-testid="empty-graph-placeholder"]')).toHaveLength(4);
     // The web summary cards still render, at their pin defaults of 0.
     const cards = wrapper.findAll('[data-testid="app-analytics-summary"]');
     expect(cards).toHaveLength(2);

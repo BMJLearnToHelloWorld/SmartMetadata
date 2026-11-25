@@ -6,11 +6,11 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import { Button, Card, Col, Input, Progress, Row, Typography } from 'ant-design-vue';
+import { Button, Card, Col, Input, Progress, Row, Skeleton, Typography } from 'ant-design-vue';
 import { ArrowRightOutlined } from '@ant-design/icons-vue';
 import SmChart from '@/features/charts/SmChart.vue';
 import type { ChartSeries } from '@/features/charts/types';
-import SmState from '@/components/shared/SmState.vue';
+import EmptyGraphPlaceholder from './EmptyGraphPlaceholder.vue';
 import { SM_DATA_INSIGHT_COLORS, SM_PALETTE } from '@/theme/tokens';
 
 export interface DataInsightChartRow {
@@ -64,12 +64,19 @@ const props = defineProps<{
   headline?: DataInsightChartHeadline;
   loading: boolean;
   testId: string;
+  /**
+   * Chart-level empty description (SmChart's own empty fallback). The
+   * card-level empty state is pin's EmptyGraphPlaceholder, not this text.
+   */
   emptyText: string;
   listAssets?: 'description' | 'owner';
   /**
-   * Pin `isPercentageGraph` (DataInsightChartCard.tsx): the tooltip
-   * formats values with a `%` suffix on the percentage graphs only.
-   * The total and tier cards are absolute counts.
+   * Pin `isPercentageGraph` (DataInsightChartCard.tsx) /
+   * `isPercentageSystemGraph` (DataInsightPureUtils.ts:217-224): only
+   * the four percentage cards are percentage graphs — description,
+   * owner, service description, service owner. DataAssetsView sets this
+   * from the card's own builder (percentageCard/serviceCard), never
+   * from the headline; the tier card is not a percentage graph in pin.
    */
   isPercentage?: boolean;
 }>();
@@ -87,7 +94,13 @@ const visibleRows = computed(() => {
   if (!query) {
     return props.rows;
   }
-  return props.rows.filter((row) => row.name.toLowerCase().includes(query));
+  // Pin DataInsightChartCard.tsx:442-443 matches the raw entity key
+  // case-insensitively (searching `storedProcedure` hits). The product
+  // additionally keeps matching the display name, so Chinese names stay
+  // searchable in a Chinese locale (multilingual exception).
+  return props.rows.filter(
+    (row) => row.name.toLowerCase().includes(query) || row.key.toLowerCase().includes(query),
+  );
 });
 
 const visibleSeries = computed(() => {
@@ -213,15 +226,22 @@ const exploreLink = computed(() =>
 
 <template>
   <Card size="small" :id="id" :data-testid="`${testId}-card`" class="di-chart-card">
-    <SmState v-if="loading" state="loading" :test-id="`${testId}-loading`" />
-    <!-- Pin DataInsightChartCard.tsx:533: a failed fetch only toasts —
-      there is no card error state, the card falls back to empty.
-      Pin's empty state is EmptyGraphPlaceholder (DataInsightChartCard.tsx:640);
-      callers that need it pass the `#empty` slot, everyone else keeps the
-      plain SmState empty text. -->
+    <!--
+      Pin DataInsightChartCard.tsx:620-645: the loading shell keeps the
+      card title + sub-header and shows SkeletonParagraph rows={4} while
+      fetching, EmptyGraphPlaceholder once the fetch returns no data.
+      A failed fetch only toasts (DataInsightChartCard.tsx:533) — there
+      is no card error state; callers that need a different empty state
+      pass the `#empty` slot (App Analytics does).
+    -->
+    <div v-if="loading" :data-testid="`${testId}-loading`">
+      <Typography.Title :level="5" class="di-chart-card__title">{{ title }}</Typography.Title>
+      <Typography.Paragraph type="secondary" class="di-chart-card__sub">{{ subTitle }}</Typography.Paragraph>
+      <Skeleton active :title="{ width: '40%' }" :paragraph="{ rows: 4 }" />
+    </div>
     <template v-else-if="!hasData">
       <slot name="empty">
-        <SmState state="empty" :test-id="`${testId}-empty`" :empty-text="emptyText" />
+        <EmptyGraphPlaceholder :test-id="`${testId}-empty`" />
       </slot>
     </template>
     <Row v-else :gutter="32">
@@ -238,6 +258,7 @@ const exploreLink = computed(() =>
           :dimmed-names="dimmedNames"
           :tooltip-percentage="isPercentage ?? false"
           :tooltip-locale="locale"
+          :percentage-y-axis="isPercentage"
           :empty="emptyText"
         />
       </Col>

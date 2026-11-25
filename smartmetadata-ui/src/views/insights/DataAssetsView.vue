@@ -110,6 +110,16 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * Pin SummaryCard.component.tsx:99 + NumberUtils.ts:17-19: summary
+ * card values render through formatNumberWithComma — Intl grouping
+ * ("1,187"), decimals kept (62.5 stays "62.5"). Summary cards only;
+ * headline values are preformatted strings and are untouched.
+ */
+function formatNumberWithComma(value: number): string {
+  return new Intl.NumberFormat(locale.value).format(value);
+}
+
 function formatChange(value: number): string {
   // +0 normalises -0 so a zero change never renders as "-0.00".
   const rounded = Math.round(value * 100) / 100 + 0;
@@ -176,7 +186,7 @@ const summaryCards = computed(() => {
   if (tier !== undefined) {
     cards.push({
       id: 'tier',
-      label: t('insights.summary.byTier'),
+      label: t('insights.summary.byTierSummary'),
       value: round2(tier),
       suffix: '%',
       target: 'total_data_assets_by_tier',
@@ -190,10 +200,18 @@ function progressColor(index: number): string {
   return SM_DATA_INSIGHT_COLORS[index % SM_DATA_INSIGHT_COLORS.length] ?? SM_DATA_INSIGHT_COLORS[0];
 }
 
+/**
+ * Pin DataInsightSummary.tsx:185-190: the heading is
+ * `label.data-insight-summary` ("{{organization}} Health at a Glance")
+ * with the Organization team's display name, falling back to the brand
+ * name (`?? t('label.brand-name')` — pin's `getEntityName` returns ''
+ * when the team is missing, so the `??` never fires there in practice;
+ * the product implements the evident intent: brand fallback).
+ */
 const summaryTitle = computed(() =>
   orgName.value
     ? t('insights.summaryFor', { organization: orgName.value })
-    : t('insights.summaryTitle'),
+    : t('insights.summaryTitle', { organization: t('product.name') }),
 );
 
 /**
@@ -241,18 +259,20 @@ function scrollToCard(id: string): void {
 }
 
 /**
- * Official DataInsightChartCard.tsx targetValue: the KPI whose
+ * Pin DataInsightChartCard.tsx:457-476 (targetValue): the KPI whose
  * dataInsightChart is the description/owner KPI chart
- * (CreateKpiRequest.dataInsightChart enum, `*_kpi` names). The stored
- * EntityReference has also been seen with the bare percentage-chart name,
- * which names the same coverage, so both forms match. No KPI means no
- * target is shown (D-D-5: no "Add KPI" entry point in this batch).
+ * (CreateKpiRequest.dataInsightChart enum, `*_kpi` names), matched on
+ * .name only — a bare percentage-chart name never matches in pin, so it
+ * must not match here either. The `?? fullyQualifiedName` fallback only
+ * covers a reference that carries no name; a DataInsightChart FQN is its
+ * chart name, so it can only equal the same `_kpi` string, never a bare
+ * chart name. No KPI means no target is shown (D-D-5: no "Add KPI" entry
+ * point in this batch).
  */
 function kpiTargetFor(kpiChartName: string): number | undefined {
-  const percentageChart = kpiChartName.replace(/_kpi$/, '');
   const found = kpiList.value.find((kpi) => {
     const ref = kpi.dataInsightChart?.name ?? kpi.dataInsightChart?.fullyQualifiedName;
-    return ref === kpiChartName || ref === percentageChart;
+    return ref === kpiChartName;
   });
   return found?.targetValue;
 }
@@ -341,8 +361,12 @@ interface ChartCardConfig {
    * service cards keep their own ("No service coverage data…"). */
   emptyText: string;
   listAssets?: 'description' | 'owner';
-  /** Pin `isPercentageGraph`: the tooltip formats values with `%` on the
-   * percentage graphs only; the total and tier cards are absolute counts. */
+  /** Pin `isPercentageGraph` (DataInsightChartCard.tsx) /
+   * `isPercentageSystemGraph` (DataInsightPureUtils.ts:217-224): only
+   * the four percentage cards are percentage graphs — the tooltip
+   * formats values with `%` on those only; total/tier are absolute
+   * counts. Set by the card's own builder — percentageCard/serviceCard
+   * true, total/tier false. */
   isPercentage: boolean;
 }
 
@@ -351,7 +375,11 @@ function entityRows(points: readonly { count?: number; day?: number; group?: str
     .sort((a, b) => b.count - a.count)
     .map((item, index) => ({
       key: item.group,
-      name: entityLabel(item.group),
+      // Pin DataInsightChartCard.tsx:717: row names are lodash startCase
+      // of the entity key. The product keeps its i18n display name
+      // (Chinese names stay Chinese — startCase leaves CJK whole), only
+      // the casing is normalised: "Stored procedure" -> "Stored Procedure".
+      name: startCase(entityLabel(item.group)),
       label: String(item.count),
       // Pin passes the raw latest value (clamped 0–100 in the row), not a share of the total.
       percent: item.count,
@@ -364,7 +392,8 @@ function percentageRows(points: readonly { count?: number; day?: number; group?:
     .sort((a, b) => b.count - a.count)
     .map((item, index) => ({
       key: item.group,
-      name: entityLabel(item.group),
+      // Pin DataInsightChartCard.tsx:717: startCase row names (see entityRows).
+      name: startCase(entityLabel(item.group)),
       label: `${round2(item.count)}%`,
       percent: item.count,
       color: progressColor(index),
@@ -389,6 +418,10 @@ function percentageCard(
   summaryCardName: 'data_assets_with_description_summary_card' | 'data_assets_with_owner_summary_card',
   kpiChartName: string,
   title: string,
+  /** Pin DataInsightChartCard.tsx RIGHT_SIDE_PANEL_LABEL_CONFIG: the
+   * headline label is not the card title ("Completed Description %" /
+   * "Assigned Owner %"), so it rides its own parameter. */
+  headlineLabel: string,
   subTitle: string,
   testId: string,
   listAssets: 'description' | 'owner',
@@ -417,7 +450,7 @@ function percentageCard(
       summaryValue === undefined
         ? undefined
         : {
-            label: title,
+            label: headlineLabel,
             value: `${round2(summaryValue)}%`,
             progress: summaryValue,
             changeText: changeText(
@@ -490,7 +523,7 @@ const cards = computed<ChartCardConfig[]>(() => {
     }),
     rows: totalRows,
     headline: {
-      label: t('insights.summary.totalAssets'),
+      label: t('insights.cards.headline.totalAssets'),
       value: String(round2(totalAssets.value)),
       progress: 0,
       changeText: changeText(totalChange(), days),
@@ -506,6 +539,7 @@ const cards = computed<ChartCardConfig[]>(() => {
     'data_assets_with_description_summary_card',
     'percentage_of_data_asset_with_description_kpi',
     t('insights.summary.withDescription'),
+    t('insights.cards.headline.completedDescription'),
     t('insights.cards.assetDescriptionLead'),
     'insights-asset-description',
     'description',
@@ -516,6 +550,7 @@ const cards = computed<ChartCardConfig[]>(() => {
     'data_assets_with_owner_summary_card',
     'percentage_of_data_asset_with_owner_kpi',
     t('insights.summary.withOwner'),
+    t('insights.cards.headline.assignedOwner'),
     t('insights.cards.assetOwnerLead'),
     'insights-asset-owner',
     'owner',
@@ -524,7 +559,9 @@ const cards = computed<ChartCardConfig[]>(() => {
   const serviceOwner = serviceOwnerCard.value;
   const serviceDescriptionRows = serviceDescription.latestByService.map((item, index) => ({
     key: item.service,
-    name: item.service,
+    // Pin DataInsightChartCard.tsx:717: startCase of the raw service
+    // name — "icrm-monorepo" -> "Icrm Monorepo".
+    name: startCase(item.service),
     label: `${round2(item.value)}%`,
     percent: item.value,
     color: progressColor(index),
@@ -542,7 +579,7 @@ const cards = computed<ChartCardConfig[]>(() => {
       serviceDescription.headline === undefined
         ? undefined
         : {
-            label: serviceDescription.title,
+            label: t('insights.cards.headline.completedDescription'),
             value: `${round2(serviceDescription.headline)}%`,
             progress: serviceDescription.headline,
             changeText: changeText(serviceDescription.change, serviceDescription.days),
@@ -556,7 +593,8 @@ const cards = computed<ChartCardConfig[]>(() => {
   };
   const serviceOwnerRows = serviceOwner.latestByService.map((item, index) => ({
     key: item.service,
-    name: item.service,
+    // Pin DataInsightChartCard.tsx:717: startCase of the raw service name.
+    name: startCase(item.service),
     label: `${round2(item.value)}%`,
     percent: item.value,
     color: progressColor(index),
@@ -574,7 +612,7 @@ const cards = computed<ChartCardConfig[]>(() => {
       serviceOwner.headline === undefined
         ? undefined
         : {
-            label: serviceOwner.title,
+            label: t('insights.cards.headline.assignedOwner'),
             value: `${round2(serviceOwner.headline)}%`,
             progress: serviceOwner.headline,
             changeText: changeText(serviceOwner.change, serviceOwner.days),
@@ -601,7 +639,7 @@ const cards = computed<ChartCardConfig[]>(() => {
       tierSummary === undefined
         ? undefined
         : {
-            label: t('insights.summary.byTier'),
+            label: t('insights.cards.headline.assignedTier'),
             value: `${round2(tierSummary)}%`,
             progress: tierSummary,
             changeText: changeText(tierChange(), days),
@@ -867,7 +905,7 @@ onMounted(async () => {
               @keydown.space.prevent="scrollToCard(card.target)"
             >
               <Card size="small" :title="card.label" :data-testid="`insights-summary-${card.id}`">
-                <Typography.Title :level="4">{{ card.value }}{{ card.suffix }}</Typography.Title>
+                <Typography.Title :level="4">{{ formatNumberWithComma(card.value) }}{{ card.suffix }}</Typography.Title>
               </Card>
             </Col>
           </Row>

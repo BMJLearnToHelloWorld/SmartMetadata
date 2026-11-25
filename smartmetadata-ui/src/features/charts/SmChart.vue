@@ -42,6 +42,7 @@ const props = withDefaults(
      */
     dimmedNames?: readonly string[];
     /**
+    /**
      * Pin `getDataInsightTooltip` (P1-3): when set, the axis tooltip
      * is the formatted one (DATE_MED header, startCase names, rounded
      * values, `%` on percentage graphs). Only the DataInsight card
@@ -50,6 +51,12 @@ const props = withDefaults(
      */
     tooltipPercentage?: boolean;
     tooltipLocale?: string;
+    /**
+     * Pin DataInsightChartCard.tsx:600-608: percentage graphs render
+     * the y-axis ticks as `${value}%`. Only the four DataInsight
+     * percentage cards pass this; every other chart keeps bare ticks.
+     */
+    percentageYAxis?: boolean;
   }>(),
   {
     height: 240,
@@ -77,6 +84,7 @@ const option = computed(() =>
           props.tooltipPercentage !== undefined
             ? { isPercentage: props.tooltipPercentage, locale: props.tooltipLocale }
             : undefined,
+        percentageYAxis: props.percentageYAxis,
       })
     : buildChartOption(props.kind, props.series, undefined, {
         hideLegend: props.hideLegend,
@@ -85,6 +93,7 @@ const option = computed(() =>
           props.tooltipPercentage !== undefined
             ? { isPercentage: props.tooltipPercentage, locale: props.tooltipLocale }
             : undefined,
+        percentageYAxis: props.percentageYAxis,
       }),
 );
 

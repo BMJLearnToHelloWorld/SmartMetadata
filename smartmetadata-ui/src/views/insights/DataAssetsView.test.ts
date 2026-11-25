@@ -126,7 +126,7 @@ function routeChartCalls() {
   });
 }
 
-async function mountView(options: { attach?: boolean } = {}) {
+async function mountView(options: { attach?: boolean; locale?: 'en-US' | 'zh-CN' } = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -141,7 +141,7 @@ async function mountView(options: { attach?: boolean } = {}) {
     // The summary click-scrolls via document.getElementById, so only the
     // scroll test mounts attached to the document.
     attachTo: options.attach ? document.body : undefined,
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [router, Antd, createTestI18n(options.locale ?? 'en-US')] },
   });
   await flushPromises();
   return wrapper;
@@ -191,6 +191,60 @@ describe('DataAssetsView', () => {
     }
   });
 
+  it('formats summary totals with a thousands separator and % suffixes untouched (pin SummaryCard)', async () => {
+    // Pin SummaryCard.component.tsx:99 + NumberUtils.ts:17-19:
+    // formatNumberWithComma — 1187 renders "1,187", 62.5% keeps "62.5%".
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return {
+        ...systemPayload,
+        total_data_assets: [
+          { count: 1000, day: DAY_7, group: 'table' },
+          { count: 187, day: DAY_7, group: 'topic' },
+        ],
+      };
+    });
+    const wrapper = await mountView();
+    expect(wrapper.get('[data-testid="insights-summary-total"]').text()).toContain('1,187');
+    expect(wrapper.get('[data-testid="insights-summary-description"]').text()).toContain('62.5%');
+    expect(wrapper.get('[data-testid="insights-summary-owner"]').text()).toContain('75%');
+  });
+
+  it('formats chart dates as pin MMM dd / DATE_MED and suffixes only the percentage y-axes', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    const charts = wrapper.findAllComponents({ name: 'VChart' });
+    expect(charts).toHaveLength(6);
+    // Pin order: total, description, owner, service description,
+    // service owner, tier. Only the four percentage cards (middle four)
+    // carry the '%' y-axis formatter (pin isPercentageSystemGraph).
+    for (const [index, chart] of charts.entries()) {
+      const option = chart.props('option') as Record<string, unknown>;
+      const yAxis = option.yAxis as { axisLabel?: { formatter: (value: number) => string } };
+      if (index === 0 || index === 5) {
+        expect(yAxis).not.toHaveProperty('axisLabel');
+      } else {
+        expect(yAxis.axisLabel?.formatter(100)).toBe('100%');
+        expect(yAxis.axisLabel?.formatter(80)).toBe('80%');
+      }
+      // Pin DataInsightChartCard.tsx:593-598: x-axis "Nov 19";
+      // DataInsightChartUtils.tsx:104: tooltip header "Nov 22, 2026".
+      const xAxis = option.xAxis as { axisLabel: { formatter: (value: string) => string } };
+      expect(xAxis.axisLabel.formatter('2026-01-07')).toBe('Jan 7');
+      const tooltip = option.tooltip as {
+        formatter: (params: Array<Record<string, unknown>>) => string;
+      };
+      const html = tooltip.formatter([
+        { axisValue: '2026-01-07', marker: '', seriesName: 'table', value: 150 },
+      ]);
+      expect(html).toContain('Jan 7, 2026');
+      expect(html).not.toContain('2026-01-07');
+      expect(html).toContain('150');
+    }
+  });
+
   it('renders six full-width cards in pin order, each with a hidden legend and a 500px line', async () => {
     routeChartCalls();
     const wrapper = await mountView();
@@ -235,13 +289,18 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="insights-service-owner-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="insights-service-description"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('No service coverage data in the selected window.');
+    // Pin R-P2-11: the empty state is pin's EmptyGraphPlaceholder wording,
+    // not the old per-card copy.
+    expect(wrapper.text()).toContain('Adding a new Data Insight is easy, just give it a spin!');
+    expect(wrapper.text()).not.toContain('No service coverage data in the selected window.');
   });
 
   it('shows the total card empty until a job writes report data', async () => {
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="insights-total-empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('No Data Insights series yet');
+    // Pin R-P2-11: the empty state is pin's EmptyGraphPlaceholder wording.
+    expect(wrapper.text()).toContain('Adding a new Data Insight is easy, just give it a spin!');
+    expect(wrapper.text()).not.toContain('No Data Insights series yet');
   });
 
   it('plots the total card line only when listChartData returns points', async () => {
@@ -364,7 +423,10 @@ describe('DataAssetsView', () => {
     routeChartCalls();
     const wrapper = await mountView();
     expect(getTeamByName).toHaveBeenCalledWith('Organization');
-    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).toContain('Acme Org');
+    // Pin R-P2-3 (DataInsightSummary.tsx:185-190): "{{organization}} Health at a Glance".
+    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).toContain(
+      'Acme Org Health at a Glance',
+    );
     // Total sums the latest per-group counts (150 + 150), not the stale day-1 point.
     expect(wrapper.get('[data-testid="insights-summary-total"]').text()).toContain('300');
     // Description/owner come from the summary cards (62.5% / 75%), NOT the
@@ -374,6 +436,14 @@ describe('DataAssetsView', () => {
     // Fourth summary card (pin ENTITIES_SUMMARY_LIST): the tier summary
     // card's latest value with a % suffix.
     expect(wrapper.get('[data-testid="insights-summary-tier"]').text()).toContain('20%');
+    // Pin R-P2-2 (RIGHT_SIDE_PANEL_LABEL_CONFIG): headline labels are not
+    // the card titles — "Completed Description %" / "Assigned Owner %".
+    expect(wrapper.get('[data-testid="insights-asset-description-headline"]').text()).toContain(
+      'Completed Description %',
+    );
+    expect(wrapper.get('[data-testid="insights-asset-owner-headline"]').text()).toContain(
+      'Assigned Owner %',
+    );
     const entityRows = wrapper.findAll('[data-testid="insights-total-row"]');
     expect(entityRows).toHaveLength(2);
     // Pin progress semantics: the bar is the raw latest value clamped
@@ -453,6 +523,8 @@ describe('DataAssetsView', () => {
     const wrapper = await mountView();
     // Daily totals 200 -> 300: +50.00%.
     expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('300');
+    // Pin R-P2-2: headline label "Total Assets", not the card title.
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('Total Assets');
     expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain(
       '+50.00% over the last 7 days',
     );
@@ -479,6 +551,9 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain(
       '-1.17% over the last 7 days',
     );
+    // Pin R-P2-2: tier headline label "Assigned Tier" (no % suffix — the
+    // tier card is not a percentage graph in pin).
+    expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain('Assigned Tier');
     const tierRows = wrapper.findAll('[data-testid="insights-tier-row"]');
     expect(tierRows).toHaveLength(2);
     expect(tierRows[0].get('[data-testid="insights-tier-row-name"]').text()).toBe('No Tier');
@@ -531,10 +606,14 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-summary-owner"]').exists()).toBe(false);
   });
 
-  it('falls back to the generic summary title when the Organization team is missing', async () => {
+  it('falls back to the brand name in the summary title when the Organization team is missing', async () => {
     getTeamByName.mockRejectedValue(new Error('not found'));
     const wrapper = await mountView();
-    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).toContain('Data Insight summary');
+    // Pin R-P2-3: "{{organization}} Health at a Glance", brand fallback
+    // (product.name = "iSmart") when the Organization team is missing.
+    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).toContain(
+      'iSmart Health at a Glance',
+    );
     expect(wrapper.get('[data-testid="insights-summary-title"]').text()).not.toContain('Acme Org');
     expect(wrapper.find('.ant-alert-error').exists()).toBe(false);
   });
@@ -560,6 +639,14 @@ describe('DataAssetsView', () => {
     // formula: description (120/300 − 50/200) × 100 = +15pp, owner +30pp.
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('62.5%');
     expect(wrapper.get('[data-testid="insights-service-owner-headline"]').text()).toContain('75%');
+    // Pin R-P2-2: service headline labels "Completed Description %" /
+    // "Assigned Owner %", not the card titles.
+    expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain(
+      'Completed Description %',
+    );
+    expect(wrapper.get('[data-testid="insights-service-owner-headline"]').text()).toContain(
+      'Assigned Owner %',
+    );
     expect(wrapper.text()).toContain('+15.00% over the last 7 days');
     expect(wrapper.text()).toContain('+30.00% over the last 7 days');
     // The KPI target renders as a marker on the headline bar, not as text.
@@ -571,24 +658,11 @@ describe('DataAssetsView', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]?.text()).toContain('Postgres');
     expect(rows[0]?.text()).toContain('80%');
-    expect(rows[1]?.text()).toContain('MySQL');
+    // Pin R-P2-7: service names go through lodash startCase, which splits
+    // on the case transition — startCase('MySQL') = "My SQL" (cf.
+    // text.test.ts: 'FOOBar' -> 'FOO Bar'), exactly as pin renders it.
+    expect(rows[1]?.text()).toContain('My SQL');
     expect(rows[1]?.text()).toContain('60%');
-  });
-
-  it('toasts and falls back to empty states, with no warning or card error state, when the service fetch fails (pin DataInsightChartCard fetchData)', async () => {
-    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
-      if (names.includes('percentage_of_service_with_description')) {
-        throw new Error('chart missing');
-      }
-      return systemPayload;
-    });
-    const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-service-load-warning"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-system-load-warning"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-service-description-error"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-service-owner-error"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="insights-service-owner-empty"]').exists()).toBe(true);
   });
 
   it('toasts and falls back to empty states, with no warning, when the system fetch fails (pin DataInsightChartCard fetchData)', async () => {
@@ -602,6 +676,117 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-system-load-warning"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="insights-total-error"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="insights-total-empty"]').exists()).toBe(true);
+  });
+
+  // Rebase note: the pre-#343 warning/error-state test is dropped —
+  // #343 reverted deviation #3 to pin literal (toast + empty states,
+  // no warning, no card error state), locked by the two toast tests
+  // above. The R-P2-7 startCase tests below are kept unchanged.
+
+  // Pin R-P2-13 (DataInsightChartCard.tsx:457-476): the KPI target only
+  // matches a KPI whose dataInsightChart name is the `_kpi` chart name.
+  // A KPI stored under the bare percentage-chart name must not produce a
+  // target — pin never matches the bare name.
+  it('ignores a KPI stored under the bare percentage chart name (pin R-P2-13)', async () => {
+    routeChartCalls();
+    listKpis.mockResolvedValue({
+      data: [
+        {
+          name: 'description-coverage',
+          targetValue: 80,
+          dataInsightChart: { name: 'percentage_of_data_asset_with_description', type: 'dataInsightChart' },
+          owners: [],
+        },
+      ],
+    });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="insights-service-description-target"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="insights-asset-description-target"]').exists()).toBe(false);
+  });
+  // Pin R-P2-7 (DataInsightChartCard.tsx:717): entity row names are
+  // startCase of the entity key. The product keeps its i18n display name
+  // and only normalises the casing — "Stored procedure" -> "Stored
+  // Procedure". Note `databaseSchema` renders "Database Schema": the
+  // shared i18n copy was changed to the pin wording per the 2026-11-25
+  // ruling (a); zh-CN stays '模式'.
+  it('renders entity row names through startCase (pin R-P2-7)', async () => {
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return {
+        ...systemPayload,
+        total_data_assets: [
+          { count: 150, day: DAY_7, group: 'table' },
+          { count: 48, day: DAY_7, group: 'storedProcedure' },
+          { count: 30, day: DAY_7, group: 'databaseSchema' },
+        ],
+        percentage_of_data_asset_with_description: [
+          { count: 42.5, day: DAY_7, group: 'storedProcedure' },
+        ],
+      };
+    });
+    const wrapper = await mountView();
+    const totalRows = wrapper.findAll('[data-testid="insights-total-row"]');
+    expect(totalRows).toHaveLength(3);
+    expect(totalRows[0]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Table');
+    expect(totalRows[1]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Stored Procedure');
+    expect(totalRows[2]?.get('[data-testid="insights-total-row-name"]').text()).toBe('Database Schema');
+    const descriptionRows = wrapper.findAll('[data-testid="insights-asset-description-row"]');
+    expect(descriptionRows).toHaveLength(1);
+    expect(
+      descriptionRows[0]?.get('[data-testid="insights-asset-description-row-name"]').text(),
+    ).toBe('Stored Procedure');
+  });
+
+  // Pin R-P2-7: service rows are startCase of the raw service name.
+  it('renders kebab-case service names through startCase (pin R-P2-7)', async () => {
+    const kebabServicePayload = {
+      ...servicePayload,
+      percentage_of_service_with_description: [
+        { count: 50, day: DAY_1, group: 'icrm-monorepo' },
+        { count: 80, day: DAY_7, group: 'icrm-monorepo' },
+        { count: 40, day: DAY_1, group: 'lineage-demo-airflow' },
+        { count: 60, day: DAY_7, group: 'lineage-demo-airflow' },
+      ],
+    };
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return kebabServicePayload;
+      }
+      return systemPayload;
+    });
+    const wrapper = await mountView();
+    const rows = wrapper.findAll('[data-testid="insights-service-description-row"]');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.get('[data-testid="insights-service-description-row-name"]').text()).toBe(
+      'Icrm Monorepo',
+    );
+    expect(rows[1]?.get('[data-testid="insights-service-description-row-name"]').text()).toBe(
+      'Lineage Demo Airflow',
+    );
+  });
+
+  // Pin R-P2-7, multilingual exception: startCase leaves CJK whole
+  // (text.test.ts: '王小明' -> '王小明'), so Chinese row names stay
+  // Chinese — the casing pass must never turn them into English.
+  it('keeps Chinese entity row names Chinese under startCase (pin R-P2-7)', async () => {
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return {
+        ...systemPayload,
+        total_data_assets: [
+          { count: 150, day: DAY_7, group: 'table' },
+          { count: 48, day: DAY_7, group: 'storedProcedure' },
+        ],
+      };
+    });
+    const wrapper = await mountView({ locale: 'zh-CN' });
+    const totalRows = wrapper.findAll('[data-testid="insights-total-row"]');
+    expect(totalRows).toHaveLength(2);
+    expect(totalRows[1]?.get('[data-testid="insights-total-row-name"]').text()).toBe('存储过程');
   });
 
   it('shows the no-permission placeholder and issues no chart requests without ViewAll', async () => {

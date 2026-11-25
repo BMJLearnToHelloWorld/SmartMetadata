@@ -17,6 +17,32 @@ export function formatChartTs(value?: number): string {
   return new Date(millis).toISOString().slice(0, 10);
 }
 
+const ISO_DATE_LABEL = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseIsoDateLabel(label: string): Date | undefined {
+  if (!ISO_DATE_LABEL.test(label)) {
+    return undefined;
+  }
+  // The ISO key is UTC (formatChartTs renders toISOString), so parse it
+  // as UTC midnight: a local parse would shift the day in +UTC zones.
+  const date = new Date(`${label}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/**
+ * Pin DataInsightChartCard.tsx:593-598: the x-axis formatter is
+ * customFormatDateTime(value, 'MMM dd') — "Nov 19". Display-only: the
+ * internal series key stays the ISO label, so non-date labels pass
+ * through untouched and non-insight charts are unaffected.
+ */
+export function formatChartAxisDate(label: string): string {
+  const date = parseIsoDateLabel(label);
+  if (!date) {
+    return label;
+  }
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date);
+}
+
 export function collapseByLabel(points: ChartPoint[]): ChartPoint[] {
   const sums = new Map<string, number>();
   for (const point of points) {

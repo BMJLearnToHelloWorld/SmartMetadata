@@ -11,6 +11,7 @@ import { SM_CHART_COLORS, SM_FONT_FAMILY } from '@/theme/tokens';
 import { formatMediumDate } from '@/utils/dates';
 import { startCase } from '@/utils/text';
 import type { ChartKind, ChartSeries } from './types';
+import { formatChartAxisDate } from './series';
 
 const COLORS = [...SM_CHART_COLORS];
 
@@ -89,12 +90,20 @@ export function buildChartOption(
     hideLegend?: boolean;
     dimmedNames?: ReadonlySet<string>;
     /**
+    /**
      * Pin `getDataInsightTooltip`: a custom axis tooltip (DATE_MED
      * header, startCase series names, formatted values). Only the
      * DataInsight card passes this; every other chart keeps the
      * default ECharts tooltip.
      */
     tooltip?: { isPercentage?: boolean; locale?: string };
+    /**
+     * Pin DataInsightChartCard.tsx:600-608 + ChartUtils.tsx:21-23:
+     * percentage graphs render the y-axis ticks as `${value}%`
+     * (axisTickFormatter(value, '%')). Only the four percentage cards
+     * pass this; total/tier cards keep bare ticks.
+     */
+    percentageYAxis?: boolean;
   } = {},
 ): Record<string, unknown> {
   const palette = [...colors];
@@ -144,8 +153,21 @@ export function buildChartOption(
         ? { bottom: 0 }
         : undefined,
     grid: { left: 48, right: 16, top: 24, bottom: series.length > 1 && !options.hideLegend ? 52 : 28, containLabel: true },
-    xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true } },
-    yAxis: { type: 'value', minInterval: 1 },
+    // Pin DataInsightChartCard.tsx:593-598: the x-axis formatter is
+    // customFormatDateTime(value, 'MMM dd') — "Nov 19". The ISO date
+    // stays the internal key; only the tick label is reformatted.
+    xAxis: {
+      type: 'category',
+      data: labels,
+      axisLabel: { hideOverlap: true, formatter: (value: string | number) => formatChartAxisDate(String(value)) },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      ...(options.percentageYAxis
+        ? { axisLabel: { formatter: (value: number) => `${value}%` } }
+        : {}),
+    },
     series: series.map((item) => ({
       type: echartsKind,
       // Pin getDataInsightLineSeries `key`: the fixed series identity,
@@ -174,7 +196,14 @@ export function buildChartOption(
             },
           }
         : {}),
-      data: labels.map((label) => item.points.find((point) => point.label === label)?.value ?? 0),
+      // Pin DataInsightChartCard.tsx:396-413: a series missing a day
+      // simply has no key for it — the gap stays a gap, never a 0.
+      // ECharts' default connectNulls is false (echarts 6 line defaults),
+      // so a null breaks the line instead of joining across it; no
+      // connectNulls is set here on purpose (only pin's KPIChart opts
+      // into connectNulls: true). The tooltip renders a null row as '-'
+      // until #343 P1-3's formatter drops null rows outright.
+      data: labels.map((label) => item.points.find((point) => point.label === label)?.value ?? null),
     })),
   };
 }

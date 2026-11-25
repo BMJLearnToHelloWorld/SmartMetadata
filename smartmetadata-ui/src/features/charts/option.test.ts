@@ -166,4 +166,91 @@ describe('buildChartOption', () => {
     const plain = buildChartOption('line', series);
     expect(plain.tooltip).toEqual({ trigger: 'axis' });
   });
+
+  // Rebase note (P2 R-P2-5): the old default-rendering tooltip test is
+  // superseded by #343 P1-3 — a null row used to render '-', the P1-3
+  // formatter drops null rows instead, locked by the 'no null rows'
+  // test above. Only the x-axis and y-axis formatters are P2's here
+  // (they do not exist in #343).
+  it('formats ISO date x-axis ticks as pin MMM dd and leaves other labels alone', () => {
+    // Pin DataInsightChartCard.tsx:593-598: customFormatDateTime(value, 'MMM dd').
+    const series = [
+      {
+        name: 'table',
+        points: [
+          { label: '2026-11-19', value: 3 },
+          { label: '2026-11-20', value: 4 },
+        ],
+      },
+    ];
+    const option = buildChartOption('line', series);
+    const xAxis = option.xAxis as { axisLabel: { formatter: (value: string) => string } };
+    expect(xAxis.axisLabel.formatter('2026-11-19')).toBe('Nov 19');
+    expect(xAxis.axisLabel.formatter('2026-11-20')).toBe('Nov 20');
+    expect(xAxis.axisLabel.formatter('Tier.Gold')).toBe('Tier.Gold');
+  });
+
+  it('leaves a gap (null) for a series missing a day instead of plotting 0 (pin R-P2-12)', () => {
+    // Pin DataInsightChartCard.tsx:396-413: graphData only carries keys
+    // the day actually has; a missing day is a gap, not a 0. ECharts'
+    // default connectNulls is false, so no connectNulls is set here.
+    const series = [
+      {
+        name: 'table',
+        points: [
+          { label: '2026-11-19', value: 100 },
+          { label: '2026-11-20', value: 110 },
+          { label: '2026-11-21', value: 120 },
+        ],
+      },
+      {
+        name: 'storedProcedure',
+        points: [
+          { label: '2026-11-19', value: 50 },
+          // No 2026-11-20 point: the line must break, not dive to 0.
+          { label: '2026-11-21', value: 60 },
+        ],
+      },
+    ];
+    const option = buildChartOption('line', series);
+    const lineSeries = option.series as Array<Record<string, unknown>>;
+    expect(lineSeries[0].data).toEqual([100, 110, 120]);
+    expect(lineSeries[1].data).toEqual([50, null, 60]);
+    for (const item of lineSeries) {
+      expect(item).not.toHaveProperty('connectNulls');
+    }
+    // The tooltip must not show the missing value as 0 either: #343
+    // P1-3's formatter drops null rows outright (pin chartTooltipRows).
+    // (Rebase note: the old default-rendering expectation — a null row
+    // rendered as '-' — is superseded by the P1-3 formatter; the "row
+    // dropped" assertion below is its equal-strength retarget. The P2
+    // tooltip test above this one was dropped for the same reason in
+    // the dates-lane rebase.)
+    const html = formatInsightTooltip(
+      [
+        { axisValue: '2026-11-20', marker: '<span>M</span>', seriesName: 'table', value: 110 },
+        { axisValue: '2026-11-20', marker: '<span>M</span>', seriesName: 'storedProcedure', value: null },
+      ],
+      { isPercentage: false, locale: 'en-US' },
+    );
+    expect(html).toContain('Nov 20, 2026');
+    expect(html).toContain('Table');
+    expect(html).toContain('110');
+    expect(html).not.toContain('Stored Procedure');
+    expect(html).not.toContain('storedProcedure');
+  });
+
+  it('suffixes percentage y-axis ticks with % and leaves total ticks bare (pin axisTickFormatter)', () => {
+    // Pin DataInsightChartCard.tsx:600-608 + ChartUtils.tsx:21-23:
+    // axisTickFormatter(value, '%') -> `${value}%`, verbatim.
+    const series = [{ name: 'A', points: [{ label: '2026-01-01', value: 80 }] }];
+    const percentage = buildChartOption('line', series, undefined, { percentageYAxis: true });
+    const percentageAxis = percentage.yAxis as {
+      axisLabel: { formatter: (value: number) => string };
+    };
+    expect(percentageAxis.axisLabel.formatter(100)).toBe('100%');
+    expect(percentageAxis.axisLabel.formatter(80)).toBe('80%');
+    expect(percentageAxis.axisLabel.formatter(1)).toBe('1%');
+    const total = buildChartOption('line', series);
+    expect(total.yAxis as Record<string, unknown>).not.toHaveProperty('axisLabel');  });
 });
