@@ -61,7 +61,10 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('asset.tabs.quality');
     expect(keys).toContain('lineage.title');
     expect(keys).toContain('lineage.searchPlaceholder');
-    expect(keys).toContain('lineage.findNode');
+    // 2026-11-25 lineage-controls: find-node moved to the entity tab-header
+    // search (LineageSearchSelect, key lineage.impactSearch); lineage.findNode
+    // was removed with the old canvas toolbar.
+    expect(keys).toContain('lineage.impactSearch');
     expect(keys).toContain('lineage.columnsLead');
     expect(keys).toContain('lineage.depthHelp');
     expect(keys).toContain('ingestion.services.connectionJsonHelp');
