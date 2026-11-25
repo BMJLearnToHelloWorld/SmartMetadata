@@ -119,4 +119,43 @@ describe('SmChart', () => {
     await chart.vm.$emit('click', { componentType: 'series', dataIndex: 0 });
     expect(wrapper.emitted('segment-click')).toBeUndefined();
   });
+
+  it('hides the legend and dims the named series when the card asks for it', () => {
+    const wrapper = mount(SmChart, {
+      props: {
+        kind: 'line',
+        empty: 'empty',
+        hideLegend: true,
+        dimmedNames: ['B'],
+        series: [
+          { name: 'A', points: [{ label: '2026-01-01', value: 1 }] },
+          { name: 'B', points: [{ label: '2026-01-01', value: 2 }] },
+        ],
+      },
+      global: { plugins: [Antd] },
+    });
+    const chart = wrapper.findComponent({ name: 'VChart' });
+    const option = chart.props('option') as Record<string, unknown>;
+    expect(option.legend).toEqual({ show: false });
+    const lineSeries = option.series as Array<Record<string, unknown>>;
+    expect(lineSeries[0].lineStyle).toEqual({ opacity: 1 });
+    expect(lineSeries[1].lineStyle).toEqual({ opacity: 0.3 });
+  });
+
+  it('keeps the legend and full opacity when the card does not ask to hide/dim', () => {
+    const wrapper = mount(SmChart, {
+      props: {
+        kind: 'line',
+        empty: 'empty',
+        series: [
+          { name: 'A', points: [{ label: '2026-01-01', value: 1 }] },
+          { name: 'B', points: [{ label: '2026-01-01', value: 2 }] },
+        ],
+      },
+      global: { plugins: [Antd] },
+    });
+    const chart = wrapper.findComponent({ name: 'VChart' });
+    const option = chart.props('option') as Record<string, unknown>;
+    expect(option.legend).toEqual({ bottom: 0 });
+  });
 });

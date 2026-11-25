@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Card, Col, Empty, Progress, Row, Select, Spin, Typography } from 'ant-design-vue';
+import { Alert, Card, Col, Empty, Row, Select, Spin, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
@@ -14,11 +14,11 @@ import {
   ABSOLUTE_VALUE_CHART_NAMES,
   computeChangeInPercentagePoints,
   DATA_REPORT_INDEXES,
+  DATA_ASSET_CHART_NAMES,
   getAggregateChartData,
   getQueryFilterForDataInsightChart,
   latestSummaryCount,
   listSystemChartData,
-  PIPELINE_CHART_NAMES,
   SERVICE_ABSOLUTE_VALUE_CHART,
   SERVICE_CHART_NAMES,
   SERVICE_SUMMARY_CARD_CHART,
@@ -30,33 +30,26 @@ import { listKpis } from '@/api/kpi';
 import { getResourcePermission, toOperationPermissions } from '@/api/permissions';
 import { listTags } from '@/api/tags';
 import { getTeamByName, listTeams } from '@/api/teams';
-import { searchAssets } from '@/api/search';
-import { listTestCases } from '@/api/testCases';
-import { listTestIncidents } from '@/api/testIncidents';
 import { INSIGHT_DATE_PRESETS, insightsDatePresetFromKey } from '@/catalog/insightsTabs';
-import type { FacetId } from '@/catalog/searchFacets';
 import SmChart from '@/features/charts/SmChart.vue';
-import { bucketsToPoints, formatChartTs, insightResultsToSeries, namedSeries, testResultsToStatusPoints } from '@/features/charts/series';
+import { formatChartTs, insightResultsToSeries } from '@/features/charts/series';
 import type { ChartSeries } from '@/features/charts/types';
 import { seriesWindow } from '@/features/charts/types';
 import { SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
 import type { Kpi } from '@/types/kpi';
 import { startCase } from '@/utils/text';
-import ServiceInsightCard from './ServiceInsightCard.vue';
+import DataInsightChartCard, {
+  type DataInsightChartHeadline,
+  type DataInsightChartRow,
+} from './DataInsightChartCard.vue';
 
 const { t, te } = useI18n();
 
 const loading = ref(false);
 const errorMessage = ref('');
-const catalogTotal = ref(0);
-const entitySeries = ref<ChartSeries[]>([]);
-const serviceSeries = ref<ChartSeries[]>([]);
-const tierSeries = ref<ChartSeries[]>([]);
-const testSeries = ref<ChartSeries[]>([]);
-const incidentSeries = ref<ChartSeries[]>([]);
-const pipeline = ref<Array<{ name: string; title: string; series: ChartSeries[] }>>([]);
-const pipelineError = ref('');
-const pipelineTried = ref(false);
+const systemData = ref<SystemChartData>({});
+const systemError = ref('');
+const systemTried = ref(false);
 const webError = ref('');
 const webTried = ref(false);
 const mostActiveUsers = ref<DataInsightAggregateRow[]>([]);
@@ -64,7 +57,6 @@ const dailyActiveSeries = ref<ChartSeries[]>([]);
 const pageViewEntities = ref<DataInsightAggregateRow[]>([]);
 const datePreset = ref(insightsDatePresetFromKey('last7').key);
 const orgName = ref('');
-const systemData = ref<SystemChartData>({});
 const permissionChecked = ref(false);
 const canViewInsights = ref(false);
 const selectedTeams = ref<string[]>([]);
@@ -98,12 +90,6 @@ function tierLabel(group: string): string {
   return startCase(group);
 }
 
-function facetBuckets(facets: Array<{ id: FacetId; buckets: Array<{ key: string; count: number }> }>, id: FacetId) {
-  return facets.find((facet) => facet.id === id)?.buckets ?? [];
-}
-
-const pipelineHasPoints = computed(() => pipeline.value.some((chart) => chart.series.some((item) => item.points.length)));
-
 /**
  * Data Insight summary (official DataInsightSummary.tsx +
  * utils/DataInsightUtils.tsx getEntitiesChartSummary +
@@ -126,6 +112,12 @@ const pipelineHasPoints = computed(() => pipeline.value.some((chart) => chart.se
  */
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function formatChange(value: number): string {
+  // +0 normalises -0 so a zero change never renders as "-0.00".
+  const rounded = Math.round(value * 100) / 100 + 0;
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}`;
 }
 
 function latestByGroup(points: readonly { count?: number; day?: number; group?: string }[]): Array<{ group: string; count: number }> {
@@ -154,12 +146,13 @@ const summaryCards = computed(() => {
   if (!hasData) {
     return [];
   }
-  const cards: Array<{ id: string; label: string; value: number; suffix: string }> = [
+  const cards: Array<{ id: string; label: string; value: number; suffix: string; target: string }> = [
     {
       id: 'total',
       label: t('insights.summary.totalAssets'),
       value: round2(totalAssets.value),
       suffix: '',
+      target: 'total_data_assets',
     },
   ];
   const description = latestSummaryCount(service.data_assets_with_description_summary_card ?? []);
@@ -169,6 +162,7 @@ const summaryCards = computed(() => {
       label: t('insights.summary.withDescription'),
       value: round2(description),
       suffix: '%',
+      target: 'percentage_of_data_asset_with_description',
     });
   }
   const owner = latestSummaryCount(service.data_assets_with_owner_summary_card ?? []);
@@ -178,27 +172,11 @@ const summaryCards = computed(() => {
       label: t('insights.summary.withOwner'),
       value: round2(owner),
       suffix: '%',
+      target: 'percentage_of_data_asset_with_owner',
     });
   }
   return cards;
 });
-
-function progressRows(points: readonly { count?: number; day?: number; group?: string }[], total: number) {
-  return latestByGroup(points)
-    .map((item) => ({
-      group: item.group,
-      count: item.count,
-      percent: total > 0 ? Math.min(100, Math.max(0, (item.count / total) * 100)) : 0,
-    }))
-    .sort((a, b) => b.count - a.count);
-}
-
-const entityProgress = computed(() =>
-  totalAssets.value > 0 ? progressRows(systemData.value.total_data_assets ?? [], totalAssets.value) : [],
-);
-const tierProgress = computed(() =>
-  totalAssets.value > 0 ? progressRows(systemData.value.total_data_assets_by_tier ?? [], totalAssets.value) : [],
-);
 
 /** Official EntitySummaryProgressBar strokeColor: palette index by sorted row. */
 function progressColor(index: number): string {
@@ -212,6 +190,15 @@ const summaryTitle = computed(() =>
 );
 
 /**
+ * Pin DataInsightSummary.tsx: the summary cards are clickable and scroll
+ * to their chart (onScrollToChart). The chart cards carry the system
+ * chart name as their DOM id, like pin's id={type}.
+ */
+function scrollToCard(id: string): void {
+  document.getElementById(id)?.scrollIntoView?.();
+}
+
+/**
  * Official DataInsightChartCard.tsx targetValue: the KPI whose
  * dataInsightChart is the description/owner KPI chart
  * (CreateKpiRequest.dataInsightChart enum, `*_kpi` names). The stored
@@ -219,17 +206,177 @@ const summaryTitle = computed(() =>
  * which names the same coverage, so both forms match. No KPI means no
  * target is shown (D-D-5: no "Add KPI" entry point in this batch).
  */
-function kpiTargetFor(chartName: (typeof SERVICE_CHART_NAMES)[number]): number | undefined {
-  const kpiChart =
-    chartName === 'percentage_of_service_with_description'
-      ? 'percentage_of_data_asset_with_description_kpi'
-      : 'percentage_of_data_asset_with_owner_kpi';
-  const percentageChart = kpiChart.replace(/_kpi$/, '');
+function kpiTargetFor(kpiChartName: string): number | undefined {
+  const percentageChart = kpiChartName.replace(/_kpi$/, '');
   const found = kpiList.value.find((kpi) => {
     const ref = kpi.dataInsightChart?.name ?? kpi.dataInsightChart?.fullyQualifiedName;
-    return ref === kpiChart || ref === percentageChart;
+    return ref === kpiChartName || ref === percentageChart;
   });
   return found?.targetValue;
+}
+
+function sumByDay(points: readonly { count?: number; day?: number }[]): Map<number, number> {
+  const byDay = new Map<number, number>();
+  for (const point of points) {
+    if (point.day === undefined || point.count === undefined) {
+      continue;
+    }
+    byDay.set(point.day, (byDay.get(point.day) ?? 0) + point.count);
+  }
+  return byDay;
+}
+
+/**
+ * Pin DataInsightChartCard.tsx computeTotalDataAssetsChange: the change
+ * in the daily total between the first and last day of the window, in %.
+ */
+function totalChange(): number | undefined {
+  const byDay = sumByDay(systemData.value.total_data_assets ?? []);
+  const days = [...byDay.keys()].sort((a, b) => a - b);
+  if (!days.length) {
+    return undefined;
+  }
+  const first = byDay.get(days[0] as number) ?? 0;
+  const last = byDay.get(days[days.length - 1] as number) ?? 0;
+  return first ? ((last - first) / first) * 100 : 0;
+}
+
+/**
+ * Pin DataInsightChartCard.tsx computeTotalDataAssetsByTierChange: the
+ * change in the tiered share of assets between the first and last day,
+ * in percentage points. The untiered bucket is excluded from the tiered
+ * share (pin excludes the exact `NoTier` group; the live catalog also
+ * reports it lowercase as `notier`, so the check is case-insensitive).
+ */
+function tierChange(): number | undefined {
+  const tierPoints = systemData.value.total_data_assets_by_tier ?? [];
+  const totalPoints = systemData.value.total_data_assets ?? [];
+  if (!tierPoints.length || !totalPoints.length) {
+    return undefined;
+  }
+  const totalByDay = sumByDay(totalPoints);
+  const tieredByDay = sumByDay(
+    tierPoints.filter((point) => (point.group ?? '').toLowerCase() !== 'notier'),
+  );
+  const days = [...totalByDay.keys()].sort((a, b) => a - b);
+  if (!days.length) {
+    return undefined;
+  }
+  const firstDay = days[0] as number;
+  const lastDay = days[days.length - 1] as number;
+  const firstTotal = totalByDay.get(firstDay) ?? 0;
+  const lastTotal = totalByDay.get(lastDay) ?? 0;
+  const firstTiered = tieredByDay.get(firstDay) ?? 0;
+  const lastTiered = tieredByDay.get(lastDay) ?? 0;
+  const firstPercent = firstTotal ? (firstTiered / firstTotal) * 100 : 0;
+  const lastPercent = lastTotal ? (lastTiered / lastTotal) * 100 : 0;
+  return lastPercent - firstPercent;
+}
+
+function changeText(value: number | undefined, unit: '%' | 'pp', days: number): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return unit === 'pp'
+    ? t('insights.service.change', { value: formatChange(value), days })
+    : t('insights.cards.changePercent', { value: formatChange(value), days });
+}
+
+interface ChartCardConfig {
+  id: string;
+  title: string;
+  subTitle: string;
+  series: ChartSeries[];
+  rows: DataInsightChartRow[];
+  headline?: DataInsightChartHeadline;
+  failed: boolean;
+  testId: string;
+  /** Empty-state text: the system cards share the pipeline wording, the
+   * service cards keep their own ("No service coverage data…"). */
+  emptyText: string;
+  listAssets?: 'description' | 'owner';
+}
+
+function entityRows(points: readonly { count?: number; day?: number; group?: string }[]): DataInsightChartRow[] {
+  return latestByGroup(points)
+    .sort((a, b) => b.count - a.count)
+    .map((item, index) => ({
+      key: item.group,
+      name: entityLabel(item.group),
+      label: String(item.count),
+      // Pin passes the raw latest value (clamped 0–100 in the row), not a share of the total.
+      percent: item.count,
+      color: progressColor(index),
+    }));
+}
+
+function percentageRows(points: readonly { count?: number; day?: number; group?: string }[]): DataInsightChartRow[] {
+  return latestByGroup(points)
+    .sort((a, b) => b.count - a.count)
+    .map((item, index) => ({
+      key: item.group,
+      name: entityLabel(item.group),
+      label: `${round2(item.count)}%`,
+      percent: item.count,
+      color: progressColor(index),
+    }));
+}
+
+function tierRows(points: readonly { count?: number; day?: number; group?: string }[]): DataInsightChartRow[] {
+  return latestByGroup(points)
+    .sort((a, b) => b.count - a.count)
+    .map((item, index) => ({
+      key: item.group,
+      name: tierLabel(item.group),
+      label: String(item.count),
+      percent: item.count,
+      color: progressColor(index),
+    }));
+}
+
+function percentageCard(
+  chartName: 'percentage_of_data_asset_with_description' | 'percentage_of_data_asset_with_owner',
+  absoluteChartName: (typeof ABSOLUTE_VALUE_CHART_NAMES)[number],
+  summaryCardName: 'data_assets_with_description_summary_card' | 'data_assets_with_owner_summary_card',
+  kpiChartName: string,
+  title: string,
+  subTitle: string,
+  testId: string,
+  listAssets: 'description' | 'owner',
+): ChartCardConfig {
+  const points = systemData.value[chartName] ?? [];
+  const absolutePoints = serviceData.value[absoluteChartName] ?? [];
+  const totalPoints = systemData.value.total_data_assets ?? [];
+  const hasChangeInputs = totalPoints.length > 0 && absolutePoints.length > 0;
+  const summaryValue = latestSummaryCount(serviceData.value[summaryCardName] ?? []);
+  const days = insightsDatePresetFromKey(datePreset.value).days;
+  return {
+    id: chartName,
+    title,
+    subTitle,
+    series: insightResultsToSeries(chartName, points),
+    rows: percentageRows(points),
+    headline:
+      summaryValue === undefined
+        ? undefined
+        : {
+            label: title,
+            value: `${round2(summaryValue)}%`,
+            progress: summaryValue,
+            changeText: changeText(
+              hasChangeInputs ? computeChangeInPercentagePoints(totalPoints, absolutePoints) : undefined,
+              'pp',
+              days,
+            ),
+            showProgress: true,
+            target: kpiTargetFor(kpiChartName),
+            targetSuffix: '%',
+          },
+    failed: serviceTried.value && Boolean(serviceError.value),
+    testId,
+    emptyText: t('insights.pipelineEmpty'),
+    listAssets,
+  };
 }
 
 function serviceCard(chartName: (typeof SERVICE_CHART_NAMES)[number]) {
@@ -248,7 +395,11 @@ function serviceCard(chartName: (typeof SERVICE_CHART_NAMES)[number]) {
       ? computeChangeInPercentagePoints(totalPoints, absolutePoints)
       : undefined,
     days: insightsDatePresetFromKey(datePreset.value).days,
-    target: kpiTargetFor(chartName),
+    target: kpiTargetFor(
+      chartName === 'percentage_of_service_with_description'
+        ? 'percentage_of_data_asset_with_description_kpi'
+        : 'percentage_of_data_asset_with_owner_kpi',
+    ),
     series: insightResultsToSeries(chartName, points),
     latestByService: latestByGroup(points)
       .map((item) => ({ service: item.group, value: item.count }))
@@ -258,6 +409,140 @@ function serviceCard(chartName: (typeof SERVICE_CHART_NAMES)[number]) {
 
 const serviceDescriptionCard = computed(() => serviceCard('percentage_of_service_with_description'));
 const serviceOwnerCard = computed(() => serviceCard('percentage_of_service_with_owner'));
+
+/**
+ * Official DataAssetsTab.component.tsx: six full-width chart cards, in
+ * pin order. The five donut/bar charts the old page rendered here have
+ * no pin counterpart (0 hits for PieChart/BarChart/CustomPieChart in
+ * pin's DataInsight components) and are deleted by Bai's 2026-11-25
+ * ruling; the pipeline line charts move back into the cards as pin's
+ * left-column charts, and the search-snapshot total line is deleted —
+ * pin has a single total source (the system chart).
+ */
+const cards = computed<ChartCardConfig[]>(() => {
+  const totalPoints = systemData.value.total_data_assets ?? [];
+  const tierPoints = systemData.value.total_data_assets_by_tier ?? [];
+  const days = insightsDatePresetFromKey(datePreset.value).days;
+  const systemFailed = systemTried.value && Boolean(systemError.value);
+  const serviceFailed = serviceTried.value && Boolean(serviceError.value);
+  const total = {
+    id: 'total_data_assets',
+    title: t('insights.summary.totalAssets'),
+    subTitle: t('insights.cards.totalLead'),
+    series: insightResultsToSeries('total_data_assets', totalPoints),
+    rows: entityRows(totalPoints),
+    headline: {
+      label: t('insights.summary.totalAssets'),
+      value: String(round2(totalAssets.value)),
+      progress: 0,
+      changeText: changeText(totalChange(), '%', days),
+      showProgress: false,
+    },
+    failed: systemFailed,
+    testId: 'insights-total',
+    emptyText: t('insights.pipelineEmpty'),
+  };
+  const description = percentageCard(
+    'percentage_of_data_asset_with_description',
+    'number_of_data_asset_with_description_kpi',
+    'data_assets_with_description_summary_card',
+    'percentage_of_data_asset_with_description_kpi',
+    t('insights.summary.withDescription'),
+    t('insights.cards.assetDescriptionLead'),
+    'insights-asset-description',
+    'description',
+  );
+  const owner = percentageCard(
+    'percentage_of_data_asset_with_owner',
+    'number_of_data_asset_with_owner_kpi',
+    'data_assets_with_owner_summary_card',
+    'percentage_of_data_asset_with_owner_kpi',
+    t('insights.summary.withOwner'),
+    t('insights.cards.assetOwnerLead'),
+    'insights-asset-owner',
+    'owner',
+  );
+  const serviceDescription = serviceDescriptionCard.value;
+  const serviceOwner = serviceOwnerCard.value;
+  const serviceDescriptionConfig: ChartCardConfig = {
+    id: 'percentage_of_service_with_description',
+    title: serviceDescription.title,
+    subTitle: t('insights.cards.serviceDescriptionLead'),
+    series: serviceDescription.series,
+    rows: serviceDescription.latestByService.map((item, index) => ({
+      key: item.service,
+      name: item.service,
+      label: `${round2(item.value)}%`,
+      percent: item.value,
+      color: progressColor(index),
+    })),
+    headline:
+      serviceDescription.headline === undefined
+        ? undefined
+        : {
+            label: serviceDescription.title,
+            value: `${round2(serviceDescription.headline)}%`,
+            progress: serviceDescription.headline,
+            changeText: changeText(serviceDescription.change, 'pp', serviceDescription.days),
+            showProgress: true,
+            target: serviceDescription.target,
+            targetSuffix: '%',
+          },
+    failed: serviceFailed,
+    testId: 'insights-service-description',
+    emptyText: t('insights.serviceChartsEmpty'),
+  };
+  const serviceOwnerConfig: ChartCardConfig = {
+    id: 'percentage_of_service_with_owner',
+    title: serviceOwner.title,
+    subTitle: t('insights.cards.serviceOwnerLead'),
+    series: serviceOwner.series,
+    rows: serviceOwner.latestByService.map((item, index) => ({
+      key: item.service,
+      name: item.service,
+      label: `${round2(item.value)}%`,
+      percent: item.value,
+      color: progressColor(index),
+    })),
+    headline:
+      serviceOwner.headline === undefined
+        ? undefined
+        : {
+            label: serviceOwner.title,
+            value: `${round2(serviceOwner.headline)}%`,
+            progress: serviceOwner.headline,
+            changeText: changeText(serviceOwner.change, 'pp', serviceOwner.days),
+            showProgress: true,
+            target: serviceOwner.target,
+            targetSuffix: '%',
+          },
+    failed: serviceFailed,
+    testId: 'insights-service-owner',
+    emptyText: t('insights.serviceChartsEmpty'),
+  };
+  const tierSummary = latestSummaryCount(serviceData.value.total_data_assets_with_tier_summary_card ?? []);
+  const tier: ChartCardConfig = {
+    id: 'total_data_assets_by_tier',
+    title: t('insights.summary.byTier'),
+    subTitle: t('insights.cards.tierLead'),
+    series: insightResultsToSeries('total_data_assets_by_tier', tierPoints),
+    rows: tierRows(tierPoints),
+    headline:
+      tierSummary === undefined
+        ? undefined
+        : {
+            label: t('insights.summary.byTier'),
+            value: `${round2(tierSummary)}%`,
+            progress: tierSummary,
+            changeText: changeText(tierChange(), 'pp', days),
+            showProgress: false,
+          },
+    failed: systemFailed,
+    testId: 'insights-tier',
+    emptyText: t('insights.pipelineEmpty'),
+  };
+  return [total, description, owner, serviceDescriptionConfig, serviceOwnerConfig, tier];
+});
 
 /**
  * Gate: official DataInsightPage.component.tsx requires Operation.ViewAll
@@ -336,8 +621,8 @@ async function loadOrganization(): Promise<void> {
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
-  pipelineError.value = '';
-  pipelineTried.value = false;
+  systemError.value = '';
+  systemTried.value = false;
   const window = seriesWindow(insightsDatePresetFromKey(datePreset.value).days);
   // Official getQueryFilterForDataInsightChart(chartFilter.team, chartFilter.tier):
   // the same filter rides every system-chart request on this page.
@@ -346,63 +631,12 @@ async function load(): Promise<void> {
     selectedTiers.value.length ? selectedTiers.value : undefined,
   );
   try {
-    const [search, tests, incidents] = await Promise.all([
-      searchAssets('*', 0, 1),
-      listTestCases({ limit: 100 }),
-      listTestIncidents({ latest: true, limit: 100 }),
-    ]);
-    catalogTotal.value = search.total;
-    entitySeries.value = namedSeries(
-      t('insights.series.entityType'),
-      bucketsToPoints(facetBuckets(search.facets, 'entityType')).map((point) => ({
-        ...point,
-        label: entityLabel(point.label),
-      })),
-    );
-    serviceSeries.value = namedSeries(
-      t('insights.series.serviceType'),
-      bucketsToPoints(facetBuckets(search.facets, 'serviceType')),
-    );
-    testSeries.value = namedSeries(
-      t('insights.series.testStatus'),
-      testResultsToStatusPoints(
-        tests.data.map((item) => ({
-          testCaseStatus: item.testCaseResult?.testCaseStatus || item.testCaseStatus,
-        })),
-      ),
-    );
-    incidentSeries.value = namedSeries(
-      t('insights.series.incidentStatus'),
-      testResultsToStatusPoints(incidents.data.map((item) => ({ testCaseStatus: item.testCaseResolutionStatusType }))),
-    );
-    pipelineTried.value = true;
+    systemTried.value = true;
     try {
-      const data = await listSystemChartData(PIPELINE_CHART_NAMES, window.startTs, window.endTs, { filter });
-      systemData.value = data;
-      // The tier bar shares the system-chart tier distribution with the
-      // top summary rows (pin's tier card is system-chart driven:
-      // DataInsightChartCard with SystemChartType.TotalDataAssetsByTier).
-      // The search 'tier' facet carries no buckets for untiered assets,
-      // so a facet-sourced bar rendered "No data" while the summary rows
-      // showed the untiered bucket — the two surfaces contradicted each
-      // other. One source, one rule: both show the untiered bucket as
-      // "No Tier" via tierLabel.
-      tierSeries.value = namedSeries(
-        t('insights.series.tier'),
-        latestByGroup(data.total_data_assets_by_tier ?? []).map((item) => ({
-          label: tierLabel(item.group),
-          value: item.count,
-        })),
-      );
-      pipeline.value = PIPELINE_CHART_NAMES.flatMap((name) => {
-        const series = insightResultsToSeries(name, data[name] ?? []);
-        return [{ name, title: t(`insights.pipeline.${name}`), series }];
-      });
+      systemData.value = await listSystemChartData(DATA_ASSET_CHART_NAMES, window.startTs, window.endTs, { filter });
     } catch (error) {
       systemData.value = {};
-      tierSeries.value = [];
-      pipeline.value = [];
-      pipelineError.value = error instanceof Error ? error.message : t('insights.pipelineFailed');
+      systemError.value = error instanceof Error ? error.message : t('insights.pipelineFailed');
     }
     // Service cards + summary cards + absolute values: fetched strictly.
     // A failure here is surfaced (warning + error state in the cards),
@@ -478,10 +712,9 @@ async function load(): Promise<void> {
         }
         byDay.set(label, (byDay.get(label) ?? 0) + row.activeUsers);
       }
-      dailyActiveSeries.value = namedSeries(
-        t('insights.web.dailyActive'),
-        [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value })),
-      );
+      dailyActiveSeries.value = [...byDay.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([label, value]) => ({ name: t('insights.web.dailyActive'), points: [{ label, value }] }));
       pageViewEntities.value = [...rowsOf(pageViews)]
         .sort((a, b) => (b.pageViews ?? 0) - (a.pageViews ?? 0))
         .slice(0, 5);
@@ -539,143 +772,6 @@ onMounted(async () => {
         :error-text="t('insights.noPermission')"
       />
       <template v-else-if="permissionChecked && canViewInsights">
-        <Typography.Title :level="5" data-testid="insights-summary-title" class="insights__sub">
-          {{ summaryTitle }}
-        </Typography.Title>
-        <div v-if="summaryCards.length" data-testid="insights-summary" class="insights-summary">
-          <Row :gutter="[16, 16]">
-            <Col v-for="card in summaryCards" :key="card.id" :xs="24" :md="8">
-              <Card size="small" :title="card.label" :data-testid="`insights-summary-${card.id}`">
-                <Typography.Title :level="4">{{ card.value }}{{ card.suffix }}</Typography.Title>
-              </Card>
-            </Col>
-          </Row>
-          <div v-if="entityProgress.length" data-testid="insights-entity-progress" class="insights-progress">
-            <Typography.Title :level="5" class="insights__sub">{{ t('insights.summary.byEntityType') }}</Typography.Title>
-            <!--
-              Official EntitySummaryProgressBar.component.tsx: name + count on one
-              flex row, ProgressBar below with no trailing % info (count is the
-              label). Ant Progress showInfo must stay false — the default % text
-              after the bar overflows and creates a horizontal scrollbar.
-            -->
-            <div
-              v-for="(row, index) in entityProgress"
-              :key="row.group"
-              class="insights-progress__row"
-              data-testid="insights-entity-progress-row"
-            >
-              <div class="insights-progress__meta">
-                <span class="insights-progress__name" data-testid="insights-progress-name">{{ entityLabel(row.group) }}</span>
-                <span class="insights-progress__value" data-testid="insights-progress-value">{{ row.count }}</span>
-              </div>
-              <Progress
-                :percent="row.percent"
-                :show-info="false"
-                :stroke-color="progressColor(index)"
-                size="small"
-              />
-            </div>
-          </div>
-          <div v-if="tierProgress.length" data-testid="insights-tier-progress" class="insights-progress">
-            <Typography.Title :level="5" class="insights__sub">{{ t('insights.summary.byTier') }}</Typography.Title>
-            <div
-              v-for="(row, index) in tierProgress"
-              :key="row.group"
-              class="insights-progress__row"
-              data-testid="insights-tier-progress-row"
-            >
-              <div class="insights-progress__meta">
-                <span class="insights-progress__name" data-testid="insights-progress-name">{{ tierLabel(row.group) }}</span>
-                <span class="insights-progress__value" data-testid="insights-progress-value">{{ row.count }}</span>
-              </div>
-              <Progress
-                :percent="row.percent"
-                :show-info="false"
-                :stroke-color="progressColor(index)"
-                size="small"
-              />
-            </div>
-          </div>
-        </div>
-        <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="insights__alert" />
-        <Typography.Paragraph>
-          {{ t('insights.catalogTotal', { total: catalogTotal }) }}
-        </Typography.Paragraph>
-        <Alert
-          v-if="serviceError"
-          type="warning"
-          show-icon
-          data-testid="insights-service-load-warning"
-          :message="t('insights.serviceLoadFailed')"
-          :description="serviceError"
-          class="insights__alert"
-        />
-        <Row :gutter="[16, 16]">
-          <Col :xs="24" :lg="12">
-            <Card size="small" :title="t('insights.charts.entityType')">
-              <Typography.Paragraph type="secondary">{{ t('insights.charts.entityTypeLead') }}</Typography.Paragraph>
-              <SmChart kind="donut" test-id="insights-entity-chart" :series="entitySeries" :colors="SM_DATA_INSIGHT_COLORS" :empty="t('charts.empty')" />
-            </Card>
-          </Col>
-          <Col :xs="24" :lg="12">
-            <Card size="small" :title="t('insights.charts.serviceType')">
-              <Typography.Paragraph type="secondary">{{ t('insights.charts.serviceTypeLead') }}</Typography.Paragraph>
-              <SmChart kind="bar" test-id="insights-service-chart" :series="serviceSeries" :colors="SM_DATA_INSIGHT_COLORS" :empty="t('charts.empty')" />
-            </Card>
-          </Col>
-          <Col :xs="24" :lg="12">
-            <Card size="small" :title="t('insights.charts.tier')">
-              <Typography.Paragraph type="secondary">{{ t('insights.charts.tierLead') }}</Typography.Paragraph>
-              <SmChart kind="bar" test-id="insights-tier-chart" :series="tierSeries" :colors="SM_DATA_INSIGHT_COLORS" :empty="t('charts.empty')" />
-            </Card>
-          </Col>
-          <Col :xs="24" :lg="12">
-            <Card size="small" :title="t('insights.charts.testStatus')">
-              <Typography.Paragraph type="secondary">{{ t('insights.charts.testStatusLead') }}</Typography.Paragraph>
-              <SmChart kind="donut" test-id="insights-test-chart" :series="testSeries" :colors="SM_DATA_INSIGHT_COLORS" :empty="t('charts.empty')" />
-            </Card>
-          </Col>
-          <Col :xs="24" :lg="12">
-            <Card size="small" :title="t('insights.charts.incidents')">
-              <Typography.Paragraph type="secondary">{{ t('insights.charts.incidentsLead') }}</Typography.Paragraph>
-              <SmChart kind="donut" test-id="insights-incident-chart" :series="incidentSeries" :colors="SM_DATA_INSIGHT_COLORS" :empty="t('charts.empty')" />
-            </Card>
-          </Col>
-          <Col :xs="24" :lg="12">
-            <ServiceInsightCard
-              :title="serviceDescriptionCard.title"
-              :headline="serviceDescriptionCard.headline"
-              :change="serviceDescriptionCard.change"
-              :days="serviceDescriptionCard.days"
-              :target="serviceDescriptionCard.target"
-              :series="serviceDescriptionCard.series"
-              :latest-by-service="serviceDescriptionCard.latestByService"
-              :loading="loading"
-              :failed="serviceTried && Boolean(serviceError)"
-              test-id="insights-service-description"
-              :empty-text="t('insights.serviceChartsEmpty')"
-              :error-text="serviceError || t('insights.serviceLoadFailed')"
-            />
-          </Col>
-          <Col :xs="24" :lg="12">
-            <ServiceInsightCard
-              :title="serviceOwnerCard.title"
-              :headline="serviceOwnerCard.headline"
-              :change="serviceOwnerCard.change"
-              :days="serviceOwnerCard.days"
-              :target="serviceOwnerCard.target"
-              :series="serviceOwnerCard.series"
-              :latest-by-service="serviceOwnerCard.latestByService"
-              :loading="loading"
-              :failed="serviceTried && Boolean(serviceError)"
-              test-id="insights-service-owner"
-              :empty-text="t('insights.serviceChartsEmpty')"
-              :error-text="serviceError || t('insights.serviceLoadFailed')"
-            />
-          </Col>
-        </Row>
-        <Typography.Title :level="5" class="insights__sub">{{ t('insights.pipelineTitle') }}</Typography.Title>
-        <Typography.Paragraph type="secondary">{{ t('insights.pipelineLead') }}</Typography.Paragraph>
         <div class="insights__filters">
           <span class="insights__filter-label">{{ t('insights.filters.team') }}</span>
           <Select
@@ -705,25 +801,66 @@ onMounted(async () => {
             @change="(value) => onDatePresetChange(value as string)"
           />
         </div>
-        <Alert v-if="pipelineError" type="warning" show-icon :message="pipelineError" class="insights__alert" />
-        <Empty
-          v-if="pipelineTried && !pipelineError && !pipelineHasPoints"
-          data-testid="insights-pipeline-empty"
-          :description="t('insights.pipelineEmpty')"
+        <Typography.Title :level="5" data-testid="insights-summary-title" class="insights__sub">
+          {{ summaryTitle }}
+        </Typography.Title>
+        <div v-if="summaryCards.length" data-testid="insights-summary" class="insights-summary">
+          <Row :gutter="[16, 16]">
+            <Col
+              v-for="card in summaryCards"
+              :key="card.id"
+              :xs="24"
+              :md="8"
+              class="insights-summary__card"
+              role="button"
+              tabindex="0"
+              @click="scrollToCard(card.target)"
+              @keydown.enter="scrollToCard(card.target)"
+              @keydown.space.prevent="scrollToCard(card.target)"
+            >
+              <Card size="small" :title="card.label" :data-testid="`insights-summary-${card.id}`">
+                <Typography.Title :level="4">{{ card.value }}{{ card.suffix }}</Typography.Title>
+              </Card>
+            </Col>
+          </Row>
+        </div>
+        <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="insights__alert" />
+        <Alert
+          v-if="systemError"
+          type="warning"
+          show-icon
+          data-testid="insights-system-load-warning"
+          :message="t('insights.pipelineFailed')"
+          :description="systemError"
+          class="insights__alert"
         />
-        <Row v-else :gutter="[16, 16]">
-          <Col v-for="chart in pipeline" :key="chart.name" :xs="24" :lg="12">
-            <Card size="small" :title="chart.title">
-              <SmChart
-                kind="line"
-                :test-id="`insights-pipeline-${chart.name}`"
-                :series="chart.series"
-                :colors="SM_DATA_INSIGHT_COLORS"
-                :empty="t('insights.pipelineEmpty')"
-              />
-            </Card>
-          </Col>
-        </Row>
+        <Alert
+          v-if="serviceError"
+          type="warning"
+          show-icon
+          data-testid="insights-service-load-warning"
+          :message="t('insights.serviceLoadFailed')"
+          :description="serviceError"
+          class="insights__alert"
+        />
+        <div class="insights-cards">
+          <DataInsightChartCard
+            v-for="card in cards"
+            :key="card.id"
+            :id="card.id"
+            :title="card.title"
+            :sub-title="card.subTitle"
+            :series="card.series"
+            :rows="card.rows"
+            :headline="card.headline"
+            :loading="loading"
+            :failed="card.failed"
+            :test-id="card.testId"
+            :list-assets="card.listAssets"
+            :empty-text="card.emptyText"
+            :error-text="card.failed && card.testId.startsWith('insights-service') ? serviceError || t('insights.serviceLoadFailed') : systemError || t('insights.pipelineFailed')"
+          />
+        </div>
         <Typography.Title :level="5" class="insights__sub">{{ t('insights.webTitle') }}</Typography.Title>
         <Typography.Paragraph type="secondary">{{ t('insights.webLead') }}</Typography.Paragraph>
         <Alert v-if="webError" type="warning" show-icon :message="webError" class="insights__alert" />
@@ -774,16 +911,15 @@ onMounted(async () => {
 .insights__alert {
   margin-block: 12px;
 }
-/*
- * The summary Row carries Ant's gutter negative margins (-8px each side),
- * which make it 16px wider than this unpadded container — the container
- * measured overflowX=true on the live page. Clip the gutter overhang here
- * (the same containment .insights-progress already applies to its rows);
- * the first/last cards stay flush with the container edges.
- */
-.insights-summary {
-  min-width: 0;
-  overflow-x: hidden;
+/* The summary Row's -8px gutter margins are absorbed by PageLayout's
+ * 16px horizontal padding (pin relies on structure, not clipping), so
+ * there is deliberately no overflow-x clamp here: one would cut the
+ * summary cards' keyboard focus rings at the outer edges. */
+.insights-summary__card {
+  cursor: pointer;
+}
+.insights-summary__card :deep(.ant-card):hover {
+  background-color: var(--sm-color-bg-hover);
 }
 .insights__sub {
   margin-top: 20px;
@@ -799,42 +935,9 @@ onMounted(async () => {
   font-size: 12px;
   line-height: 18px;
 }
-.insights-progress {
-  min-width: 0;
-  overflow-x: hidden;
-}
-.insights-progress__row {
-  min-width: 0;
-  margin-block-end: 8px;
-}
-.insights-progress__meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  font-size: 12px;
-  line-height: 18px;
-}
-.insights-progress__name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.insights-progress__value {
-  flex-shrink: 0;
-}
-/* Ant Progress defaults leave room for showInfo % text; keep bar full-width. */
-.insights-progress__row :deep(.ant-progress) {
-  display: block;
-  width: 100%;
-  margin-inline-end: 0;
-  line-height: 1;
-}
-.insights-progress__row :deep(.ant-progress-outer) {
-  margin-inline-end: 0 !important;
-  padding-inline-end: 0 !important;
-}
-.insights-progress__row :deep(.ant-progress-text) {
-  display: none;
+.insights-cards {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
 }
 </style>

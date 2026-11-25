@@ -23,13 +23,13 @@ export const SYSTEM_CHART_NAMES = [
 export type SystemChartName = (typeof SYSTEM_CHART_NAMES)[number];
 
 /**
- * The four charts rendered in the pipeline section. The two service charts
- * are members of SYSTEM_CHART_NAMES but have their own cards (with a
- * headline, change value and per-service column) and are fetched with the
- * summary/absolute-value charts, not rendered again as pipeline lines.
+ * The four system charts rendered as the data-asset cards. The two service
+ * charts are members of SYSTEM_CHART_NAMES but have their own cards (with a
+ * headline, change value and per-service rows) and are fetched with the
+ * summary/absolute-value charts, not rendered again as separate lines.
  * (ADR:2026-11-07-data-insights-service-cards)
  */
-export const PIPELINE_CHART_NAMES = [
+export const DATA_ASSET_CHART_NAMES = [
   'total_data_assets',
   'percentage_of_data_asset_with_description',
   'percentage_of_data_asset_with_owner',

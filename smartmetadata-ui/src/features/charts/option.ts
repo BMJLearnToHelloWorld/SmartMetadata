@@ -16,11 +16,19 @@ const COLORS = [...SM_CHART_COLORS];
  * Optional palette override. DataInsight categorical charts pass
  * SM_DATA_INSIGHT_COLORS; every other chart keeps the global palette,
  * so a DataInsight-only change never recolours profiler/quality charts.
+ *
+ * `hideLegend` is the official DataInsightChartCard behaviour
+ * (DataInsightChartUtils.tsx HIDDEN_CHART_LEGEND = { show: false }):
+ * the card title names the chart and the side panel is the legend, so
+ * the built-in one stays off. `dimmedNames` is the same card's hover
+ * behaviour: the hovered series stays at full opacity and every other
+ * visible series drops to HOVER_CHART_OPACITY (0.3).
  */
 export function buildChartOption(
   kind: ChartKind,
   series: ChartSeries[],
   colors: readonly string[] = COLORS,
+  options: { hideLegend?: boolean; dimmedNames?: ReadonlySet<string> } = {},
 ): Record<string, unknown> {
   const palette = [...colors];
   if (kind === 'donut') {
@@ -57,8 +65,12 @@ export function buildChartOption(
     color: palette,
     textStyle: { fontFamily: SM_FONT_FAMILY },
     tooltip: { trigger: 'axis' },
-    legend: series.length > 1 ? { bottom: 0 } : undefined,
-    grid: { left: 48, right: 16, top: 24, bottom: series.length > 1 ? 52 : 28, containLabel: true },
+    legend: options.hideLegend
+      ? { show: false }
+      : series.length > 1
+        ? { bottom: 0 }
+        : undefined,
+    grid: { left: 48, right: 16, top: 24, bottom: series.length > 1 && !options.hideLegend ? 52 : 28, containLabel: true },
     xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true } },
     yAxis: { type: 'value', minInterval: 1 },
     series: series.map((item) => ({
@@ -66,6 +78,12 @@ export function buildChartOption(
       name: item.name,
       smooth: kind === 'line' || kind === 'area',
       ...(kind === 'area' ? { areaStyle: {} } : {}),
+      // Pin getDataInsightLineSeries always sends lineStyle.opacity:
+      // ECharts deep-merges a series that keeps its id, so an omitted
+      // opacity would leave the previous dimmed value in place.
+      ...(options.dimmedNames
+        ? { lineStyle: { opacity: options.dimmedNames.has(item.name) ? 0.3 : 1 } }
+        : {}),
       data: labels.map((label) => item.points.find((point) => point.label === label)?.value ?? 0),
     })),
   };

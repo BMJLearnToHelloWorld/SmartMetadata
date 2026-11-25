@@ -29,6 +29,18 @@ const props = withDefaults(
      * cursor never promises a navigation that does not exist.
      */
     segmentClickable?: boolean;
+    /**
+     * Official DataInsightChartCard: the card title names the chart and
+     * the side panel is the legend, so the built-in legend stays off
+     * (HIDDEN_CHART_LEGEND = { show: false }).
+     */
+    hideLegend?: boolean;
+    /**
+     * Series names to dim to HOVER_CHART_OPACITY (0.3) while another
+     * series is hovered in the card's side panel; the hovered series
+     * stays at full opacity. Only the DataInsight card passes this.
+     */
+    dimmedNames?: readonly string[];
   }>(),
   {
     height: 240,
@@ -43,7 +55,15 @@ const emit = defineEmits<{
 
 const ready = computed(() => !props.error && hasChartPoints(props.series));
 const option = computed(() =>
-  props.colors ? buildChartOption(props.kind, props.series, props.colors) : buildChartOption(props.kind, props.series),
+  props.colors
+    ? buildChartOption(props.kind, props.series, props.colors, {
+        hideLegend: props.hideLegend,
+        dimmedNames: props.dimmedNames ? new Set(props.dimmedNames) : undefined,
+      })
+    : buildChartOption(props.kind, props.series, undefined, {
+        hideLegend: props.hideLegend,
+        dimmedNames: props.dimmedNames ? new Set(props.dimmedNames) : undefined,
+      }),
 );
 
 /**
