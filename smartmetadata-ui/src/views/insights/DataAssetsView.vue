@@ -120,12 +120,6 @@ function formatNumberWithComma(value: number): string {
   return new Intl.NumberFormat(locale.value).format(value);
 }
 
-function formatChange(value: number): string {
-  // +0 normalises -0 so a zero change never renders as "-0.00".
-  const rounded = Math.round(value * 100) / 100 + 0;
-  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}`;
-}
-
 function latestByGroup(points: readonly { count?: number; day?: number; group?: string }[]): Array<{ group: string; count: number }> {
   const byGroup = new Map<string, { count?: number; day?: number }>();
   for (const point of points) {
@@ -336,19 +330,6 @@ function tierChange(): number | undefined {
   return lastPercent - firstPercent;
 }
 
-/**
- * Pin CustomStatistic.tsx:44-64 renders every change line with a `%`
- * suffix — even the percentage-point changes from computeDefaultChange /
- * computeTotalDataAssetsByTierChange (pin's own display quirk, kept
- * verbatim per Bai 2026-11-25 ruling).
- */
-function changeText(value: number | undefined, days: number): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  return t('insights.cards.changePercent', { value: formatChange(value), days });
-}
-
 interface ChartCardConfig {
   id: string;
   title: string;
@@ -453,10 +434,10 @@ function percentageCard(
             label: headlineLabel,
             value: `${round2(summaryValue)}%`,
             progress: summaryValue,
-            changeText: changeText(
-              hasChangeInputs ? computeChangeInPercentagePoints(totalPoints, absolutePoints) : undefined,
-              days,
-            ),
+            changeValue: hasChangeInputs
+              ? computeChangeInPercentagePoints(totalPoints, absolutePoints)
+              : undefined,
+            changeDays: days,
             showProgress: true,
             target: kpiTargetFor(kpiChartName),
             targetSuffix: '%',
@@ -526,7 +507,8 @@ const cards = computed<ChartCardConfig[]>(() => {
       label: t('insights.cards.headline.totalAssets'),
       value: String(round2(totalAssets.value)),
       progress: 0,
-      changeText: changeText(totalChange(), days),
+      changeValue: totalChange(),
+      changeDays: days,
       showProgress: false,
     },
     testId: 'insights-total',
@@ -582,7 +564,8 @@ const cards = computed<ChartCardConfig[]>(() => {
             label: t('insights.cards.headline.completedDescription'),
             value: `${round2(serviceDescription.headline)}%`,
             progress: serviceDescription.headline,
-            changeText: changeText(serviceDescription.change, serviceDescription.days),
+            changeValue: serviceDescription.change,
+            changeDays: serviceDescription.days,
             showProgress: true,
             target: serviceDescription.target,
             targetSuffix: '%',
@@ -615,7 +598,8 @@ const cards = computed<ChartCardConfig[]>(() => {
             label: t('insights.cards.headline.assignedOwner'),
             value: `${round2(serviceOwner.headline)}%`,
             progress: serviceOwner.headline,
-            changeText: changeText(serviceOwner.change, serviceOwner.days),
+            changeValue: serviceOwner.change,
+            changeDays: serviceOwner.days,
             showProgress: true,
             target: serviceOwner.target,
             targetSuffix: '%',
@@ -642,7 +626,8 @@ const cards = computed<ChartCardConfig[]>(() => {
             label: t('insights.cards.headline.assignedTier'),
             value: `${round2(tierSummary)}%`,
             progress: tierSummary,
-            changeText: changeText(tierChange(), days),
+            changeValue: tierChange(),
+            changeDays: days,
             showProgress: false,
           },
     testId: 'insights-tier',
@@ -904,7 +889,13 @@ onMounted(async () => {
               @keydown.enter="scrollToCard(card.target)"
               @keydown.space.prevent="scrollToCard(card.target)"
             >
-              <Card size="small" :title="card.label" :data-testid="`insights-summary-${card.id}`">
+              <!-- Pin SummaryCard.component.tsx: the title is a wrapping
+                paragraph, not an antd Card title (which ellipsises) — at
+                span 6 the label must wrap instead of truncating. -->
+              <Card size="small" :data-testid="`insights-summary-${card.id}`">
+                <Typography.Paragraph type="secondary" class="insights-summary__label">
+                  {{ card.label }}
+                </Typography.Paragraph>
                 <Typography.Title :level="4">{{ formatNumberWithComma(card.value) }}{{ card.suffix }}</Typography.Title>
               </Card>
             </Col>
@@ -949,6 +940,9 @@ onMounted(async () => {
  * summary cards' keyboard focus rings at the outer edges. */
 .insights-summary__card {
   cursor: pointer;
+}
+.insights-summary__label {
+  margin-bottom: 0;
 }
 .insights-summary__card :deep(.ant-card):hover {
   background-color: var(--sm-color-bg-hover);

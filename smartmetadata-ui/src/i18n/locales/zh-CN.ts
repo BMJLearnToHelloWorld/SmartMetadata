@@ -1903,7 +1903,7 @@ const zhCN = {
       searchPlaceholder: '搜索',
       exploreNoDescription: '探索没有描述的数据资产',
       exploreNoOwner: '探索没有所有者的数据资产',
-      changePercent: '最近 {days} 天变化 {value}%',
+      changeDays: '{days}天更改',
       headline: {
         totalAssets: '总资产',
         completedDescription: '已完成描述 %',

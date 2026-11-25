@@ -28,9 +28,13 @@ function formatKpiTs(ts?: number): string {
   return ts ? new Date(ts).toLocaleDateString() : '—';
 }
 
+/**
+ * Pin KPILatestResultsV1.tsx:67-74 renders KPI result values with
+ * toFixed(2); the raw float (52.066115702479344) is never shown bare.
+ */
 function kpiCurrent(kpi: Kpi): string {
   const value = kpi.kpiResult?.targetResult[0]?.value;
-  return value === undefined ? '—' : value;
+  return value === undefined ? '—' : Number(value).toFixed(2);
 }
 
 function kpiTargetMet(kpi: Kpi): boolean | undefined {

@@ -48,7 +48,8 @@ function mountCard(props: Record<string, unknown> = {}) {
         label: 'Services with description',
         value: '62.5%',
         progress: 62.5,
-        changeText: '+15.00% over the last 7 days',
+        changeValue: 15,
+        changeDays: 7,
         showProgress: true,
         target: 80,
         targetSuffix: '%',
@@ -75,7 +76,8 @@ describe('DataInsightChartCard', () => {
   it('renders the headline, change, target, 500px line chart and descending rows', () => {
     const wrapper = mountCard();
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('62.5%');
-    expect(wrapper.text()).toContain('+15.00% over the last 7 days');
+    expect(wrapper.text()).toContain('+15.00%');
+    expect(wrapper.text()).toContain('7-days change');
     const target = wrapper.get('[data-testid="insights-service-description-target"]');
     expect(target.text()).toBe('80%');
     expect(target.attributes('style')).toContain('left: 80%');
@@ -97,10 +99,43 @@ describe('DataInsightChartCard', () => {
     expect(main.exists()).toBe(true);
     const change = headline.find('.di-chart-card__headline-change');
     expect(change.exists()).toBe(true);
-    expect(change.text()).toContain('+15.00% over the last 7 days');
+    expect(change.text()).toContain('+15.00%');
+    expect(change.text()).toContain('7-days change');
     // The change sits in the right column, not stacked under the value.
     expect(change.element.parentElement).toBe(main.element);
     expect(headline.find('.di-chart-card__headline-value').text()).toBe('62.5%');
+  });
+
+  it('does not crush the headline at narrow width: pin wraps the row and splits the change into two short lines', () => {
+    const wrapper = mountCard();
+    const headline = wrapper.get('[data-testid="insights-service-description-headline"]');
+    const main = headline.find('.di-chart-card__headline-main');
+    // Pin CustomStatistic.tsx:34: the headline row wraps (Box wrap="wrap"),
+    // so the change drops to the next line instead of crushing the left
+    // column to min-content. The compiled SFC style lands in the document.
+    const styles = [...document.querySelectorAll('style')].map((el) => el.textContent ?? '').join('\n');
+    expect(styles).toContain('flex-wrap:wrap');
+    // The change is two short lines (signed percent + duration), never one
+    // 185px sentence: its min-content width is the longer line, so the
+    // label + value keep their full width at a 221px headline.
+    const change = headline.get('.di-chart-card__headline-change');
+    expect(change.element.parentElement).toBe(main.element);
+    const valueLine = change.get('.di-chart-card__headline-change-value');
+    const daysLine = change.get('.di-chart-card__headline-change-days');
+    expect(valueLine.text()).toBe('+15.00%');
+    expect(daysLine.text()).toBe('7-days change');
+    expect(headline.get('.di-chart-card__headline-label').text()).toBe('Services with description');
+    expect(headline.get('.di-chart-card__headline-value').text()).toBe('62.5%');
+    // Pin CustomStatistic.tsx:49-55: a non-negative change reads success.
+    expect(valueLine.classes()).toContain('ant-typography-success');
+    // ...and a negative change reads danger, with the same two lines.
+    const negative = mountCard({ headline: { label: 'Assigned Tier', value: '2.33%', progress: 2.33, changeValue: -1.17, changeDays: 7, showProgress: false } });
+    const negativeChange = negative.get('.di-chart-card__headline-change');
+    expect(negativeChange.get('.di-chart-card__headline-change-value').text()).toBe('-1.17%');
+    expect(negativeChange.get('.di-chart-card__headline-change-value').classes()).toContain(
+      'ant-typography-danger',
+    );
+    expect(negativeChange.get('.di-chart-card__headline-change-days').text()).toBe('7-days change');
   });
 
   it('hides the right headline column when there is no change line', () => {
@@ -173,7 +208,8 @@ describe('DataInsightChartCard', () => {
       headline: { label: 'Services with description', value: '40%', progress: 40, showProgress: true },
     });
     expect(wrapper.find('[data-testid="insights-service-description-target"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('over the last 7 days');
+    expect(wrapper.find('.di-chart-card__headline-change').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('7-days change');
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('40%');
   });
 

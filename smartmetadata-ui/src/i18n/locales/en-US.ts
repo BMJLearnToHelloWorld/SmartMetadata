@@ -1924,7 +1924,7 @@ const enUS = {
       searchPlaceholder: 'Search',
       exploreNoDescription: 'Explore Assets with No description',
       exploreNoOwner: 'Explore Assets with No Owner',
-      changePercent: '{value}% over the last {days} days',
+      changeDays: '{days}-days change',
       headline: {
         totalAssets: 'Total Assets',
         completedDescription: 'Completed Description %',
