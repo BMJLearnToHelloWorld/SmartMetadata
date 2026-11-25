@@ -48,16 +48,14 @@ function mountCard(props: Record<string, unknown> = {}) {
         label: 'Services with description',
         value: '62.5%',
         progress: 62.5,
-        changeText: '+15.00 pp over the last 7 days',
+        changeText: '+15.00% over the last 7 days',
         showProgress: true,
         target: 80,
         targetSuffix: '%',
       },
       loading: false,
-      failed: false,
       testId: 'insights-service-description',
       emptyText: 'No service coverage data in the selected window.',
-      errorText: 'Service coverage charts failed to load',
       ...props,
     },
     global: {
@@ -77,7 +75,7 @@ describe('DataInsightChartCard', () => {
   it('renders the headline, change, target, 500px line chart and descending rows', () => {
     const wrapper = mountCard();
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('62.5%');
-    expect(wrapper.text()).toContain('+15.00 pp over the last 7 days');
+    expect(wrapper.text()).toContain('+15.00% over the last 7 days');
     const target = wrapper.get('[data-testid="insights-service-description-target"]');
     expect(target.text()).toBe('80%');
     expect(target.attributes('style')).toContain('left: 80%');
@@ -90,6 +88,53 @@ describe('DataInsightChartCard', () => {
     expect(rows[0]?.text()).toContain('80%');
     expect(rows[1]?.text()).toContain('MySQL');
     expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(false);
+  });
+
+  it('lays the headline out as pin CustomStatistic: label + value left, change right-aligned', () => {
+    const wrapper = mountCard();
+    const headline = wrapper.get('[data-testid="insights-service-description-headline"]');
+    const main = headline.find('.di-chart-card__headline-main');
+    expect(main.exists()).toBe(true);
+    const change = headline.find('.di-chart-card__headline-change');
+    expect(change.exists()).toBe(true);
+    expect(change.text()).toContain('+15.00% over the last 7 days');
+    // The change sits in the right column, not stacked under the value.
+    expect(change.element.parentElement).toBe(main.element);
+    expect(headline.find('.di-chart-card__headline-value').text()).toBe('62.5%');
+  });
+
+  it('hides the right headline column when there is no change line', () => {
+    const wrapper = mountCard({
+      headline: { label: 'Services with description', value: '40%', progress: 40, showProgress: true },
+    });
+    expect(wrapper.find('.di-chart-card__headline-change').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('40%');
+  });
+
+  it('passes the percentage flag to the chart tooltip formatter (pin getDataInsightTooltip)', () => {
+    const wrapper = mountCard({ isPercentage: true });
+    const option = chartOption(wrapper);
+    const formatter = (option.tooltip as Record<string, unknown>).formatter as (
+      params: Array<{ axisValue: string; seriesName: string; value: number; marker: string }>,
+    ) => string;
+    expect(typeof formatter).toBe('function');
+    const html = formatter([
+      { axisValue: '2026-01-07', seriesName: 'Postgres', value: 80, marker: '' },
+      { axisValue: '2026-01-07', seriesName: 'MySQL', value: 62.5, marker: '' },
+    ]);
+    expect(html).toContain('Jan 7, 2026');
+    expect(html).toContain('80%');
+    expect(html).toContain('62.5%');
+    const absolute = mountCard({ isPercentage: false });
+    const absoluteFormatter = (chartOption(absolute).tooltip as Record<string, unknown>).formatter as (
+      params: Array<{ axisValue: string; seriesName: string; value: number; marker: string }>,
+    ) => string;
+    const absoluteHtml = absoluteFormatter([
+      { axisValue: '2026-01-07', seriesName: 'Postgres', value: 80, marker: '' },
+    ]);
+    expect(absoluteHtml).toContain('Jan 7, 2026');
+    expect(absoluteHtml).toContain('80');
+    expect(absoluteHtml).not.toContain('80%');
   });
 
   it('hides the built-in legend: the right panel is the legend (pin HIDDEN_CHART_LEGEND)', () => {
@@ -113,7 +158,7 @@ describe('DataInsightChartCard', () => {
       headline: { label: 'Services with description', value: '40%', progress: 40, showProgress: true },
     });
     expect(wrapper.find('[data-testid="insights-service-description-target"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('pp over the last');
+    expect(wrapper.text()).not.toContain('over the last 7 days');
     expect(wrapper.get('[data-testid="insights-service-description-headline"]').text()).toContain('40%');
   });
 
@@ -160,12 +205,31 @@ describe('DataInsightChartCard', () => {
     const wrapper = mountCard({ series: [], rows: [], headline: undefined });
     expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="insights-service-description"]').exists()).toBe(false);
+    // Pin DataInsightChartCard.tsx:533: a failed fetch only toasts — the
+    // card has no error state at all, so no data always means empty.
+    expect(wrapper.find('[data-testid="insights-service-description-error"]').exists()).toBe(false);
   });
 
-  it('shows the error state, not the empty state, when the fetch failed', () => {
-    const wrapper = mountCard({ failed: true });
-    expect(wrapper.find('[data-testid="insights-service-description-error"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="insights-service-description-empty"]').exists()).toBe(false);
+  it('renders a provided #empty slot instead of the plain SmState empty text', () => {
+    const wrapper = mount(DataInsightChartCard, {
+      props: {
+        id: 'page_views_by_entities',
+        title: 'Page Views by Data Assets',
+        subTitle: 'Displays the number of times a dataset type was viewed.',
+        series: [],
+        rows: [],
+        loading: false,
+        testId: 'insights-page-views',
+        emptyText: 'Adding a new Data Insight is easy, just give it a spin!',
+      },
+      slots: { empty: '<div data-testid="custom-empty">placeholder</div>' },
+      global: {
+        plugins: [Antd, createTestI18n()],
+        stubs: { RouterLink: ROUTER_LINK_STUB },
+      },
+    });
+    expect(wrapper.find('[data-testid="custom-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="insights-page-views-empty"]').exists()).toBe(false);
   });
 
   it('shows loading while fetching', () => {

@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SM_CHART_COLORS, SM_COLOR_PRIMARY, SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
-import { buildChartOption } from './option';
+import { buildChartOption, formatInsightTooltip, formatInsightTooltipValue } from './option';
 
 describe('buildChartOption', () => {
   it('uses OM categorical tokens instead of default antd chart hues', () => {
@@ -89,5 +89,81 @@ describe('buildChartOption', () => {
     expect(undimmed.series as Array<Record<string, unknown>>).toEqual(
       expect.arrayContaining([expect.not.objectContaining({ lineStyle: expect.anything() })]),
     );
+  });
+
+  it('keeps a rank-fixed series colour however the visible array is ordered (pin dataInsightColor)', () => {
+    // The visible set after hover + filter is [table, schema]: without a
+    // fixed colour, schema would take the palette colour of index 1
+    // (purple) instead of its rank colour (blue). The series carry the
+    // rank colour, so the option must pin it per series.
+    const series = [
+      { name: 'table', points: [{ label: '2026-01-01', value: 5 }], color: '#FFD54F' },
+      { name: 'databaseSchema', points: [{ label: '2026-01-01', value: 3 }], color: '#64B5F6' },
+    ];
+    const option = buildChartOption('line', series, SM_DATA_INSIGHT_COLORS, {
+      hideLegend: true,
+      dimmedNames: new Set(['table']),
+    });
+    const lineSeries = option.series as Array<Record<string, unknown>>;
+    expect(lineSeries[0].id).toBe('table');
+    expect(lineSeries[1].id).toBe('databaseSchema');
+    expect(lineSeries[0].lineStyle).toEqual({ color: '#FFD54F', opacity: 0.3 });
+    expect(lineSeries[1].lineStyle).toEqual({ color: '#64B5F6', opacity: 1 });
+    expect(lineSeries[0].itemStyle).toEqual({ color: '#FFD54F' });
+    expect(lineSeries[1].itemStyle).toEqual({ color: '#64B5F6' });
+  });
+
+  it('keeps the palette-by-index fallback for series without a fixed colour', () => {
+    const series = [
+      { name: 'A', points: [{ label: '2026-01-01', value: 1 }] },
+      { name: 'B', points: [{ label: '2026-01-01', value: 2 }] },
+    ];
+    const option = buildChartOption('line', series, undefined, { dimmedNames: new Set(['B']) });
+    const lineSeries = option.series as Array<Record<string, unknown>>;
+    expect(lineSeries[0].lineStyle).toEqual({ opacity: 1 });
+    expect(lineSeries[0].itemStyle).toBeUndefined();
+  });
+
+  it('formats insight tooltip values like pin getEntryFormattedValue', () => {
+    expect(formatInsightTooltipValue(52, true)).toBe('52%');
+    expect(formatInsightTooltipValue(52.4271844601942, true)).toBe('52.43%');
+    expect(formatInsightTooltipValue(52.4271844601942, false)).toBe('52.43');
+    expect(formatInsightTooltipValue(0, true)).toBe('0%');
+    expect(formatInsightTooltipValue(undefined, true)).toBe('');
+  });
+
+  it('renders the insight tooltip with a DATE_MED header, startCase names and no null rows (pin getDataInsightTooltip)', () => {
+    const html = formatInsightTooltip(
+      [
+        { axisValue: '2026-11-22', seriesName: 'table', value: 52.4271844601942, marker: '<i>t</i>' },
+        { axisValue: '2026-11-22', seriesName: 'storedProcedure', value: 0, marker: '<i>s</i>' },
+        { axisValue: '2026-11-22', seriesName: 'databaseSchema', value: null, marker: '<i>d</i>' },
+      ],
+      { isPercentage: true, locale: 'en-US' },
+    );
+    expect(html).toContain('Nov 22, 2026');
+    expect(html).toContain('Table');
+    expect(html).toContain('52.43%');
+    expect(html).toContain('Stored Procedure');
+    expect(html).toContain('0%');
+    expect(html).not.toContain('52.4271844601942');
+    expect(html).not.toContain('Database Schema');
+  });
+
+  it('wires the insight tooltip formatter only when the card asks for it', () => {
+    const series = [{ name: 'table', points: [{ label: '2026-11-22', value: 52 }] }];
+    const withTooltip = buildChartOption('line', series, undefined, {
+      tooltip: { isPercentage: true, locale: 'en-US' },
+    });
+    expect(typeof (withTooltip.tooltip as Record<string, unknown>).formatter).toBe('function');
+    const html = (
+      (withTooltip.tooltip as Record<string, unknown>).formatter as (
+        params: unknown,
+      ) => string
+    )([{ axisValue: '2026-11-22', seriesName: 'table', value: 52, marker: '' }]);
+    expect(html).toContain('Nov 22, 2026');
+    expect(html).toContain('52%');
+    const plain = buildChartOption('line', series);
+    expect(plain.tooltip).toEqual({ trigger: 'axis' });
   });
 });

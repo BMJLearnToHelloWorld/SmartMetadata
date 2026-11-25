@@ -9,9 +9,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  APP_ANALYTICS_BLOCKS,
+  CUSTOM_DATE_RANGE_KEY,
   INSIGHTS_DEFAULT_TAB,
   INSIGHTS_TABS,
+  INSIGHT_DATE_PRESETS,
   ONLINE_USERS_TIME_WINDOWS,
   insightsDatePresetFromKey,
   insightsTabFromKey,
@@ -32,21 +33,34 @@ describe('insightsTabs', () => {
     expect(insightsTabFromKey('kpis').routeName).toBe('insights-kpis');
   });
 
-  it('marks app-analytics unsupported with the official four blocks', () => {
-    expect(INSIGHTS_TABS.find((tab) => tab.key === 'app-analytics')?.supported).toBe(false);
-    expect(APP_ANALYTICS_BLOCKS.map((block) => block.key)).toEqual([
-      'top-view-entities',
-      'page-views-by-entities',
-      'daily-active-users',
-      'top-active-users',
-    ]);
+  it('marks app-analytics supported: the four pin blocks are real charts now', () => {
+    const tab = INSIGHTS_TABS.find((tab) => tab.key === 'app-analytics');
+    expect(tab?.supported).toBe(true);
+    expect(tab?.leadKey).toBe('insights.appAnalyticsLead');
   });
 
   it('defaults the date preset to 7 days (official default) and the online window to 24 hours', () => {
     expect(insightsDatePresetFromKey(undefined).days).toBe(7);
-    expect(insightsDatePresetFromKey('last30').days).toBe(30);
+    expect(insightsDatePresetFromKey('last30days').days).toBe(30);
     expect(onlineUsersWindowFromKey(undefined).minutes).toBe(1440);
     expect(ONLINE_USERS_TIME_WINDOWS.map((window) => window.minutes)).toEqual([5, 60, 1440, 10080, 43200, 0]);
+  });
+
+  it('offers pin PROFILER_FILTER_RANGE presets only: yesterday + 3/7/14/30/60 days, no 90-day preset', () => {
+    expect(INSIGHT_DATE_PRESETS.map((preset) => [preset.key, preset.days])).toEqual([
+      ['yesterday', 1],
+      ['last3days', 3],
+      ['last7days', 7],
+      ['last14days', 14],
+      ['last30days', 30],
+      ['last60days', 60],
+    ]);
+    expect(insightsDatePresetFromKey('last7days').key).toBe('last7days');
+    // An unknown key (including the retired 90-day key) falls back to
+    // the pin default 7-day window, never to a pin-absent window.
+    expect(insightsDatePresetFromKey('last90').key).toBe('last7days');
+    expect(insightsDatePresetFromKey(undefined).key).toBe('last7days');
+    expect(CUSTOM_DATE_RANGE_KEY).toBe('customRange');
   });
 
   it('bands online activity exactly like the official page', () => {
