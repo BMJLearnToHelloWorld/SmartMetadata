@@ -184,7 +184,7 @@ describe('LineageView', () => {
     const link = document.body.querySelector(
       '[data-testid="entity-link"]',
     ) as HTMLElement | null;
-    expect(link?.getAttribute('href')).toContain('/asset/table/svc.db.schema.raw_orders');
+    expect(link?.getAttribute('href')).toContain('/assets/table/svc.db.schema.raw_orders');
     link?.click();
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset');
@@ -214,13 +214,16 @@ describe('LineageView', () => {
     // like LineageConfigModal.test.ts does (findComponent cannot see
     // teleported content by testid).
     await wrapper.get('[data-testid="lineage-config"]').trigger('click');
+    // antd InputNumber forwards data-testid onto the inner <input>
+    // itself (verified by probe), so there is no descendant input
+    // to select — the testid element IS the input.
     await vi.waitFor(() =>
       expect(
-        document.body.querySelector('[data-testid="lineage-config-upstream"] input'),
+        document.body.querySelector('[data-testid="lineage-config-upstream"]'),
       ).not.toBeNull(),
     );
     const upstreamInput = document.body.querySelector(
-      '[data-testid="lineage-config-upstream"] input',
+      '[data-testid="lineage-config-upstream"]',
     ) as HTMLInputElement;
     await new DOMWrapper(upstreamInput).setValue('2');
     const okButton = document.body.querySelector(
