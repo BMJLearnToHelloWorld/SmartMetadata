@@ -61,4 +61,33 @@ describe('buildChartOption', () => {
     expect(series[0].smooth).toBe(true);
     expect(series[0].areaStyle).toEqual({});
   });
+
+  it('hides the built-in legend when hideLegend is set (pin HIDDEN_CHART_LEGEND)', () => {
+    const series = [
+      { name: 'A', points: [{ label: '2026-01-01', value: 1 }] },
+      { name: 'B', points: [{ label: '2026-01-01', value: 2 }] },
+    ];
+    const option = buildChartOption('line', series, undefined, { hideLegend: true });
+    expect(option.legend).toEqual({ show: false });
+    // No legend row to leave room for: the grid bottom shrinks back to 28.
+    expect(option.grid).toMatchObject({ bottom: 28 });
+    const shown = buildChartOption('line', series);
+    expect(shown.legend).toEqual({ bottom: 0 });
+    expect(shown.grid).toMatchObject({ bottom: 52 });
+  });
+
+  it('dims the named series to 0.3 and keeps the rest at 1 (pin HOVER_CHART_OPACITY)', () => {
+    const series = [
+      { name: 'A', points: [{ label: '2026-01-01', value: 1 }] },
+      { name: 'B', points: [{ label: '2026-01-01', value: 2 }] },
+    ];
+    const option = buildChartOption('line', series, undefined, { dimmedNames: new Set(['B']) });
+    const lineSeries = option.series as Array<Record<string, unknown>>;
+    expect(lineSeries[0].lineStyle).toEqual({ opacity: 1 });
+    expect(lineSeries[1].lineStyle).toEqual({ opacity: 0.3 });
+    const undimmed = buildChartOption('line', series);
+    expect(undimmed.series as Array<Record<string, unknown>>).toEqual(
+      expect.arrayContaining([expect.not.objectContaining({ lineStyle: expect.anything() })]),
+    );
+  });
 });

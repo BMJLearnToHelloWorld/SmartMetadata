@@ -14,9 +14,6 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import DataAssetsView from './DataAssetsView.vue';
 
-const searchAssets = vi.fn();
-const listTestCases = vi.fn();
-const listTestIncidents = vi.fn();
 const listSystemChartData = vi.fn();
 const getAggregateChartData = vi.fn();
 const getTeamByName = vi.fn();
@@ -26,15 +23,6 @@ const listKpis = vi.fn();
 const getResourcePermission = vi.fn();
 const fetchLoggedInUser = vi.fn();
 
-vi.mock('@/api/search', () => ({
-  searchAssets: (...args: unknown[]) => searchAssets(...args),
-}));
-vi.mock('@/api/testCases', () => ({
-  listTestCases: (...args: unknown[]) => listTestCases(...args),
-}));
-vi.mock('@/api/testIncidents', () => ({
-  listTestIncidents: (...args: unknown[]) => listTestIncidents(...args),
-}));
 vi.mock('@/api/dataInsights', async () => {
   const actual = await vi.importActual<typeof import('@/api/dataInsights')>('@/api/dataInsights');
   return {
@@ -71,16 +59,19 @@ vi.mock('@/api/auth', () => ({
 const DAY_1 = Date.UTC(2026, 0, 1);
 const DAY_7 = Date.UTC(2026, 0, 7);
 
-/** Legacy pipeline payload: totals 200 → 300, percentage latest 42.5% / 80%. */
-const legacyPayload = {
+/** System payload: totals 200 → 300, percentage latest 42.5% / 80%.
+ * The percentage points carry their entity-type group, as the server
+ * returns them — the card rows and the line series share the group key,
+ * so a group-less point would match no row and its chart would be empty. */
+const systemPayload = {
   total_data_assets: [
     { count: 100, day: DAY_1, group: 'table' },
     { count: 100, day: DAY_1, group: 'topic' },
     { count: 150, day: DAY_7, group: 'table' },
     { count: 150, day: DAY_7, group: 'topic' },
   ],
-  percentage_of_data_asset_with_description: [{ count: 42.5, day: DAY_7 }],
-  percentage_of_data_asset_with_owner: [{ count: 80, day: DAY_7 }],
+  percentage_of_data_asset_with_description: [{ count: 42.5, day: DAY_7, group: 'table' }],
+  percentage_of_data_asset_with_owner: [{ count: 80, day: DAY_7, group: 'table' }],
   total_data_assets_by_tier: [
     { count: 7, day: DAY_7, group: 'Tier.Gold' },
     { count: 3, day: DAY_7, group: 'Tier.Silver' },
@@ -126,18 +117,24 @@ function routeChartCalls() {
     if (names.includes('percentage_of_service_with_description')) {
       return servicePayload;
     }
-    return legacyPayload;
+    return systemPayload;
   });
 }
 
-async function mountView() {
+async function mountView(options: { attach?: boolean } = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/insights/data-assets', name: 'insights-data-assets', component: DataAssetsView }],
+    routes: [
+      { path: '/insights/data-assets', name: 'insights-data-assets', component: DataAssetsView },
+      { path: '/explore', name: 'search', component: { template: '<div />' } },
+    ],
   });
   await router.push({ name: 'insights-data-assets' });
   await router.isReady();
   const wrapper = mount(DataAssetsView, {
+    // The summary click-scrolls via document.getElementById, so only the
+    // scroll test mounts attached to the document.
+    attachTo: options.attach ? document.body : undefined,
     global: { plugins: [router, Antd, createTestI18n()] },
   });
   await flushPromises();
@@ -146,9 +143,6 @@ async function mountView() {
 
 describe('DataAssetsView', () => {
   beforeEach(() => {
-    searchAssets.mockReset();
-    listTestCases.mockReset();
-    listTestIncidents.mockReset();
     listSystemChartData.mockReset();
     getAggregateChartData.mockReset();
     getAggregateChartData.mockResolvedValue([]);
@@ -167,19 +161,6 @@ describe('DataAssetsView', () => {
     });
     fetchLoggedInUser.mockReset();
     fetchLoggedInUser.mockResolvedValue({ id: 'u1', name: 'alice', isAdmin: false });
-    searchAssets.mockResolvedValue({
-      total: 7,
-      hits: [],
-      facets: [
-        { id: 'entityType', field: 'entityType', buckets: [{ key: 'table', count: 5 }] },
-        { id: 'serviceType', field: 'serviceType', buckets: [{ key: 'Postgres', count: 5 }] },
-        { id: 'tier', field: 'tier.tagFQN', buckets: [{ key: 'Tier.Gold', count: 2 }] },
-      ],
-    });
-    listTestCases.mockResolvedValue({
-      data: [{ testCaseStatus: 'Success' }, { testCaseResult: { testCaseStatus: 'Failed' }, testCaseStatus: 'Failed' }],
-    });
-    listTestIncidents.mockResolvedValue({ data: [{ testCaseResolutionStatusType: 'Ack' }] });
     listSystemChartData.mockResolvedValue({});
   });
 
@@ -187,19 +168,55 @@ describe('DataAssetsView', () => {
     document.body.innerHTML = '';
   });
 
-  it('plots live catalog and quality snapshots from existing GET payloads', async () => {
-    // The tier bar shares the system-chart tier distribution with the
-    // summary rows, so its points come from the chart payload, not the
-    // search 'tier' facet.
+  it('plots the six pin cards from the system and service chart payloads', async () => {
     routeChartCalls();
     const wrapper = await mountView();
-    expect(wrapper.text()).toContain('7');
-    expect(wrapper.find('[data-testid="insights-entity-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-service-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-tier-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-test-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-incident-chart"]').attributes('data-points')).toBe('1');
-    expect(searchAssets).toHaveBeenCalledWith('*', 0, 1);
+    for (const testId of [
+      'insights-total',
+      'insights-asset-description',
+      'insights-asset-owner',
+      'insights-service-description',
+      'insights-service-owner',
+      'insights-tier',
+    ]) {
+      expect(wrapper.find(`[data-testid="${testId}"]`).attributes('data-points')).toBe('1');
+    }
+  });
+
+  it('renders six full-width cards in pin order, each with a hidden legend and a 500px line', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    const cards = wrapper.findAll('[data-testid$="-card"]').map((el) => el.attributes('data-testid'));
+    expect(cards).toEqual([
+      'insights-total-card',
+      'insights-asset-description-card',
+      'insights-asset-owner-card',
+      'insights-service-description-card',
+      'insights-service-owner-card',
+      'insights-tier-card',
+    ]);
+    const charts = wrapper.findAllComponents({ name: 'VChart' });
+    expect(charts).toHaveLength(6);
+    for (const chart of charts) {
+      expect((chart.props('option') as Record<string, unknown>).legend).toEqual({ show: false });
+      expect(chart.attributes('style')).toContain('height: 500px');
+    }
+  });
+
+  it('drops the five pin-absent charts and the search-snapshot total (Bai 2026-11-25 ruling)', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    expect(wrapper.text()).not.toContain('Catalog assets in this search snapshot');
+    for (const testId of [
+      'insights-entity-chart',
+      'insights-service-chart',
+      'insights-tier-chart',
+      'insights-test-chart',
+      'insights-incident-chart',
+    ]) {
+      expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(false);
+    }
+    expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(false);
   });
 
   it('shows the service cards empty when the service charts return no points', async () => {
@@ -210,27 +227,19 @@ describe('DataAssetsView', () => {
     expect(wrapper.text()).toContain('No service coverage data in the selected window.');
   });
 
-  it('leaves the pipeline empty until a job writes report data', async () => {
+  it('shows the total card empty until a job writes report data', async () => {
     const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Data Insights pipeline');
+    expect(wrapper.find('[data-testid="insights-total-empty"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('No Data Insights series yet');
   });
 
-  it('plots test-status donut when latest status lives only under testCaseResult', async () => {
-    listTestCases.mockResolvedValue({
-      data: [{ testCaseResult: { testCaseStatus: 'Failed' } }, { testCaseResult: { testCaseStatus: 'Success' } }],
-    });
-    const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-test-chart"]').attributes('data-points')).toBe('1');
-  });
-
-  it('plots pipeline series only when listChartData returns points', async () => {
+  it('plots the total card line only when listChartData returns points', async () => {
     listSystemChartData.mockResolvedValue({
       total_data_assets: [{ count: 4, day: Date.UTC(2026, 0, 1), group: 'table' }],
     });
     const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-pipeline-total_data_assets"]').attributes('data-points')).toBe('1');
+    expect(wrapper.find('[data-testid="insights-total-empty"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="insights-total"]').attributes('data-points')).toBe('1');
   });
 
   it('renders web activity aggregates for users, daily actives and page views', async () => {
@@ -249,7 +258,7 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-web-entities"]').text()).toContain('svc.db.schema.orders');
   });
 
-  it('defaults the pipeline window to the 7-day preset', async () => {
+  it('defaults the chart window to the 7-day preset', async () => {
     routeChartCalls();
     await mountView();
     expect(listSystemChartData).toHaveBeenCalledTimes(2);
@@ -268,22 +277,23 @@ describe('DataAssetsView', () => {
     // percentage series' latest point (42.5% / 80%) — the D-D-1 correction.
     expect(wrapper.get('[data-testid="insights-summary-description"]').text()).toContain('62.5%');
     expect(wrapper.get('[data-testid="insights-summary-owner"]').text()).toContain('75%');
-    const entityRows = wrapper.findAll('[data-testid="insights-entity-progress-row"]');
+    const entityRows = wrapper.findAll('[data-testid="insights-total-row"]');
     expect(entityRows).toHaveLength(2);
-    // Official EntitySummaryProgressBar: name + count meta, ProgressBar with no trailing % info.
-    expect(entityRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Table');
-    expect(entityRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('150');
-    expect(entityRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 50%');
+    // Pin progress semantics: the bar is the raw latest value clamped
+    // 0–100, not a share of the total — 150 clamps to a full bar.
+    expect(entityRows[0].get('[data-testid="insights-total-row-name"]').text()).toContain('Table');
+    expect(entityRows[0].get('[data-testid="insights-total-row-value"]').text()).toBe('150');
+    expect(entityRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 100%');
     expect(entityRows[0].find('.ant-progress-text').exists()).toBe(false);
-    const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-row"]');
     expect(tierRows).toHaveLength(2);
     // Pin DataInsightChartCard.tsx:717 renders the tier groups with
     // lodash startCase: `Tier.Gold` -> `Tier Gold`.
-    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
-    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Silver');
-    expect(tierRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('7');
-    // Tier shares are of the global total (7 of 300), not of tiered assets.
-    expect(tierRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 2.33');
+    expect(tierRows[0].get('[data-testid="insights-tier-row-name"]').text()).toContain('Tier Gold');
+    expect(tierRows[1].get('[data-testid="insights-tier-row-name"]').text()).toContain('Tier Silver');
+    expect(tierRows[0].get('[data-testid="insights-tier-row-value"]').text()).toBe('7');
+    // Same pin bar semantics: 7 renders as a 7% bar, not 7/300.
+    expect(tierRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 7%');
     expect(tierRows[0].find('.ant-progress-text').exists()).toBe(false);
   });
 
@@ -291,12 +301,10 @@ describe('DataAssetsView', () => {
   // startCase, so the untiered group displays as "No Tier". The stored
   // chart data has been seen both as the canonical `NoTier` (server
   // TierStep.java:48) and as lowercase `notier`; both spellings map to
-  // the "No Tier" display name. The tier bar shares the system-chart
-  // distribution with the summary rows, so it plots the same bucket
-  // instead of the search facet's "No data" state.
+  // the "No Tier" display name.
   it.each(['notier', 'NoTier'])('labels the untiered tier group %s as "No Tier"', async (group) => {
     const tierPayload = {
-      ...legacyPayload,
+      ...systemPayload,
       total_data_assets_by_tier: [
         { count: 112, day: DAY_7, group },
         { count: 7, day: DAY_7, group: 'Tier.Gold' },
@@ -309,12 +317,12 @@ describe('DataAssetsView', () => {
       return tierPayload;
     });
     const wrapper = await mountView();
-    const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-row"]');
     expect(tierRows).toHaveLength(2);
-    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toBe('No Tier');
-    expect(tierRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('112');
-    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
-    expect(wrapper.find('[data-testid="insights-tier-chart"]').attributes('data-points')).toBe('1');
+    expect(tierRows[0].get('[data-testid="insights-tier-row-name"]').text()).toBe('No Tier');
+    expect(tierRows[0].get('[data-testid="insights-tier-row-value"]').text()).toBe('112');
+    expect(tierRows[1].get('[data-testid="insights-tier-row-name"]').text()).toContain('Tier Gold');
+    expect(wrapper.find('[data-testid="insights-tier"]').attributes('data-points')).toBe('1');
   });
 
   it('renders the untiered bucket as pin-verbatim "No Tier"', async () => {
@@ -327,19 +335,87 @@ describe('DataAssetsView', () => {
         return servicePayload;
       }
       return {
-        ...legacyPayload,
+        ...systemPayload,
         total_data_assets_by_tier: [
-          ...legacyPayload.total_data_assets_by_tier,
+          ...systemPayload.total_data_assets_by_tier,
           { count: 5, day: DAY_7, group: 'notier' },
         ],
       };
     });
     const wrapper = await mountView();
-    const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-row"]');
     expect(tierRows).toHaveLength(3);
-    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Tier Gold');
-    expect(tierRows[1].get('[data-testid="insights-progress-name"]').text()).toContain('No Tier');
-    expect(tierRows[1].get('[data-testid="insights-progress-value"]').text()).toBe('5');
+    expect(tierRows[0].get('[data-testid="insights-tier-row-name"]').text()).toContain('Tier Gold');
+    expect(tierRows[1].get('[data-testid="insights-tier-row-name"]').text()).toContain('No Tier');
+    expect(tierRows[1].get('[data-testid="insights-tier-row-value"]').text()).toBe('5');
+  });
+
+  it('renders the total card change as a percent of the daily total (pin computeTotalDataAssetsChange)', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    // Daily totals 200 -> 300: +50.00%.
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('300');
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain(
+      '+50.00% over the last 7 days',
+    );
+  });
+
+  it('renders the tier card change on the tiered share only, excluding the untiered bucket (pin computeTotalDataAssetsByTierChange)', async () => {
+    listSystemChartData.mockImplementation(async (names: readonly string[]) => {
+      if (names.includes('percentage_of_service_with_description')) {
+        return servicePayload;
+      }
+      return {
+        ...systemPayload,
+        total_data_assets_by_tier: [
+          { count: 7, day: DAY_1, group: 'Tier.Gold' },
+          { count: 193, day: DAY_1, group: 'notier' },
+          { count: 7, day: DAY_7, group: 'Tier.Gold' },
+          { count: 293, day: DAY_7, group: 'notier' },
+        ],
+      };
+    });
+    const wrapper = await mountView();
+    // Tiered share: 7/200 = 3.50% -> 7/300 = 2.33%, change -1.17pp.
+    expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain(
+      '-1.17 pp over the last 7 days',
+    );
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-row"]');
+    expect(tierRows).toHaveLength(2);
+    expect(tierRows[0].get('[data-testid="insights-tier-row-name"]').text()).toBe('No Tier');
+    expect(tierRows[0].get('[data-testid="insights-tier-row-value"]').text()).toBe('293');
+  });
+
+  it('scrolls to the chart when a summary card is clicked (pin DataInsightSummary onScrollToChart)', async () => {
+    routeChartCalls();
+    const wrapper = await mountView({ attach: true });
+    try {
+      const card = document.getElementById('total_data_assets');
+      expect(card).not.toBeNull();
+      const scrollIntoView = vi.fn();
+      card!.scrollIntoView = (() => {
+        scrollIntoView();
+      }) as Element['scrollIntoView'];
+      await wrapper.get('[data-testid="insights-summary-total"]').trigger('click');
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it('links the description/owner cards out to Explore with pin filters', async () => {
+    routeChartCalls();
+    const wrapper = await mountView();
+    const descriptionHref =
+      wrapper.find('[data-testid="insights-asset-description-explore-link"]').attributes('href') ?? '';
+    const descriptionFilter = decodeURIComponent(descriptionHref);
+    expect(descriptionFilter).toContain('descriptionStatus');
+    expect(descriptionFilter).toContain('INCOMPLETE');
+    const ownerHref =
+      wrapper.find('[data-testid="insights-asset-owner-explore-link"]').attributes('href') ?? '';
+    const ownerFilter = decodeURIComponent(ownerHref);
+    expect(ownerFilter).toContain('ownerDisplayName');
+    expect(ownerFilter).toContain('is_null');
   });
 
   it('omits the summary description/owner cards when their summary cards have no value', async () => {
@@ -347,7 +423,7 @@ describe('DataAssetsView', () => {
       if (names.includes('percentage_of_service_with_description')) {
         return {};
       }
-      return legacyPayload;
+      return systemPayload;
     });
     const wrapper = await mountView();
     expect(wrapper.get('[data-testid="insights-summary-total"]').text()).toContain('300');
@@ -386,8 +462,12 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-service-owner-headline"]').text()).toContain('75%');
     expect(wrapper.text()).toContain('+15.00 pp over the last 7 days');
     expect(wrapper.text()).toContain('+30.00 pp over the last 7 days');
-    expect(wrapper.text()).toContain('Target: 80%');
-    const rows = wrapper.findAll('[data-testid="insights-service-description-service"]');
+    // The KPI target renders as a marker on the headline bar, not as text.
+    expect(wrapper.get('[data-testid="insights-service-description-target"]').text()).toBe('80%');
+    expect(wrapper.get('[data-testid="insights-service-description-target"]').attributes('style')).toContain(
+      'left: 80%',
+    );
+    const rows = wrapper.findAll('[data-testid="insights-service-description-row"]');
     expect(rows).toHaveLength(2);
     expect(rows[0]?.text()).toContain('Postgres');
     expect(rows[0]?.text()).toContain('80%');
@@ -402,7 +482,7 @@ describe('DataAssetsView', () => {
         if (names.includes('percentage_of_service_with_description')) {
           throw new Error('chart missing');
         }
-        return legacyPayload;
+        return systemPayload;
       });
       const wrapper = await mountView();
       expect(wrapper.find('[data-testid="insights-service-load-warning"]').exists()).toBe(true);
@@ -425,7 +505,6 @@ describe('DataAssetsView', () => {
     expect(wrapper.find('[data-testid="insights-no-permission"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="insights-service-description"]').exists()).toBe(false);
     expect(listSystemChartData).not.toHaveBeenCalled();
-    expect(searchAssets).not.toHaveBeenCalled();
   });
 
   it('lets an admin through on the isAdminUser line even when ViewAll is denied', async () => {
