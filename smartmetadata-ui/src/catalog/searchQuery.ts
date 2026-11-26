@@ -10,6 +10,7 @@
 import type { FacetId } from './searchFacets';
 import { aggregationFieldNamesForFacet, NULL_OPTION_KEY } from './searchFacets';
 import { estateFromQuery } from './browseEstate';
+import { escapeESReservedCharacters } from './escapeESReservedCharacters';
 
 export type SearchFilters = Partial<Record<FacetId, string[]>>;
 
@@ -111,11 +112,26 @@ export function luceneTerm(field: string, value: string): string {
   return `${field}:${value}`;
 }
 
-export function composeSearchQuery(userQuery: string, filters: SearchFilters = {}): string {
+/**
+ * Composes the Lucene `q` from the free-text query plus the facet
+ * filters. `userQuery` is free text by default and is ES-escaped (pin
+ * ExploreUtils.tsx:209,303 — the counts payload and the results payload
+ * both feed escapeESReservedCharacters(searchQueryParam)), so reserved
+ * characters can neither misparse nor 400. Pass `{ rawLucene: true }`
+ * only when the input is an already-built Lucene fragment — the My Data
+ * owned/followed terms (`owners.id:u-1`, via homeQueries) — which must
+ * reach the server untouched. Facet values go through luceneTerm below,
+ * which quotes them instead of escaping.
+ */
+export function composeSearchQuery(
+  userQuery: string,
+  filters: SearchFilters = {},
+  options: { rawLucene?: boolean } = {},
+): string {
   const clauses: string[] = [];
   const trimmed = userQuery.trim();
   if (trimmed && trimmed !== '*') {
-    clauses.push(trimmed);
+    clauses.push(options.rawLucene ? trimmed : escapeESReservedCharacters(trimmed));
   }
   for (const id of Object.keys(FILTER_LUCENE_FIELD) as FacetId[]) {
     // A "No X" selection is a structured must_not.exists clause in

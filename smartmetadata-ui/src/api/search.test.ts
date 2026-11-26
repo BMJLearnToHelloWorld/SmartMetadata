@@ -78,13 +78,13 @@ describe('searchAssets', () => {
     expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('explain=');
   });
 
-  it('sends deleted only when showDeleted opts in', async () => {
+  it('always sends deleted, false unless showDeleted opts in (EXP-P0-4)', async () => {
     await searchAssets('orders', 0, 15, { deleted: true });
-    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('deleted=true');
+    expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('deleted')).toBe('true');
     await searchAssets('orders', 0, 15, { deleted: false });
-    expect(String(vi.mocked(fetch).mock.calls[1][0])).not.toContain('deleted=');
+    expect(new URL(String(vi.mocked(fetch).mock.calls[1][0])).searchParams.get('deleted')).toBe('false');
     await searchAssets('orders', 0, 15);
-    expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('deleted=');
+    expect(new URL(String(vi.mocked(fetch).mock.calls[2][0])).searchParams.get('deleted')).toBe('false');
   });
 
   it('nlqSearch queries GET /v1/search/nlq/query with the UI nlq params', async () => {
@@ -128,6 +128,24 @@ describe('searchAssets', () => {
     await nlqSearch('top selling products', 0, 10, { index: 'dataAsset' });
     const bareUrl = new URL(String(vi.mocked(fetch).mock.calls[1][0]));
     expect(bareUrl.searchParams.has('query_filter')).toBe(false);
+  });
+
+  it('nlqSearch always sends deleted, false unless showDeleted opts in (EXP-P0-4)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [{ _source: { name: 'orders', fullyQualifiedName: 'svc.db.schema.orders', entityType: 'table' } }],
+          },
+        }),
+      ),
+    );
+    await nlqSearch('top selling products', 0, 10, { index: 'dataAsset' });
+    expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('deleted')).toBe('false');
+    await nlqSearch('top selling products', 0, 10, { index: 'dataAsset', deleted: true });
+    expect(new URL(String(vi.mocked(fetch).mock.calls[1][0])).searchParams.get('deleted')).toBe('true');
   });
 
   it('nlqSearch forwards explain as given (pin: showRankingDetails serialized; false becomes explain=false)', async () => {
@@ -254,14 +272,14 @@ describe('searchEntityTypeCounts (D4)', () => {
     );
   });
 
-  it('omits deleted and include_top_hit unless opted in, and reads an empty counts page as no counts', async () => {
+  it('sends deleted=false by default and still omits include_top_hit unless opted in, and reads an empty counts page as no counts', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse({ hits: { total: { value: 0 }, hits: [] }, aggregations: {} })),
     );
     const page = await searchEntityTypeCounts({ query: 'orders', index: ['table'] });
     const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
-    expect(url.searchParams.has('deleted')).toBe(false);
+    expect(url.searchParams.get('deleted')).toBe('false');
     expect(url.searchParams.has('include_top_hit')).toBe(false);
     expect(entityTypeCountsFromPage(page)).toEqual(new Map());
   });
@@ -471,6 +489,19 @@ describe('searchQueries', () => {
     expect(page.queries[0]?.duration).toBe(250);
     expect(page.queries[0]?.queryUsedIn).toHaveLength(1);
   });
+
+  it('always sends deleted=false on the query tab unless showDeleted opts in (EXP-P0-4, C14)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ hits: { total: { value: 0 }, hits: [] } }),
+      ),
+    );
+    await searchQueries('*', 0, 15);
+    expect(new URL(String(vi.mocked(fetch).mock.calls[0][0])).searchParams.get('deleted')).toBe('false');
+    await searchQueries('*', 0, 15, { deleted: true });
+    expect(new URL(String(vi.mocked(fetch).mock.calls[1][0])).searchParams.get('deleted')).toBe('true');
+  });
 });
 
 describe('getReindexFailures', () => {
@@ -571,14 +602,14 @@ describe('search export (D10)', () => {
     expect(job).toEqual({ jobId: 'job-1', message: 'Export initiated' });
   });
 
-  it('omits deleted and from when the export does not opt in', async () => {
+  it('sends deleted=false by default and omits from when the export does not opt in', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
       jsonResponse({ jobId: 'job-2', message: '' }),
     );
     vi.stubGlobal('fetch', fetchMock);
     await exportSearchResultsAsync({ q: '*', index: 'table', size: 15 });
     const url = new URL(String(fetchMock.mock.calls[0][0]));
-    expect(url.searchParams.has('deleted')).toBe(false);
+    expect(url.searchParams.get('deleted')).toBe('false');
     expect(url.searchParams.has('from')).toBe(false);
     expect(url.searchParams.get('size')).toBe('15');
   });
@@ -591,6 +622,7 @@ describe('search export (D10)', () => {
     const blob = await exportSearchResultsCsvStream({ q: 'orders', index: 'dataAsset', size: 10, from: 0 });
     const url = new URL(String(fetchMock.mock.calls[0][0]));
     expect(url.pathname).toBe('/api/v1/search/export');
+    expect(url.searchParams.get('deleted')).toBe('false');
     expect(url.searchParams.get('from')).toBe('0');
     // NOTE: no instanceof check — the Blob comes from the fetch Response
     // (undici realm), so `instanceof Blob` (jsdom realm) fails on some
