@@ -115,6 +115,7 @@ describe('GlobalSearchBar', () => {
     expect(mockSearchAssets).toHaveBeenCalledWith('ord', 0, 15, {
       index: 'dataAsset',
       includeAggregations: false,
+      deleted: false,
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="global-search-group-table"]').exists()).toBe(true);
@@ -132,6 +133,7 @@ describe('GlobalSearchBar', () => {
     expect(mockSearchAssets).toHaveBeenLastCalledWith('orders', 0, 15, {
       index: 'table',
       includeAggregations: false,
+      deleted: false,
     });
   });
 

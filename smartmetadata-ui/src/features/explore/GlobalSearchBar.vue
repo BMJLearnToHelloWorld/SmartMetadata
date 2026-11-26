@@ -133,6 +133,11 @@ function fetchSuggestions(text: string): void {
   void searchAssets(escapeESReservedCharacters(text), 0, SUGGESTION_PAGE_SIZE, {
     index: scope.value || 'dataAsset',
     includeAggregations: false,
+    // Pin Suggestions.tsx:361-391 passes includeDeleted: false
+    // explicitly; searchAssets defaults deleted to false too, but the
+    // call site states it so a future default change cannot re-open
+    // the soft-deleted leak in the suggestion popover.
+    deleted: false,
   })
     .then((page) => {
       if (id === requestId) {

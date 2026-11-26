@@ -42,7 +42,11 @@ export function followedAssetsQuery(user: LoginUser | null | undefined): string 
 }
 
 export function scopedSearchQuery(base: string, domain?: string): string {
-  return composeSearchQuery(base, domainFilters(domain));
+  // `base` is an already-built Lucene fragment (ownedAssetsQuery /
+  // followedAssetsQuery via luceneTerm), not free text — it must reach
+  // the server untouched, and isOwnedSearch/isFollowedSearch match on
+  // its unescaped `owners.id:` / `followers:` prefixes.
+  return composeSearchQuery(base, domainFilters(domain), { rawLucene: true });
 }
 
 export function isOwnedSearch(query: string): boolean {
