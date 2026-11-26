@@ -132,6 +132,14 @@ describe('AppShell', () => {
     expect(img.attributes('src')).toBe('https://example.com/other.svg');
   });
 
+  it('navigates home when the logo is clicked', async () => {
+    const { wrapper, router } = await mountShell();
+    expect(router.currentRoute.value.name).toBe('search');
+    await wrapper.find('[data-testid="shell-logo-home"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('home');
+  });
+
   it('renders reference left-nav groups, child labels, and footer Settings/Logout', async () => {
     const { wrapper } = await mountShell();
     expect(wrapper.text()).toContain('Home');
