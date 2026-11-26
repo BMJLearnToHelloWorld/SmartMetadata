@@ -244,4 +244,32 @@ describe('LineageGraph', () => {
       targetHandle: 'svc.db.schema.orders.id',
     });
   });
+
+  it('inlines fill:none on entity and column edges so the PNG export keeps stroke-only paths', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL, forceColumnEdges: true },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    const edges = flow.props('edges') as {
+      id: string;
+      style?: Record<string, unknown>;
+      labelBgStyle?: Record<string, unknown>;
+      data?: { isColumnEdge?: boolean };
+    }[];
+    const entityEdge = edges.find((edge) => edge.data?.isColumnEdge === false);
+    const columnEdge = edges.find((edge) => edge.data?.isColumnEdge === true);
+    expect(entityEdge).toBeDefined();
+    expect(columnEdge).toBeDefined();
+    // html-to-image deep-copies the edges <svg> without computed styles:
+    // without an inline fill the open smoothstep path renders as a solid
+    // black fill in the exported PNG (repro: work/lineage-png-bug/REPORT.md).
+    expect(entityEdge?.style).toMatchObject({ fill: 'none' });
+    expect(columnEdge?.style).toMatchObject({ fill: 'none' });
+    // The label background rect's fill is stylesheet-only too; without an
+    // inline fill it renders black and hides the black label text.
+    expect(entityEdge?.labelBgStyle).toMatchObject({ fill: 'white' });
+    expect(columnEdge?.labelBgStyle).toMatchObject({ fill: 'white' });
+    wrapper.unmount();
+  });
 });

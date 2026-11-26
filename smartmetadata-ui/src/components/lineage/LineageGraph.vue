@@ -284,9 +284,19 @@ const edges = computed<Edge[]>(() => {
       class: highlighted ? 'lineage-edge--active' : undefined,
       data: { isColumnEdge: false },
       style: {
+        // PNG export: html-to-image deep-copies the edges <svg> without
+        // applying computed styles, so Vue Flow's stylesheet-only
+        // `fill: none` is lost and the open smoothstep path renders as a
+        // solid black fill in the PNG. Inline it so the export keeps a
+        // stroke-only path (repro: work/lineage-png-bug/REPORT.md §4).
+        fill: 'none',
         stroke: highlighted ? SM_COLOR_WARNING : SM_SURFACES.textQuaternary,
         strokeWidth: highlighted ? 2.5 : 2,
       },
+      // Same export mechanism: the label background rect's `fill: white`
+      // is also stylesheet-only; without it the rect renders black and
+      // hides the black label text. Inline it via Vue Flow's labelBgStyle.
+      labelBgStyle: { fill: 'white' },
     };
   });
   const columnEdges = visibleColumnEdges.value.map((edge) => ({
@@ -304,10 +314,14 @@ const edges = computed<Edge[]>(() => {
       // Q-TH-4: read the managed CSS variable so a custom theme
       // primary color reaches column edges (Vue Flow applies this
       // style to the SVG path, where the variable resolves live).
+      // `fill: 'none'` is inlined for the same PNG-export reason as the
+      // entity edges above: the stylesheet-only fill is lost in export.
+      fill: 'none',
       stroke: 'var(--sm-color-primary)',
       strokeWidth: 1.75,
       strokeDasharray: '5 4',
     },
+    labelBgStyle: { fill: 'white' },
   }));
   return [...entityEdges, ...columnEdges];
 });
