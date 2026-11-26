@@ -218,6 +218,28 @@ describe('LineageGraph', () => {
     expect(wrapper.emitted('delete-edge')?.[0]?.[0]).toEqual({ edge, isColumnEdge: false });
   });
 
+  it('holds edges back until the ELK layout resolves so nodes and edges reach Vue Flow together', async () => {
+    const wrapper = mount(LineageGraph, {
+      props: { model: MODEL },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const flow = wrapper.findComponent({ name: 'VueFlow' });
+    // Before the async ELK layout resolves there are no nodes; passing the
+    // model edges then would make Vue Flow silently drop them (their
+    // endpoints are not in the store) and never re-add them, because the
+    // edges prop reference never changes afterwards — the first paint
+    // showed 0 edges until some later recompute.
+    expect(flow.props('nodes')).toEqual([]);
+    expect(flow.props('edges')).toEqual([]);
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-node-center-id"]').exists()).toBe(true),
+    );
+    const edges = flow.props('edges') as { id: string }[];
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.id).toBe(MODEL.edges[0].id);
+    wrapper.unmount();
+  });
+
   it('selects a column edge as its parent edge plus the column pair', async () => {
     const wrapper = mount(LineageGraph, {
       props: { model: MODEL },

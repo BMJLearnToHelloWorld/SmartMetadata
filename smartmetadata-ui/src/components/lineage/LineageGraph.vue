@@ -266,6 +266,16 @@ const visibleColumnEdges = computed(() =>
 );
 
 const edges = computed<Edge[]>(() => {
+  // Nodes arrive from the async ELK layout; while `positioned` is
+  // undefined the node list is empty, and Vue Flow silently drops edges
+  // whose endpoints are not in the store — and never re-adds them when
+  // only the nodes change, because this computed's reference never
+  // changes. Gate on `positioned` so nodes and edges reach Vue Flow in
+  // the same update: the first paint shows the whole graph, not nodes
+  // with 0 edges until some later recompute (e.g. expanding columns).
+  if (!positioned.value) {
+    return [];
+  }
   const entityEdges = props.model.edges.map((edge) => {
     const highlighted =
       props.highlightedEdgeIds.includes(edge.id) ||
