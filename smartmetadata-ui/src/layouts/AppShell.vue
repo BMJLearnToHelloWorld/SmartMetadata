@@ -151,6 +151,21 @@ function onBrandImageError(event: Event): void {
   target.dataset.fallbackApplied = 'true';
   target.src = collapsed.value ? monogramUrl : logoUrl;
 }
+
+/**
+ * Pin SidebarBrand.tsx:56: the sidebar logo is a button that navigates
+ * home (ROUTES.HOME = '/'). The root route resolves through the persona
+ * landing redirect to Home, so '/' is the pin-faithful target.
+ */
+function goHome(): void {
+  try {
+    router.push('/').catch(() => {
+      message.error(t('chrome.navFailed'));
+    });
+  } catch {
+    message.error(t('chrome.navFailed'));
+  }
+}
 // The profile link targets the final top-level user page
 // (/users/:fqn, 02 #7), which addresses the user by name; the menu
 // item only renders once the profile name is known.
@@ -412,9 +427,16 @@ async function onLogout(): Promise<void> {
       :width="272"
       theme="light"
     >
-      <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
+      <button
+        type="button"
+        class="shell__brand"
+        :class="{ 'shell__brand--collapsed': collapsed }"
+        :aria-label="t('label.home')"
+        data-testid="shell-logo-home"
+        @click="goHome"
+      >
         <img class="shell__logo" :src="brandImageSrc" alt="iSmart" @error="onBrandImageError" />
-      </div>
+      </button>
       <div class="shell__nav">
         <Menu
           class="shell__nav-main"
@@ -840,6 +862,13 @@ async function onLogout(): Promise<void> {
   min-height: 36px;
   margin: 22px 16px 14px;
   padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.shell__brand:focus-visible {
+  outline: 2px solid var(--sm-color-primary);
+  outline-offset: 2px;
 }
 .shell__brand--collapsed {
   justify-content: flex-start;
