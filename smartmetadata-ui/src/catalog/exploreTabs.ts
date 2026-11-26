@@ -73,23 +73,23 @@ export interface ExploreTab {
 export const EXPLORE_TABS: ExploreTab[] = [
   { index: 'table', slug: 'tables', entityType: 'table', sortGroup: 'table', labelKey: 'table' },
   { index: 'tableColumn', slug: 'columns', entityType: 'tableColumn', sortGroup: 'column', labelKey: 'column' },
-  { index: 'storedProcedure', slug: 'storedProcedures', entityType: 'storedProcedure', sortGroup: 'entity', labelKey: 'storedProcedure' },
-  { index: 'database', slug: 'databases', entityType: 'database', sortGroup: 'entity', labelKey: 'database' },
-  { index: 'databaseSchema', slug: 'databaseSchemas', entityType: 'databaseSchema', sortGroup: 'entity', labelKey: 'databaseSchema' },
+  { index: 'storedProcedure', slug: 'storedProcedure', entityType: 'storedProcedure', sortGroup: 'entity', labelKey: 'storedProcedure' },
+  { index: 'database', slug: 'database', entityType: 'database', sortGroup: 'entity', labelKey: 'database' },
+  { index: 'databaseSchema', slug: 'databaseSchema', entityType: 'databaseSchema', sortGroup: 'entity', labelKey: 'databaseSchema' },
   { index: 'dashboard', slug: 'dashboards', entityType: 'dashboard', sortGroup: 'entity', labelKey: 'dashboard' },
-  { index: 'dashboardDataModel', slug: 'dashboardDataModels', entityType: 'dashboardDataModel', sortGroup: 'entity', labelKey: 'dashboardDataModel' },
+  { index: 'dashboardDataModel', slug: 'dashboardDataModel', entityType: 'dashboardDataModel', sortGroup: 'entity', labelKey: 'dashboardDataModel' },
   { index: 'chart', slug: 'charts', entityType: 'chart', sortGroup: 'entity', labelKey: 'chart' },
   { index: 'pipeline', slug: 'pipelines', entityType: 'pipeline', sortGroup: 'entity', labelKey: 'pipeline' },
   { index: 'topic', slug: 'topics', entityType: 'topic', sortGroup: 'entity', labelKey: 'topic' },
   { index: 'mlmodel', slug: 'mlmodels', entityType: 'mlmodel', sortGroup: 'entity', labelKey: 'mlmodel' },
   { index: 'container', slug: 'containers', entityType: 'container', sortGroup: 'entity', labelKey: 'container' },
   { index: 'searchIndex', slug: 'searchIndexes', entityType: 'searchIndex', sortGroup: 'entity', labelKey: 'searchIndex' },
-  { index: 'glossaryTerm', slug: 'glossaryTerms', entityType: 'glossaryTerm', sortGroup: 'entity', labelKey: 'glossaryTerm' },
+  { index: 'glossaryTerm', slug: 'glossaries', entityType: 'glossaryTerm', sortGroup: 'entity', labelKey: 'glossaryTerm' },
   { index: 'tag', slug: 'tags', entityType: 'tag', sortGroup: 'tag', labelKey: 'tag' },
   { index: 'dataProduct', slug: 'dataProducts', entityType: 'dataProduct', sortGroup: 'tag', labelKey: 'dataProduct' },
-  { index: 'apiCollection', slug: 'apiCollections', entityType: 'apiCollection', sortGroup: 'tag', labelKey: 'apiCollection', defaultSortId: 'popularity' },
-  { index: 'apiEndpoint', slug: 'apiEndpoints', entityType: 'apiEndpoint', sortGroup: 'tag', labelKey: 'apiEndpoint', defaultSortId: 'popularity' },
-  { index: 'metric', slug: 'metrics', entityType: 'metric', sortGroup: 'tag', labelKey: 'metric' },
+  { index: 'apiCollection', slug: 'apiCollection', entityType: 'apiCollection', sortGroup: 'tag', labelKey: 'apiCollection', defaultSortId: 'popularity' },
+  { index: 'apiEndpoint', slug: 'apiEndpoint', entityType: 'apiEndpoint', sortGroup: 'tag', labelKey: 'apiEndpoint', defaultSortId: 'popularity' },
+  { index: 'metric', slug: 'metric', entityType: 'metric', sortGroup: 'tag', labelKey: 'metric' },
   { index: 'directory', slug: 'directories', entityType: 'directory', sortGroup: 'tag', labelKey: 'directory' },
   { index: 'file', slug: 'files', entityType: 'file', sortGroup: 'tag', labelKey: 'file' },
   { index: 'spreadsheet', slug: 'spreadsheets', entityType: 'spreadsheet', sortGroup: 'tag', labelKey: 'spreadsheet' },
@@ -179,6 +179,53 @@ export function exploreTabFromQuery(query: Record<string, unknown>): ExploreTab 
     return null;
   }
   return exploreTabForIndex(raw) ?? exploreTabForSlug(raw);
+}
+
+/**
+ * The tab named by the route: the `/explore/:tab` path param (pin
+ * `ROUTES.EXPLORE_WITH_TAB`) wins; a legacy `?tab=` query still resolves
+ * (index or slug) so old links and bookmarks keep working.
+ */
+export function exploreTabFromRoute(route: {
+  params: Record<string, unknown>;
+  query: Record<string, unknown>;
+}): ExploreTab | null {
+  const raw = Array.isArray(route.params.tab) ? route.params.tab[0] : route.params.tab;
+  if (typeof raw === 'string' && raw) {
+    return exploreTabForSlug(raw) ?? null;
+  }
+  return exploreTabFromQuery(route.query);
+}
+
+/**
+ * Official `findActiveSearchIndex` (utils/ExplorePureUtils.ts:114),
+ * verbatim semantics: among the tabs with hits, prefer the top hit's
+ * tab when it has hits, else the tab with the highest count (first in
+ * `EXPLORE_TABS` order wins a tie — the reducer keeps the earlier key
+ * on a strict `>`). Counts are keyed by entity type, as the counts
+ * endpoint returns them; `null` means no tab has hits (pin falls back
+ * to the dataAsset index then). NLQ callers pass no top hit: pin's
+ * top hit is arbitrary under NLQ's RRF ranking, so only the counts
+ * decide there.
+ */
+export function findActiveSearchIndex(
+  counts: Map<string, number>,
+  topHitEntityType?: string | null,
+): ExploreTab | null {
+  const withHits = EXPLORE_TABS.filter((tab) => (counts.get(tab.entityType) ?? 0) > 0);
+  if (topHitEntityType) {
+    const topHitTab = withHits.find((tab) => tab.entityType === topHitEntityType);
+    if (topHitTab) {
+      return topHitTab;
+    }
+  }
+  return withHits.reduce<ExploreTab | null>(
+    (active, tab) =>
+      active === null || (counts.get(tab.entityType) ?? 0) > (counts.get(active.entityType) ?? 0)
+        ? tab
+        : active,
+    null,
+  );
 }
 
 export function sortOptionsForTab(tab: ExploreTab | null): ExploreSortOption[] {

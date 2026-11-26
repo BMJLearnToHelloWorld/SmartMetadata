@@ -163,7 +163,7 @@ function exploreFilters(extra: SearchFilters = {}): SearchFilters {
 }
 
 function goExplore(query = '', extra: SearchFilters = {}): void {
-  void router.push({ name: 'search', query: searchRouteQuery(query, exploreFilters(extra)) });
+  void router.push({ name: 'search', ...searchRouteQuery(query, exploreFilters(extra)) });
 }
 
 function onHeroSearch(query: string): void {

@@ -13,7 +13,6 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import DetailTabs from '@/components/shared/DetailTabs.vue';
 import { createTestI18n } from '@/test/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { useSearchStore } from '@/stores/search';
@@ -81,13 +80,13 @@ const SEARCH_BODY = {
   },
 };
 
-async function mountView(query: Record<string, string> = {}) {
+async function mountView(query: Record<string, string> = {}, params: Record<string, string> = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/search', name: 'search', component: SearchView },
+      { path: '/search/:tab?', name: 'search', component: SearchView },
       { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
       { path: '/governance/terms/:id', name: 'governance-term', component: { template: '<div>term</div>' } },
@@ -102,7 +101,7 @@ async function mountView(query: Record<string, string> = {}) {
       },
     ],
   });
-  await router.push({ name: 'search', query });
+  await router.push({ name: 'search', params, query });
   await router.isReady();
   const wrapper = mount(SearchView, {
     global: { plugins: [router, pinia, Antd, createTestI18n()] },
@@ -140,7 +139,9 @@ describe('SearchView', () => {
         }
         if (url.pathname.includes('/v1/search/query')) {
           expect(url.searchParams.get('include_aggregations')).toBe('true');
-          expect(url.searchParams.get('index')).toBe('dataAsset');
+          // The index is asserted per test (mainSearchUrls / tabbed
+          // lookups): it is dataAsset without a query, the URL tab with
+          // one, or the auto-selected tab for a query without a tab.
           return jsonResponse(SEARCH_BODY);
         }
         // Owner avatars resolve their permission, then a missing profile
@@ -348,6 +349,20 @@ describe('SearchView', () => {
   });
 
   it('toggles a chip into Lucene q= the same way the old facet list did', async () => {
+    // The all-tab chip set (with the entityType chip) only renders
+    // when no tab auto-selects: empty counts leave the auto-select
+    // at null, so the DATA_ASSET set shows (pin falls back to
+    // DATA_ASSET when no tab has hits, ExploreUtils.ts:370-378).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname.includes('/v1/search/entityTypeCounts')) {
+          return jsonResponse(countsBody([]));
+        }
+        return jsonResponse(SEARCH_BODY);
+      }),
+    );
     const { wrapper, router } = await mountView({ q: 'orders' });
     emitSelect(wrapper, 'explore-chip-entityType', ['table']);
     await flushPromises();
@@ -405,16 +420,17 @@ describe('SearchView', () => {
     const { wrapper } = await mountView({ q: 'orders' });
     expect(wrapper.find('[data-testid="explore-left-panel"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="explore-estate"]').exists()).toBe(false);
-    // Same items as the top bar: all + the 24 tabs, icon + label + badge.
+    // Pin has no all-tab: only the 24 tabs, icon + label + badge.
     const panel = wrapper.get('[data-testid="explore-left-panel"]');
-    expect(panel.find('[data-testid="explore-left-tab-all"]').exists()).toBe(true);
+    expect(panel.find('[data-testid="explore-left-tab-all"]').exists()).toBe(false);
     expect(panel.find('[data-testid="explore-left-tab-table"]').exists()).toBe(true);
     expect(panel.find('[data-testid="explore-left-tab-table"]').text()).toContain('Table');
-    // Counts come from the entityType aggregation: table 1, topic 1,
-    // all = result total 3; count-less tabs show no badge.
+    // Counts come from the entityType aggregation: table 1, topic 1.
+    // The auto-selected tab (table, tie → first) shows the result
+    // total 3; count-less tabs show no badge; zero-count tabs are
+    // hidden while a query is present.
     expect(panel.findAll('[data-testid="filter-count"]').map((badge) => badge.text())).toEqual([
       '3',
-      '1',
       '1',
     ]);
   });
@@ -423,7 +439,8 @@ describe('SearchView', () => {
     const { wrapper, router } = await mountView({ q: 'orders' });
     await wrapper.get('[data-testid="explore-left-tab-table"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.query.tab).toBe('table');
+    expect(router.currentRoute.value.params.tab).toBe('tables');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
   });
 
   it('shows the estate tree when no query is typed (D14)', async () => {
@@ -916,8 +933,7 @@ describe('SearchView explore tabs (Stage 2)', () => {
     expect(tabbed).toBeDefined();
     expect(tabbed?.searchParams.get('sort_field')).toBe('totalVotes');
 
-    const { wrapper: columnWrapper } = await mountView({ tab: 'tableColumn', sort: 'popularity' });
-    expect(columnWrapper.find('[data-testid="explore-tabs"]').text()).toContain('Column');
+    await mountView({ tab: 'tableColumn', sort: 'popularity' });
     const columnCall = vi
       .mocked(fetch)
       .mock.calls.map((call) => new URL(String(call[0]), 'http://localhost'))
@@ -1053,6 +1069,11 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
 
   function facetOptionsFetch(input: RequestInfo | URL) {
     const url = new URL(String(input), 'http://localhost');
+    if (url.pathname.includes('/v1/search/entityTypeCounts')) {
+      // Zero counts: no tab auto-selects, so the all-tab chip set
+      // (with the entityType chip) renders and the facet fetch runs.
+      return jsonResponse(countsBody([]));
+    }
     if (url.searchParams.get('size') === '0' && url.searchParams.get('q')?.includes('service.displayName.keyword:mysql')) {
       // The per-facet options fetch for the entityType chip: Tag is
       // excluded from q, so the aggregation still carries Metric.
@@ -1141,6 +1162,11 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
       ...SEARCH_BODY,
       applied_quick_filters: { fieldList: ['owner'] },
     };
+    // Settle the mount's keyword search before toggling NLP: the
+    // mount's runSearch must complete first, or its late keyword
+    // response overwrites the NLQ echo (runSearch has no generation
+    // guard yet — a stale run can still overwrite a newer one).
+    stubSearch();
     const { wrapper } = await mountView({ q: 'customer' });
     // The default stub asserts include_aggregations on every call, which
     // the NLQ call does not send; swap it before flipping the toggle.
@@ -1165,7 +1191,9 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
     const nlqCalls = calls.filter((url) => url.pathname.includes('/search/nlq/query'));
     expect(nlqCalls.length).toBeGreaterThan(0);
     expect(nlqCalls[0].searchParams.get('q')).toBe('customer');
-    expect(nlqCalls[0].searchParams.get('index')).toBe('dataAsset');
+    // The query auto-selects the table tab (counts tie → first tab),
+    // so the NLQ search runs on the active tab's index, not dataAsset.
+    expect(nlqCalls[0].searchParams.get('index')).toBe('table');
     expect(wrapper.find('[data-testid="explore-nlq-applied-filters"]').text()).toContain(
       'NLQ applied filters: owner',
     );
@@ -1336,7 +1364,9 @@ describe('SearchView tab-switch semantics (D30)', () => {
     wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'],
     key: string,
   ) {
-    wrapper.findComponent(DetailTabs).vm.$emit('change', key);
+    // The top strip is gone (EXP-P0-1); tabs live in the left panel
+    // and only render while a query is active (pin ExploreV1).
+    await wrapper.get(`[data-testid="explore-left-tab-${key}"]`).trigger('click');
     await flushPromises();
   }
 
@@ -1355,9 +1385,12 @@ describe('SearchView tab-switch semantics (D30)', () => {
       q: 'orders',
       owner: 'alice',
       tagFqn: 'PII.Sensitive',
-      tab: 'topic',
       sort: 'relevance',
     });
+    // The tab switch navigates to /explore/:tab — the tab is a path
+    // param now, not a query param.
+    expect(router.currentRoute.value.params.tab).toBe('topics');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.entityType).toBeUndefined();
     expect(router.currentRoute.value.query.service).toBeUndefined();
     expect(router.currentRoute.value.query.page).toBeUndefined();
@@ -1367,23 +1400,13 @@ describe('SearchView tab-switch semantics (D30)', () => {
   });
 
   it('falls back to the new tab default sort without a query', async () => {
-    const { wrapper, router } = await mountView({
-      entityType: 'table',
-      owner: 'alice',
-      tagFqn: 'PII.Sensitive',
-      service: 'mysql',
-      sort: 'updated',
-    });
-    await switchTab(wrapper, 'topic');
-    expect(router.currentRoute.value.query).toMatchObject({
-      owner: 'alice',
-      tagFqn: 'PII.Sensitive',
-      tab: 'topic',
-    });
-    expect(router.currentRoute.value.query.entityType).toBeUndefined();
-    expect(router.currentRoute.value.query.service).toBeUndefined();
+    // Without a query the left aside is the estate tree, not the tab
+    // list (pin ExploreV1 shows tabs only while searching), so the
+    // tab arrives via the URL; the sort is the new tab's default,
+    // not _score, and no sort param is written.
+    const { wrapper, router } = await mountView({}, { tab: 'topics' });
+    expect(wrapper.find('[data-testid="explore-left-panel"]').exists()).toBe(false);
     expect(router.currentRoute.value.query.sort).toBeUndefined();
-    expect(router.currentRoute.value.query.order).toBeUndefined();
     const tabbed = searchUrls().find((url) => url.searchParams.get('index') === 'topic');
     expect(tabbed?.searchParams.get('sort_field')).toBe('totalVotes');
   });
@@ -1517,7 +1540,8 @@ describe('SearchView Explore request parameters and cache (D32/D31)', () => {
 
   it('sends track_total_hits, explain and exclude_source_fields on the results search (D32)', async () => {
     await mountView({ q: 'orders' });
-    const main = mainSearchUrls('dataAsset');
+    // The query auto-selects the table tab (counts tie → first tab).
+    const main = mainSearchUrls('table');
     expect(main).toHaveLength(1);
     expect(main[0].searchParams.get('track_total_hits')).toBe('true');
     expect(main[0].searchParams.get('explain')).toBe('false');
@@ -1530,14 +1554,20 @@ describe('SearchView Explore request parameters and cache (D32/D31)', () => {
   });
 
   it('does not refetch the same search when switching back to it within the cache window (D31)', async () => {
-    const { wrapper } = await mountView({ q: 'orders' });
-    expect(mainSearchUrls('dataAsset')).toHaveLength(1);
-    wrapper.findComponent(DetailTabs).vm.$emit('change', 'table');
+    // Pin the sort to relevance: the auto-selected table search
+    // otherwise uses the table default (totalVotes) while the
+    // explicit switch uses _score — different cache keys that would
+    // refetch. Pin behaves the same: auto-select is state and keeps
+    // the URL sort, the switch navigates with _score.
+    const { wrapper } = await mountView({ q: 'orders', sort: 'relevance' });
+    // The query auto-selects the table tab (counts tie → first tab).
+    expect(mainSearchUrls('table')).toHaveLength(1);
+    await wrapper.get('[data-testid="explore-left-tab-topic"]').trigger('click');
+    await flushPromises();
+    expect(mainSearchUrls('topic')).toHaveLength(1);
+    await wrapper.get('[data-testid="explore-left-tab-table"]').trigger('click');
     await flushPromises();
     expect(mainSearchUrls('table')).toHaveLength(1);
-    wrapper.findComponent(DetailTabs).vm.$emit('change', 'all');
-    await flushPromises();
-    expect(mainSearchUrls('dataAsset')).toHaveLength(1);
   });
 });
 
@@ -1563,11 +1593,14 @@ describe('SearchView tab counts from the counts endpoint (D4/D3)', () => {
   });
 
   it('counts every tab from the endpoint and hides zero-result tabs when a query is present', async () => {
-    const { wrapper } = await mountView({ q: 'orders' });
-    const tabs = wrapper.find('[data-testid="explore-tabs"]');
-    expect(tabs.text()).toContain('Table (2)');
-    expect(tabs.text()).toContain('Dashboard (1)');
-    expect(tabs.text()).not.toContain('Topic');
+    const { wrapper, router } = await mountView({ q: 'orders' });
+    // The query auto-selects the table tab (most hits); the URL stays
+    // `/explore` — the auto-selected tab is state, not a route param.
+    expect(router.currentRoute.value.params.tab).toBeUndefined();
+    const panel = wrapper.get('[data-testid="explore-left-panel"]');
+    expect(panel.find('[data-testid="explore-left-tab-table"]').text()).toContain('3');
+    expect(panel.find('[data-testid="explore-left-tab-dashboard"]').text()).toContain('1');
+    expect(panel.find('[data-testid="explore-left-tab-topic"]').exists()).toBe(false);
     const countsCall = vi
       .mocked(fetch)
       .mock.calls.map(([input]) => new URL(String(input), 'http://localhost'))
@@ -1580,14 +1613,28 @@ describe('SearchView tab counts from the counts endpoint (D4/D3)', () => {
 
   it('keeps the active tab even at zero hits', async () => {
     const { wrapper } = await mountView({ q: 'orders', tab: 'topic' });
-    const tabs = wrapper.find('[data-testid="explore-tabs"]');
-    expect(tabs.text()).toContain('Topic (3)');
+    const panel = wrapper.get('[data-testid="explore-left-panel"]');
+    expect(panel.find('[data-testid="explore-left-tab-topic"]').text()).toContain('3');
   });
 
-  it('shows every tab without a query', async () => {
+  it('shows the estate tree instead of tabs without a query', async () => {
     const { wrapper } = await mountView();
-    const tabs = wrapper.find('[data-testid="explore-tabs"]');
-    expect(tabs.text()).toContain('Topic (1)');
+    expect(wrapper.find('[data-testid="explore-left-panel"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="explore-estate"]').exists()).toBe(true);
+  });
+
+  it('reads the tab from the /explore/:tab path param', async () => {
+    const { wrapper, router } = await mountView({ q: 'orders' }, { tab: 'topics' });
+    expect(router.currentRoute.value.params.tab).toBe('topics');
+    const panel = wrapper.get('[data-testid="explore-left-panel"]');
+    expect(panel.find('[data-testid="explore-left-tab-topic"]').classes()).toContain(
+      'explore__left-tab--active',
+    );
+    const tabbed = vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => new URL(String(input), 'http://localhost'))
+      .find((url) => url.searchParams.get('index') === 'topic');
+    expect(tabbed).toBeDefined();
   });
 });
 

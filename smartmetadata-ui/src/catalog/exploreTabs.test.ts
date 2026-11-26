@@ -11,7 +11,9 @@ import {
   exploreTabForIndex,
   exploreTabForSlug,
   exploreTabFromQuery,
+  exploreTabFromRoute,
   facetsForTab,
+  findActiveSearchIndex,
   sortOptionsForTab,
 } from './exploreTabs';
 
@@ -29,6 +31,47 @@ describe('exploreTabs', () => {
     expect(exploreTabFromQuery({ tab: 'dashboards' })?.index).toBe('dashboard');
     expect(exploreTabFromQuery({})).toBeNull();
     expect(exploreTabFromQuery({ tab: 'nope' })).toBeNull();
+  });
+
+  it('uses pin ExplorePageTabs paths as slugs (singular/camel, not pluralised)', () => {
+    expect(exploreTabForIndex('storedProcedure')?.slug).toBe('storedProcedure');
+    expect(exploreTabForIndex('database')?.slug).toBe('database');
+    expect(exploreTabForIndex('databaseSchema')?.slug).toBe('databaseSchema');
+    expect(exploreTabForIndex('dashboardDataModel')?.slug).toBe('dashboardDataModel');
+    expect(exploreTabForIndex('glossaryTerm')?.slug).toBe('glossaries');
+    expect(exploreTabForIndex('apiCollection')?.slug).toBe('apiCollection');
+    expect(exploreTabForIndex('apiEndpoint')?.slug).toBe('apiEndpoint');
+    expect(exploreTabForIndex('metric')?.slug).toBe('metric');
+  });
+
+  it('resolves the tab from the /explore/:tab param, falling back to a legacy ?tab= query', () => {
+    expect(exploreTabFromRoute({ params: { tab: 'tables' }, query: {} })?.index).toBe('table');
+    expect(exploreTabFromRoute({ params: { tab: 'glossaries' }, query: {} })?.index).toBe('glossaryTerm');
+    // The path param wins over the query.
+    expect(exploreTabFromRoute({ params: { tab: 'topics' }, query: { tab: 'table' } })?.index).toBe('topic');
+    // Legacy links: ?tab= still resolves (index or slug).
+    expect(exploreTabFromRoute({ params: {}, query: { tab: 'table' } })?.index).toBe('table');
+    expect(exploreTabFromRoute({ params: {}, query: { tab: 'dashboards' } })?.index).toBe('dashboard');
+    expect(exploreTabFromRoute({ params: {}, query: {} })).toBeNull();
+    expect(exploreTabFromRoute({ params: { tab: 'nope' }, query: {} })).toBeNull();
+  });
+
+  it('auto-selects the tab with the most hits, preferring the top hit when it has hits', () => {
+    const counts = new Map([
+      ['table', 2],
+      ['dashboard', 5],
+      ['topic', 1],
+    ]);
+    expect(findActiveSearchIndex(counts)?.index).toBe('dashboard');
+    // The top hit wins even when another tab counts more.
+    expect(findActiveSearchIndex(counts, 'topic')?.index).toBe('topic');
+    // A top hit with no hits does not win.
+    expect(findActiveSearchIndex(counts, 'pipeline')?.index).toBe('dashboard');
+    // A tie goes to the first tab in EXPLORE_TABS order.
+    expect(findActiveSearchIndex(new Map([['table', 1], ['topic', 1]]))?.index).toBe('table');
+    // No tab with hits: null (the caller falls back to dataAsset).
+    expect(findActiveSearchIndex(new Map())).toBeNull();
+    expect(findActiveSearchIndex(new Map([['table', 0]]))).toBeNull();
   });
 
   it('uses per-tab sorting groups and defaults', () => {

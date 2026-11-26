@@ -64,7 +64,7 @@ async function mountBar(initialPath = '/') {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
-      { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
+      { path: '/search/:tab?', name: 'search', component: { template: '<div>search</div>' } },
       {
         path: '/assets/:entityType/:fqn',
         name: 'asset',
@@ -167,7 +167,8 @@ describe('GlobalSearchBar', () => {
     await wrapper.find('[data-testid="global-search"]').trigger('keydown.enter');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('search');
-    expect(router.currentRoute.value.query).toEqual({ q: 'orders', tab: 'table' });
+    expect(router.currentRoute.value.query).toEqual({ q: 'orders' });
+    expect(router.currentRoute.value.params.tab).toBe('tables');
     expect(useSearchStore().isNLPEnabled).toBe(false);
   });
 
