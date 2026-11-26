@@ -13,6 +13,10 @@ import type { SearchPage } from '@/types/api';
 import type { SearchSettings } from '@/types/admin';
 import { apiRequest } from './client';
 import { mapQuerySearchPage, type QuerySearchPage } from './queries';
+import { escapeESReservedCharacters, ES_RESERVED_CHARACTERS } from '@/catalog/escapeESReservedCharacters';
+
+/** Re-exported from the leaf module — see catalog/escapeESReservedCharacters.ts. */
+export { escapeESReservedCharacters, ES_RESERVED_CHARACTERS };
 
 export interface SearchAssetsOptions {
   index?: string;
@@ -21,8 +25,11 @@ export interface SearchAssetsOptions {
   sortOrder?: 'asc' | 'desc';
   /**
    * Official GET search surface (searchAPI rawSearchQuery): the showDeleted
-   * flag travels as `deleted`. Only true is sent, so existing requests that
-   * do not opt in are byte-identical to before.
+   * flag travels as `deleted`, always sent — pin defaults it to false
+   * (`deleted: includeDeletedParam`, searchAPI.ts:161), so omitting it
+   * would leave the server with `deleted: null` and no filter, leaking
+   * soft-deleted assets into results. `deleted: false` unless the caller
+   * opts in with true.
    */
   deleted?: boolean;
   /**
@@ -120,45 +127,6 @@ export interface AggregateResponse {
 }
 
 /**
- * Official escapeESReservedCharacters (utils/StringUtils.ts), verbatim:
- * backslash-escapes every Elasticsearch reserved character so a
- * field value can be wrapped in a `.*...*` include pattern.
- */
-export const ES_RESERVED_CHARACTERS: Record<string, string> = {
-  '+': String.raw`\+`,
-  '-': String.raw`\-`,
-  '=': String.raw`\=`,
-  '&': String.raw`\&`,
-  '|': String.raw`\|`,
-  '>': String.raw`\>`,
-  '<': String.raw`\<`,
-  '!': String.raw`\!`,
-  '(': String.raw`\(`,
-  ')': String.raw`\)`,
-  '{': String.raw`\{`,
-  '}': String.raw`\}`,
-  '[': String.raw`\[`,
-  ']': String.raw`\]`,
-  '^': String.raw`\^`,
-  '"': String.raw`\"`,
-  '~': String.raw`\~`,
-  '*': String.raw`\*`,
-  '?': String.raw`\?`,
-  ':': String.raw`\:`,
-  '\\': String.raw`\\`,
-  '/': String.raw`\/`,
-};
-
-export const escapeESReservedCharacters = (text?: string): string => {
-  const reUnescapedHtml = /[\\[\]#+=&|><!(){}^"~*?:/-]/g;
-  const reHasUnescapedHtml = new RegExp(reUnescapedHtml.source);
-  const getReplacedChar = (char: string): string => ES_RESERVED_CHARACTERS[char] ?? char;
-  return text && reHasUnescapedHtml.test(text)
-    ? text.replaceAll(reUnescapedHtml, getReplacedChar)
-    : (text ?? '');
-};
-
-/**
  * Official postAggregateFieldOptions (rest/miscAPI.ts), verbatim: wraps
  * the filter value as `.*<escaped>.*` (or `.*` when empty) and POSTs
  * the body as given otherwise. No exact-match variant is needed in
@@ -217,7 +185,7 @@ export async function nlqSearch(
       size,
       sort_field: options.sortField,
       sort_order: options.sortOrder,
-      deleted: options.deleted === true ? true : undefined,
+      deleted: options.deleted ?? false,
       explain: options.explain,
       query_filter: options.query_filter,
     },
@@ -247,7 +215,7 @@ export async function searchAssets(
       include_aggregations: options.includeAggregations ?? true,
       sort_field: options.sortField,
       sort_order: options.sortOrder,
-      deleted: options.deleted === true ? true : undefined,
+      deleted: options.deleted ?? false,
       track_total_hits: options.trackTotalHits === true ? true : undefined,
       query_filter: options.query_filter,
       explain: options.explain,
@@ -286,7 +254,7 @@ export async function searchEntityTypeCounts(
       index: request.index.join(','),
       query_filter: request.queryFilter,
       post_filter: request.postFilter,
-      deleted: request.deleted === true ? true : undefined,
+      deleted: request.deleted ?? false,
       include_top_hit: request.includeTopHit,
     },
   });
@@ -346,7 +314,7 @@ export async function exportSearchResultsAsync(
     query: {
       q: params.q,
       index: params.index,
-      deleted: params.deleted === true ? true : undefined,
+      deleted: params.deleted ?? false,
       query_filter: params.query_filter,
       post_filter: params.post_filter,
       sort_field: params.sort_field,
@@ -369,7 +337,7 @@ export async function exportSearchResultsCsvStream(
     query: {
       q: params.q,
       index: params.index,
-      deleted: params.deleted === true ? true : undefined,
+      deleted: params.deleted ?? false,
       query_filter: params.query_filter,
       post_filter: params.post_filter,
       sort_field: params.sort_field,
@@ -470,6 +438,12 @@ export interface SearchQueriesOptions {
   sortOrder?: 'asc' | 'desc';
   /** Already-serialized createQueryFilter JSON (see SearchAssetsOptions). */
   query_filter?: string;
+  /**
+   * Show-deleted flag, always sent as `deleted` like every other search
+   * client (pin rawSearchQuery default false); the query tab previously
+   * sent no `deleted` at all, so soft-deleted queries leaked in.
+   */
+  deleted?: boolean;
 }
 
 /**
@@ -495,6 +469,7 @@ export async function searchQueries(
       size,
       sort_field: options.sortField,
       sort_order: options.sortOrder,
+      deleted: options.deleted ?? false,
       query_filter: options.query_filter,
     },
   });
