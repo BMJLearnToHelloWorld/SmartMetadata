@@ -299,6 +299,7 @@ const enUS = {
     governance: 'Governance',
     'header-plural': 'Headers',
     'healthy': 'Healthy',
+    home: 'Home',
     'home-page': 'Home Page',
     hour: 'Hour',
     'http-method': 'HTTP Method',

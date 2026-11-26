@@ -299,6 +299,7 @@ const zhCN = {
     governance: '数据治理',
     'header-plural': '标头',
     'healthy': '健康',
+    home: '主页',
     'home-page': '主页',
     hour: '小时',
     'http-method': 'HTTP 方法',
