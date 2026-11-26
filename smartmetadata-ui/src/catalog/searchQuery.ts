@@ -11,7 +11,6 @@ import type { FacetId } from './searchFacets';
 import { aggregationFieldNamesForFacet, NULL_OPTION_KEY } from './searchFacets';
 import { estateFromQuery } from './browseEstate';
 import { escapeESReservedCharacters } from './escapeESReservedCharacters';
-import { exploreTabForIndex } from './exploreTabs';
 
 export type SearchFilters = Partial<Record<FacetId, string[]>>;
 
@@ -362,23 +361,11 @@ export interface SearchRouteOptions {
   estate?: string;
   /**
    * Explore tab index (D13): the global search bar submits with the
-   * scope the user picked, and pin always forces `sort=_score` on that
-   * submit. Empty means no tab — the route has no `:tab` param, exactly
-   * as pin navigates with an empty tab for All.
+   * scope the user picked (`tab=<index>`), and pin always forces
+   * `sort=_score` on that submit. Empty means the all-tab — no `tab`
+   * param, exactly as pin navigates with an empty tab for All.
    */
   tab?: string;
-}
-
-/**
- * The Explore location for a search: query params plus the route params.
- * The tab travels as the `/explore/:tab` path param (pin
- * `ROUTES.EXPLORE_WITH_TAB`), resolved from the tab index to its slug;
- * everything else travels as query params. Spread the result into
- * `router.push({ name: 'search', ...searchRouteQuery(...) })`.
- */
-export interface SearchRouteLocation {
-  params: Record<string, string>;
-  query: Record<string, string>;
 }
 
 export function searchRouteQuery(
@@ -386,7 +373,7 @@ export function searchRouteQuery(
   filters: SearchFilters,
   page = 0,
   options: SearchRouteOptions = {},
-): SearchRouteLocation {
+): Record<string, string> {
   const next = filtersToQuery(filters);
   const trimmed = userQuery.trim();
   if (trimmed) {
@@ -408,12 +395,11 @@ export function searchRouteQuery(
   if (estate) {
     next.estate = estate;
   }
-  const params: Record<string, string> = {};
-  const tab = options.tab ? exploreTabForIndex(options.tab) : undefined;
+  const tab = options.tab ?? '';
   if (tab) {
-    params.tab = tab.slug;
+    next.tab = tab;
   }
-  return { params, query: next };
+  return next;
 }
 
 export function searchRouteFromLocation(
@@ -421,7 +407,7 @@ export function searchRouteFromLocation(
   query: Record<string, unknown>,
   page = 0,
   overrides: SearchRouteOptions & { filters?: SearchFilters } = {},
-): SearchRouteLocation {
+): Record<string, string> {
   return searchRouteQuery(
     userQuery,
     overrides.filters ?? filtersFromQuery(query),
