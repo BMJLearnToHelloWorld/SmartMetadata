@@ -38,6 +38,29 @@ describe('searchQuery', () => {
     expect(composeSearchQuery('', { owner: ['Data Eng'] })).toBe('ownerDisplayName:"Data Eng"');
   });
 
+  it('escapes reserved characters in the free-text query like pin (EXP-P1-26)', () => {
+    expect(composeSearchQuery('orders+sales', {})).toBe('orders\\+sales');
+    expect(composeSearchQuery('revenue:2024', {})).toBe('revenue\\:2024');
+    expect(composeSearchQuery('ord*', {})).toBe('ord\\*');
+    expect(composeSearchQuery('(draft) report', {})).toBe('\\(draft\\) report');
+    expect(composeSearchQuery('plain text', {})).toBe('plain text');
+  });
+
+  it('escapes only the free text, never the facet terms', () => {
+    expect(composeSearchQuery('ord*', { entityType: ['table'] })).toBe('ord\\* AND entityType:table');
+    expect(composeSearchQuery('a+b', { owner: ['Data Eng'] })).toBe(
+      'a\\+b AND ownerDisplayName:"Data Eng"',
+    );
+  });
+
+  it('passes an already-built Lucene fragment through untouched with rawLucene', () => {
+    expect(composeSearchQuery('owners.id:u-1', {})).toBe('owners.id\\:u\\-1');
+    expect(composeSearchQuery('owners.id:u-1', {}, { rawLucene: true })).toBe('owners.id:u-1');
+    expect(
+      composeSearchQuery('owners.id:u-1', { domain: ['Life Sciences'] }, { rawLucene: true }),
+    ).toBe('owners.id:u-1 AND domains.displayName.keyword:"Life Sciences"');
+  });
+
   it('uses OR inside a multi-value facet and * when nothing is set', () => {
     expect(composeSearchQuery('  ', { entityType: ['table', 'topic'] })).toBe(
       '(entityType:table OR entityType:topic)',
