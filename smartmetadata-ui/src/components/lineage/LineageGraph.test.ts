@@ -272,6 +272,12 @@ describe('LineageGraph', () => {
       props: { model: MODEL, forceColumnEdges: true },
       global: { plugins: [Antd, createTestI18n()] },
     });
+    // Edges are gated on the async ELK layout (#352): until `positioned`
+    // resolves the edges computed is []. Wait for the layout like the
+    // other tests do, otherwise this reads an empty edge list.
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="lineage-node-center-id"]').exists()).toBe(true),
+    );
     const flow = wrapper.findComponent({ name: 'VueFlow' });
     const edges = flow.props('edges') as {
       id: string;
