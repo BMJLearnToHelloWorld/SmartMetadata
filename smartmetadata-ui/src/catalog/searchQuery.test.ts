@@ -88,10 +88,13 @@ describe('searchQuery', () => {
     expect(filters).toEqual({ entityType: ['table', 'topic'], tagFqn: ['PII.Sensitive'] });
     expect(toggleFilterValue(filters, 'entityType', 'table').entityType).toEqual(['topic']);
     expect(searchRouteQuery('orders', filters, 2)).toEqual({
-      q: 'orders',
-      entityType: 'table,topic',
-      tagFqn: 'PII.Sensitive',
-      page: '2',
+      params: {},
+      query: {
+        q: 'orders',
+        entityType: 'table,topic',
+        tagFqn: 'PII.Sensitive',
+        page: '2',
+      },
     });
   });
 
@@ -104,31 +107,37 @@ describe('searchQuery', () => {
         estate: 'databases',
       }),
     ).toEqual({
-      q: 'orders',
-      entityType: 'table',
-      sort: 'updated',
-      estate: 'databases',
+      params: {},
+      query: {
+        q: 'orders',
+        entityType: 'table',
+        sort: 'updated',
+        estate: 'databases',
+      },
     });
     expect(
       searchRouteFromLocation('customers', { q: 'orders', entityType: 'table', sort: 'popularity', estate: 'databases' }),
     ).toEqual({
-      q: 'customers',
-      entityType: 'table',
-      sort: 'popularity',
-      estate: 'databases',
+      params: {},
+      query: {
+        q: 'customers',
+        entityType: 'table',
+        sort: 'popularity',
+        estate: 'databases',
+      },
     });
   });
 
-  it('carries the global-search scope as tab and omits it for All (D13)', () => {
+  it('carries the global-search scope as the /explore/:tab param and omits it for All (D13)', () => {
     expect(searchRouteQuery('orders', {}, 0, { tab: 'table' })).toEqual({
-      q: 'orders',
-      tab: 'table',
+      params: { tab: 'tables' },
+      query: { q: 'orders' },
     });
-    expect(searchRouteQuery('orders', {}, 0, { tab: '' })).toEqual({ q: 'orders' });
-    expect(searchRouteQuery('orders', {}, 0)).toEqual({ q: 'orders' });
+    expect(searchRouteQuery('orders', {}, 0, { tab: '' })).toEqual({ params: {}, query: { q: 'orders' } });
+    expect(searchRouteQuery('orders', {}, 0)).toEqual({ params: {}, query: { q: 'orders' } });
     expect(
       searchRouteFromLocation('orders', { q: 'old', tab: 'topic' }, 0, { tab: 'table' }),
-    ).toEqual({ q: 'orders', tab: 'table' });
+    ).toEqual({ params: { tab: 'tables' }, query: { q: 'orders' } });
   });
 
   it('composes certification and data-product Lucene terms when those chips are set', () => {

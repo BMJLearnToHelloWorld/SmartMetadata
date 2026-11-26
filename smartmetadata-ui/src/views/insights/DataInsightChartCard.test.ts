@@ -372,10 +372,11 @@ describe('DataInsightChartCard', () => {
     expect(wrapper.text()).toContain('Explore Assets with No description');
     const to = JSON.parse(link.attributes('data-to') ?? '{}') as {
       name?: string;
+      params?: Record<string, string>;
       query?: Record<string, string>;
     };
     expect(to.name).toBe('search');
-    expect(to.query?.tab).toBe('table');
+    expect(to.params?.tab).toBe('tables');
     const filter = to.query?.query_filter ?? '';
     expect(filter).toContain('descriptionStatus');
     expect(filter).toContain('INCOMPLETE');

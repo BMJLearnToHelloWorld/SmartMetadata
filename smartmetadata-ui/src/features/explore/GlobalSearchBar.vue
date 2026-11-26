@@ -9,7 +9,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Input, Select } from 'ant-design-vue';
 import { escapeESReservedCharacters, searchAssets } from '@/api/search';
 import { openSearchHit } from '@/catalog/entityRoutes';
-import { EXPLORE_TABS, exploreTabFromQuery } from '@/catalog/exploreTabs';
+import { EXPLORE_TABS, exploreTabFromRoute } from '@/catalog/exploreTabs';
 import { DEFAULT_SORT, searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -77,10 +77,10 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let requestId = 0;
 
 function scopeFromQuery(): string {
-  // exploreTabFromQuery accepts both the tab index and the slug, so a
-  // URL like ?tab=tables keeps the scope in sync with the Explore tab
-  // instead of falling back to All.
-  return exploreTabFromQuery(route.query)?.index ?? '';
+  // exploreTabFromRoute accepts the `/explore/:tab` param and the legacy
+  // `?tab=` query (index or slug), so the scope stays in sync with the
+  // Explore tab either way.
+  return exploreTabFromRoute(route)?.index ?? '';
 }
 
 scope.value = scopeFromQuery();
@@ -208,11 +208,11 @@ function submitSearch(value: string): void {
     // sort survives the submit instead of being reset.
     void router.push({
       name: 'search',
-      query: searchRouteFromLocation(trimmed, route.query, 0, { tab }),
+      ...searchRouteFromLocation(trimmed, route.query, 0, { tab }),
     });
     return;
   }
-  void router.push({ name: 'search', query: searchRouteQuery(trimmed, {}, 0, { sort: DEFAULT_SORT, tab }) });
+  void router.push({ name: 'search', ...searchRouteQuery(trimmed, {}, 0, { sort: DEFAULT_SORT, tab }) });
 }
 
 function onClear(): void {
@@ -226,7 +226,7 @@ function onClear(): void {
     // the sort the user already chose.
     void router.push({
       name: 'search',
-      query: searchRouteFromLocation('', route.query, 0, { tab: scope.value || undefined }),
+      ...searchRouteFromLocation('', route.query, 0, { tab: scope.value || undefined }),
     });
   }
 }
@@ -268,7 +268,7 @@ watch(
 );
 
 watch(
-  () => route.query.tab,
+  () => exploreTabFromRoute(route)?.index ?? '',
   () => {
     scope.value = scopeFromQuery();
   },

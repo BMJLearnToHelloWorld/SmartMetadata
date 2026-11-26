@@ -231,8 +231,8 @@ const exploreLink = computed(() =>
   props.listAssets
     ? {
         name: 'search',
+        params: { tab: 'tables' },
         query: {
-          tab: 'table',
           query_filter: JSON.stringify(
             props.listAssets === 'description'
               ? INCOMPLETE_DESCRIPTION_ADVANCE_SEARCH_FILTER

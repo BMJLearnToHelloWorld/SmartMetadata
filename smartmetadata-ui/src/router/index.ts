@@ -243,9 +243,10 @@ export const router = createRouter({
           meta: { guard: 'admin-only' },
         },
         // D1 (B2-E5b): official EXPLORE '/explore'
-        // (constants.ts:155); '/search' stays as an alias so old links
+        // (constants.ts:155) + EXPLORE_WITH_TAB '/explore/:tab'
+        // (constants.ts:156); '/search' stays as an alias so old links
         // and stored landing pages keep resolving.
-        { path: 'explore', name: 'search', component: SearchView, alias: 'search' },
+        { path: 'explore/:tab?', name: 'search', component: SearchView, alias: 'search' },
         // B-7(c): the aggregate Connections surface (pin
         // ConnectionsPage, RoutePosition.APP) — the retired
         // `ingestion/services` aggregate list lives here now.

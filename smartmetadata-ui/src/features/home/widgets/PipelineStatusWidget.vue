@@ -200,11 +200,11 @@ function latestRunError(pipeline: PipelineSummary): string | undefined {
 }
 
 function openPipelines(): void {
-  void router.push({ name: 'search', query: { tab: 'pipelines' } });
+  void router.push({ name: 'search', params: { tab: 'pipelines' } });
 }
 
 function openPipeline(pipeline: PipelineSummary): void {
-  void router.push({ name: 'search', query: { q: pipeline.pipelineFqn, tab: 'pipelines' } });
+  void router.push({ name: 'search', params: { tab: 'pipelines' }, query: { q: pipeline.pipelineFqn } });
 }
 </script>
 

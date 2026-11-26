@@ -37,8 +37,9 @@ import {
   EXPLORE_TABS,
   defaultSortForTab,
   exploreSortFromQuery,
-  exploreTabFromQuery,
+  exploreTabFromRoute,
   facetsForTab,
+  findActiveSearchIndex,
   sortOptionsForTab,
   type ExploreSort,
   type ExploreTab,
@@ -86,7 +87,6 @@ import {
   sortFromQuery,
   type SearchFilters,
 } from '@/catalog/searchQuery';
-import DetailTabs from '@/components/shared/DetailTabs.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
@@ -189,6 +189,18 @@ const queryFilter = computed(() =>
   typeof route.query.query_filter === 'string' ? route.query.query_filter : undefined,
 );
 /**
+ * The tab from the URL (`/explore/:tab`, pin `ROUTES.EXPLORE_WITH_TAB`),
+ * and the tab the page is effectively showing: the URL tab when one is
+ * named, else the auto-selected tab pin's `findActiveSearchIndex`
+ * picks from the counts while a query is present (state, not URL — pin
+ * keeps `autoSelectedSearchIndex` in state and the URL stays
+ * `/explore`). Without a query there is no auto-select and the page is
+ * the dataAsset browse view.
+ */
+const activeTab = computed<ExploreTab | null>(() => exploreTabFromRoute(route));
+const autoSelectedTab = ref<ExploreTab | null>(null);
+const effectiveTab = computed<ExploreTab | null>(() => activeTab.value ?? autoSelectedTab.value);
+/**
  * Advanced-search field config for the active tab (pin `getTreeConfig`
  * per search index) and for the applied-filter SQL text. The SQL text
  * renders against the `dataAsset` union, so a filter built on another tab
@@ -196,7 +208,7 @@ const queryFilter = computed(() =>
  * set does not contain its fields.
  */
 const advancedFieldDefs = computed<QueryBuilderFieldDef[]>(() =>
-  advancedFields.fieldsForTab(activeTab.value?.index ?? 'dataAsset'),
+  advancedFields.fieldsForTab(effectiveTab.value?.index ?? 'dataAsset'),
 );
 const advancedSqlFields = computed<QueryBuilderFieldDef[]>(() =>
   advancedFields.fieldsForTab('dataAsset'),
@@ -220,23 +232,22 @@ const page = computed(() => pageFromQuery(route.query.page));
 const showDeleted = computed(() => route.query.showDeleted === 'true');
 const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, readGlobalPageSize(window.localStorage, authStore.user?.name)));
 const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
-const activeTab = computed<ExploreTab | null>(() => exploreTabFromQuery(route.query));
 const sortOptions = computed(() => {
-  const base = activeTab.value
-    ? sortOptionsForTab(activeTab.value)
+  const base = effectiveTab.value
+    ? sortOptionsForTab(effectiveTab.value)
     : SORT_OPTIONS.map((option) => ({ id: option.id, field: option.field, defaultOrder: option.defaultOrder }));
-  if (!activeTab.value) {
+  if (!effectiveTab.value) {
     return base;
   }
   // D33 pin quirk: the API tabs default to totalVotes although the tag
   // sorting group has no popularity option. The dropdown carries the
   // default as well, so the sort label never renders blank.
-  const fallback = defaultSortForTab(activeTab.value);
+  const fallback = defaultSortForTab(effectiveTab.value);
   return base.some((option) => option.id === fallback.id) ? base : [...base, fallback];
 });
 const currentSort = computed<ExploreSort>(() => {
-  if (activeTab.value) {
-    return exploreSortFromQuery(route.query, activeTab.value);
+  if (effectiveTab.value) {
+    return exploreSortFromQuery(route.query, effectiveTab.value);
   }
   const base = sortFromQuery(route.query);
   return { id: base.id, order: base.order, field: sortField(base) };
@@ -251,7 +262,7 @@ const currentSort = computed<ExploreSort>(() => {
 const facetOptions = useFacetOptions(() => ({
   query: query.value,
   filters: filters.value,
-  index: activeTab.value?.index ?? 'dataAsset',
+  index: effectiveTab.value?.index ?? 'dataAsset',
   deleted: showDeleted.value,
   queryFilter: queryFilter.value,
 }));
@@ -293,7 +304,7 @@ const countsComplete = computed(() => countsForCurrentQuery.value !== null);
  * selection, so an active Status filter never hides itself.
  */
 const chipFacetIds = computed<FacetId[]>(() => {
-  const ids = facetsForTab(activeTab.value);
+  const ids = facetsForTab(effectiveTab.value);
   if (!ids.includes('entityStatus')) {
     return ids;
   }
@@ -325,12 +336,12 @@ const activeFilterIds = computed<FacetId[]>(() => {
 watch(
   () =>
     JSON.stringify({
-      tab: activeTab.value?.index ?? null,
+      tab: effectiveTab.value?.index ?? null,
       queryFilter: queryFilter.value,
       deleted: showDeleted.value,
     }),
   () => {
-    if (activeTab.value?.index === 'glossaryTerm') {
+    if (effectiveTab.value?.index === 'glossaryTerm') {
       void facetOptions.checkEntityStatus();
     }
   },
@@ -352,60 +363,26 @@ const tabCounts = computed(() => {
   // page's result total, not the aggregation bucket. Other tabs keep their
   // counts; on a failed search the total is a reset 0, not a result count,
   // so it must not overwrite the bucket into a misleading (0).
-  if (activeTab.value && !errorMessage.value) {
-    counts.set(activeTab.value.entityType, total.value);
+  if (effectiveTab.value && !errorMessage.value) {
+    counts.set(effectiveTab.value.entityType, total.value);
   }
   return counts;
 });
-const exploreTabItems = computed(() => {
-  const items = [
-    {
-      key: 'all',
-      label: total.value ? `${t('explore.all')} (${total.value})` : t('explore.all'),
-    },
-  ];
-  for (const tab of EXPLORE_TABS) {
-    // Counts come from the counts endpoint when a query is present, else
-    // from the current search's entityType aggregation; tabs with no
-    // bucket stay count-less (unknown, not 0) on partial counts.
-    const count = tabCounts.value.get(tab.entityType);
-    const label = t(`explore.entity.${tab.labelKey}`);
-    items.push({ key: tab.index, label: count !== undefined ? `${label} (${count})` : label });
-  }
-  // D3 (ExplorePageV1.component.tsx:327-342): with a query, hide
-  // zero-result tabs, keeping the active tab (so the tab control never
-  // loses its selection) and the 'all' pseudo-tab. The product has no
-  // global-search scope tab to keep — the active tab is the kept one.
-  // Hiding applies only on complete counts: a missing bucket on partial
-  // aggregation counts is unknown, not zero.
-  if (!query.value.trim() || !countsComplete.value) {
-    return items;
-  }
-  return items.filter((item) => {
-    if (item.key === 'all' || item.key === activeTab.value?.index) {
-      return true;
-    }
-    const tab = EXPLORE_TABS.find((entry) => entry.index === item.key);
-    return tab !== undefined && (tabCounts.value.get(tab.entityType) ?? 0) > 0;
-  });
-});
 /**
  * D14 (pin ExploreV1 exploreLeftPanel): while a query is typed the left
- * aside shows the same tabs vertically — icon + truncating label + count
- * badge, click switches tab — instead of the estate tree. Counts are the
- * same aggregation counts as the top bar; a count-less tab shows no badge.
- * The 'all' item uses the SearchEntityIcon 'query' (SearchOutlined)
- * fallback, as the icon map has no all-tab glyph.
+ * aside shows the tabs vertically — icon + truncating label + count
+ * badge, click switches tab — instead of the estate tree. Pin renders no
+ * all-tab (getTabsInfo() has 24 entries, no DATA_ASSET), so neither does
+ * this list. D3 (ExplorePageV1.component.tsx:327-342): with a query,
+ * hide zero-result tabs, keeping the active tab (so the tab control
+ * never loses its selection). Hiding applies only on complete counts:
+ * a missing bucket on partial aggregation counts is unknown, not zero.
+ * Counts come from the counts endpoint when a query is present, else
+ * from the current search's entityType aggregation; tabs with no bucket
+ * stay count-less (unknown, not 0) on partial counts.
  */
 const leftPanelItems = computed(() => {
-  const items: Array<{ key: string; label: string; iconType: string; count?: number }> = [
-    {
-      key: 'all',
-      label: t('explore.all'),
-      iconType: 'query',
-      count: total.value ? total.value : undefined,
-    },
-  ];
+  const items: Array<{ key: string; label: string; iconType: string; count?: number }> = [];
   for (const tab of EXPLORE_TABS) {
     items.push({
       key: tab.index,
@@ -414,7 +391,16 @@ const leftPanelItems = computed(() => {
       count: tabCounts.value.get(tab.entityType),
     });
   }
-  return items;
+  if (!query.value.trim() || !countsComplete.value) {
+    return items;
+  }
+  return items.filter((item) => {
+    if (item.key === effectiveTab.value?.index) {
+      return true;
+    }
+    const tab = EXPLORE_TABS.find((entry) => entry.index === item.key);
+    return tab !== undefined && (tabCounts.value.get(tab.entityType) ?? 0) > 0;
+  });
 });
 const searchKey = computed(() =>
   JSON.stringify({
@@ -519,7 +505,7 @@ const isTabScopeDisabled = computed(
     !tabAssetsCount.value,
 );
 const activeTabLabel = computed(() =>
-  activeTab.value ? t(`explore.entity.${activeTab.value.labelKey}`) : t('explore.exportVisibleResults'),
+  effectiveTab.value ? t(`explore.entity.${effectiveTab.value.labelKey}`) : t('explore.exportVisibleResults'),
 );
 
 function entityLabel(entityType: string): string {
@@ -596,10 +582,14 @@ function pushSearch(
   if (nextEstate) {
     next.estate = nextEstate;
   }
-  if (nextTab) {
-    next.tab = nextTab.index;
-  }
-  void router.push({ name: 'search', query: next });
+  // The tab travels as the `/explore/:tab` path param (pin
+  // `ROUTES.EXPLORE_WITH_TAB`), not as a query param; no tab means no
+  // param, exactly as pin navigates with an empty tab.
+  void router.push({
+    name: 'search',
+    params: nextTab ? { tab: nextTab.slug } : {},
+    query: next,
+  });
 }
 
 function onChipChange(id: FacetId, values: string[]): void {
@@ -790,10 +780,10 @@ async function handleOpenExportScopeModal(): Promise<void> {
     });
     allAssetsCount.value = countResult.total;
     if (isSearchMode.value) {
-      tabAssetsCount.value = activeTab.value
+      tabAssetsCount.value = effectiveTab.value
         ? (countResult.facets
             .find((facet) => facet.id === 'entityType')
-            ?.buckets.find((bucket) => bucket.key === activeTab.value?.entityType)?.count ?? 0)
+            ?.buckets.find((bucket) => bucket.key === effectiveTab.value?.entityType)?.count ?? 0)
         : countResult.total;
     }
   } catch {
@@ -827,7 +817,7 @@ async function handleExportScopeConfirm(): Promise<void> {
   try {
     const job = await exportSearchResultsAsync({
       q: composeSearchQuery(query.value, filters.value),
-      index: isVisibleScope ? (activeTab.value?.index ?? 'dataAsset') : 'dataAsset',
+      index: isVisibleScope ? (effectiveTab.value?.index ?? 'dataAsset') : 'dataAsset',
       sort_field: currentSort.value.field,
       sort_order: currentSort.value.order,
       size: exportSize,
@@ -929,9 +919,12 @@ async function loadEstatePresence(): Promise<void> {
  * shares the request across tab switches within the session. A slow
  * response for a superseded query never overwrites the current
  * query's counts; a failed counts call leaves the aggregation counts
- * in place (tabs are never hidden on partial counts).
+ * in place (tabs are never hidden on partial counts). Returns the top
+ * hit's entity type (pin `applyHitCounts` reads `hits[0]` for the
+ * auto-select tie-breaker) — undefined when the response carries no
+ * hit or the counts belong to a superseded query.
  */
-async function loadTypeCounts(): Promise<void> {
+async function loadTypeCounts(): Promise<string | undefined> {
   const key = countsKey.value;
   const page = await exploreCache.getOrLoad(
     `counts:${key}`,
@@ -947,7 +940,9 @@ async function loadTypeCounts(): Promise<void> {
   if (key === countsKey.value) {
     typeCounts.value = entityTypeCountsFromPage(page);
     typeCountsKey.value = key;
+    return page.hits[0]?.entityType;
   }
+  return undefined;
 }
 
 /**
@@ -1029,18 +1024,7 @@ async function runSearch(): Promise<void> {
     // A new search rebuilds the tree and drops previously loaded children,
     // matching the official tree's rebuild behaviour.
     estateChildMap.value = {};
-    // D4 + D17 run beside the results search, never blocking it:
-    // official runs counts and results concurrently when a tab is
-    // explicit (ExploreUtils.ts:349-359), and the sharded-family
-    // lookup is its own effect (ExplorePageV1.component.tsx:645-671).
-    // A failed counts call must not fail the results (see D3 hiding).
     const trimmedQuery = query.value.trim();
-    const countsPromise = trimmedQuery ? loadTypeCounts().catch(() => undefined) : Promise.resolve(undefined);
-    if (trimmedQuery) {
-      void loadShardedFamilies();
-    } else {
-      shardedFamilies.value = [];
-    }
     // D11 NLQ (pin ExploreUtils.fetchEntityData): NLP active + a
     // non-empty query goes through nlqSearch instead of the keyword
     // search. The query is the raw text (pin sends the escaped query
@@ -1051,7 +1035,34 @@ async function runSearch(): Promise<void> {
     // verdict) — GET /v1/search/nlq/query is the route both serve.
     const useNlq =
       searchStore.isNLPActive && searchStore.isNLPEnabled && trimmedQuery !== '';
-    const index = activeTab.value?.index ?? 'dataAsset';
+    // D4 + D17: official runs counts and results concurrently when a
+    // tab is explicit (ExploreUtils.ts:349-359), and the sharded-family
+    // lookup is its own effect (ExplorePageV1.component.tsx:645-671).
+    // A failed counts call must not fail the results (see D3 hiding).
+    // With a query and NO tab, the count decides which index actually
+    // has results, so the count must complete before the results query
+    // can be issued: pin auto-selects via findActiveSearchIndex and
+    // falls back to dataAsset when no tab has hits
+    // (ExploreUtils.ts:370-378). The auto-selected tab is state, not
+    // URL — the URL stays `/explore`.
+    let countsPromise: Promise<string | undefined>;
+    if (trimmedQuery && !activeTab.value) {
+      countsPromise = loadTypeCounts().catch(() => undefined);
+      const topHit = await countsPromise;
+      autoSelectedTab.value = findActiveSearchIndex(
+        countsForCurrentQuery.value ?? new Map(),
+        useNlq ? undefined : topHit,
+      );
+    } else {
+      autoSelectedTab.value = null;
+      countsPromise = trimmedQuery ? loadTypeCounts().catch(() => undefined) : Promise.resolve(undefined);
+    }
+    if (trimmedQuery) {
+      void loadShardedFamilies();
+    } else {
+      shardedFamilies.value = [];
+    }
+    const index = effectiveTab.value?.index ?? 'dataAsset';
     // D31/D29/D32: the keyword search goes through the 30s cache, keyed
     // by the exact request (the ranking-details explain flag is part of
     // the key, so toggling it is never served a stale cached result);
@@ -1122,7 +1133,7 @@ async function runSearch(): Promise<void> {
       } else {
         delete nextQuery.page;
       }
-      await router.replace({ name: 'search', query: nextQuery });
+      await router.replace({ name: 'search', params: route.params, query: nextQuery });
     }
   } catch (error) {
     hits.value = [];
@@ -1160,12 +1171,6 @@ watch(expandedKeys, (keys) => {
 <template>
   <div class="explore" data-tour-step="explore-search" data-tour-page>
     <PageHeader :header="t('explore.title')" :sub-header="query ? t('explore.leadQuery', { query }) : t('explore.lead')" />
-    <DetailTabs
-      :tabs="exploreTabItems"
-      :active-key="activeTab?.index ?? 'all'"
-      test-id="explore-tabs"
-      @change="onTabChange"
-    />
     <div class="explore__toolbar">
       <ExploreFilterChips
         :facets="chipFacets"
@@ -1323,7 +1328,7 @@ watch(expandedKeys, (keys) => {
             :key="item.key"
             type="button"
             class="explore__left-tab"
-            :class="{ 'explore__left-tab--active': (activeTab?.index ?? 'all') === item.key }"
+            :class="{ 'explore__left-tab--active': effectiveTab?.index === item.key }"
             :data-testid="`explore-left-tab-${item.key}`"
             @click="onTabChange(item.key)"
           >
@@ -1580,7 +1585,7 @@ watch(expandedKeys, (keys) => {
           :fields="advancedFieldDefs"
           :fetch-options="
             (field, text) =>
-              advancedFields.fetchFieldOptions(field, text, activeTab?.index ?? 'dataAsset')
+              advancedFields.fetchFieldOptions(field, text, effectiveTab?.index ?? 'dataAsset')
           "
         />
         <Space>
