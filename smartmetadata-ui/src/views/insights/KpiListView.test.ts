@@ -101,6 +101,25 @@ describe('KpiListView', () => {
     expect(wrapper.find('[data-testid="kpi-detail"]').text()).toContain('no');
   });
 
+  it('formats the Current value to two decimals instead of showing the raw float (pin KPILatestResultsV1 toFixed(2))', async () => {
+    listKpis.mockResolvedValue({
+      data: [
+        {
+          ...kpiRows[0],
+          kpiResult: {
+            timestamp: 1704153600000,
+            targetResult: [
+              { name: 'completedDescriptionFraction', value: '52.066115702479344', targetMet: false },
+            ],
+          },
+        },
+      ],
+    });
+    const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('52.07');
+    expect(wrapper.text()).not.toContain('52.066115702479344');
+  });
+
   it('selects another KPI row from the same GET payload', async () => {
     listKpis.mockResolvedValue({ data: kpiRows });
     const { wrapper } = await mountView();

@@ -210,6 +210,10 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-summary-total"]').text()).toContain('1,187');
     expect(wrapper.get('[data-testid="insights-summary-description"]').text()).toContain('62.5%');
     expect(wrapper.get('[data-testid="insights-summary-owner"]').text()).toContain('75%');
+    // Pin SummaryCard.component.tsx: the title is a wrapping paragraph,
+    // not an antd Card title (which ellipsises at span 6).
+    expect(wrapper.find('[data-testid="insights-summary-total"] .ant-card-head-title').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="insights-summary-total"]').text()).toContain('Total Data Assets');
   });
 
   it('formats chart dates as pin MMM dd / DATE_MED and suffixes only the percentage y-axes', async () => {
@@ -384,7 +388,7 @@ describe('DataAssetsView', () => {
     expect(startTs).toBe(dayjs(DAY_1).startOf('day').valueOf());
     expect(endTs).toBe(dayjs(DAY_7).endOf('day').valueOf());
     // The picked span is 7 days, so the change line still reports 7 days.
-    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('over the last 7 days');
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('7-days change');
   });
 
   it('colours the total-card lines by latest-value rank, not by first appearance (pin dataInsightColor)', async () => {
@@ -525,9 +529,8 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('300');
     // Pin R-P2-2: headline label "Total Assets", not the card title.
     expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('Total Assets');
-    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain(
-      '+50.00% over the last 7 days',
-    );
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('+50.00%');
+    expect(wrapper.get('[data-testid="insights-total-headline"]').text()).toContain('7-days change');
   });
 
   it('renders the tier card change on the tiered share only, excluding the untiered bucket (pin computeTotalDataAssetsByTierChange)', async () => {
@@ -548,9 +551,8 @@ describe('DataAssetsView', () => {
     const wrapper = await mountView();
     // Tiered share: 7/200 = 3.50% -> 7/300 = 2.33%, change -1.17%.
     // Pin CustomStatistic always writes "%", even for pp changes.
-    expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain(
-      '-1.17% over the last 7 days',
-    );
+    expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain('-1.17%');
+    expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain('7-days change');
     // Pin R-P2-2: tier headline label "Assigned Tier" (no % suffix — the
     // tier card is not a percentage graph in pin).
     expect(wrapper.get('[data-testid="insights-tier-headline"]').text()).toContain('Assigned Tier');
@@ -647,8 +649,8 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-service-owner-headline"]').text()).toContain(
       'Assigned Owner %',
     );
-    expect(wrapper.text()).toContain('+15.00% over the last 7 days');
-    expect(wrapper.text()).toContain('+30.00% over the last 7 days');
+    expect(wrapper.text()).toContain('+15.00%');
+    expect(wrapper.text()).toContain('+30.00%');
     // The KPI target renders as a marker on the headline bar, not as text.
     expect(wrapper.get('[data-testid="insights-service-description-target"]').text()).toBe('80%');
     expect(wrapper.get('[data-testid="insights-service-description-target"]').attributes('style')).toContain(

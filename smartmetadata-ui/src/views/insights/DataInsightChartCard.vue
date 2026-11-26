@@ -32,8 +32,16 @@ export interface DataInsightChartHeadline {
   value: string;
   /** Bar width when showProgress (the numeric headline value). */
   progress: number;
-  /** Preformatted change line, e.g. "+15.00% over the last 7 days". */
-  changeText?: string;
+  /**
+   * Pin CustomStatistic.tsx:34-66: the change is a raw number (changeInValue)
+   * plus a duration (duration), rendered as two lines — the signed percent
+   * (coloured success/danger) over the "{days}-days change" wording. The card
+   * formats the percent line itself, so a narrow headline never has to fit
+   * one long sentence beside the label + value.
+   */
+  changeValue?: number;
+  /** Pin CustomStatistic duration: the "N-days change" line. */
+  changeDays?: number;
   /** Pin DataInsightProgressBar showProgress: only the percentage cards show the bar. */
   showProgress: boolean;
   /** KPI target: rendered as a marker on the bar (pin renderProgressTarget). */
@@ -123,6 +131,18 @@ function clamp(value: number): number {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * Pin CustomStatistic.tsx:49-55: sign + round(changeInValue, 2) + '%'.
+ * Every change line gets a `%` suffix — even the percentage-point changes
+ * from computeDefaultChange / computeTotalDataAssetsByTierChange (pin's own
+ * display quirk, kept verbatim per Bai 2026-11-25 ruling).
+ * The +0 normalises -0 so a zero change never renders as "-0.00%".
+ */
+function formatChangeValue(value: number): string {
+  const rounded = round2(value) + 0;
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}%`;
 }
 
 function isActive(row: DataInsightChartRow): boolean {
@@ -264,9 +284,10 @@ const exploreLink = computed(() =>
       </Col>
       <Col :xs="24" :lg="8">
         <div v-if="headline" :data-testid="`${testId}-headline`" class="di-chart-card__headline">
-          <!-- Pin CustomStatistic.tsx:34-66: label + value left, the
-            change right-aligned — never stacked. The change text itself
-            (value + unit wording) is untouched. -->
+          <!-- Pin CustomStatistic.tsx:34-66: label + value left, the change
+            right-aligned as two lines (signed percent over the
+            "{days}-days change" wording) in a wrapping row — never one long
+            sentence beside the label. -->
           <div class="di-chart-card__headline-main">
             <div class="di-chart-card__headline-left">
               <Typography.Paragraph type="secondary" class="di-chart-card__headline-label">
@@ -274,13 +295,21 @@ const exploreLink = computed(() =>
               </Typography.Paragraph>
               <Typography.Title :level="4" class="di-chart-card__headline-value">{{ headline.value }}</Typography.Title>
             </div>
-            <Typography.Paragraph
-              v-if="headline.changeText"
-              type="secondary"
-              class="di-chart-card__headline-change"
-            >
-              {{ headline.changeText }}
-            </Typography.Paragraph>
+            <div v-if="headline.changeValue !== undefined" class="di-chart-card__headline-change">
+              <Typography.Paragraph
+                class="di-chart-card__headline-change-value"
+                :type="headline.changeValue >= 0 ? 'success' : 'danger'"
+              >
+                {{ formatChangeValue(headline.changeValue) }}
+              </Typography.Paragraph>
+              <Typography.Paragraph
+                v-if="headline.changeDays !== undefined"
+                type="secondary"
+                class="di-chart-card__headline-change-days"
+              >
+                {{ t('insights.cards.changeDays', { days: headline.changeDays }) }}
+              </Typography.Paragraph>
+            </div>
           </div>
           <div v-if="headline.showProgress" class="di-chart-card__progress">
             <Progress
@@ -362,6 +391,10 @@ const exploreLink = computed(() =>
 }
 .di-chart-card__headline-main {
   display: flex;
+  /* Pin CustomStatistic.tsx:34: the headline row wraps (Box wrap="wrap") —
+   * when the change cannot fit beside the label + value it drops to the
+   * next line instead of crushing the left column to min-content. */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
@@ -373,6 +406,12 @@ const exploreLink = computed(() =>
   flex-shrink: 0;
   margin-bottom: 0;
   text-align: right;
+}
+.di-chart-card__headline-change-value {
+  margin-bottom: 0;
+}
+.di-chart-card__headline-change-days {
+  margin-bottom: 0;
 }
 .di-chart-card__headline-label {
   margin-bottom: 0;

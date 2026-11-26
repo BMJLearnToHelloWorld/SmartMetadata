@@ -189,6 +189,10 @@ describe('AppAnalyticsView', () => {
     expect(cards[0]?.text()).toContain('410');
     expect(cards[1]?.text()).toContain('Average Daily Active Users on the Platform');
     expect(cards[1]?.text()).toContain('15');
+    // Pin SummaryCard.component.tsx: the title is a wrapping paragraph,
+    // not an antd Card title (which ellipsises at span 6).
+    expect(cards[0]?.find('.ant-card-head-title').exists()).toBe(false);
+    expect(cards[1]?.find('.ant-card-head-title').exists()).toBe(false);
     const mostActive = wrapper.get('[data-testid="summary-item-MostActiveUsers"]');
     expect(mostActive.text()).toContain('Most Active User');
     expect(mostActive.text()).toContain('alice');
@@ -230,7 +234,8 @@ describe('AppAnalyticsView', () => {
     expect(headline.text()).toContain('Total Assets');
     expect(headline.text()).toContain('260');
     // Day totals 150 -> 260, a +73.33% change over the 7-day window.
-    expect(headline.text()).toContain('+73.33% over the last 7 days');
+    expect(headline.text()).toContain('+73.33%');
+    expect(headline.text()).toContain('7-days change');
   });
 
   it('plots the daily active users headline from the aggregate payload', async () => {
@@ -240,7 +245,8 @@ describe('AppAnalyticsView', () => {
     expect(headline.text()).toContain('Total Active User');
     // Pin getFormattedActiveUsersData: total is the latest day's value.
     expect(headline.text()).toContain('20');
-    expect(headline.text()).toContain('+100.00% over the last 7 days');
+    expect(headline.text()).toContain('+100.00%');
+    expect(headline.text()).toContain('7-days change');
   });
 
   it('renders the two tables with pin columns', async () => {

@@ -66,24 +66,6 @@ function progressColor(index: number): string {
   return SM_DATA_INSIGHT_COLORS[index % SM_DATA_INSIGHT_COLORS.length] ?? SM_DATA_INSIGHT_COLORS[0];
 }
 
-function formatChange(value: number): string {
-  // +0 normalises -0 so a zero change never renders as "-0.00".
-  const rounded = Math.round(value * 100) / 100 + 0;
-  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}`;
-}
-
-/**
- * Pin CustomStatistic.tsx:44-64 renders every change line with a `%`
- * suffix — even the percentage-point changes (pin's own display quirk,
- * kept verbatim per Bai 2026-11-25 ruling).
- */
-function changeText(value: number | undefined, days: number): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  return t('insights.cards.changePercent', { value: formatChange(value), days });
-}
-
 /**
  * Pin DatePickerMenu (DatePickerMenu.component.tsx:229-256): a preset
  * window is rolling, `startTs = now - days`, `endTs = now`; a custom
@@ -263,7 +245,8 @@ const pageViewsHeadline = computed<DataInsightChartHeadline | undefined>(() =>
         label: t('insights.appAnalytics.totalAssets'),
         value: String(pageViewsLatestTotal.value),
         progress: 0,
-        changeText: changeText(pageViewsChange(), currentDays.value),
+        changeValue: pageViewsChange(),
+        changeDays: currentDays.value,
         showProgress: false,
       }
     : undefined,
@@ -310,7 +293,19 @@ const dailyChange = computed<number | undefined>(() => {
   return first ? ((last - first) / first) * 100 : 0;
 });
 
-const dailyChangeText = computed(() => changeText(dailyChange.value, currentDays.value));
+/**
+ * Pin CustomStatistic.tsx:49-55: sign + round(changeInValue, 2) + '%'.
+ * Mirrors DataInsightChartCard's formatChangeValue; the +0 normalises -0
+ * so a zero change never renders as "-0.00%".
+ */
+function formatChangeValue(value: number): string {
+  const rounded = Math.round(value * 100) / 100 + 0;
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}%`;
+}
+
+/** Pin CustomStatistic.tsx:34-66: the daily-active headline below renders
+ * the change as two lines (signed percent + "{days}-days change") from the
+ * raw change number and the window days — no preformatted sentence. */
 
 /**
  * Pin TopViewEntities.tsx:84-130 columns: Data Asset (decoded FQN,
@@ -582,7 +577,13 @@ onMounted(async () => {
               @keydown.enter="scrollToCard(card.target)"
               @keydown.space.prevent="scrollToCard(card.target)"
             >
-              <Card size="small" :title="card.label">
+              <!-- Pin SummaryCard.component.tsx: the title is a wrapping
+                paragraph, not an antd Card title (which ellipsises) — at
+                span 6 the label must wrap instead of truncating. -->
+              <Card size="small">
+                <Typography.Paragraph type="secondary" class="app-analytics-summary__label">
+                  {{ card.label }}
+                </Typography.Paragraph>
                 <Typography.Title :level="4">{{ card.value }}</Typography.Title>
               </Card>
             </Col>
@@ -592,7 +593,10 @@ onMounted(async () => {
               :md="6"
               data-testid="summary-item-MostActiveUsers"
             >
-              <Card size="small" :title="t('insights.appAnalytics.mostActiveUser')">
+              <Card size="small">
+                <Typography.Paragraph type="secondary" class="app-analytics-summary__label">
+                  {{ t('insights.appAnalytics.mostActiveUser') }}
+                </Typography.Paragraph>
                 <UserPopOverCard
                   :user-name="mostActiveUser.userName ?? ''"
                   show-user-name
@@ -695,7 +699,9 @@ onMounted(async () => {
               <Col :xs="24" :lg="8">
                 <div data-testid="insights-daily-active-headline" class="app-analytics__headline">
                   <!-- Pin CustomStatistic.tsx:34-66: label + value left,
-                    the change right-aligned — never stacked. -->
+                    the change right-aligned as two lines (signed percent
+                    over the "{days}-days change" wording) in a wrapping
+                    row — never one long sentence beside the label. -->
                   <div class="app-analytics__headline-main">
                     <div class="app-analytics__headline-left">
                       <Typography.Paragraph type="secondary" class="app-analytics__headline-label">
@@ -705,13 +711,17 @@ onMounted(async () => {
                         {{ dailyTotal }}
                       </Typography.Title>
                     </div>
-                    <Typography.Paragraph
-                      v-if="dailyChangeText"
-                      type="secondary"
-                      class="app-analytics__headline-change"
-                    >
-                      {{ dailyChangeText }}
-                    </Typography.Paragraph>
+                    <div v-if="dailyChange !== undefined" class="app-analytics__headline-change">
+                      <Typography.Paragraph
+                        class="app-analytics__headline-change-value"
+                        :type="dailyChange >= 0 ? 'success' : 'danger'"
+                      >
+                        {{ formatChangeValue(dailyChange) }}
+                      </Typography.Paragraph>
+                      <Typography.Paragraph type="secondary" class="app-analytics__headline-change-days">
+                        {{ t('insights.cards.changeDays', { days: currentDays }) }}
+                      </Typography.Paragraph>
+                    </div>
                   </div>
                 </div>
               </Col>
@@ -767,6 +777,9 @@ onMounted(async () => {
 .app-analytics-summary__card {
   cursor: pointer;
 }
+.app-analytics-summary__label {
+  margin-bottom: 0;
+}
 .app-analytics-summary__card :deep(.ant-card):hover {
   background-color: var(--sm-color-bg-hover);
 }
@@ -797,6 +810,10 @@ onMounted(async () => {
 }
 .app-analytics__headline-main {
   display: flex;
+  /* Pin CustomStatistic.tsx:34: the headline row wraps (Box wrap="wrap") —
+   * when the change cannot fit beside the label + value it drops to the
+   * next line instead of crushing the left column to min-content. */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
@@ -808,6 +825,12 @@ onMounted(async () => {
   flex-shrink: 0;
   margin-bottom: 0;
   text-align: right;
+}
+.app-analytics__headline-change-value {
+  margin-bottom: 0;
+}
+.app-analytics__headline-change-days {
+  margin-bottom: 0;
 }
 .app-analytics__headline-label {
   margin-bottom: 0;
