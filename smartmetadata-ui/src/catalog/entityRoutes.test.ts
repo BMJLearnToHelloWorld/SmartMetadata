@@ -47,7 +47,7 @@ describe('entityRoutes', () => {
     });
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
-      fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes,dataProducts,certification',
+      fields: 'owners,tags,domains,extension,service,messageSchema,partitions,replicationFactor,retentionSize,cleanupPolicies,maximumMessageSize,followers,votes,dataProducts,certification',
     });
     expect(resolveDetailEndpoint('dashboard', 'bi.sales')).toEqual({
       path: `/v1/dashboards/name/${encodeURIComponent('bi.sales')}`,
@@ -162,7 +162,7 @@ describe('entityRoutes', () => {
     expect(resolveDetailEndpoint('spreadsheet', 'drive.shared.budget')).toEqual({
       path: `/v1/drives/spreadsheets/name/${encodeURIComponent('drive.shared.budget')}`,
       fields:
-        'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,createdTime,modifiedTime',
+        'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,fileVersion,createdTime,modifiedTime',
     });
     expect(resolveDetailEndpoint('worksheet', 'drive.shared.budget.Sheet1')).toEqual({
       path: `/v1/drives/worksheets/name/${encodeURIComponent('drive.shared.budget.Sheet1')}`,

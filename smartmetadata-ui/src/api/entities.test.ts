@@ -153,6 +153,95 @@ describe('asset entity writes', () => {
     expect(asset.tablePartition).toBeUndefined();
   });
 
+  it('maps the E-3a preview overview fields (topic sizing, drive counts, server, apiCollection)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/topics/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 't-1',
+              name: 'events',
+              fullyQualifiedName: 'svc.kafka.events',
+              partitions: 6,
+              replicationFactor: 3,
+              retentionSize: 1024,
+              cleanupPolicies: ['delete', 'compact'],
+              maximumMessageSize: 2048,
+              messageSchema: { schemaType: 'Avro', schemaFields: [] },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/drives/directories/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'd-1',
+              name: 'shared',
+              fullyQualifiedName: 'drive.shared',
+              numberOfFiles: 7,
+              numberOfSubDirectories: 2,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/drives/worksheets/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'w-1',
+              name: 'sheet1',
+              fullyQualifiedName: 'drive.book.sheet1',
+              rowCount: 42,
+              columns: [{ name: 'a', dataType: 'STRING' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/mlmodels/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'm-1',
+              name: 'churn',
+              fullyQualifiedName: 'ml.churn',
+              server: 'https://example.invalid/ml',
+              dashboard: { name: 'churn-dash', fullyQualifiedName: 'dash.churn' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'e-1',
+            name: 'get-orders',
+            fullyQualifiedName: 'api.orders.get-orders',
+            endpointURL: 'https://example.invalid/orders',
+            apiCollection: { name: 'orders', fullyQualifiedName: 'api.orders' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const topic = await fetchAssetDetail('topic', 'svc.kafka.events');
+    expect(topic.replicationFactor).toBe(3);
+    expect(topic.retentionSize).toBe(1024);
+    expect(topic.cleanupPolicies).toEqual(['delete', 'compact']);
+    expect(topic.maximumMessageSize).toBe(2048);
+    expect(topic.messageSchemaType).toBe('Avro');
+    const directory = await fetchAssetDetail('directory', 'drive.shared');
+    expect(directory.numberOfFiles).toBe(7);
+    expect(directory.numberOfSubDirectories).toBe(2);
+    const worksheet = await fetchAssetDetail('worksheet', 'drive.book.sheet1');
+    expect(worksheet.rowCount).toBe(42);
+    expect(worksheet.schemaRows).toHaveLength(1);
+    const mlmodel = await fetchAssetDetail('mlmodel', 'ml.churn');
+    expect(mlmodel.server).toBe('https://example.invalid/ml');
+    expect(mlmodel.dashboard).toMatchObject({ name: 'churn-dash', fullyQualifiedName: 'dash.churn' });
+    const endpoint = await fetchAssetDetail('apiEndpoint', 'api.orders.get-orders');
+    expect(endpoint.apiEndpointUrl).toBe('https://example.invalid/orders');
+    expect(endpoint.apiCollection).toMatchObject({ name: 'orders', fullyQualifiedName: 'api.orders' });
+  });
+
   it('nests STRUCT columns with path keys and drops empty nested children', async () => {
     vi.stubGlobal(
       'fetch',

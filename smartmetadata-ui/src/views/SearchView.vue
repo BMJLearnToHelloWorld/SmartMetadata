@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Dropdown, Empty, Input, Menu, Pagination, Select, Space, Switch, Tag, Typography, message } from 'ant-design-vue';
@@ -55,7 +55,7 @@ import {
   selectedEstateFromFilters,
   type EstateNode,
 } from '@/catalog/browseEstate';
-import { assetLocation, detailLocationForHit, lineageLocation, openSearchHit, parentTableLocation } from '@/catalog/entityRoutes';
+import { assetLocation, assetTabLocation, detailLocationForHit, openSearchHit, parentTableLocation } from '@/catalog/entityRoutes';
 import {
   cardBreadcrumbs,
   cardDescriptionNeedles,
@@ -164,6 +164,13 @@ const estateChildMap = ref<Record<string, EstateNode[]>>({});
 const estateLoadingKeys = ref<Set<string>>(new Set());
 const expandedKeys = ref<string[]>([]);
 const selectedFqn = ref('');
+/**
+ * E-3a: pin `ExploreV1.component.tsx:654` keeps the summary panel closed
+ * (`showSummaryPanel=false`) until it is opened, and `:584-601` mounts it
+ * only while open. The product pane was a permanent inline aside; it is
+ * now mounted only while `previewOpen` and a hit is selected.
+ */
+const previewOpen = ref(false);
 /**
  * D4: per-type counts from GET /v1/search/entityTypeCounts for the
  * current query, with the query key they were fetched for. A stale
@@ -454,7 +461,7 @@ const selectedEstateKeys = computed(() => {
 });
 const crumbs = computed(() => browsePathLabels(filters.value, estateId.value));
 const selectedHit = computed(
-  () => hits.value.find((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value) ?? hits.value[0] ?? null,
+  () => hits.value.find((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value) ?? null,
 );
 const recordRange = computed(() => {
   if (!total.value) {
@@ -849,6 +856,51 @@ function selectHit(hit: SearchHit): void {
   selectedFqn.value = hit.fullyQualifiedName || hit.name;
 }
 
+/**
+ * E-3a open trigger (pin `ExploreV1.component.tsx`): a result card click
+ * opens the panel for that card (`ExploreSearchCard.tsx:915-920`
+ * `onClick` → `handleSummaryPanelDisplay`), and fresh results
+ * auto-display their first hit (`ExploreV1.component.tsx` effect at
+ * ~:1210 calling `handleSummaryPanelDisplay(firstEntity)` — the
+ * part-4 report's "opens only on a card action" misread pin by missing
+ * that effect; the first-hit auto-display is pin behaviour, kept here).
+ * Close is Escape (`ExploreV1.component.tsx:1178`), the panel's X, or
+ * navigating away (an in-panel link calls `handleClosePanel`, `:952`).
+ */
+function openPreview(hit: SearchHit): void {
+  selectHit(hit);
+  previewOpen.value = true;
+}
+
+function closePreview(): void {
+  previewOpen.value = false;
+}
+
+function onEscapeKey(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    closePreview();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onEscapeKey);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onEscapeKey);
+});
+
+// An in-panel link navigates away from Explore; pin closes the panel on
+// such a click (`onLinkClick={handleClosePanel}`).
+watch(
+  () => route.name,
+  (name) => {
+    if (name !== 'search') {
+      previewOpen.value = false;
+    }
+  },
+);
+
 // Non-null parent-table location for the card's Table link. Only called
 // under the parentTableLocation(...) v-if guard, so the throw is unreachable
 // in practice; it exists because templates have no non-null assertion.
@@ -876,17 +928,22 @@ function prefetchHit(hit: SearchHit): void {
 function openHit(hit: SearchHit): void {
   // D26: parent table, wired asset detail, or governance detail for
   // glossaryTerm / tag / dataProduct (when the hit carries an id).
-  // Anything without a navigation target only selects the preview.
+  // Anything without a navigation target only opens the preview.
   if (!openSearchHit((to) => void router.push(to), hit)) {
-    selectHit(hit);
+    openPreview(hit);
   }
 }
 
-// D25: the preview lineage entry navigates to the lineage page for the
-// hit (product analogue of pin EntitySummaryPanel handleLineageClick).
+// E-3d: the preview lineage entry navigates to the entity detail
+// page's Lineage tab — pin `EntitySummaryPanel.handleLineageClick`
+// (`EntitySummaryPanel.component.tsx:866-874`,
+// `getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`); the product
+// analogue is the `asset` route with `?tab=lineage` (see
+// `assetTabLocation`). The full-page lineage graph was the previous
+// destination; it stays reachable from the detail page itself.
 function openLineageHit(hit: SearchHit): void {
   if (hit.fullyQualifiedName) {
-    void router.push(lineageLocation(hit.entityType, hit.fullyQualifiedName));
+    void router.push(assetTabLocation(hit.entityType, hit.fullyQualifiedName, 'lineage'));
   }
 }
 
@@ -1119,8 +1176,18 @@ async function runSearch(): Promise<void> {
     } else {
       await estatePromise;
     }
-    if (hits.value.length && !hits.value.some((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value)) {
+    // E-3a (pin `ExploreV1.component.tsx` effect at ~:1210): fresh
+    // results auto-display their first hit; with no hits the panel
+    // closes — pin renders no panel at all when nothing is selected
+    // (`:584-601` mounts it only while `showSummaryPanel && entityDetails`).
+    // This replaces the old selection reset, which silently re-pointed
+    // the permanent pane at hits[0] without opening semantics.
+    if (hits.value.length) {
       selectedFqn.value = hits.value[0].fullyQualifiedName || hits.value[0].name;
+      previewOpen.value = true;
+    } else {
+      selectedFqn.value = '';
+      previewOpen.value = false;
     }
     // D29: once results settle, correct an out-of-range page in the URL,
     // as official's ExploreV1 effect navigates to validCurrentPage
@@ -1313,7 +1380,7 @@ watch(expandedKeys, (keys) => {
     <!-- D35 (pin ExploreV1:413): the active-domain chip sits directly under
          the filter-chips row. It renders nothing without an active domain. -->
     <DomainFilterChip class="explore__domain-chip" />
-    <div class="explore__split">
+    <div class="explore__split" :class="{ 'explore__split--no-preview': !previewOpen }">
       <aside class="explore__pane explore__pane--estate">
         <!-- D14 (pin ExploreV1 exploreLeftPanel): a query turns the left
              aside into the vertical tab list; without one it is the tree. -->
@@ -1414,7 +1481,7 @@ watch(expandedKeys, (keys) => {
             class="explore__card explore__card--dense explore__card--om"
             :class="{ 'explore__card--selected': isSelected(hit) }"
             :data-testid="`search-card-${hit.fullyQualifiedName || hit.name}`"
-            @click="selectHit(hit)"
+            @click="openPreview(hit)"
           >
             <!-- D18: clickable entity breadcrumbs replace the raw FQN row
                  (pin `ExploreSearchCard` `BreadcrumbAndScoreCell`). -->
@@ -1540,8 +1607,17 @@ watch(expandedKeys, (keys) => {
           />
         </div>
       </section>
-      <aside class="explore__pane explore__pane--preview">
-        <ExplorePreview :hit="selectedHit" @open="openHit" @open-lineage="openLineageHit" />
+      <aside v-if="previewOpen && selectedHit" class="explore__pane explore__pane--preview">
+        <!-- Pin ExploreV1.component.tsx:585-601 keys the panel by
+             entityType + FQN so a new entity remounts it (fresh fetch,
+             tab reset); the same key is used here. -->
+        <ExplorePreview
+          :key="`${selectedHit.entityType}-${selectedHit.fullyQualifiedName || selectedHit.name}`"
+          :hit="selectedHit"
+          @open="openHit"
+          @open-lineage="openLineageHit"
+          @close="closePreview"
+        />
       </aside>
     </div>
     <ExploreExportScopeModal
@@ -1734,6 +1810,9 @@ watch(expandedKeys, (keys) => {
   gap: 12px;
   align-items: stretch;
   min-height: 520px;
+}
+.explore__split--no-preview {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
 }
 .explore__pane {
   border: 1px solid var(--sm-border-secondary);

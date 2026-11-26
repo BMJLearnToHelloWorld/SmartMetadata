@@ -43,7 +43,7 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
     fields:
       'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,tablePartition,tableConstraints,aliases,followers,votes,joins,dataProducts,certification,testSuite',
   },
-  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes,dataProducts,certification' },
+  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,replicationFactor,retentionSize,cleanupPolicies,maximumMessageSize,followers,votes,dataProducts,certification' },
   dashboard: {
     collection: 'dashboards',
     fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers,votes,dataProducts,certification',
@@ -123,7 +123,7 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
   spreadsheet: {
     collection: 'drives/spreadsheets',
     fields:
-      'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,createdTime,modifiedTime',
+      'owners,worksheets,followers,tags,domains,dataProducts,votes,extension,mimeType,fileVersion,createdTime,modifiedTime',
   },
   worksheet: {
     collection: 'drives/worksheets',
@@ -150,6 +150,27 @@ export function lineageLocation(entityType: string, fqn: string): { name: string
   return {
     name: 'lineage',
     params: { entityType, fqn },
+  };
+}
+
+/**
+ * E-3d: pin `EntitySummaryPanel.handleLineageClick`
+ * (`EntitySummaryPanel.component.tsx:866-874`) navigates to the entity
+ * detail page's Lineage tab
+ * (`getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`). The product
+ * detail page addresses its tabs through the `?tab=` query param
+ * (`AssetDetailView.onTabChange` / `getRenderedActiveTab`), so the
+ * product analogue is the `asset` route with `query: { tab }`.
+ */
+export function assetTabLocation(
+  entityType: string,
+  fqn: string,
+  tab: string,
+): { name: string; params: { entityType: string; fqn: string }; query: { tab: string } } {
+  return {
+    name: 'asset',
+    params: { entityType, fqn },
+    query: { tab },
   };
 }
 
@@ -207,9 +228,10 @@ export function governanceDetailLocation(
 
 /** A router location a search hit can navigate to: asset/lineage
  * locations carry entityType + fqn, governance detail locations carry
- * the entity id. */
+ * the entity id. An asset location may also carry a `?tab=` query
+ * (E-3d: pin's detail-page tab links, e.g. the Lineage tab). */
 export type SearchHitLocation =
-  | { name: string; params: { entityType: string; fqn: string } }
+  | { name: string; params: { entityType: string; fqn: string }; query?: { tab: string } }
   | { name: string; params: { id: string } };
 
 /**

@@ -152,6 +152,13 @@ describe('SearchView', () => {
             permissions: [{ operation: 'ViewBasic', access: 'allow' }],
           });
         }
+        // E-3a: the preview gates on the entity permission endpoint.
+        if (url.pathname.includes('/v1/permissions/')) {
+          return jsonResponse({
+            resource: 'table',
+            permissions: [{ operation: 'ViewBasic', access: 'allow' }],
+          });
+        }
         return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } });
       }),
     );
@@ -188,7 +195,11 @@ describe('SearchView', () => {
     expect(card.text()).not.toContain('Data Eng');
     // D21: tags are hidden on list cards (pin `showTags={false}`).
     expect(card.text()).not.toContain('Sensitive');
-    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('varchar(50)');
+    // E-3a retarget: pin's table explore overview is Type / Queries /
+    // Columns / Incidents only — the Data Type row belongs to the column
+    // builder, so the table preview no longer shows the hit's varchar(50).
+    expect(wrapper.get('[data-testid="explore-preview"]').text()).not.toContain('varchar(50)');
+    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('Type');
     expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('Finance');
   });
 
@@ -392,7 +403,10 @@ describe('SearchView', () => {
     expect(router.currentRoute.value.name).toBe('search');
     expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('events');
     expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('No description');
-    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('No owners assigned');
+    // E-3c: the Overview sections now render through the detail-page widget
+    // cells, whose empty state is the detail-page '—' marker, not the old
+    // preview-only 'No owners assigned' text.
+    expect(wrapper.get('[data-testid="explore-preview-owners"]').text()).toContain('—');
   });
 
   it('sends sort_field when Popularity is chosen', async () => {
@@ -874,41 +888,56 @@ describe('SearchView empty results', () => {
     expect(router.currentRoute.value.name).toBe('search');
   });
 
-  // D25: the preview lineage entry navigates to the lineage page.
-  it('navigates to the lineage page from the preview lineage entry (D25)', async () => {
+  // E-3d retarget: the preview lineage entry navigates to the entity
+  // detail page's Lineage tab (pin `EntitySummaryPanel.handleLineageClick`
+  // → `getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`); the
+  // full-page lineage graph was the previous destination, and it stays
+  // reachable from the detail page itself — not from the preview.
+  it('navigates to the detail-page Lineage tab from the preview lineage entry (D25, E-3d)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse({
-        hits: {
-          total: { value: 1 },
-          hits: [
-            {
-              _id: 't1',
-              _index: 'table_search_index',
-              _source: {
-                name: 'orders',
-                displayName: 'Orders',
-                fullyQualifiedName: 'svc.db.schema.orders',
-                entityType: 'table',
-                owners: [],
-                tags: [],
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        // E-3a: the preview gates on the entity permission endpoint.
+        if (url.pathname.includes('/v1/permissions/')) {
+          return jsonResponse({
+            resource: 'table',
+            permissions: [{ operation: 'ViewBasic', access: 'allow' }],
+          });
+        }
+        return jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 't1',
+                _index: 'table_search_index',
+                _source: {
+                  name: 'orders',
+                  displayName: 'Orders',
+                  fullyQualifiedName: 'svc.db.schema.orders',
+                  entityType: 'table',
+                  owners: [],
+                  tags: [],
+                },
               },
-            },
-          ],
-        },
-        aggregations: SEARCH_BODY.aggregations,
-      })),
+            ],
+          },
+          aggregations: SEARCH_BODY.aggregations,
+        });
+      }),
     );
     const { wrapper, router } = await mountView();
     await wrapper.get('[data-testid="search-card-svc.db.schema.orders"]').trigger('click');
     await flushPromises();
     await wrapper.get('[data-testid="explore-preview-lineage"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('lineage');
+    expect(router.currentRoute.value.name).toBe('asset');
     expect(router.currentRoute.value.params).toMatchObject({
       entityType: 'table',
       fqn: 'svc.db.schema.orders',
     });
+    expect(router.currentRoute.value.query).toMatchObject({ tab: 'lineage' });
   });
 });
 
@@ -1926,6 +1955,102 @@ describe('SearchView export (D10)', () => {
     expect(document.body.textContent).toContain('Export is limited to 200000 assets');
     const okButton = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLButtonElement;
     expect(okButton.disabled).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('SearchView preview open/close (E-3a)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname.includes('/v1/search/entityTypeCounts')) {
+          return jsonResponse({
+            hits: { total: { value: 0 }, hits: [] },
+            aggregations: {
+              'sterms#entityType': {
+                buckets: [
+                  { key: 'table', doc_count: 1 },
+                  { key: 'topic', doc_count: 1 },
+                ],
+              },
+            },
+          });
+        }
+        if (url.pathname.includes('/v1/search/query')) {
+          return jsonResponse(SEARCH_BODY);
+        }
+        // E-3a: the preview gates on the entity permission endpoint.
+        if (url.pathname.includes('/v1/permissions/')) {
+          return jsonResponse({
+            resource: 'table',
+            permissions: [{ operation: 'ViewBasic', access: 'allow' }],
+          });
+        }
+        return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('auto-displays the first hit and closes on Escape (pin ExploreV1 effect + :1178)', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('Orders');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await flushPromises();
+    expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(false);
+    // The results stay listed; only the panel closes.
+    expect(wrapper.find('[data-testid="search-card-svc.db.schema.orders"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('closes from the preview X button and reopens on a card click', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="explore-preview-close"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="search-card-kafka.events"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('events');
+    wrapper.unmount();
+  });
+
+  it('switching cards switches the preview entity', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="search-card-kafka.events"]').trigger('click');
+    await flushPromises();
+    const preview = wrapper.get('[data-testid="explore-preview"]');
+    expect(preview.text()).toContain('events');
+    expect(preview.text()).not.toContain('Orders');
+    wrapper.unmount();
+  });
+
+  it('renders no panel when results are empty (pin: no panel when nothing is selected)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname.includes('/v1/permissions/')) {
+          return jsonResponse({
+            resource: 'table',
+            permissions: [{ operation: 'ViewBasic', access: 'allow' }],
+          });
+        }
+        return jsonResponse({
+          hits: { total: { value: 0 }, hits: [] },
+          aggregations: { 'sterms#entityType': { buckets: [] } },
+        });
+      }),
+    );
+    const { wrapper } = await mountView({ q: 'zzz' });
+    expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="explore-empty"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

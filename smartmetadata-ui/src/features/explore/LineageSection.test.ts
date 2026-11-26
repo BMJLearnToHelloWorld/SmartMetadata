@@ -36,6 +36,11 @@ async function mountSection() {
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
       {
+        path: '/assets/:entityType/:fqn',
+        name: 'asset',
+        component: { template: '<div>asset</div>' },
+      },
+      {
         path: '/lineage/:entityType/:fqn',
         name: 'lineage',
         component: { template: '<div>lineage</div>' },
@@ -57,7 +62,11 @@ describe('LineageSection (Q-TAB-4)', () => {
     getMock.mockReset();
   });
 
-  it('counts entities at depth 1 only and links to the full lineage page', async () => {
+  // E-3d retarget: the section click navigates to the entity detail
+  // page's Lineage tab (pin `EntitySummaryPanel.handleLineageClick` →
+  // `getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`); the
+  // full-page lineage graph was the previous destination.
+  it('counts entities at depth 1 only and links to the detail-page Lineage tab', async () => {
     getMock.mockResolvedValue(PAGING);
     const { wrapper, router } = await mountSection();
     expect(getMock).toHaveBeenCalledWith({ fqn: 'svc.db.schema.orders', entityType: 'table' });
@@ -66,9 +75,10 @@ describe('LineageSection (Q-TAB-4)', () => {
     expect(wrapper.find('[data-testid="downstream-count"]').text()).toBe('2');
     await wrapper.find('[data-testid="upstream-lineage"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('lineage');
+    expect(router.currentRoute.value.name).toBe('asset');
     expect(router.currentRoute.value.params.entityType).toBe('table');
     expect(router.currentRoute.value.params.fqn).toBe('svc.db.schema.orders');
+    expect(router.currentRoute.value.query).toMatchObject({ tab: 'lineage' });
     wrapper.unmount();
   });
 
