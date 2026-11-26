@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Modal, Select, Space, Tag, Typography, message } from 'ant-design-vue';
 import type { DefaultOptionType } from 'ant-design-vue/es/select';
@@ -31,6 +31,12 @@ import type { AssetTagOption, TagSource } from '@/types/governance';
  * permission object. `onTagsChange` receives the full new tag list
  * (both sources, tier included) as `TagLabelInput`s; it throws on
  * failure so the cell keeps the editor open.
+ *
+ * `maxVisible` caps the displayed chips (pin `GlossaryTermsSection`
+ * `maxVisibleGlossaryTerms={3}`): the rest hide behind a "+N more" /
+ * "Show Less" toggle. The cap is display-only — the edit picker still
+ * seeds from the full source list and the save merge still carries
+ * every label. Unset means show all (the detail pages' behaviour).
  */
 const props = withDefaults(
   defineProps<{
@@ -40,6 +46,8 @@ const props = withDefaults(
     hasEditAccess: boolean;
     /** Pin `multiSelect` (GlossaryWidget: entityRules.canAddMultipleGlossaryTerm). */
     multiple?: boolean;
+    /** Display cap; see the doc above. */
+    maxVisible?: number;
     onTagsChange: (tags: TagLabelInput[]) => Promise<unknown> | unknown;
     testId?: string;
   }>(),
@@ -92,6 +100,27 @@ const pickerOptions = computed(() =>
 const editOpen = ref(false);
 const saving = ref(false);
 const selected = ref<string[]>([]);
+
+/** Pin `GlossaryTermsSection` overflow: first `maxVisible` chips, the rest behind a toggle. */
+const showAll = ref(false);
+const visibleTags = computed(() =>
+  showAll.value || props.maxVisible === undefined
+    ? sourceTags.value
+    : sourceTags.value.slice(0, props.maxVisible),
+);
+/** Labels past the cap, whether or not they are currently revealed. */
+const hiddenCount = computed(() =>
+  props.maxVisible === undefined
+    ? 0
+    : Math.max(0, sourceTags.value.length - props.maxVisible),
+);
+// New data collapses the list again (pin remounts the section per entity id + tag count).
+watch(
+  () => props.tags,
+  () => {
+    showAll.value = false;
+  },
+);
 
 const editTitle = computed(() =>
   t('label.edit-entity', {
@@ -154,13 +183,31 @@ async function saveTags(): Promise<void> {
   <div :data-testid="testId">
     <Space wrap>
       <Tag
-        v-for="tag in sourceTags"
+        v-for="tag in visibleTags"
         :key="tag.tagFQN"
         :class="isGeneratedTag(tag) ? 'asset-overview__generated-tag' : undefined"
       >
         <StarOutlined v-if="isGeneratedTag(tag)" class="asset-overview__generated-tag-icon" />
         {{ tag.name }}
       </Tag>
+      <Button
+        v-if="hiddenCount > 0 && !showAll"
+        type="link"
+        size="small"
+        data-testid="show-more-tags"
+        @click="showAll = true"
+      >
+        {{ t('label.show-more-count', { count: hiddenCount }) }}
+      </Button>
+      <Button
+        v-if="hiddenCount > 0 && showAll"
+        type="link"
+        size="small"
+        data-testid="show-less-tags"
+        @click="showAll = false"
+      >
+        {{ t('label.show-less') }}
+      </Button>
       <Typography.Text v-if="!sourceTags.length" type="secondary">—</Typography.Text>
       <Button
         v-if="hasEditAccess && !sourceTags.length"

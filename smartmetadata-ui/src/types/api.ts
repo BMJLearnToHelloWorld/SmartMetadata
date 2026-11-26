@@ -394,6 +394,25 @@ export interface AssetDetail {
   database?: EntityRef;
   databaseSchema?: EntityRef;
   partitions?: number;
+  /**
+   * E-3a preview overview rows (pin DataAssetSummaryPanelUtils
+   * explore-visible builders): topic sizing, drive counts/versions, and
+   * the API endpoint's parent collection. Requested via the DETAIL_ENDPOINTS
+   * field sets and mapped in `api/entities.ts`; absent when the server
+   * returned nothing for them.
+   */
+  replicationFactor?: number;
+  retentionSize?: number;
+  cleanupPolicies?: string[];
+  maximumMessageSize?: number;
+  messageSchemaType?: string;
+  numberOfFiles?: number;
+  numberOfSubDirectories?: number;
+  fileExtension?: string;
+  fileType?: string;
+  fileVersion?: string;
+  rowCount?: number;
+  apiCollection?: EntityRef;
   sourceUrl?: string;
   scheduleInterval?: string;
   pipelineState?: string;
@@ -408,6 +427,10 @@ export interface AssetDetail {
   dataModelType?: string;
   algorithm?: string;
   target?: string;
+  /** ML model server URL (pin getMlModelOverview `server` row). */
+  server?: string;
+  /** ML model dashboard ref (pin getMlModelOverview `dashboard` row). */
+  dashboard?: EntityRef;
   prefix?: string;
   numberOfObjects?: number;
   size?: number;

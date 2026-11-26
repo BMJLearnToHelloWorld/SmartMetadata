@@ -149,4 +149,26 @@ describe('useEntityPermissions', () => {
     expect(result.hasViewAccess.value).toBe(false);
     expect(result.isLoading.value).toBe(true);
   });
+
+  it('refetches under the new resource when the resource changes (E-3a preview switch)', async () => {
+    const fetchMock = stubPermissionFetch((url) =>
+      url.includes('/permissions/table/')
+        ? permissionResponse(['ViewBasic'])
+        : url.includes('/permissions/topic/')
+          ? permissionResponse(['EditAll', 'ViewBasic'])
+          : new Response('not found', { status: 404 }),
+    );
+    const resource = ref<'table' | 'topic'>('table');
+    const result = useEntityPermissions(resource, 'svc.db.schema.orders');
+    await flushPromises();
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/permissions/table/name/');
+    expect(result.canViewBasic.value).toBe(true);
+    expect(result.canEditAll.value).toBe(false);
+
+    resource.value = 'topic';
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/permissions/topic/name/');
+    expect(result.canEditAll.value).toBe(true);
+  });
 });

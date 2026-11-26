@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Spin, Typography } from 'ant-design-vue';
 import { getLineagePagingData } from '@/api/lineage';
-import { lineageLocation } from '@/catalog/entityRoutes';
+import { assetTabLocation } from '@/catalog/entityRoutes';
 import { countImpactDirectionTotals, parseLineagePaginationInfo } from '@/lineage/lineageTable';
 
 const props = defineProps<{
@@ -47,11 +47,13 @@ async function load(): Promise<void> {
 }
 
 function openLineage(): void {
-  // Divergence (recorded): pin's section click navigates to the entity
-  // detail page's lineage tab; the product opens the full-page lineage
-  // graph (lineageLocation), the same destination the detail-page
-  // "Open full-page lineage" button uses.
-  void router.push(lineageLocation(props.entityType, props.fqn));
+  // E-3d: pin's section click navigates to the entity detail page's
+  // Lineage tab (`EntitySummaryPanel.component.tsx:866-874`,
+  // `getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`); the product
+  // analogue is the `asset` route with `?tab=lineage` (see
+  // `assetTabLocation`). The full-page lineage graph stays reachable
+  // from the detail page's own "Open full-page lineage" button.
+  void router.push(assetTabLocation(props.entityType, props.fqn, 'lineage'));
 }
 
 onMounted(() => {

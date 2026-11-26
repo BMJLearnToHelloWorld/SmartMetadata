@@ -190,7 +190,7 @@ export const DEFAULT_ENTITY_PERMISSION: OperationPermissions = {
  * exactly as in pin.
  */
 export function useEntityPermissions(
-  resource: ResourceEntity,
+  resource: MaybeRefOrGetter<ResourceEntity>,
   identifier: MaybeRefOrGetter<EntityPermissionIdentifier>,
   options?: {
     deleted?: MaybeRefOrGetter<boolean>;
@@ -203,6 +203,12 @@ export function useEntityPermissions(
   const error = ref<unknown | null>(null);
   let generation = 0;
 
+  // E-3a: the resource is reactive so a host that re-points the hook at
+  // a different entity type (the Explore preview switching from a table
+  // to a topic) refetches under the new resource instead of serving the
+  // previous type's grant. Plain-string callers are unaffected
+  // (`toValue` passes them through).
+  const resourceRef = computed(() => toValue(resource));
   const key = computed(() => {
     const resolved = toValue(identifier);
     return typeof resolved === 'object' ? resolved.id : resolved;
@@ -225,8 +231,8 @@ export function useEntityPermissions(
       // Entity-level: the backend has evaluated conditions — the store
       // already maps to strict Allow only (toOperationPermissions).
       const ops = byId.value
-        ? await store.getEntityPermissionById(resource, key.value)
-        : await store.getEntityPermissionByFqn(resource, key.value);
+        ? await store.getEntityPermissionById(resourceRef.value, key.value)
+        : await store.getEntityPermissionByFqn(resourceRef.value, key.value);
       // A newer key may have started its own fetch while this one was in
       // flight, or the gate may have closed meanwhile; only the latest
       // generation while still enabled may publish.
@@ -250,7 +256,7 @@ export function useEntityPermissions(
   }
 
   watch(
-    [key, isEnabled],
+    [key, isEnabled, resourceRef],
     () => {
       // A new key must never inherit the previous entity's grant while
       // its own permission is still loading (fail-closed).
@@ -269,7 +275,7 @@ export function useEntityPermissions(
     // Invalidate the store entry for this key so the next read re-fetches
     // instead of serving the cached grant — never bypass the store with
     // a direct API call.
-    store.invalidateEntityPermission(resource, toValue(identifier));
+    store.invalidateEntityPermission(resourceRef.value, toValue(identifier));
     await fetchPermissions();
   }
 
