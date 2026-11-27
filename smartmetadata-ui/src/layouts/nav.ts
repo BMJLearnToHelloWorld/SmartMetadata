@@ -158,6 +158,7 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'quality-test-definition': 'quality-test-definitions',
   'quality-test-case': 'quality-test-cases',
   'quality-test-suite': 'quality-test-cases',
+  'quality-data-quality-tab': 'quality-test-cases',
   // The incident record route redirects to the test-case detail page
   // (F-D-2), so its breadcrumb parent follows the landing page.
   'observability-incident': 'quality-test-cases',
@@ -206,6 +207,7 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'settings-notification-announcement-edit': 'admin-settings',
   'observability-alert-add': 'observability-alerts',
   'observability-alert-edit': 'observability-alerts',
+  'observability-alert': 'observability-alerts',
   // Insights is a top-level-only leaf (same as search / lineage-home).
   // /insights redirects to /insights/data-assets; child routes must keep
   // highlighting `insights`, not a missing menu key.
@@ -222,13 +224,14 @@ const DETAIL_TO_LIST: Record<string, string> = {
  * Settings-space route names that keep a legacy name (DESIGN §6.6):
  * their pages moved under `/settings/` without a rename, so the
  * `admin-`/`settings-` prefix rule below does not catch them. Every
- * entry here is verified against the route table: alerts and
- * announcements under `settings/notifications/`, workflows under
+ * entry here is verified against the route table: notification alerts
+ * and announcements under `settings/notifications/`, workflows under
  * `settings/governance/`, online users under `settings/members/`.
+ * Observability alerts (`/observability/alerts`) are not settings-space.
  */
 const SETTINGS_SPACE_NAMES = new Set([
-  'observability-alerts',
-  'observability-alert',
+  'settings-notification-alerts',
+  'settings-notification-alert',
   'announcements',
   'announcement-duplicate',
   'workflows',

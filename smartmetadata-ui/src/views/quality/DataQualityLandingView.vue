@@ -67,7 +67,7 @@ const route = useRoute();
 const router = useRouter();
 
 const loading = ref(false);
-const activeTab = ref<DqLandingTab>(parseDqTab(route.query.tab));
+const activeTab = ref<DqLandingTab>(parseDqTab(route.params.tab ?? route.query.tab));
 const rangeDays = ref(30);
 const range = ref(seriesWindow(30));
 const filters = reactive<DqGovernanceFilters>({});
@@ -300,10 +300,23 @@ async function loadSummary(): Promise<void> {
   }
 }
 
+function dqQueryWithoutTab(): Record<string, string | string[]> {
+  const query = { ...route.query };
+  delete query.tab;
+  return query;
+}
+
+function dataQualityPagePath(tab: DqLandingTab, subTab?: string): string {
+  if (tab === 'test-suites' && subTab) {
+    return '/data-quality/' + tab + '/' + subTab;
+  }
+  return '/data-quality/' + tab;
+}
+
 function onTabChange(key: string | number): void {
   const tab = parseDqTab(key);
   activeTab.value = tab;
-  void router.replace({ query: { ...route.query, tab } });
+  void router.replace({ path: dataQualityPagePath(tab), query: dqQueryWithoutTab() });
 }
 
 function setFilter(id: keyof DqGovernanceFilters, value: unknown): void {
@@ -341,7 +354,8 @@ const donutChartFilters = computed<DqDashboardChartFilters>(() => ({
 function openDonutCases(drill?: DqTestCaseListDrill): void {
   activeTab.value = 'test-cases';
   void router.replace({
-    query: { tab: 'test-cases', ...buildDqTestCaseListQuery(donutChartFilters.value, drill) },
+    path: dataQualityPagePath('test-cases'),
+    query: buildDqTestCaseListQuery(donutChartFilters.value, drill),
   });
 }
 
@@ -396,9 +410,9 @@ watch(
 );
 
 watch(
-  () => route.query.tab,
-  (value) => {
-    activeTab.value = parseDqTab(value);
+  () => [route.params.tab, route.query.tab],
+  () => {
+    activeTab.value = parseDqTab(route.params.tab ?? route.query.tab);
   },
 );
 

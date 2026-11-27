@@ -28,7 +28,7 @@ describe('notification breadcrumbs', () => {
         routeName: 'settings-category',
         routeParams: { category: 'notifications' },
       },
-      { label: 'label.alert-plural', routeName: 'observability-alerts' },
+      { label: 'label.alert-plural', routeName: 'settings-notification-alerts' },
       { label: 'DQ Alert' },
     ]);
   });
@@ -51,7 +51,7 @@ describe('notification breadcrumbs', () => {
         routeName: 'settings-category',
         routeParams: { category: 'notifications' },
       },
-      { label: 'label.alert-plural', routeName: 'observability-alerts' },
+      { label: 'label.alert-plural', routeName: 'settings-notification-alerts' },
       { label: 'label.create-entity:{"entity":"label.alert"}' },
     ]);
     expect(create[create.length - 1]).toEqual({

@@ -129,6 +129,7 @@ async function mountView(path: string): Promise<{ wrapper: VueWrapper; router: R
         component: AlertFormView,
       },
       { path: '/observability/alerts', name: 'observability-alerts', component: stub },
+        { path: '/settings/notifications/alerts', name: 'settings-notification-alerts', component: stub },
       { path: '/observability/alerts/add', name: 'observability-alerts-add', component: AlertFormView },
       {
         path: '/observability/alerts/edit/:fqn',

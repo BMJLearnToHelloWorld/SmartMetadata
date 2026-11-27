@@ -194,12 +194,12 @@ describe('ServiceInsightsTab (official ServiceInsightsTab, OSS widgets)', () => 
       ingestionPipelines: [
         pipeline({
           pipelineType: 'metadata',
-          pipelineStatuses: [{ pipelineState: 'PartialSuccess' }],
+          pipelineStatuses: [{ pipelineState: 'partialSuccess' }],
         }),
         pipeline({
           id: 'u1',
           pipelineType: 'usage',
-          pipelineStatuses: [{ pipelineState: 'Queued' }],
+          pipelineStatuses: [{ pipelineState: 'queued' }],
         }),
         pipeline({ id: 'l1', pipelineType: 'lineage' }),
       ],
@@ -220,7 +220,7 @@ describe('ServiceInsightsTab (official ServiceInsightsTab, OSS widgets)', () => 
     expect(wrapper.find('[data-testid="agent-status-summary-item-Pending"]').exists()).toBe(true);
     await wrapper.setProps({
       ingestionPipelines: [
-        pipeline({ pipelineStatuses: [{ pipelineState: 'Success' }] }),
+        pipeline({ pipelineStatuses: [{ pipelineState: 'success' }] }),
       ],
     });
     expect(wrapper.find('[data-testid="agent-status-summary-item-Successful"]').exists()).toBe(true);

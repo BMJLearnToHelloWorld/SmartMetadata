@@ -151,6 +151,7 @@ async function mountView(path: string): Promise<{
         component: stub,
       },
       { path: '/observability/alerts', name: 'observability-alerts', component: stub },
+        { path: '/settings/notifications/alerts', name: 'settings-notification-alerts', component: stub },
       {
         path: '/observability/alert/:fqn/:tab',
         name: 'observability-alert',

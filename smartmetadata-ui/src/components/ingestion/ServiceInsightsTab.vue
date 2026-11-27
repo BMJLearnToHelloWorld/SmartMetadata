@@ -171,16 +171,14 @@ function getAgentLabelFromType(pipelineType: string | undefined): string {
 /** Pin `getAgentStatusLabelFromStatus` (AgentsStatusWidgetPureUtils.ts). */
 function getAgentStatusLabelFromStatus(status: string | undefined): AgentStatusLabel {
   switch (status) {
-    case 'Success':
-    case 'PartialSuccess':
+    case 'success':
+    case 'partialSuccess':
     case 'active':
     case 'activeError':
     case 'completed':
       return 'Successful';
-    case 'Failed':
     case 'failed':
       return 'Failed';
-    case 'Running':
     case 'running':
     case 'started':
     case 'stopInProgress':

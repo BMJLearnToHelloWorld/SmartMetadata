@@ -101,7 +101,7 @@ describe('WidgetAssetHealthCell', () => {
   });
 
   it('renders all four rows healthy with an all-clear header', async () => {
-    vi.stubGlobal('fetch', stubFetch({ pipelineState: 'Success', contractStatus: 'Success' }));
+    vi.stubGlobal('fetch', stubFetch({ pipelineState: 'success', contractStatus: 'Success' }));
     const wrapper = mountCell();
     await flush();
     expect(wrapper.find('[data-testid="asset-health"]').exists()).toBe(true);
@@ -138,7 +138,7 @@ describe('WidgetAssetHealthCell', () => {
     vi.stubGlobal(
       'fetch',
       stubFetch({
-        pipelineState: 'Success',
+        pipelineState: 'success',
         summary: { success: 8, failed: 2, total: 10 },
         contractStatus: 'Success',
       }),

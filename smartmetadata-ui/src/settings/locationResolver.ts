@@ -54,7 +54,7 @@ export const SETTINGS_LOCATION_TABLE: Readonly<Record<SettingsPath, RouteLocatio
   governance: { name: 'settings-category', params: { category: 'governance' } },
   'governance/workflow-definitions': { name: 'workflows' },
   'preferences/dataAssetRules': { name: 'settings-preferences-entity-rules' },
-  'notifications/alerts': { name: 'observability-alerts' },
+  'notifications/alerts': { name: 'settings-notification-alerts' },
 };
 
 /**

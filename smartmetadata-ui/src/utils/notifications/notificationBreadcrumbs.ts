@@ -37,6 +37,7 @@ export const SETTINGS_CATEGORY_ROUTE_NAME = 'settings-category';
 export const NOTIFICATIONS_CATEGORY_PARAMS = { category: 'notifications' };
 export const ANNOUNCEMENTS_ROUTE_NAME = 'announcements';
 export const OBSERVABILITY_ALERTS_ROUTE_NAME = 'observability-alerts';
+export const SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME = 'settings-notification-alerts';
 
 /**
  * Alert detail breadcrumbs (useAlertDetailsData.ts:152-191). Notification:
@@ -60,7 +61,7 @@ export function getAlertDetailsBreadcrumbs(
         routeName: SETTINGS_CATEGORY_ROUTE_NAME,
         routeParams: NOTIFICATIONS_CATEGORY_PARAMS,
       },
-      { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
+      { label: t('label.alert-plural'), routeName: SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME },
       { label: name },
     ];
   }
@@ -95,7 +96,7 @@ export function getAlertFormBreadcrumbs(
         routeName: SETTINGS_CATEGORY_ROUTE_NAME,
         routeParams: NOTIFICATIONS_CATEGORY_PARAMS,
       },
-      { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
+      { label: t('label.alert-plural'), routeName: SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME },
       last,
     ];
   }

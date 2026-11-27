@@ -897,6 +897,7 @@ export const router = createRouter({
           path: 'quality/test-definitions',
           name: 'quality-test-definitions',
           component: TestDefinitionsListView,
+          alias: 'test-library',
         },
         {
           path: 'quality/test-definitions/:id',
@@ -907,6 +908,11 @@ export const router = createRouter({
         // G-02 (visual comparison): official DATA_QUALITY
         // '/data-quality'.
         { path: 'quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView, alias: 'data-quality' },
+        {
+          path: 'data-quality/:tab/:subTab?',
+          name: 'quality-data-quality-tab',
+          component: DataQualityLandingView,
+        },
         {
           path: 'quality/test-cases/:id',
           name: 'quality-test-case',
@@ -941,6 +947,20 @@ export const router = createRouter({
             tab: route.params.tab as string,
           }),
         },
+        {
+          path: 'test-case/:fqn/versions/:version',
+          redirect: (to) => ({
+            name: 'quality-test-case-version',
+            params: { id: to.params.fqn, version: to.params.version },
+          }),
+        },
+        {
+          path: 'test-case/:fqn/versions/:version/:tab',
+          redirect: (to) => ({
+            name: 'quality-test-case-version-tab',
+            params: { id: to.params.fqn, version: to.params.version, tab: to.params.tab },
+          }),
+        },
         // G-03 (visual comparison), tab half: official
         // DATA_QUALITY_WITH_TAB '/data-quality/:tab' with tab
         // 'test-suites' (DataQualityPageTabs.TEST_SUITES). The
@@ -948,10 +968,9 @@ export const router = createRouter({
         {
           path: 'quality/test-suites',
           name: 'quality-test-suites',
-          alias: 'data-quality/test-suites',
           redirect: (to) => ({
-            name: 'quality-test-cases',
-            query: { ...to.query, tab: 'test-suites' },
+            path: '/data-quality/test-suites',
+            query: to.query,
           }),
         },
         // G-03 (visual comparison), detail half: official
@@ -1010,18 +1029,38 @@ export const router = createRouter({
           component: IncidentDetailView,
           props: true,
         },
-        { path: 'settings/notifications/alerts', name: 'observability-alerts', component: AlertsListView, meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } } },
+        { path: 'settings/notifications/alerts', name: 'settings-notification-alerts', component: AlertsListView, meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } } },
         {
-          path: 'settings/notifications/alerts/:id',
-          name: 'observability-alert',
+          path: 'settings/notifications/alerts/:fqn/:tab?',
+          name: 'settings-notification-alert',
           component: AlertDetailView,
-          props: true,
+          props: (route) => ({
+            id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
+            tab: route.params.tab as string | undefined,
+          }),
           meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
         },
         // 07 §12 #6-8 (pin constants.ts:320-324): the add/edit faces
         // keep the plural `alerts/` prefix. They carry no declaration:
         // under the old table /observability was not an admin prefix,
         // so they were session-only there.
+        {
+          path: 'observability/alerts',
+          name: 'observability-alerts',
+          component: AlertsListView,
+          alias: 'observability/alert',
+          meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
+        },
+        {
+          path: 'observability/alert/:fqn/:tab?',
+          name: 'observability-alert',
+          component: AlertDetailView,
+          props: (route) => ({
+            id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
+            tab: route.params.tab as string | undefined,
+          }),
+          meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
+        },
         {
           path: 'observability/alerts/add',
           name: 'observability-alert-add',
@@ -1032,14 +1071,43 @@ export const router = createRouter({
           name: 'observability-alert-edit',
           component: AlertFormView,
         },
-        // The old plural detail shape redirects to the canonical
-        // detail record above (which takes :id).
+        // Legacy plural detail shape: official detail is singular /observability/alert/:fqn/:tab.
         {
           path: 'observability/alerts/:id',
           redirect: (to) => ({
             name: 'observability-alert',
-            params: { id: to.params.id },
+            params: { fqn: to.params.id, tab: 'configuration' },
           }),
+        },
+        // Official ClassicObservabilityRedirect (AuthenticatedAppRouter): strip
+        // the /observability prefix so shared AI-mode links open the classic pages.
+        // Do not add a catch-all under /observability — that would steal alerts.
+        { path: 'observability', redirect: '/data-quality' },
+        {
+          path: 'observability/data-quality/:pathMatch(.*)*',
+          redirect: (to) => {
+            const rest = to.params.pathMatch;
+            const suffix = rest ? '/' + (Array.isArray(rest) ? rest.join('/') : rest) : '';
+            return { path: '/data-quality' + suffix, query: to.query, hash: to.hash };
+          },
+        },
+        { path: 'observability/incident-manager', redirect: '/incident-manager' },
+        { path: 'observability/test-library', redirect: '/test-library' },
+        {
+          path: 'observability/test-suites/:pathMatch(.*)*',
+          redirect: (to) => {
+            const rest = to.params.pathMatch;
+            const suffix = rest ? '/' + (Array.isArray(rest) ? rest.join('/') : rest) : '';
+            return { path: '/test-suites' + suffix, query: to.query, hash: to.hash };
+          },
+        },
+        {
+          path: 'observability/test-case/:pathMatch(.*)*',
+          redirect: (to) => {
+            const rest = to.params.pathMatch;
+            const suffix = rest ? '/' + (Array.isArray(rest) ? rest.join('/') : rest) : '';
+            return { path: '/test-case' + suffix, query: to.query, hash: to.hash };
+          },
         },
         // B-7(c): `ingestion/services` is retired with ServicesListView
         // (health chips + kind Tabs + `?health=` buckets); the aggregate

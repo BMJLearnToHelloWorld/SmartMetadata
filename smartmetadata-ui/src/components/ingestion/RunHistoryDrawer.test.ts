@@ -52,7 +52,7 @@ function statuses(): PipelineStatus[] {
     {
       runId: 'r3',
       timestamp: T3,
-      pipelineState: 'Success',
+      pipelineState: 'success',
       startDate: T3,
       endDate: T3 + 90_000,
       status: [
@@ -74,7 +74,7 @@ function statuses(): PipelineStatus[] {
     {
       runId: 'r2',
       timestamp: T2,
-      pipelineState: 'Failed',
+      pipelineState: 'failed',
       startDate: T2,
       endDate: T2 + 60_000,
       status: [
@@ -91,7 +91,7 @@ function statuses(): PipelineStatus[] {
     {
       runId: 'r1',
       timestamp: T1,
-      pipelineState: 'Queued',
+      pipelineState: 'queued',
       status: [],
     },
   ];

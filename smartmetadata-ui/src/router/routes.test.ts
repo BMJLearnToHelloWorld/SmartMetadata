@@ -52,7 +52,10 @@ describe('official-path aliases (G-01…G-10)', () => {
     ['/explore', 'search'],
     ['/search', 'search'],
     ['/data-quality', 'quality-test-cases'],
-    ['/data-quality/test-suites', 'quality-test-suites'],
+    ['/data-quality/test-suites', 'quality-data-quality-tab'],
+    ['/data-quality/test-cases', 'quality-data-quality-tab'],
+    ['/data-quality/dashboard', 'quality-data-quality-tab'],
+    ['/test-library', 'quality-test-definitions'],
     ['/test-suites/some-suite', 'quality-test-suite'],
     ['/domain', 'governance-domains'],
     ['/dataProduct', 'governance-data-products'],
@@ -123,8 +126,8 @@ describe('settings route-pattern manifest (§4.5)', () => {
     ['/settings/persona', 'admin-settings-persona'],
     ['/settings/persona/Analyst', 'admin-settings-persona-detail'],
     ['/settings/sso', 'admin-settings-sso'],
-    ['/settings/notifications/alerts', 'observability-alerts'],
-    ['/settings/notifications/alerts/al1', 'observability-alert'],
+    ['/settings/notifications/alerts', 'settings-notification-alerts'],
+    ['/settings/notifications/alerts/al1', 'settings-notification-alert'],
     ['/settings/notifications/announcements', 'announcements'],
     ['/settings/notifications/announcements/duplicate/a1', 'announcement-duplicate'],
     ['/settings/preferences/appearance', 'settings-preferences-appearance'],
@@ -306,7 +309,6 @@ describe('settings route-pattern manifest (§4.5)', () => {
       '/admin/settings/persona/p1/customize/LandingPage/Table',
       '/announcements',
       '/announcements/duplicate/a1',
-      '/observability/alerts',
       '/govern/workflows',
       '/govern/workflows/w1/workflow',
       '/workflows',
@@ -538,9 +540,8 @@ describe('settings sections faces', () => {
 
   const redirectCases: Array<[path: string, name: string, params: Record<string, string>]> = [
     ['/settings/members/teams', 'settings-members-team', { fqn: 'Organization' }],
-    // The plural alerts detail redirects to the canonical detail record,
-    // which takes :id (not :fqn/:tab).
-    ['/observability/alerts/a1', 'observability-alert', { id: 'a1' }],
+    // The plural alerts detail redirects to the official singular detail.
+    ['/observability/alerts/a1', 'observability-alert', { fqn: 'a1', tab: 'configuration' }],
   ];
   it.each(redirectCases)('redirects %s to %s', (path, name, params) => {
     const resolved = resolveRedirect(path);
@@ -602,10 +603,13 @@ describe('settings sections faces', () => {
     // Same canonical record, distinct fqn so the case title stays unique.
     ['/settings/governance/workflow-definitions/w2', 'workflow-detail', { fqn: 'w2' }],
     // 07 notifications table (pin constants.ts:318-334).
-    // The settings-notification-alert(s) records were dropped; HEAD's
-    // canonical observability-alerts / observability-alert records win.
-    ['/settings/notifications/alerts', 'observability-alerts', {}],
-    ['/settings/notifications/alerts/a1', 'observability-alert', { id: 'a1' }],
+    // Settings notification list/detail are a separate official face from
+    // observability alerts.
+    ['/settings/notifications/alerts', 'settings-notification-alerts', {}],
+    ['/settings/notifications/alerts/a1', 'settings-notification-alert', { fqn: 'a1' }],
+    ['/settings/notifications/alerts/a1/configuration', 'settings-notification-alert', { fqn: 'a1', tab: 'configuration' }],
+    ['/observability/alerts', 'observability-alerts', {}],
+    ['/observability/alert/a1/configuration', 'observability-alert', { fqn: 'a1', tab: 'configuration' }],
     ['/settings/notifications/add-notification', 'settings-notification-alert-add', {}],
     ['/settings/notifications/edit-notification/a1', 'settings-notification-alert-edit', { fqn: 'a1' }],
     // (The legacy /observability/alert(s) list/detail shapes are
@@ -657,21 +661,17 @@ describe('settings sections faces', () => {
     }
   });
 
-  it('sends the dropped legacy observability and :tab detail shapes to the catch-all', () => {
-    // No /observability/alerts list record and no singular
-    // /observability/alert/:fqn record survive the merge (the canonical
-    // list/detail live under /settings/notifications/alerts, and only the
-    // plural /observability/alerts/:id redirect exists), and the
-    // :tab-suffixed alert detail shape was dropped with the sections
-    // :tab record — all four paths must 404.
-    for (const path of [
-      '/observability/alerts',
-      '/observability/alert/a1',
-      '/observability/alert/a1/recentEvents',
-      '/settings/notifications/alerts/a1/diagnostic-info',
-    ]) {
-      expect(router.resolve(path).name).toBe('not-found');
-    }
+  it('resolves official observability alert paths and classic redirects', () => {
+    expect(router.resolve('/observability/alerts').name).toBe('observability-alerts');
+    expect(router.resolve('/observability/alert').name).toBe('observability-alerts');
+    expect(router.resolve('/observability/alert/a1').name).toBe('observability-alert');
+    expect(router.resolve('/observability/alert/a1/recentEvents').name).toBe('observability-alert');
+    expect(router.resolve('/settings/notifications/alerts/a1/diagnostic-info').name).toBe('settings-notification-alert');
+    expect(router.resolve('/observability').redirectedFrom || router.resolve('/observability').path).toBeTruthy();
+    expect(router.resolve('/test-library').name).toBe('quality-test-definitions');
+    expect(router.getRoutes().find((route) => route.path === '/observability/test-library')?.redirect).toBe('/test-library');
+    expect(router.getRoutes().find((route) => route.path === '/observability/incident-manager')?.redirect).toBe('/incident-manager');
+    expect(router.resolve('/test-library').name).toBe('quality-test-definitions');
   });
 
   it('registers each new path exactly once', () => {
@@ -694,7 +694,7 @@ describe('settings sections faces', () => {
       '/settings/notifications/alerts',
       '/settings/notifications/add-notification',
       '/settings/notifications/edit-notification/:fqn',
-      '/settings/notifications/alerts/:id',
+      '/settings/notifications/alerts/:fqn/:tab?',
       '/settings/notifications/announcements',
       '/settings/notifications/announcements/add',
       '/settings/notifications/announcements/edit/:id',

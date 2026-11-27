@@ -173,11 +173,12 @@ async function mountLanding(path = '/quality/test-cases') {
     history: createMemoryHistory(),
     routes: [
       { path: '/quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView },
+        { path: '/data-quality/:tab/:subTab?', name: 'quality-data-quality-tab', component: DataQualityLandingView },
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
       {
         path: '/quality/test-suites',
         name: 'quality-test-suites',
-        redirect: (to) => ({ name: 'quality-test-cases', query: { ...to.query, tab: 'test-suites' } }),
+        redirect: (to) => ({ path: '/data-quality/test-suites', query: to.query }),
       },
       { path: '/quality/test-suites/:id', name: 'quality-test-suite', component: { template: '<div>ts</div>' } },
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
@@ -227,7 +228,7 @@ describe('DataQualityLandingView', () => {
     expect(tabs.length).toBeGreaterThanOrEqual(3);
     await tabs[1].trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
     expect(wrapper.findComponent(TestCasesListView).exists()).toBe(true);
     expect(wrapper.get('[data-testid="test-cases-table"]').text()).toContain('row_count');
     await wrapper.get('[data-testid="test-case-row-tc1"]').trigger('click');
@@ -247,8 +248,8 @@ describe('DataQualityLandingView', () => {
 
   it('redirects /quality/test-suites onto the landing Test Suites tab', async () => {
     const { wrapper, router } = await mountLanding('/quality/test-suites');
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-suites');
+    expect(router.currentRoute.value.name).toBe('quality-data-quality-tab');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-suites');
     expect(wrapper.findComponent(TestSuitesListView).exists()).toBe(true);
   });
 
@@ -345,7 +346,7 @@ describe('DataQualityLandingView', () => {
     expect(charts.length).toBe(3);
     await charts[0].vm.$emit('segment-click', 0);
     await flushPromises();
-    expect(router.currentRoute.value.query.tab).toBe('test-suites');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-suites');
   });
 
   it('drills the not-covered slice to explore (pin ROUTES.EXPLORE)', async () => {
@@ -361,7 +362,7 @@ describe('DataQualityLandingView', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[1].vm.$emit('segment-click', 0);
     await flushPromises();
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
     expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Success', 'Queued']);
     expect(wrapper.findComponent(TestCasesListView).props('status')).toEqual(['Success', 'Queued']);
   });
@@ -371,7 +372,7 @@ describe('DataQualityLandingView', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[1].vm.$emit('segment-click', 1);
     await flushPromises();
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
     expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Failed', 'Aborted']);
     expect(wrapper.findComponent(TestCasesListView).props('status')).toEqual(['Failed', 'Aborted']);
   });
@@ -381,7 +382,7 @@ describe('DataQualityLandingView', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[2].vm.$emit('segment-click', 1);
     await flushPromises();
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
     expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
     expect(wrapper.findComponent(TestCasesListView).props('status')).toBe('Failed');
   });
