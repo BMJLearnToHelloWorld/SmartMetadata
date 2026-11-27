@@ -5,6 +5,7 @@ import Antd from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
 import { createTestI18n } from '@/test/i18n';
+import { usePermissionStore } from '@/stores/permissions';
 
 vi.mock('@/utils/codeMirrorUtils', () => ({
   CSMode: { SQL: 'sql' },
@@ -38,6 +39,8 @@ async function mountTab() {
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div />' } },
       { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
+      { path: '/bulk/import/:entityType/:fqn', name: 'bulk-import', component: { template: '<div />' } },
+      { path: '/bulk/edit/:entityType/:fqn', name: 'bulk-edit', component: { template: '<div />' } },
     ],
   });
   await router.push('/');
@@ -220,6 +223,112 @@ describe('AssetDataQualityTab', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="profiler-setting-btn"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="asset-dq-add"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows the official ViewTests PermissionPlaceholder only after permissions are loaded and ViewTests is false', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    });
+    await router.push('/');
+    await router.isReady();
+    const unknown = mount(AssetDataQualityTab, {
+      props: { entityFqn: 'svc.db.schema.orders', permissionsLoaded: false, viewTests: false, showIncidents: false },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(unknown.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    expect(unknown.find('[data-testid="asset-dq-test-cases"]').exists()).toBe(true);
+    unknown.unmount();
+
+    const denied = mount(AssetDataQualityTab, {
+      props: { entityFqn: 'svc.db.schema.orders', permissionsLoaded: true, viewTests: false, showIncidents: false },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(denied.get('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(denied.text()).toMatch(/View Data Observability|Data Observability/);
+    expect(denied.find('[data-testid="manage-button"]').exists()).toBe(false);
+    denied.unmount();
+  });
+
+  it('shows official QualityTab ManageButton import/export/bulk-edit on the embedded path and hides the list ⋯ menu', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/bulk/import/:entityType/:fqn', name: 'bulk-import', component: { template: '<div />' } },
+        { path: '/bulk/edit/:entityType/:fqn', name: 'bulk-edit', component: { template: '<div />' } },
+      ],
+    });
+    await router.push('/');
+    await router.isReady();
+    const store = usePermissionStore();
+    vi.spyOn(store, 'getResourcePermission').mockResolvedValue({
+      ViewAll: true,
+      EditAll: true,
+    } as never);
+    const wrapper = mount(AssetDataQualityTab, {
+      props: {
+        entityFqn: 'svc.db.schema.orders',
+        testSuiteFqn: 'suite.orders',
+        tableId: 'tbl-1',
+        showIncidents: false,
+        permissionsLoaded: true,
+        viewTests: true,
+      },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="asset-dq-add"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="profiler-setting-btn"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="test-cases-manage"]').exists()).toBe(false);
+    const manage = wrapper.get('[data-testid="manage-button"]');
+    expect(manage.attributes('title')).toBe('Manage Test Cases');
+    await manage.trigger('click');
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="import-button"]')?.textContent).toMatch(/Import/);
+    expect(document.body.querySelector('[data-testid="export-button"]')?.textContent).toMatch(/Export/);
+    expect(document.body.querySelector('[data-testid="bulk-edit-button"]')?.textContent).toMatch(/Bulk Edit/);
+    (document.body.querySelector('[data-testid="import-button"]') as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/bulk/import/testCase/svc.db.schema.orders');
+    expect(router.currentRoute.value.query.sourceEntityType).toBe('table');
+    wrapper.unmount();
+  });
+
+  it('hides the official QualityTab ManageButton when the table is deleted', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    });
+    await router.push('/');
+    await router.isReady();
+    const store = usePermissionStore();
+    vi.spyOn(store, 'getResourcePermission').mockResolvedValue({
+      ViewAll: true,
+      EditAll: true,
+    } as never);
+    const wrapper = mount(AssetDataQualityTab, {
+      props: {
+        entityFqn: 'svc.db.schema.orders',
+        deleted: true,
+        showIncidents: false,
+        permissionsLoaded: true,
+        viewTests: true,
+      },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="manage-button"]').exists()).toBe(false);
     wrapper.unmount();
   });
 });

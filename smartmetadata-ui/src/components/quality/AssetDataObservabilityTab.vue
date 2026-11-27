@@ -14,6 +14,7 @@ import { Tabs } from 'ant-design-vue';
 import type { OperationPermissions } from '@/api/permissions';
 import { getDerivedPermissionFlags } from '@/api/permissions';
 import { listTableCustomMetrics, type CustomMetricRecord } from '@/api/customMetrics';
+import { getDataQualityReport } from '@/api/dataQualityReports';
 import { usePermissionStore } from '@/stores/permissions';
 import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
 import ColumnProfileTable from '@/components/quality/ColumnProfileTable.vue';
@@ -86,6 +87,7 @@ const metricIsColumn = ref(false);
 const editingMetric = ref<CustomMetricRecord | undefined>();
 const tableCustomMetrics = ref<CustomMetricRecord[]>([]);
 const testCaseCreatePermission = ref(false);
+const incidentTabCount = ref(0);
 
 const dataQualityTabLabel = computed(() => t('label.data-entity', { entity: t('label.quality') }));
 
@@ -173,6 +175,38 @@ async function loadCustomMetrics(): Promise<void> {
   }
 }
 
+/**
+ * Official DataObservabilityTab.fetchNewIncidentCount: new minus resolved
+ * stateId cardinality on testCaseResolutionStatus for this table FQN.
+ */
+async function loadIncidentTabCount(): Promise<void> {
+  const wildcard = `${props.entityFqn}*`;
+  const aggregationQuery = 'bucketName=newIncidents:aggType=cardinality:field=stateId';
+  const index = 'testCaseResolutionStatus';
+  const queryFor = (status: string) =>
+    JSON.stringify({
+      query: {
+        bool: {
+          must: [
+            { term: { testCaseResolutionStatusType: status } },
+            { wildcard: { 'testCase.entityFQN.keyword': wildcard } },
+          ],
+        },
+      },
+    });
+  try {
+    const [newReport, resolvedReport] = await Promise.all([
+      getDataQualityReport({ q: queryFor('New'), index, aggregationQuery }),
+      getDataQualityReport({ q: queryFor('Resolved'), index, aggregationQuery }),
+    ]);
+    const newCount = Number(newReport.data[0]?.stateId ?? 0);
+    const resolvedCount = Number(resolvedReport.data[0]?.stateId ?? 0);
+    incidentTabCount.value = newCount - resolvedCount;
+  } catch {
+    incidentTabCount.value = 0;
+  }
+}
+
 async function loadTestCasePermission(): Promise<void> {
   try {
     const ops = await permissionStore.getResourcePermission('testCase');
@@ -201,6 +235,7 @@ watch(
 onMounted(() => {
   void loadCustomMetrics();
   void loadTestCasePermission();
+  void loadIncidentTabCount();
 });
 </script>
 
@@ -220,7 +255,14 @@ onMounted(() => {
         <Tabs.TabPane :key="TABLE_PROFILE" :tab="t('label.table-entity-text', { entityText: t('label.profile') })" />
         <Tabs.TabPane :key="COLUMN_PROFILE" :tab="t('label.column-entity', { entity: t('label.profile') })" />
         <Tabs.TabPane :key="DATA_QUALITY" :tab="dataQualityTabLabel" />
-        <Tabs.TabPane :key="INCIDENTS" :tab="t('label.incident-plural')" />
+        <Tabs.TabPane :key="INCIDENTS">
+          <template #tab>
+            <span>
+              {{ t('label.incident-plural') }}
+              <span data-testid="count" class="asset-data-observability__count">{{ incidentTabCount }}</span>
+            </span>
+          </template>
+        </Tabs.TabPane>
       </Tabs>
       <ProfilerTabFilters
         :active-tab="activeSubTab"
@@ -280,6 +322,8 @@ onMounted(() => {
         :table-id="tableId"
         :columns="columns"
         :show-incidents="false"
+        :permissions-loaded="permissionsLoaded"
+        :view-tests="permissions?.ViewTests === true"
       />
     </div>
 
@@ -310,6 +354,7 @@ onMounted(() => {
       :metric="editingMetric"
       :active-column-fqn="activeColumnFqn"
       :columns="columns"
+      :is-profiling-enabled="tableProfile != null"
       @close="closeMetricDrawer"
       @success="loadCustomMetrics(); closeMetricDrawer();"
     />

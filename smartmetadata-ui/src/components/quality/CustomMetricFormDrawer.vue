@@ -17,6 +17,7 @@ import SmDrawer from '@/components/shared/SmDrawer.vue';
 import SmCodeEditor from '@/components/shared/SmCodeEditor.vue';
 import ShowHintToggle from '@/components/quality/ShowHintToggle.vue';
 import TableProfilerChartPreview from '@/components/quality/TableProfilerChartPreview.vue';
+import SingleColumnProfile from '@/components/quality/SingleColumnProfile.vue';
 import { listTableCustomMetricNames, putCustomMetric, type CustomMetricRecord } from '@/api/customMetrics';
 import { ENTITY_NAME_REGEX } from '@/utils/entityName';
 import { CSMode } from '@/utils/codeMirrorUtils';
@@ -35,6 +36,8 @@ const props = withDefaults(
     /** Official activeColumnFqn seeds a new column metric's columnName. */
     activeColumnFqn?: string;
     columns?: Array<{ name: string; dataType?: string; fullyQualifiedName?: string; displayName?: string }>;
+    /** Official isProfilingEnabled for the SingleColumnProfile hint preview. */
+    isProfilingEnabled?: boolean;
   }>(),
   {
     tableId: undefined,
@@ -44,6 +47,7 @@ const props = withDefaults(
     metric: undefined,
     activeColumnFqn: undefined,
     columns: () => [],
+    isProfilingEnabled: false,
   },
 );
 
@@ -73,6 +77,18 @@ const title = computed(() =>
       }),
 );
 const submitLabel = computed(() => (isEditMode.value ? t('label.save') : t('label.create')));
+
+const selectedColumnFqn = computed(() => {
+  const columnName = form.columnName;
+  const match = props.columns.find((column) => column.name === columnName);
+  if (match?.fullyQualifiedName) {
+    return match.fullyQualifiedName;
+  }
+  if (props.entityFqn && columnName) {
+    return `${props.entityFqn}.${columnName}`;
+  }
+  return '';
+});
 
 function columnNameFromActiveFqn(): string {
   const match = props.columns.find((column) => column.fullyQualifiedName === props.activeColumnFqn);
@@ -234,11 +250,21 @@ async function onSubmit(): Promise<void> {
       </Form.Item>
     </Form>
     <div
-      v-if="showHint && !isColumnMetric"
+      v-if="showHint"
       class="custom-metric-form-layout__preview"
       data-testid="custom-metric-profile-preview"
     >
-      <TableProfilerChartPreview :entity-fqn="entityFqn" :custom-metrics="previewMetrics" />
+      <SingleColumnProfile
+        v-if="isColumnMetric"
+        :active-column-fqn="selectedColumnFqn"
+        :columns="columns"
+        :is-profiling-enabled="isProfilingEnabled"
+      />
+      <TableProfilerChartPreview
+        v-else
+        :entity-fqn="entityFqn"
+        :custom-metrics="previewMetrics"
+      />
     </div>
     </div>
   </SmDrawer>

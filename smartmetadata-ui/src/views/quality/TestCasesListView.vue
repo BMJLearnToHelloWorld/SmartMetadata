@@ -433,7 +433,7 @@ defineExpose({ openCreate });
       <Button v-if="!embedded" type="primary" data-testid="create-test-case" @click="openCreate">
         {{ t('quality.testCases.create') }}
       </Button>
-      <Dropdown :trigger="['click']">
+      <Dropdown v-if="!embedded" :trigger="['click']">
         <Button data-testid="test-cases-manage">⋯</Button>
         <template #overlay>
           <Menu @click="onManageMenu">

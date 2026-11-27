@@ -70,4 +70,26 @@ describe('IncidentDateRangeFilter', () => {
     expect(wrapper.emitted('clear')).toHaveLength(1);
     expect(wrapper.emitted('apply')).toBeUndefined();
   });
+
+  it('uses officialLabels show the official trigger titles and custom start -> end range', async () => {
+    const wrapper = mount(IncidentDateRangeFilter, {
+      props: {
+        officialLabels: true,
+        showSelectedCustomRange: true,
+        rangeKey: 'last7days',
+        testId: 'profiler-date-range',
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    expect(wrapper.get('[data-testid="date-picker-menu"]').text()).toBe('Last 7 days');
+    await wrapper.setProps({
+      rangeKey: 'customRange',
+      startTs: dayjs('2026-02-10').startOf('day').valueOf(),
+      endTs: dayjs('2026-02-12').endOf('day').valueOf(),
+    });
+    await flushPromises();
+    expect(wrapper.get('[data-testid="date-picker-menu"]').text()).toBe('2026-02-10 -> 2026-02-12');
+    wrapper.unmount();
+  });
 });

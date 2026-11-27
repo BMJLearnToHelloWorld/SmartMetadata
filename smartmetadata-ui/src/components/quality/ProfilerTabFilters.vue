@@ -106,6 +106,8 @@ function columnLabel(column: { name: string; dataType?: string; fullyQualifiedNa
         :end-ts="endTs"
         :range-key="rangeKey"
         :range-title="rangeTitle"
+        official-labels
+        show-selected-custom-range
         test-id="profiler-date-range"
         @apply="emit('date-change', $event)"
       />

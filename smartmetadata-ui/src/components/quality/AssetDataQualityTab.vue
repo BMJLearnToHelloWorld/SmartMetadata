@@ -10,7 +10,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Dropdown, Menu, Table, Tabs, Tag, Tooltip, Typography } from 'ant-design-vue';
+import { Button, Dropdown, Menu, Table, Tabs, Tag, Tooltip, Typography, message } from 'ant-design-vue';
 import { DownOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue';
 import { INGESTION_PIPELINE_FIELDS, getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { fetchTestCaseResultByTestSuiteId } from '@/api/dataQualityReports';
@@ -19,6 +19,9 @@ import IngestionStatusCount from '@/components/ingestion/IngestionStatusCount.vu
 import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
 import CustomMetricFormDrawer from '@/components/quality/CustomMetricFormDrawer.vue';
 import ProfilerSettingsModal from '@/features/crud/ProfilerSettingsModal.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import { exportTestCasesInCSV } from '@/api/testCases';
+import { notifyCsvJobsRefresh } from '@/api/csvJobs';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { usePermissionStore } from '@/stores/permissions';
 import TestCasesListView from '@/views/quality/TestCasesListView.vue';
@@ -46,7 +49,13 @@ const props = withDefaults(defineProps<{
    * The fallback top-level quality slot still shows both.
    */
   showIncidents?: boolean;
-}>(), { showIncidents: true });
+  /**
+   * Official QualityTab: PermissionPlaceholder only when permissions are
+   * loaded and ViewTests is false. Unknown still shows the tab.
+   */
+  permissionsLoaded?: boolean;
+  viewTests?: boolean;
+}>(), { showIncidents: true, permissionsLoaded: false, viewTests: false });
 
 
 const showIncidentTab = computed(() => props.showIncidents);
@@ -54,6 +63,12 @@ const { t } = useI18n();
 const router = useRouter();
 const permissionStore = usePermissionStore();
 const isAdminUser = computed(() => permissionStore.isAdminUser);
+
+const testsDenied = computed(() => props.permissionsLoaded && !props.viewTests);
+
+const showQualityManage = computed(
+  () => innerTab.value === 'testCases' && !props.deleted && (testCaseViewAll.value || testCaseEditAll.value),
+);
 const outerTab = ref<'quality' | 'incidents'>('quality');
 const innerTab = ref<'testCases' | 'workflows'>('testCases');
 const summary = ref({ total: 0, success: 0, failed: 0, aborted: 0 });
@@ -67,6 +82,8 @@ const editingPipeline = ref<IngestionPipeline | null>(null);
 const orchestratorUnavailable = ref(false);
 const metricDrawerOpen = ref(false);
 const settingsOpen = ref(false);
+const testCaseViewAll = ref(false);
+const testCaseEditAll = ref(false);
 
 const testCasesCount = computed(() => summary.value.total);
 const workflowCount = computed(() => pipelineTotal.value);
@@ -190,6 +207,45 @@ function onViewPipeline(pipeline: IngestionPipeline): void {
   void router.push({ name: 'ingestion-pipeline', params: { id: pipeline.id } });
 }
 
+async function loadTestCaseResourcePermission(): Promise<void> {
+  try {
+    const ops = await permissionStore.getResourcePermission('testCase');
+    testCaseViewAll.value = ops.ViewAll === true;
+    testCaseEditAll.value = ops.EditAll === true;
+  } catch {
+    testCaseViewAll.value = false;
+    testCaseEditAll.value = false;
+  }
+}
+
+/** Official ExtraTestCaseDropdownOptions on QualityTab ManageButton. */
+function onQualityManage({ key }: { key: string | number }): void {
+  if (key === 'import-button') {
+    void router.push({
+      path: `/bulk/import/testCase/${encodeURIComponent(props.entityFqn)}`,
+      query: { sourceEntityType: 'table' },
+    });
+    return;
+  }
+  if (key === 'bulk-edit-button') {
+    void router.push({
+      path: `/bulk/edit/testCase/${encodeURIComponent(props.entityFqn)}`,
+      query: { sourceEntityType: 'table' },
+    });
+    return;
+  }
+  if (key === 'export-button') {
+    void exportTestCasesInCSV(props.entityFqn, { recursive: true })
+      .then(() => {
+        notifyCsvJobsRefresh();
+        message.success(t('quality.testCases.exportStarted'));
+      })
+      .catch((error: unknown) => {
+        message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+      });
+  }
+}
+
 async function loadOrchestrator(): Promise<void> {
   try {
     const status = await getOrchestratorStatus();
@@ -211,11 +267,18 @@ onMounted(() => {
   void loadSummary();
   void loadPipelines();
   void loadOrchestrator();
+  void loadTestCaseResourcePermission();
 });
 </script>
 
 <template>
-  <div class="asset-dq" data-testid="asset-data-quality-tab">
+  <div v-if="testsDenied" class="asset-dq" data-testid="asset-data-quality-tab">
+    <PermissionPlaceholder
+      :permission-value="t('label.view-entity', { entity: t('label.data-observability') })"
+      test-id="permission-error-placeholder"
+    />
+  </div>
+  <div v-else class="asset-dq" data-testid="asset-data-quality-tab">
     <div class="asset-dq__header">
       <Tabs v-if="showIncidentTab" v-model:activeKey="outerTab" data-testid="asset-dq-outer-tabs">
         <Tabs.TabPane key="quality" :tab="t('quality.asset.dataQuality')" />
@@ -269,6 +332,27 @@ onMounted(() => {
             </template>
           </Tabs.TabPane>
         </Tabs>
+        <Dropdown v-if="showQualityManage" :trigger="['click']">
+          <Button data-testid="manage-button" :title="t('label.manage-entity', { entity: t('label.test-case-plural') })">
+            ⋯
+          </Button>
+          <template #overlay>
+            <Menu data-testid="manage-dropdown-list-container" @click="onQualityManage">
+              <Menu.Item v-if="testCaseEditAll" key="import-button" data-testid="import-button">
+                <div>{{ t('label.import') }}</div>
+                <div class="asset-dq__manage-help">{{ t('message.import-entity-help', { entity: t('label.test-case-lowercase-plural') }) }}</div>
+              </Menu.Item>
+              <Menu.Item v-if="testCaseViewAll" key="export-button" data-testid="export-button">
+                <div>{{ t('label.export') }}</div>
+                <div class="asset-dq__manage-help">{{ t('message.export-entity-help', { entity: t('label.test-case-lowercase-plural') }) }}</div>
+              </Menu.Item>
+              <Menu.Item v-if="testCaseEditAll" key="bulk-edit-button" data-testid="bulk-edit-button">
+                <div>{{ t('label.bulk-edit') }}</div>
+                <div class="asset-dq__manage-help">{{ t('message.bulk-edit-entity-help', { entity: t('label.test-case-lowercase-plural') }) }}</div>
+              </Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <Button
           v-if="innerTab === 'workflows' && testSuiteFqn && pipelines.length > 0"
           data-testid="asset-dq-add-pipeline"

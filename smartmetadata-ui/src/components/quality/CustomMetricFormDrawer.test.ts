@@ -10,6 +10,10 @@ vi.mock('@/utils/codeMirrorUtils', () => ({
   CSMode: { SQL: 'sql' },
 }));
 
+vi.mock('@/api/profiler', () => ({
+  listColumnProfiles: vi.fn(async () => []),
+}));
+
 vi.mock('@/features/charts/SmChart.vue', () => ({
   default: {
     props: ['kind', 'series', 'empty', 'height', 'testId'],
@@ -140,6 +144,28 @@ describe('CustomMetricFormDrawer (official table-level QualityTab form)', () => 
     expect(document.body.querySelector('[data-testid="custom-metric-profile-preview"]')).toBeNull();
     const narrowed = document.body.querySelector('.ant-drawer-content-wrapper') as HTMLElement | null;
     expect(narrowed?.style.width || '').toContain('60vw');
+    wrapper.unmount();
+  });
+
+  it('shows the official SingleColumnProfile hint preview for a column metric and keeps table preview off that path', async () => {
+    const wrapper = await mountDrawer({
+      entityFqn: 'db.schema.tbl',
+      isColumnMetric: true,
+      isProfilingEnabled: true,
+      activeColumnFqn: 'db.schema.tbl.id',
+      columns: [{
+        name: 'id',
+        dataType: 'INT',
+        fullyQualifiedName: 'db.schema.tbl.id',
+        customMetrics: [{ name: 'col_metric', expression: 'SELECT 1', columnName: 'id' }],
+      }],
+    });
+    expect(document.body.querySelector('[data-testid="custom-metric-profile-preview"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="profiler-tab-container"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="custom-metric-graph-container"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="table-profiler-chart-container"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="col_metric-custom-metrics-menu"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="custom-metric-edit"]')).toBeNull();
     wrapper.unmount();
   });
 });

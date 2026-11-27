@@ -25,6 +25,16 @@ vi.mock('@/api/customMetrics', () => ({
   listTableCustomMetrics: vi.fn(async () => []),
 }));
 
+vi.mock('@/api/dataQualityReports', () => ({
+  getDataQualityReport: vi.fn(async ({ q }: { q: string }) => {
+    const parsed = JSON.parse(q) as {
+      query: { bool: { must: Array<{ term?: { testCaseResolutionStatusType?: string } }> } };
+    };
+    const status = parsed.query.bool.must[0]?.term?.testCaseResolutionStatusType;
+    return { data: [{ stateId: status === 'New' ? '5' : '2' }] };
+  }),
+}));
+
 vi.mock('@/components/quality/TableProfilerChartPreview.vue', () => ({
   default: defineComponent({
     name: 'TableProfilerChartPreview',
@@ -112,6 +122,13 @@ describe('AssetDataObservabilityTab official profiler children', () => {
     expect(wrapper.find('[data-testid="asset-data-observability-tabs"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="profiler-back-to-column-profile"]').text()).toContain('Column Profile');
     expect(wrapper.get('[data-testid="column-picker-menu-button"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('shows the official Incidents sub-tab count badge as new minus resolved stateId cardinality', async () => {
+    const { wrapper } = await mountTab();
+    const badge = wrapper.get('[data-testid="count"]');
+    expect(badge.text()).toBe('3');
     wrapper.unmount();
   });
 });

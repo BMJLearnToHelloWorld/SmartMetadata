@@ -66,4 +66,22 @@ describe('ProfilerTabFilters official parent chrome', () => {
     expect(wrapper.find('[data-testid="profiler-setting-btn"]').exists()).toBe(false);
     wrapper.unmount();
   });
+
+  it('uses official DatePickerMenu trigger titles, not incident-page wording', async () => {
+    const wrapper = mount(ProfilerTabFilters, {
+      props: { activeTab: 'table-profile', editDataProfile: true, createTestCasePermission: true },
+      global: { plugins: [Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const trigger = wrapper.get('[data-testid="date-picker-menu"]');
+    expect(trigger.text()).toBe('Last 7 days');
+    expect(trigger.text()).not.toMatch(/incident|date range/i);
+    await trigger.trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="incident-date-preset-yesterday"]')?.textContent?.trim()).toBe('Yesterday');
+    expect(document.querySelector('[data-testid="incident-date-preset-last7days"]')?.textContent?.trim()).toBe('Last 7 days');
+    expect(document.querySelector('[data-testid="incident-date-preset-custom"]')?.textContent?.trim()).toBe('Custom Range');
+    wrapper.unmount();
+  });
 });

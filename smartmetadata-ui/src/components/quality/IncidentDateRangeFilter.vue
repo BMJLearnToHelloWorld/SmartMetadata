@@ -23,8 +23,24 @@ const props = withDefaults(
     rangeKey?: string;
     rangeTitle?: string;
     testId?: string;
+    /**
+     * Official DatePickerMenu / TabFilters titles use label.yesterday,
+     * label.last-number-of-days, and label.custom-range. The incident
+     * list keeps its existing keys unless this is set.
+     */
+    officialLabels?: boolean;
+    /** Official TabFilters DatePickerMenu showSelectedCustomRange. */
+    showSelectedCustomRange?: boolean;
   }>(),
-  { startTs: undefined, endTs: undefined, rangeKey: undefined, rangeTitle: undefined, testId: 'incident-date-range' },
+  {
+    startTs: undefined,
+    endTs: undefined,
+    rangeKey: undefined,
+    rangeTitle: undefined,
+    testId: 'incident-date-range',
+    officialLabels: false,
+    showSelectedCustomRange: false,
+  },
 );
 const emit = defineEmits<{
   apply: [range: IncidentDateRange];
@@ -51,15 +67,33 @@ watch(
   },
 );
 
+function officialPresetTitle(days: number): string {
+  return days === 1
+    ? t('label.yesterday')
+    : t('label.last-number-of-days', { numberOfDays: days });
+}
+
 function presetTitle(days: number): string {
+  if (props.officialLabels) {
+    return officialPresetTitle(days);
+  }
   return days === 1
     ? t('observability.incidents.yesterday')
     : t('observability.incidents.lastNumberOfDays', { numberOfDays: days });
 }
 
+function customTitle(startTs?: number, endTs?: number): string {
+  if (props.officialLabels && props.showSelectedCustomRange && startTs !== undefined && endTs !== undefined) {
+    const start = dayjs(startTs).format('YYYY-MM-DD');
+    const end = dayjs(endTs).format('YYYY-MM-DD');
+    return `${start} -> ${end}`;
+  }
+  return props.officialLabels ? t('label.custom-range') : t('observability.incidents.customRange');
+}
+
 const triggerLabel = computed(() => {
   if (props.rangeKey === CUSTOM_DATE_RANGE_KEY || customOpen.value) {
-    return props.rangeTitle || t('observability.incidents.customRange');
+    return props.rangeTitle || customTitle(props.startTs, props.endTs);
   }
   const preset = INCIDENT_DATE_PRESETS.find((item) => item.key === props.rangeKey);
   if (preset) {
@@ -67,6 +101,9 @@ const triggerLabel = computed(() => {
   }
   if (props.rangeTitle) {
     return props.rangeTitle;
+  }
+  if (props.officialLabels) {
+    return officialPresetTitle(7);
   }
   return t('observability.incidents.dateRangePlaceholder');
 });
@@ -97,7 +134,7 @@ function onCustomChange(dates: unknown): void {
       startTs,
       endTs,
       key: CUSTOM_DATE_RANGE_KEY,
-      title: t('observability.incidents.customRange'),
+      title: customTitle(startTs, endTs),
     });
     return;
   }
@@ -123,7 +160,7 @@ function onCustomChange(dates: unknown): void {
             {{ presetTitle(preset.days) }}
           </Menu.Item>
           <Menu.Item :key="CUSTOM_DATE_RANGE_KEY" data-testid="incident-date-preset-custom">
-            {{ t('observability.incidents.customRange') }}
+            {{ officialLabels ? t('label.custom-range') : t('observability.incidents.customRange') }}
           </Menu.Item>
         </Menu>
       </template>
