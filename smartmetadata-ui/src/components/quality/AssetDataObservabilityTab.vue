@@ -35,6 +35,14 @@ const TABLE_PROFILE = 'table-profile';
 const COLUMN_PROFILE = 'column-profile';
 const DATA_QUALITY = 'data-quality';
 const INCIDENTS = 'incidents';
+const PROFILER_SUB_TABS = [TABLE_PROFILE, COLUMN_PROFILE, DATA_QUALITY, INCIDENTS] as const;
+type ProfilerSubTab = (typeof PROFILER_SUB_TABS)[number];
+
+function officialProfilerSubTab(value: unknown): ProfilerSubTab | undefined {
+  return typeof value === 'string' && (PROFILER_SUB_TABS as readonly string[]).includes(value)
+    ? (value as ProfilerSubTab)
+    : undefined;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -77,8 +85,9 @@ const route = useRoute();
 const router = useRouter();
 const permissionStore = usePermissionStore();
 
-/** Official profilerClassBase.getDefaultTabKey: TABLE_PROFILE. */
-const activeSubTab = ref(TABLE_PROFILE);
+/** Official profilerClassBase.getDefaultTabKey: TABLE_PROFILE, unless the route carries ProfilerTabPath (incident table-link uses DATA_QUALITY). */
+const activeSubTab = ref(officialProfilerSubTab(route.query.subTab) ?? TABLE_PROFILE);
+
 const settingsOpen = ref(false);
 const testCaseOpen = ref(false);
 const initialTestLevel = ref<TestLevel>(TEST_LEVEL.TABLE);
@@ -319,9 +328,6 @@ onMounted(() => {
         :test-suite-fqn="testSuiteFqn"
         :test-suite-id="testSuiteId"
         :deleted="deleted"
-        :table-id="tableId"
-        :columns="columns"
-        :show-incidents="false"
         :permissions-loaded="permissionsLoaded"
         :view-tests="permissions?.ViewTests === true"
       />

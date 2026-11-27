@@ -1,7 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
+import { isCsvJobOwned } from '@/api/csvJobs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
 import { createTestI18n } from '@/test/i18n';
@@ -16,13 +17,6 @@ vi.mock('@/components/shared/SmCodeEditor.vue', () => ({
     props: ['value', 'variant', 'mode', 'showCopyButton', 'className'],
     emits: ['change'],
     template: '<textarea data-testid="sql-editor-stub" :value="value" @input="$emit(\'change\', $event.target.value)" />',
-  },
-}));
-
-vi.mock('@/features/crud/ProfilerSettingsModal.vue', () => ({
-  default: {
-    props: ['open', 'tableId', 'columns'],
-    template: '<div v-if="open" data-testid="profiler-settings-modal-stub" />',
   },
 }));
 
@@ -46,7 +40,7 @@ async function mountTab() {
   await router.push('/');
   await router.isReady();
   const wrapper = mount(AssetDataQualityTab, {
-    props: { entityFqn: 'svc.db.schema.orders', testSuiteFqn: 'suite.orders', testSuiteId: 'suite-id', tableId: 'tbl-1', columns: [{ name: 'id', dataType: 'INT' }] },
+    props: { entityFqn: 'svc.db.schema.orders', testSuiteFqn: 'suite.orders', testSuiteId: 'suite-id' },
     global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
     attachTo: document.body,
   });
@@ -68,6 +62,9 @@ describe('AssetDataQualityTab', () => {
               { document_count: '1', entityFQN: 'svc.db.schema.orders', 'testCaseResult.testCaseStatus': 'failed' },
             ],
           });
+        }
+        if (url.includes('/exportAsync')) {
+          return jsonResponse({ jobId: 'csv-job-quality-tab' });
         }
         if (url.includes('/api/v1/dataQuality/testCases/search')) {
           return jsonResponse({
@@ -111,13 +108,15 @@ describe('AssetDataQualityTab', () => {
     document.body.querySelectorAll('.ant-drawer, .ant-dropdown, .ant-message').forEach((node) => node.remove());
   });
 
-  it('renders official summary cards and 数据质控 / 事件 tabs', async () => {
+  it('renders official summary cards and does not host the product fallback Incidents tab or add menu', async () => {
     const wrapper = await mountTab();
     expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-dq-total"]').text()).toContain('2');
     expect(wrapper.find('[data-testid="asset-dq-success"]').text()).toContain('1');
     expect(wrapper.find('[data-testid="asset-dq-failed"]').text()).toContain('1');
-    expect(wrapper.find('[data-testid="asset-dq-incidents-tab"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-dq-incidents-tab"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-dq-add"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="profiler-setting-btn"]').exists()).toBe(false);
     const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
     expect(urls.some((url) => url.includes('/api/v1/dataQuality/testSuites/dataQualityReport'))).toBe(true);
     wrapper.unmount();
@@ -148,20 +147,6 @@ describe('AssetDataQualityTab', () => {
     wrapper.unmount();
   });
 
-  it('exposes the official 添加 dropdown with 测试用例 and 自定义指标', async () => {
-    const wrapper = await mountTab();
-    const add = wrapper.find('[data-testid="asset-dq-add"]');
-    expect(add.exists()).toBe(true);
-    expect(add.text()).toContain('添加');
-    await add.trigger('click');
-    await flushPromises();
-    const testCaseItem = document.body.querySelector('[data-testid="asset-dq-add-test-case"]');
-    const metricItem = document.body.querySelector('[data-testid="asset-dq-add-custom-metric"]');
-    expect(testCaseItem?.textContent).toContain('测试用例');
-    expect(metricItem?.textContent).toContain('自定义指标');
-    wrapper.unmount();
-  });
-
   it('lists TestSuite workflows with official columns, test-case tooltip, and 添加管道', async () => {
     const wrapper = await mountTab();
     const workflowsTab = wrapper.find('[data-testid="asset-dq-workflows-tab"]');
@@ -178,54 +163,6 @@ describe('AssetDataQualityTab', () => {
     wrapper.unmount();
   });
 
-  it('opens the official table-level custom metric form from 添加 自定义指标', async () => {
-    const wrapper = await mountTab();
-    await wrapper.get('[data-testid="asset-dq-add"]').trigger('click');
-    await flushPromises();
-    const metricItem = document.body.querySelector('[data-testid="asset-dq-add-custom-metric"]') as HTMLElement | null;
-    expect(metricItem).not.toBeNull();
-    const item = (metricItem?.closest('.ant-dropdown-menu-item') as HTMLElement | null) ?? metricItem;
-    item?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    expect(document.body.querySelector('[data-testid="custom-metric-form"]')).not.toBeNull();
-    expect(document.body.textContent).toContain('添加数据表指标');
-    wrapper.unmount();
-  });
-
-  it('shows the official profiler settings gear on the quality header', async () => {
-    const wrapper = await mountTab();
-    const gear = wrapper.find('[data-testid="profiler-setting-btn"]');
-    expect(gear.exists()).toBe(true);
-    await gear.trigger('click');
-    await flushPromises();
-    expect(wrapper.find('[data-testid="profiler-settings-modal-stub"]').exists()).toBe(true);
-    wrapper.unmount();
-  });
-
-  it('hides the official gear and custom-metric item when the asset is deleted', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div />' } },
-        { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
-      ],
-    });
-    await router.push('/');
-    await router.isReady();
-    const wrapper = mount(AssetDataQualityTab, {
-      props: { entityFqn: 'svc.db.schema.orders', tableId: 'tbl-1', deleted: true },
-      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
-    });
-    await flushPromises();
-    expect(wrapper.find('[data-testid="profiler-setting-btn"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="asset-dq-add"]').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
   it('shows the official ViewTests PermissionPlaceholder only after permissions are loaded and ViewTests is false', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
@@ -236,7 +173,7 @@ describe('AssetDataQualityTab', () => {
     await router.push('/');
     await router.isReady();
     const unknown = mount(AssetDataQualityTab, {
-      props: { entityFqn: 'svc.db.schema.orders', permissionsLoaded: false, viewTests: false, showIncidents: false },
+      props: { entityFqn: 'svc.db.schema.orders', permissionsLoaded: false, viewTests: false },
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     await flushPromises();
@@ -245,7 +182,7 @@ describe('AssetDataQualityTab', () => {
     unknown.unmount();
 
     const denied = mount(AssetDataQualityTab, {
-      props: { entityFqn: 'svc.db.schema.orders', permissionsLoaded: true, viewTests: false, showIncidents: false },
+      props: { entityFqn: 'svc.db.schema.orders', permissionsLoaded: true, viewTests: false },
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     await flushPromises();
@@ -277,8 +214,6 @@ describe('AssetDataQualityTab', () => {
       props: {
         entityFqn: 'svc.db.schema.orders',
         testSuiteFqn: 'suite.orders',
-        tableId: 'tbl-1',
-        showIncidents: false,
         permissionsLoaded: true,
         viewTests: true,
       },
@@ -321,7 +256,6 @@ describe('AssetDataQualityTab', () => {
       props: {
         entityFqn: 'svc.db.schema.orders',
         deleted: true,
-        showIncidents: false,
         permissionsLoaded: true,
         viewTests: true,
       },
@@ -342,4 +276,87 @@ describe('AssetDataQualityTab', () => {
     expect(pipelineTab.get('[data-testid="count"]').text()).toBe('1');
     wrapper.unmount();
   });
+
+  it('exports through the official CSV tray with no started toast', async () => {
+    const success = vi.spyOn(message, 'success');
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/bulk/import/:entityType/:fqn', name: 'bulk-import', component: { template: '<div />' } },
+        { path: '/bulk/edit/:entityType/:fqn', name: 'bulk-edit', component: { template: '<div />' } },
+      ],
+    });
+    await router.push('/');
+    await router.isReady();
+    const store = usePermissionStore();
+    vi.spyOn(store, 'getResourcePermission').mockResolvedValue({
+      ViewAll: true,
+      EditAll: true,
+    } as never);
+    const wrapper = mount(AssetDataQualityTab, {
+      props: {
+        entityFqn: 'svc.db.schema.orders',
+        permissionsLoaded: true,
+        viewTests: true,
+      },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    await wrapper.get('[data-testid="manage-button"]').trigger('click');
+    await flushPromises();
+    (document.body.querySelector('[data-testid="export-button"]') as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(isCsvJobOwned('csv-job-quality-tab')).toBe(true);
+    expect(success).not.toHaveBeenCalled();
+    wrapper.unmount();
+    success.mockRestore();
+  });
+
+  it('shows official server.unexpected-error when QualityTab export fails without a message', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/exportAsync')) {
+        return Promise.reject({});
+      }
+      return new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    });
+    await router.push('/');
+    await router.isReady();
+    const store = usePermissionStore();
+    vi.spyOn(store, 'getResourcePermission').mockResolvedValue({
+      ViewAll: true,
+      EditAll: true,
+    } as never);
+    const wrapper = mount(AssetDataQualityTab, {
+      props: {
+        entityFqn: 'svc.db.schema.orders',
+        permissionsLoaded: true,
+        viewTests: true,
+      },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    await wrapper.get('[data-testid="manage-button"]').trigger('click');
+    await flushPromises();
+    (document.body.querySelector('[data-testid="export-button"]') as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalled();
+    expect(errorSpy.mock.calls[0][0]).toBe('An unexpected error occurred.');
+    wrapper.unmount();
+    errorSpy.mockRestore();
+  });
+
 });

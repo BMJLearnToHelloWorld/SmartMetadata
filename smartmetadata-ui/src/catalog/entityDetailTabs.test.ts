@@ -237,28 +237,30 @@ describe('preservedTabKeys (M-1)', () => {
     expect(keysFor('apiEndpoint')).toEqual(['overview']);
   });
 
-  it('preserves only quality for the chart fallback', () => {
-    // Chart's overview resolves through the `details` alias, so it is
-    // not kept. (File used to sit here; the D-TAB-2 host lane split it.)
-    expect(keysFor('chart')).toEqual(['quality']);
+  it('preserves nothing for the chart fallback', () => {
+    // Official Chart TabsIds have no Quality tab. Chart's overview
+    // resolves through the `details` alias, so it is not kept either.
+    expect(keysFor('chart')).toEqual([]);
   });
 
-  it('preserves overview and quality for the pipeline fallback', () => {
-    expect(keysFor('pipeline')).toEqual(['overview', 'quality']);
+  it('preserves overview for the pipeline fallback', () => {
+    // Official Pipeline TabsIds have no Quality tab and no OVERVIEW.
+    expect(keysFor('pipeline')).toEqual(['overview']);
   });
 
   // D-TAB-2 (host lane): the drive fallback branches are retained policy
   // for unsplit states — they no longer fire through the view, so they
   // are locked by direct calls with hasSplitDefs false.
-  it('preserves overview and quality for unsplit drive fallbacks', () => {
-    expect(preservedTabKeys('directory', false)).toEqual(['overview', 'quality']);
-    expect(preservedTabKeys('file', false)).toEqual(['quality']);
-    expect(preservedTabKeys('spreadsheet', false)).toEqual(['overview', 'quality']);
-    expect(preservedTabKeys('worksheet', false)).toEqual(['overview', 'quality']);
+  it('preserves overview only for unsplit drive fallbacks that official TabsIds do not name', () => {
+    expect(preservedTabKeys('directory', false)).toEqual(['overview']);
+    expect(preservedTabKeys('file', false)).toEqual([]);
+    expect(preservedTabKeys('spreadsheet', false)).toEqual(['overview']);
+    expect(preservedTabKeys('worksheet', false)).toEqual(['overview']);
   });
 
-  it('preserves quality for query and unknown fallback types', () => {
-    expect(keysFor('query')).toEqual(['quality']);
-    expect(keysFor('no-such-type')).toEqual(['quality']);
+  it('preserves nothing for query and unknown fallback types', () => {
+    // Official has no top-level Quality tab on these types.
+    expect(keysFor('query')).toEqual([]);
+    expect(keysFor('no-such-type')).toEqual([]);
   });
 });

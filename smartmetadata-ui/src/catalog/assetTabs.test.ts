@@ -16,7 +16,6 @@ describe('assetTabKeys', () => {
       'overview',
       'schema',
       'lineage',
-      'quality',
       'activity',
       'customProperties',
     ]);
@@ -30,7 +29,6 @@ describe('assetTabKeys', () => {
       'tasks',
       'executions',
       'lineage',
-      'quality',
       'activity',
       'customProperties',
     ]);
@@ -45,7 +43,9 @@ describe('assetTabKeys', () => {
   });
 
   it('does not invent a schema tab for types without a schema payload', () => {
-    expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'quality', 'activity', 'customProperties']);
-    expect(assetTabKeys('query')).toEqual(['overview', 'lineage', 'quality', 'activity', 'customProperties']);
+    // Official asset-detail TabsIds have no top-level Quality tab; table
+    // quality lives under Data Observability / Profiler.
+    expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('query')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
   });
 });

@@ -393,7 +393,9 @@ function openTable(tableFqn: string): void {
   void router.push({
     name: 'asset',
     params: { entityType: 'table', fqn: tableFqn },
-    query: { tab: 'quality' },
+    // Official IncidentManagerTable table-link: EntityTabs.PROFILER +
+    // ProfilerTabPath.DATA_QUALITY. Product asset routes use query tab/subTab.
+    query: { tab: 'profiler', subTab: 'data-quality' },
   });
 }
 

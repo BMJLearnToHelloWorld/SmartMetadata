@@ -1,31 +1,30 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official TableProfiler QualityTab + TabFilters 添加 dropdown +
-  TestSuitePipelineTab columns (live quality-asset-data-quality /
-  incidents / workflows shots). Vue3 + ant-design-vue. No CCL React/CSS
-  copy. Does not rename the product asset tab 数据质量.
+  Official TableProfiler QualityTab + TestSuitePipelineTab columns.
+  Vue3 + ant-design-vue. No CCL React/CSS copy. Official QualityTab
+  does not host a top-level Incidents tab, add menu, or profiler
+  settings gear (those live on DataObservabilityTab / TabFilters).
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Dropdown, Menu, Table, Tabs, Tag, Tooltip, Typography, message } from 'ant-design-vue';
-import { DownOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue';
+import { QuestionCircleOutlined } from '@ant-design/icons-vue';
 import { INGESTION_PIPELINE_FIELDS, getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { fetchTestCaseResultByTestSuiteId } from '@/api/dataQualityReports';
 import IngestionRecentRuns from '@/components/ingestion/IngestionRecentRuns.vue';
 import IngestionStatusCount from '@/components/ingestion/IngestionStatusCount.vue';
 import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
-import CustomMetricFormDrawer from '@/components/quality/CustomMetricFormDrawer.vue';
-import ProfilerSettingsModal from '@/features/crud/ProfilerSettingsModal.vue';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import { exportTestCasesInCSV } from '@/api/testCases';
-import { notifyCsvJobsRefresh } from '@/api/csvJobs';
+import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
+import { downloadCsv } from '@/features/csv/csv';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { usePermissionStore } from '@/stores/permissions';
 import TestCasesListView from '@/views/quality/TestCasesListView.vue';
-import IncidentsListView from '@/views/observability/IncidentsListView.vue';
 import IngestionLogsModal from '@/views/ingestion/IngestionLogsModal.vue';
 import KillPipelineModal from '@/views/ingestion/KillPipelineModal.vue';
 import PipelineRowActions from '@/views/ingestion/PipelineRowActions.vue';
@@ -40,25 +39,14 @@ const props = withDefaults(defineProps<{
   testSuiteFqn?: string;
   testSuiteId?: string;
   deleted?: boolean;
-  /** Official QualityTab is a table profiler surface; required to add a custom metric or open profiler settings. */
-  tableId?: string;
-  columns?: { name: string; dataType: string }[];
-  /**
-   * Official QualityTab (DATA_QUALITY sub-tab) does not host Incidents;
-   * official IncidentsTab is a sibling under DataObservabilityTab.
-   * The fallback top-level quality slot still shows both.
-   */
-  showIncidents?: boolean;
   /**
    * Official QualityTab: PermissionPlaceholder only when permissions are
    * loaded and ViewTests is false. Unknown still shows the tab.
    */
   permissionsLoaded?: boolean;
   viewTests?: boolean;
-}>(), { showIncidents: true, permissionsLoaded: false, viewTests: false });
+}>(), { permissionsLoaded: false, viewTests: false });
 
-
-const showIncidentTab = computed(() => props.showIncidents);
 const { t } = useI18n();
 const router = useRouter();
 const permissionStore = usePermissionStore();
@@ -69,21 +57,17 @@ const testsDenied = computed(() => props.permissionsLoaded && !props.viewTests);
 const showQualityManage = computed(
   () => innerTab.value === 'testCases' && !props.deleted && (testCaseViewAll.value || testCaseEditAll.value),
 );
-const outerTab = ref<'quality' | 'incidents'>('quality');
 const innerTab = ref<'testCases' | 'workflows'>('testCases');
 const summary = ref({ total: 0, success: 0, failed: 0, aborted: 0 });
 const pipelines = ref<IngestionPipeline[]>([]);
 const pipelineTotal = ref(0);
 const pipelineError = ref('');
 const pipelineLoading = ref(false);
-const casesView = ref<{ openCreate: () => void; total?: number } | null>(null);
 /** Official QualityTab TabsLabel count is testCasePaging.paging.total. */
 const listTestCaseTotal = ref(0);
 const pipelineDrawerOpen = ref(false);
 const editingPipeline = ref<IngestionPipeline | null>(null);
 const orchestratorUnavailable = ref(false);
-const metricDrawerOpen = ref(false);
-const settingsOpen = ref(false);
 const testCaseViewAll = ref(false);
 const testCaseEditAll = ref(false);
 
@@ -168,7 +152,7 @@ async function loadPipelines(): Promise<void> {
   } catch (error) {
     pipelines.value = [];
     pipelineTotal.value = 0;
-    pipelineError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    pipelineError.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
     pipelineLoading.value = false;
   }
@@ -182,16 +166,25 @@ const rowActions = usePipelineRowActions({
 const logsPipeline = rowActions.logsPipeline;
 const killPipeline = rowActions.killPipeline;
 
-function onAddMenu({ key }: { key: string | number }): void {
-  if (key === 'test-case') {
-    casesView.value?.openCreate();
-    if (outerTab.value !== 'quality') {
-      outerTab.value = 'quality';
+function officialExportFileName(name: string): string {
+  return `${name}_${new Date().toISOString().slice(0, 10)}.csv`;
+}
+
+/** Official ExtraTestCaseDropdownOptions + EntityExportModalProvider.runTrayExport (CSV-only). */
+async function exportTestCasesTray(name: string): Promise<void> {
+  try {
+    const result = await exportTestCasesInCSV(name, { recursive: true });
+    if (typeof result === 'string') {
+      downloadCsv(result, officialExportFileName(name));
+      return;
     }
-    innerTab.value = 'testCases';
-  }
-  if (key === 'custom-metric') {
-    metricDrawerOpen.value = true;
+    const jobId = result && typeof result === 'object' && 'jobId' in result
+      ? (result as { jobId?: unknown }).jobId
+      : undefined;
+    markCsvJobOwned(typeof jobId === 'string' ? jobId : undefined);
+    notifyCsvJobsRefresh();
+  } catch (error: unknown) {
+    message.error(getErrorText(error, t('server.unexpected-error')));
   }
 }
 
@@ -237,14 +230,7 @@ function onQualityManage({ key }: { key: string | number }): void {
     return;
   }
   if (key === 'export-button') {
-    void exportTestCasesInCSV(props.entityFqn, { recursive: true })
-      .then(() => {
-        notifyCsvJobsRefresh();
-        message.success(t('quality.testCases.exportStarted'));
-      })
-      .catch((error: unknown) => {
-        message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
-      });
+    void exportTestCasesTray(props.entityFqn);
   }
 }
 
@@ -281,41 +267,6 @@ onMounted(() => {
     />
   </div>
   <div v-else class="asset-dq" data-testid="asset-data-quality-tab">
-    <div class="asset-dq__header">
-      <Tabs v-if="showIncidentTab" v-model:activeKey="outerTab" data-testid="asset-dq-outer-tabs">
-        <Tabs.TabPane key="quality" :tab="t('quality.asset.dataQuality')" />
-        <Tabs.TabPane key="incidents">
-          <template #tab>
-            <span data-testid="asset-dq-incidents-tab">{{ t('quality.asset.incidents') }}</span>
-          </template>
-        </Tabs.TabPane>
-      </Tabs>
-      <div v-if="!deleted && showIncidentTab" class="asset-dq__header-actions">
-        <Dropdown :trigger="['click']">
-          <Button type="primary" data-testid="asset-dq-add">
-            {{ t('quality.asset.add') }}
-            <DownOutlined />
-          </Button>
-          <template #overlay>
-            <Menu data-testid="asset-dq-add-menu" @click="onAddMenu">
-              <Menu.Item key="test-case" data-testid="asset-dq-add-test-case">
-                {{ t('quality.asset.addTestCase') }}
-              </Menu.Item>
-              <Menu.Item v-if="tableId" key="custom-metric" data-testid="asset-dq-add-custom-metric" @click="metricDrawerOpen = true">
-                {{ t('quality.asset.addCustomMetric') }}
-              </Menu.Item>
-            </Menu>
-          </template>
-        </Dropdown>
-        <Tooltip v-if="tableId" :title="t('label.setting-plural')">
-          <Button data-testid="profiler-setting-btn" @click="settingsOpen = true">
-            <SettingOutlined />
-          </Button>
-        </Tooltip>
-      </div>
-    </div>
-
-    <template v-if="outerTab === 'quality'">
       <div class="asset-dq__cards">
         <div v-for="card in summaryCards" :key="card.key" class="asset-dq__card" :data-testid="card.testId">
           <div class="asset-dq__card-title">{{ card.title }}</div>
@@ -374,7 +325,6 @@ onMounted(() => {
 
       <TestCasesListView
         v-show="innerTab === 'testCases'"
-        ref="casesView"
         embedded
         prefer-search
         :entity-fqn="entityFqn"
@@ -473,30 +423,7 @@ onMounted(() => {
           </template>
         </Table>
       </div>
-    </template>
 
-    <IncidentsListView
-      v-else
-      embedded
-      :origin-entity-fqn="entityFqn"
-      data-testid="asset-dq-incidents"
-    />
-
-    <CustomMetricFormDrawer
-      :open="metricDrawerOpen"
-      :table-id="tableId"
-      :entity-fqn="entityFqn"
-      @close="metricDrawerOpen = false"
-      @success="metricDrawerOpen = false"
-    />
-    <ProfilerSettingsModal
-      v-if="tableId"
-      :open="settingsOpen"
-      :table-id="tableId"
-      :columns="columns ?? []"
-      @cancel="settingsOpen = false"
-      @saved="settingsOpen = false"
-    />
     <TestSuitePipelineFormDrawer
       :open="pipelineDrawerOpen"
       :suite="suiteForDrawer"
@@ -524,18 +451,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.asset-dq__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.asset-dq__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 4px;
-}
 .asset-dq__cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

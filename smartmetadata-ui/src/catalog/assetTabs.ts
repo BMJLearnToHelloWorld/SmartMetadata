@@ -18,11 +18,10 @@ export type AssetTabKey =
   | 'executions'
   | 'code'
   | 'lineage'
-  | 'quality'
   | 'activity'
   | 'customProperties';
 
-const SHARED_TAIL: AssetTabKey[] = ['lineage', 'quality', 'activity', 'customProperties'];
+const SHARED_TAIL: AssetTabKey[] = ['lineage', 'activity', 'customProperties'];
 
 export function assetTabKeys(entityType: string): AssetTabKey[] {
   const keys: AssetTabKey[] = ['overview'];

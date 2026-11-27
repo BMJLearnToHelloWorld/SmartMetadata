@@ -454,7 +454,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(router.currentRoute.value.name).toBe('quality-test-case');
   });
 
-  it('opens the table asset route with the quality tab from the table link', async () => {
+  it('opens the table asset route with the official profiler Data Quality sub-tab from the table link', async () => {
     const { wrapper, router } = await mountView();
     const tableLink = wrapper
       .findAll('a')
@@ -464,6 +464,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset');
     expect(router.currentRoute.value.params).toMatchObject({ entityType: 'table', fqn: 'svc.db.schema.orders' });
-    expect(router.currentRoute.value.query.tab).toBe('quality');
+    expect(router.currentRoute.value.query.tab).toBe('profiler');
+    expect(router.currentRoute.value.query.subTab).toBe('data-quality');
   });
 });

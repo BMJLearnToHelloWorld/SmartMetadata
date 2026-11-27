@@ -8,7 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
+import { isCsvJobOwned } from '@/api/csvJobs';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -193,6 +194,48 @@ describe('TestCasesListView official list chrome', () => {
     expect(router.currentRoute.value.path).toBe('/bulk/import/testCase/*');
     wrapper.unmount();
   });
+  it('exports through the official CSV tray with no started toast and official manage labels', async () => {
+    const success = vi.spyOn(message, 'success');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/exportAsync')) {
+          return jsonResponse({ jobId: 'csv-job-test-cases' });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/quality/test-cases', name: 'quality-test-cases', component: TestCasesListView }],
+    });
+    await router.push('/quality/test-cases');
+    await router.isReady();
+    const wrapper = mount(TestCasesListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    await wrapper.get('[data-testid="test-cases-manage"]').trigger('click');
+    await flushPromises();
+    const exportItem = document.body.querySelector('[data-testid="test-cases-export"]');
+    expect(exportItem?.textContent).toMatch(/Export/);
+    expect(document.body.querySelector('[data-testid="test-cases-import"]')?.textContent).toMatch(/Import/);
+    expect(document.body.querySelector('[data-testid="test-cases-bulk-edit"]')?.textContent).toMatch(/Bulk Edit/);
+    (exportItem as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(isCsvJobOwned('csv-job-test-cases')).toBe(true);
+    expect(success).not.toHaveBeenCalled();
+    wrapper.unmount();
+    success.mockRestore();
+  });
+
 });
 
 

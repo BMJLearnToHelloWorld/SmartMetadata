@@ -8,7 +8,9 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Dropdown, Menu, Select, Switch, message } from 'ant-design-vue';
 import { deleteTestCase, exportTestCasesInCSV, listTestCases, listTestCasesBySearch } from '@/api/testCases';
-import { notifyCsvJobsRefresh } from '@/api/csvJobs';
+import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
+import { downloadCsv } from '@/features/csv/csv';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { ApiError } from '@/api/client';
 import { formatChartTs } from '@/features/charts/series';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -265,7 +267,7 @@ async function load(): Promise<void> {
     pageAfter.value = page.after;
   } catch (error) {
     cases.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
     loading.value = false;
   }
@@ -332,11 +334,18 @@ function onManageMenu({ key }: { key: string | number }): void {
 
 async function exportCases(): Promise<void> {
   try {
-    await exportTestCasesInCSV('*', { recursive: true });
+    const result = await exportTestCasesInCSV('*', { recursive: true });
+    if (typeof result === 'string') {
+      downloadCsv(result, `*_${new Date().toISOString().slice(0, 10)}.csv`);
+      return;
+    }
+    const jobId = result && typeof result === 'object' && 'jobId' in result
+      ? (result as { jobId?: unknown }).jobId
+      : undefined;
+    markCsvJobOwned(typeof jobId === 'string' ? jobId : undefined);
     notifyCsvJobsRefresh();
-    message.success(t('quality.testCases.exportStarted'));
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    message.error(getErrorText(error, t('server.unexpected-error')));
   }
 }
 
@@ -442,9 +451,9 @@ defineExpose({ openCreate, total });
         <Button data-testid="test-cases-manage">⋯</Button>
         <template #overlay>
           <Menu @click="onManageMenu">
-            <Menu.Item key="import" data-testid="test-cases-import">{{ t('quality.testCases.import') }}</Menu.Item>
-            <Menu.Item key="export" data-testid="test-cases-export">{{ t('quality.testCases.export') }}</Menu.Item>
-            <Menu.Item key="bulk" data-testid="test-cases-bulk-edit">{{ t('quality.testCases.bulkEdit') }}</Menu.Item>
+            <Menu.Item key="import" data-testid="test-cases-import">{{ t('label.import') }}</Menu.Item>
+            <Menu.Item key="export" data-testid="test-cases-export">{{ t('label.export') }}</Menu.Item>
+            <Menu.Item key="bulk" data-testid="test-cases-bulk-edit">{{ t('label.bulk-edit') }}</Menu.Item>
           </Menu>
         </template>
       </Dropdown>

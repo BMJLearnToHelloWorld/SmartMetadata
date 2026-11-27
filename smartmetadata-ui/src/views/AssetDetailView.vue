@@ -80,7 +80,6 @@ import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetOverviewFields from '@/features/crud/AssetOverviewFields.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
-import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
 import AssetDataObservabilityTab from '@/components/quality/AssetDataObservabilityTab.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -496,7 +495,6 @@ const TAB_TEST_IDS: Record<AssetTabKey, string> = {
   executions: 'asset-tab-executions',
   code: 'asset-tab-code',
   lineage: 'asset-tab-lineage',
-  quality: 'asset-tab-quality',
   activity: 'asset-tab-activity',
   customProperties: 'asset-tab-custom',
 };
@@ -2287,30 +2285,6 @@ onMounted(() => {
           </GenericTab>
           <template v-else>
             <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" :has-edit-access="lineageHasEditAccess" />
-          </template>
-      </template>
-      <template v-if="asset" #quality>
-          <GenericTab
-            v-if="widgetLayoutFor('quality') !== null"
-            :layout="widgetLayoutFor('quality') ?? []"
-            :page-type="pageType ?? ''"
-          >
-            <template #widget="{ contentKey, widget }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
-            </template>
-          </GenericTab>
-          <template v-else>
-            <AssetDataQualityTab
-              :entity-fqn="asset.fullyQualifiedName"
-              :test-suite-fqn="asset.testSuite?.fullyQualifiedName"
-              :test-suite-id="asset.testSuite?.id"
-              :deleted="Boolean(asset.deleted)"
-              :table-id="asset.id"
-              :columns="asset.schemaRows"
-              :permissions-loaded="!loading"
-              :view-data-profile="assetOps?.ViewDataProfile === true"
-              :permissions="assetOps ?? undefined"
-            />
           </template>
       </template>
       <template v-if="asset" #activity>

@@ -2346,9 +2346,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('keeps only the preserved quality tab on a Chart page listing lineage alone (F-2)', async () => {
-    // Chart is a fallback view: `quality` has no Chart TabsId, so it
-    // is preserved; `overview` resolves through the `details` alias,
+  it('keeps only the listed lineage tab on a Chart page listing lineage alone (F-2)', async () => {
+    // Official Chart TabsIds have no Quality tab, so it is not
+    // preserved. `overview` resolves through the `details` alias,
     // so it is removed when `details` is unlisted.
     stubWithDoc(
       docWithPage('Chart', [{ id: 'lineage', name: 'lineage' }]),
@@ -2368,7 +2368,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('chart', 'bi.sales.revenue');
     await settle(wrapper);
-    expect(tabLabels(wrapper)).toEqual(['Lineage', 'Quality']);
+    expect(tabLabels(wrapper)).toEqual(['Lineage']);
+    expect(wrapper.find('[data-testid="asset-tab-quality"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(false);
     wrapper.unmount();
   }, 20000);
 
@@ -2404,11 +2406,11 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('keeps the preserved overview and quality tabs on a catalog Pipeline page listing tasks alone (F-2)', async () => {
-    // The catalog Pipeline fallback set preserves both `overview`
-    // (no Pipeline TabsId resolves to it) and `quality`; executions,
-    // lineage, activity, and custom properties are removed when
-    // unlisted.
+  it('keeps the preserved overview tab on a catalog Pipeline page listing tasks alone (F-2)', async () => {
+    // Official Pipeline TabsIds have no Quality tab. The catalog
+    // Pipeline fallback still preserves `overview` (no Pipeline TabsId
+    // resolves to it); executions, lineage, activity, and custom
+    // properties are removed when unlisted.
     stubWithDoc(
       docWithPage('Pipeline', [{ id: 'tasks', name: 'tasks' }]),
       (url) => {
@@ -2433,7 +2435,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
     await settle(wrapper);
-    expect(tabLabels(wrapper)).toEqual(['Tasks', 'Overview', 'Quality']);
+    expect(tabLabels(wrapper)).toEqual(['Tasks', 'Overview']);
+    expect(wrapper.find('[data-testid="asset-tab-quality"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(false);
     wrapper.unmount();
   }, 20000);
 
