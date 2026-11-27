@@ -151,28 +151,53 @@ const tierFilter = ref(props.tier ?? '');
 const serviceFilter = ref('');
 const dimensionFilter = ref(props.dataQualityDimension ?? '');
 const dataProductFilter = ref(props.dataProductFqn ?? '');
+const hasActiveFilters = computed(() => {
+  const tableIsUser = Boolean(tableFilter.value) && tableFilter.value !== (props.entityFqn ?? '');
+  const tagIsUser = Boolean(tagFilter.value) && tagFilter.value !== (props.tags ?? '');
+  const tierIsUser = Boolean(tierFilter.value) && tierFilter.value !== (props.tier ?? '');
+  const dimensionIsUser =
+    Boolean(dimensionFilter.value) && dimensionFilter.value !== (props.dataQualityDimension ?? '');
+  const dataProductIsUser =
+    Boolean(dataProductFilter.value) && dataProductFilter.value !== (props.dataProductFqn ?? '');
+  return Boolean(
+    searchValue.value ||
+      typeFilter.value ||
+      tableIsUser ||
+      tagIsUser ||
+      platformFilter.value.length ||
+      lastRunStartTs.value !== undefined ||
+      lastRunEndTs.value !== undefined ||
+      tierIsUser ||
+      serviceFilter.value ||
+      dimensionIsUser ||
+      dataProductIsUser,
+  );
+});
+const emptyText = computed(() =>
+  hasActiveFilters.value ? t('message.no-matching-test-cases') : t('message.no-test-cases-yet'),
+);
 const formOpen = ref(false);
 const editing = ref<TestCase | undefined>();
 const deleting = ref<TestCase | undefined>();
 const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.status'), key: 'status', width: 110 },
-  { title: t('quality.testCases.failureReason'), key: 'failureReason', ellipsis: true },
+  { title: t('label.status'), key: 'status', width: 110 },
+  { title: t('label.failed-slash-aborted-reason'), key: 'failureReason', ellipsis: true },
   {
-    title: t('quality.testCases.lastRun'),
+    title: t('label.last-run'),
     key: 'lastRun',
     width: 170,
     sorter: (left, right) =>
       ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
   },
   {
-    title: t('crud.name'),
+    title: t('label.name'),
     dataIndex: 'name',
     key: 'name',
     sorter: (left, right) => entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
   },
-  { title: t('quality.testCases.asset'), key: 'entityFQN' },
-  { title: t('quality.testCases.column'), key: 'column', width: 140 },
-  { title: t('quality.testCases.incident'), key: 'incident', width: 120 },
+  { title: t('label.table'), key: 'entityFQN' },
+  { title: t('label.column'), key: 'column', width: 140 },
+  { title: t('label.incident'), key: 'incident', width: 120 },
 ]);
 
 function includeMode(): 'non-deleted' | 'deleted' {
@@ -317,7 +342,11 @@ async function onFormSubmitted(saved: TestCase): Promise<void> {
   const wasEdit = Boolean(editing.value);
   formOpen.value = false;
   editing.value = undefined;
-  message.success(t(wasEdit ? 'quality.testCases.updated' : 'quality.testCases.created', { name: saved.name }));
+  message.success(
+      t(wasEdit ? 'server.update-entity-success' : 'server.create-entity-success', {
+        entity: t('label.test-case'),
+      }),
+    );
   resetPager();
   await load();
 }
@@ -390,10 +419,10 @@ async function onDeleteConfirm(mode: 'soft' | 'hard'): Promise<void> {
   try {
     await deleteTestCase(record.id, { hardDelete: mode === 'hard', recursive: mode === 'hard' });
     deleting.value = undefined;
-    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    message.success(t('server.entity-deleted-successfully', { entity: record.displayName || record.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+    message.error(getErrorText(error, t('server.delete-entity-error', { entity: t('label.test-case') })));
   }
 }
 
@@ -417,8 +446,8 @@ defineExpose({ openCreate, total });
       :coverage="coverage"
     />
   <EntityListShell
-    :title="t('quality.testCases.title')"
-    :lead="t('quality.testCases.lead')"
+    :title="t('label.data-quality')"
+    :lead="t('message.page-sub-header-for-data-quality')"
     :hide-heading="embedded"
     :loading="loading"
     :error="errorMessage"
@@ -427,13 +456,13 @@ defineExpose({ openCreate, total });
     table-test-id="test-cases-table"
     show-search
     :search-value="searchValue"
-    :search-placeholder="t('quality.testCases.searchPlaceholder')"
+    :search-placeholder="t('label.search-entity', { entity: t('label.test-case-lowercase') })"
     show-row-actions
     show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
-    :empty-text="t('quality.testCases.empty')"
+    :empty-text="emptyText"
     @update:search-value="searchValue = $event"
     @search="onSearch"
     @refresh="load"
@@ -445,7 +474,7 @@ defineExpose({ openCreate, total });
   >
     <template #actions>
       <Button v-if="!embedded" type="primary" data-testid="create-test-case" @click="openCreate">
-        {{ t('quality.testCases.create') }}
+        {{ t('label.new-entity', { entity: t('label.test-case') }) }}
       </Button>
       <Dropdown v-if="!embedded" :trigger="['click']">
         <Button data-testid="test-cases-manage">⋯</Button>
@@ -460,7 +489,7 @@ defineExpose({ openCreate, total });
     </template>
     <template #filters>
       <Dropdown :trigger="['click']">
-        <Button data-testid="test-cases-advanced">{{ t('quality.testCases.advanced') }}</Button>
+        <Button data-testid="test-cases-advanced">{{ t('label.advanced') }}</Button>
         <template #overlay>
           <Menu data-testid="test-cases-advanced-menu" @click="onAdvancedMenu">
             <Menu.Item
@@ -486,7 +515,7 @@ defineExpose({ openCreate, total });
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.table)"
         v-model="tableFilter"
-        :placeholder="t('quality.testCases.tableFilter')"
+        :placeholder="t('label.table')"
         test-id="test-cases-table-filter"
         :fetch-options="fetchTableFilterOptions"
         @change="onFilterChange"
@@ -496,7 +525,7 @@ defineExpose({ openCreate, total });
         v-model:value="platformFilter"
         mode="multiple"
         allow-clear
-        :placeholder="t('quality.testCases.platformFilter')"
+        :placeholder="t('label.platform')"
         data-testid="test-cases-platform-filter"
         style="width: 180px"
         @change="onFilterChange"
@@ -509,7 +538,7 @@ defineExpose({ openCreate, total });
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.type)"
         v-model:value="typeFilter"
         allow-clear
-        :placeholder="t('quality.testCases.typeFilter')"
+        :placeholder="t('label.type')"
         data-testid="test-cases-type-filter"
         style="width: 140px"
         @change="onFilterChange"
@@ -520,7 +549,7 @@ defineExpose({ openCreate, total });
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.status)"
         :value="statusSelectValue"
         allow-clear
-        :placeholder="t('quality.testCases.statusFilter')"
+        :placeholder="t('label.status')"
         data-testid="test-cases-status-filter"
         style="width: 160px"
         @change="onStatusFilterChange"
@@ -532,7 +561,7 @@ defineExpose({ openCreate, total });
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tags)"
         v-model="tagFilter"
-        :placeholder="t('quality.testCases.tagFilter')"
+        :placeholder="t('label.tag-plural')"
         test-id="test-cases-tag-filter"
         width="160px"
         :fetch-options="fetchTagFilterOptions"
@@ -541,7 +570,7 @@ defineExpose({ openCreate, total });
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tier)"
         v-model="tierFilter"
-        :placeholder="t('quality.testCases.tierFilter')"
+        :placeholder="t('label.tier')"
         test-id="test-cases-tier-filter"
         width="140px"
         :remote="false"
@@ -551,7 +580,7 @@ defineExpose({ openCreate, total });
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.service)"
         v-model="serviceFilter"
-        :placeholder="t('quality.testCases.serviceFilter')"
+        :placeholder="t('label.service')"
         test-id="test-cases-service-filter"
         width="160px"
         :fetch-options="fetchServiceFilterOptions"
@@ -560,7 +589,7 @@ defineExpose({ openCreate, total });
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dimension)"
         v-model="dimensionFilter"
-        :placeholder="t('quality.testCases.dimensionFilter')"
+        :placeholder="t('label.dimension')"
         test-id="test-cases-dimension-filter"
         width="160px"
         :remote="false"
@@ -570,7 +599,7 @@ defineExpose({ openCreate, total });
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dataProduct)"
         v-model="dataProductFilter"
-        :placeholder="t('quality.testCases.dataProductFilter')"
+        :placeholder="t('label.data-product-plural')"
         test-id="test-cases-data-product-filter"
         width="180px"
         :fetch-options="fetchDataProductFilterOptions"
@@ -578,12 +607,12 @@ defineExpose({ openCreate, total });
       />
       <span class="tc-deleted-toggle">
         <Switch v-model:checked="showDeleted" data-testid="test-cases-show-deleted" @change="onFilterChange" />
-        {{ t('quality.testCases.showDeleted') }}
+        {{ t('label.show-deleted') }}
       </span>
     </template>
     <template #emptyExtra>
       <Button type="primary" data-testid="test-cases-empty-cta" @click="openCreate">
-        {{ t('quality.testCases.create') }}
+        {{ t('label.new-entity', { entity: t('label.test-case') }) }}
       </Button>
     </template>
     <template #bodyCell="{ column, record }">

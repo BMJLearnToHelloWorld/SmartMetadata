@@ -260,12 +260,12 @@ function handleClose(): void {
 <template>
   <Drawer
     :open="open"
-    :title="isEdit ? t('quality.testSuites.editIngestionTitle') : t('quality.testSuites.addIngestionTitle')"
+    :title="isEdit ? t('label.edit-entity', { entity: t('label.pipeline') }) : t('label.add-entity', { entity: t('label.pipeline') })"
     width="560"
     @close="handleClose"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')">
+      <Form.Item :label="t('label.name')">
         <Input v-model:value="form.name" data-testid="pipeline-name" />
       </Form.Item>
       <Form.Item
@@ -296,7 +296,7 @@ function handleClose(): void {
       </Form.Item>
       <Form.Item
         v-if="!form.selectAll"
-        :label="t('quality.testCases.title')"
+        :label="t('label.test-case-plural')"
         :validate-status="casesError ? 'error' : undefined"
         :help="casesError || undefined"
       >
@@ -318,7 +318,7 @@ function handleClose(): void {
           {{ isEdit ? t('crud.save') : t('crud.create') }}
         </Button>
         <Button data-testid="test-suite-ingestion-cancel" @click="handleClose">
-          {{ t('crud.cancel') }}
+          {{ t('label.cancel') }}
         </Button>
       </div>
     </Form>

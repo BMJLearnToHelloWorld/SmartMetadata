@@ -243,9 +243,9 @@ describe('preservedTabKeys (M-1)', () => {
     expect(keysFor('chart')).toEqual([]);
   });
 
-  it('preserves overview for the pipeline fallback', () => {
+  it('does not preserve a product-invented overview for the pipeline fallback', () => {
     // Official Pipeline TabsIds have no Quality tab and no OVERVIEW.
-    expect(keysFor('pipeline')).toEqual(['overview']);
+    expect(keysFor('pipeline')).toEqual([]);
   });
 
   // D-TAB-2 (host lane): the drive fallback branches are retained policy

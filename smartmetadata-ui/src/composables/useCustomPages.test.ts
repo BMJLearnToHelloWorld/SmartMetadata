@@ -409,11 +409,11 @@ describe('getDetailsTabWithNewLabel per-view preserveKeys contracts (F-2)', () =
       expected: [tab('overview', 'File!')],
     },
     {
-      name: 'catalog Pipeline fallback: official has no Quality tab; overview is preserved in default order',
-      defaults: ['overview', 'tasks', 'executions', 'lineage', 'activity', 'customProperties'].map((key) => tab(key)),
-      options: { preserveKeys: ['overview'] },
+      name: 'catalog Pipeline fallback: official has no Quality tab and no OVERVIEW to preserve',
+      defaults: ['tasks', 'executions', 'lineage', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: [] },
       customized: [{ id: 'tasks' }],
-      expected: [tab('tasks'), tab('overview')],
+      expected: [tab('tasks')],
     },
     {
       name: 'Directory fallback: an id resolving to no rendered key still leaves the preserved overview',

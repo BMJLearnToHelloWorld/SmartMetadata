@@ -32,26 +32,26 @@ watch(
 <template>
   <Modal
     :open="open"
-    :title="t('quality.testCases.deleteTitle')"
-    :ok-text="t('crud.delete')"
-    :cancel-text="t('crud.cancel')"
+    :title="t('label.delete')"
+    :ok-text="t('label.delete')"
+    :cancel-text="t('label.cancel')"
     ok-type="danger"
     data-testid="test-case-delete-modal"
     @ok="emit('confirm', mode)"
     @cancel="emit('cancel')"
   >
     <Typography.Paragraph>
-      {{ t('quality.testCases.deleteLead', { name }) }}
+      {{ t('message.delete-entity-message', { entity: name }) }}
     </Typography.Paragraph>
     <Radio.Group v-model:value="mode" data-testid="test-case-delete-mode">
       <Space direction="vertical" style="width: 100%">
         <Radio value="soft" data-testid="test-case-delete-soft">
-          <strong>{{ t('quality.testCases.deleteSoft') }}</strong>
-          <div>{{ t('quality.testCases.deleteSoftHelp') }}</div>
+          <strong>{{ t('label.soft-delete') }}</strong>
+          <div>{{ t('message.soft-delete-common-message', { entity: t('label.test-case') }) }}</div>
         </Radio>
         <Radio value="hard" data-testid="test-case-delete-hard">
-          <strong>{{ t('quality.testCases.deleteHard') }}</strong>
-          <div>{{ t('quality.testCases.deleteHardHelp') }}</div>
+          <strong>{{ t('label.permanently-delete') }}</strong>
+          <div>{{ t('message.permanently-delete-common-message', { entity: t('label.test-case') }) }}</div>
         </Radio>
       </Space>
     </Radio.Group>

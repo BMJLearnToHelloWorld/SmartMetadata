@@ -143,7 +143,7 @@ watch(
 <template>
   <Drawer
     :open="open"
-    :title="t('quality.testSuites.createBundleTitle')"
+    :title="t('label.new-entity', { entity: t('label.bundle-suite') })"
     placement="right"
     :width="480"
     :destroy-on-close="true"
@@ -152,13 +152,13 @@ watch(
   >
     <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 16px" />
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')">
+      <Form.Item :label="t('label.name')">
         <Input v-model:value="name" data-testid="bundle-suite-name" />
       </Form.Item>
-      <Form.Item :label="t('quality.testSuites.tests')" required>
+      <Form.Item :label="t('label.test-case-plural')" required>
         <Input
           v-model:value="searchValue"
-          :placeholder="t('quality.testCases.searchPlaceholder')"
+          :placeholder="t('label.search-entity', { entity: t('label.test-case-lowercase') })"
           data-testid="bundle-suite-search"
           @pressEnter="loadCases"
           @change="loadCases"
@@ -167,7 +167,7 @@ watch(
           <Select
             v-model:value="statusFilter"
             allow-clear
-            :placeholder="t('quality.testCases.statusFilter')"
+            :placeholder="t('label.status')"
             style="width: 120px"
             @change="loadCases"
           >
@@ -176,14 +176,14 @@ watch(
           <Select
             v-model:value="typeFilter"
             allow-clear
-            :placeholder="t('quality.testCases.typeFilter')"
+            :placeholder="t('label.type')"
             style="width: 120px"
             @change="loadCases"
           >
             <Select.Option v-for="type in TEST_CASE_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
           </Select>
-          <Input v-model:value="tableFilter" :placeholder="t('quality.testCases.tableFilter')" style="width: 140px" @change="loadCases" />
-          <Input v-model:value="columnFilter" :placeholder="t('quality.testCases.column')" style="width: 120px" @change="loadCases" />
+          <Input v-model:value="tableFilter" :placeholder="t('label.table')" style="width: 140px" @change="loadCases" />
+          <Input v-model:value="columnFilter" :placeholder="t('label.column')" style="width: 120px" @change="loadCases" />
         </Space>
         <label class="bundle-suite__all">
           <input type="checkbox" :checked="allSelected" data-testid="bundle-suite-select-all" @change="toggleAll(($event.target as HTMLInputElement).checked)" />
@@ -248,7 +248,7 @@ watch(
     </Form>
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
-        <Button data-testid="bundle-suite-cancel" @click="close">{{ t('crud.cancel') }}</Button>
+        <Button data-testid="bundle-suite-cancel" @click="close">{{ t('label.cancel') }}</Button>
         <Button type="primary" :loading="saving" data-testid="bundle-suite-submit" @click="onSubmit">{{ t('crud.create') }}</Button>
       </Space>
     </template>

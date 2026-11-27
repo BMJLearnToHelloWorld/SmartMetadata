@@ -235,9 +235,11 @@ export function isOfficiallySplit(entityType: string): boolean {
  * OVERVIEW). Official entity-detail TabsIds have no top-level Quality
  * tab on any asset type (table quality lives under Profiler / Data
  * Observability), so fallback sets do not preserve a product-invented
- * `quality` slot. The pipeline, directory, spreadsheet, and worksheet
- * sets still carry an `overview` no official id resolves to (their
- * TabsIds name neither `overview` nor an id aliasing to it). Chart's
+ * `quality` slot. Official Pipeline TabsIds have no OVERVIEW, so the
+ * pipeline fallback does not preserve a product-invented overview tab.
+ * The directory, spreadsheet, and worksheet sets still carry an
+ * `overview` no official id resolves to (their TabsIds name neither
+ * `overview` nor an id aliasing to it). Chart's
  * `overview` resolves through the `details` alias and File's matches
  * the official OVERVIEW id, so neither is preserved.
  * `hasSplitDefs` is whether the entity has split tab definitions
@@ -254,7 +256,6 @@ export function preservedTabKeys(entityType: string, hasSplitDefs: boolean): str
   }
   const keys: string[] = [];
   if (
-    entityType === 'pipeline' ||
     entityType === 'directory' ||
     entityType === 'spreadsheet' ||
     entityType === 'worksheet'

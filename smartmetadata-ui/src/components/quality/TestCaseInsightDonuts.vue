@@ -28,28 +28,28 @@ const visible = computed(
 /** Official useTestSummaryCards segment order: success, aborted, failed. */
 const resultsSeries = computed(() =>
   props.results && props.results.total
-    ? namedSeries(t('quality.testCases.allTests'), [
-        { label: t('quality.landing.success'), value: props.results.success },
-        { label: t('quality.landing.aborted'), value: props.results.aborted },
-        { label: t('quality.landing.failed'), value: props.results.failed },
+    ? namedSeries(t('label.total-entity', { entity: t('label.test-plural') }), [
+        { label: t('label.success'), value: props.results.success },
+        { label: t('label.aborted'), value: props.results.aborted },
+        { label: t('label.failed'), value: props.results.failed },
       ])
     : [],
 );
 
 const healthSeries = computed(() =>
   props.health && props.health.total
-    ? namedSeries(t('quality.testCases.healthyAssets'), [
-        { label: t('quality.landing.healthy'), value: props.health.healthy },
-        { label: t('quality.landing.unhealthy'), value: props.health.unhealthy },
+    ? namedSeries(t('label.healthy-data-asset-plural'), [
+        { label: t('label.healthy'), value: props.health.healthy },
+        { label: t('label.unhealthy'), value: props.health.unhealthy },
       ])
     : [],
 );
 
 const coverageSeries = computed(() =>
   props.coverage && props.coverage.total
-    ? namedSeries(t('quality.testCases.coverage'), [
-        { label: t('quality.landing.covered'), value: props.coverage.covered },
-        { label: t('quality.landing.notCovered'), value: props.coverage.notCovered },
+    ? namedSeries(t('label.data-asset-plural-coverage'), [
+        { label: t('label.covered'), value: props.coverage.covered },
+        { label: t('label.uncovered'), value: props.coverage.notCovered },
       ])
     : [],
 );
@@ -63,37 +63,37 @@ const coveragePercent = computed(() => insightPercent(props.coverage?.covered ??
   <div v-if="visible" class="tc-insights" data-testid="test-cases-insights">
     <div class="tc-insights__card" data-testid="test-cases-insight-all">
       <div class="tc-insights__meta">
-        <div class="tc-insights__title">{{ t('quality.testCases.allTests') }}</div>
+        <div class="tc-insights__title">{{ t('label.total-entity', { entity: t('label.test-plural') }) }}</div>
         <strong class="tc-insights__value">{{ results?.total ?? 0 }}</strong>
         <div class="tc-insights__legend">
-          {{ t('quality.landing.success') }} {{ results?.success ?? 0 }} ·
-          {{ t('quality.landing.aborted') }} {{ results?.aborted ?? 0 }} ·
-          {{ t('quality.landing.failed') }} {{ results?.failed ?? 0 }}
+          {{ t('label.success') }} {{ results?.success ?? 0 }} ·
+          {{ t('label.aborted') }} {{ results?.aborted ?? 0 }} ·
+          {{ t('label.failed') }} {{ results?.failed ?? 0 }}
         </div>
       </div>
       <div class="tc-insights__chart">
         <div class="tc-insights__percent">{{ resultsPercent }}</div>
-        <SmChart kind="donut" test-id="test-cases-insight-all-chart" :series="resultsSeries" :empty="t('quality.landing.chartEmpty')" :height="140" />
+        <SmChart kind="donut" test-id="test-cases-insight-all-chart" :series="resultsSeries" :empty="t('label.no-data')" :height="140" />
       </div>
     </div>
     <div class="tc-insights__card" data-testid="test-cases-insight-health">
       <div class="tc-insights__meta">
-        <div class="tc-insights__title">{{ t('quality.testCases.healthyAssets') }}</div>
+        <div class="tc-insights__title">{{ t('label.healthy-data-asset-plural') }}</div>
         <strong class="tc-insights__value">{{ health?.healthy ?? 0 }}</strong>
       </div>
       <div class="tc-insights__chart">
         <div class="tc-insights__percent">{{ healthPercent }}</div>
-        <SmChart kind="donut" test-id="test-cases-insight-health-chart" :series="healthSeries" :empty="t('quality.landing.chartEmpty')" :height="140" />
+        <SmChart kind="donut" test-id="test-cases-insight-health-chart" :series="healthSeries" :empty="t('label.no-data')" :height="140" />
       </div>
     </div>
     <div class="tc-insights__card" data-testid="test-cases-insight-coverage">
       <div class="tc-insights__meta">
-        <div class="tc-insights__title">{{ t('quality.testCases.coverage') }}</div>
+        <div class="tc-insights__title">{{ t('label.data-asset-plural-coverage') }}</div>
         <strong class="tc-insights__value">{{ coverage?.covered ?? 0 }}</strong>
       </div>
       <div class="tc-insights__chart">
         <div class="tc-insights__percent">{{ coveragePercent }}</div>
-        <SmChart kind="donut" test-id="test-cases-insight-coverage-chart" :series="coverageSeries" :empty="t('quality.landing.chartEmpty')" :height="140" />
+        <SmChart kind="donut" test-id="test-cases-insight-coverage-chart" :series="coverageSeries" :empty="t('label.no-data')" :height="140" />
       </div>
     </div>
   </div>

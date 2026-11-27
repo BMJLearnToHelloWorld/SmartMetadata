@@ -191,11 +191,13 @@ describe('DataQualityDashboard', () => {
 
   it('derives coverage, health and results from the shared batch', async () => {
     const { wrapper } = await mountDashboard();
-    expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('Tables 20');
+    expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('Data Assets Coverage');
+    expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('20');
     expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('Covered 2');
-    expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Entities 2');
+    expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Healthy Data Assets');
     expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Healthy 1');
     expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Unhealthy 1');
+    expect(wrapper.get('[data-testid="dq-dashboard-results-card"]').text()).toContain('Total Tests');
     expect(wrapper.get('[data-testid="dq-dashboard-results-card"]').text()).toContain('Success 3');
     expect(wrapper.get('[data-testid="dq-dashboard-results-card"]').text()).toContain('Failed 1');
     expect(wrapper.find('[data-testid="dq-dashboard-dimension-Completeness"]').exists()).toBe(true);
@@ -390,7 +392,7 @@ describe('DataQualityDashboard', () => {
     selector.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     const selectAllButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Select all'),
+      button.textContent?.includes('Select All'),
     ) as HTMLElement | undefined;
     expect(selectAllButton).toBeDefined();
     selectAllButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

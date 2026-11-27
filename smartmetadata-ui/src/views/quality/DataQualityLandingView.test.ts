@@ -258,7 +258,7 @@ describe('DataQualityLandingView', () => {
     stubFetch('quality-404');
     const { wrapper } = await mountLanding();
     expect(wrapper.find('[data-testid="dq-health-empty"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="dq-health-empty"]').text()).toMatch(/empty|Add a test|no test/i);
+    expect(wrapper.get('[data-testid="dq-health-empty"]').text()).toContain('No data');
     expect(wrapper.find('[data-testid^="dq-residual-"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('20897');
   });

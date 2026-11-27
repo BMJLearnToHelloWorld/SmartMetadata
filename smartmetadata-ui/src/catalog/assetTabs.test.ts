@@ -25,7 +25,6 @@ describe('assetTabKeys', () => {
     expect(assetTabKeys('dashboard')).toContain('charts');
     expect(assetTabKeys('dashboard')).not.toContain('schema');
     expect(assetTabKeys('pipeline')).toEqual([
-      'overview',
       'tasks',
       'executions',
       'lineage',

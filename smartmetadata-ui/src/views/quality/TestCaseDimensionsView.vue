@@ -6,6 +6,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
@@ -36,7 +37,7 @@ async function load(): Promise<void> {
     testCase.value = await getTestCaseByName(fqn.value);
   } catch (error) {
     testCase.value = undefined;
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case') }));
   }
 }
 
@@ -50,7 +51,7 @@ watch(fqn, () => {
 
 <template>
   <PageLayout test-id="test-case-dimensions">
-    <PageHeader :header="testCase?.displayName || testCase?.name || fqn" :sub-header="t('quality.testCases.dimensionsLead')" />
+    <PageHeader :header="testCase?.displayName || testCase?.name || fqn" :sub-header="t('label.dimensionality')" />
     <Typography.Paragraph v-if="errorMessage" type="danger">{{ errorMessage }}</Typography.Paragraph>
     <Button
       v-if="testCase"
@@ -58,7 +59,7 @@ watch(fqn, () => {
       data-testid="test-case-dimensions-back"
       @click="router.push({ name: 'quality-test-case', params: { id: testCase.id } })"
     >
-      {{ t('quality.testCases.backToDetail') }}
+      {{ t('label.entity-detail-plural', { entity: t('label.test-case') }) }}
     </Button>
     <DimensionalityPanel
       v-if="fqn && dimensionColumns.length"

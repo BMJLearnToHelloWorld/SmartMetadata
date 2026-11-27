@@ -7,6 +7,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { Button, Input, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
 import {
   DeleteOutlined,
@@ -74,12 +75,12 @@ const platformOptions = computed(() =>
 );
 
 const columns = computed(() => [
-  { title: t('quality.testDefinitions.columnName'), dataIndex: 'name', key: 'name' },
-  { title: t('quality.testDefinitions.columnDescription'), dataIndex: 'description', key: 'description' },
-  { title: t('quality.testDefinitions.entityType'), dataIndex: 'entityType', key: 'entityType', width: 120 },
-  { title: t('quality.testDefinitions.platforms'), key: 'testPlatforms', width: 180 },
-  { title: t('quality.testDefinitions.enabled'), key: 'enabled', width: 90 },
-  { title: t('quality.testDefinitions.actions'), key: 'actions', width: 90 },
+  { title: t('label.name'), dataIndex: 'name', key: 'name' },
+  { title: t('label.description'), dataIndex: 'description', key: 'description' },
+  { title: t('label.entity-type'), dataIndex: 'entityType', key: 'entityType', width: 120 },
+  { title: t('label.test-platform-plural'), key: 'testPlatforms', width: 180 },
+  { title: t('label.enabled'), key: 'enabled', width: 90 },
+  { title: t('label.action-plural'), key: 'actions', width: 90 },
 ]);
 
 const totalPages = computed(() => pageCount(total.value, pageSize.value));
@@ -106,7 +107,7 @@ async function load(): Promise<void> {
     pageBefore.value = page.before;
   } catch (error) {
     definitions.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
     loading.value = false;
   }
@@ -218,13 +219,13 @@ async function onSave(values: TestDefinitionFormValues): Promise<void> {
         operations.push({ op: 'remove', path: '/dataQualityDimension' });
       }
       await patchTestDefinition(editing.value.id, operations);
-      message.success(t('quality.testDefinitions.updated'));
+      message.success(t('server.update-entity-success', { entity: t('label.test-definition') }));
     } else if (editing.value) {
       await updateTestDefinition({ ...toCreateTestDefinitionRequest(values), name: editing.value.name });
-      message.success(t('quality.testDefinitions.updated'));
+      message.success(t('server.update-entity-success', { entity: t('label.test-definition') }));
     } else {
       const created = await createTestDefinition(toCreateTestDefinitionRequest(values));
-      message.success(t('quality.testDefinitions.created', { name: created.name }));
+      message.success(t('server.create-entity-success', { entity: t('label.test-definition') }));
     }
     drawerOpen.value = false;
     Object.assign(values, createEmptyTestDefinitionForm());
@@ -269,17 +270,17 @@ function onDelete(record: TestDefinition): void {
     return;
   }
   Modal.confirm({
-    title: t('quality.testDefinitions.deleteTitle', { name: record.displayName || record.name }),
-    content: t('quality.testDefinitions.deleteConfirm'),
-    okText: t('quality.testDefinitions.delete'),
-    cancelText: t('quality.testDefinitions.cancel'),
+    title: t('label.delete'),
+    content: t('message.permanently-delete-common-message', { entity: record.displayName || record.name }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
     okButtonProps: { danger: true, 'data-testid': 'confirm-delete-test-definition' },
     async onOk() {
       await deleteTestDefinition(record.fullyQualifiedName || record.name, {
         hardDelete: true,
         recursive: true,
       });
-      message.success(t('quality.testDefinitions.deleted', { name: record.name }));
+      message.success(t('server.entity-deleted-successfully', { entity: record.displayName || record.name }));
       await load();
     },
   });
@@ -295,14 +296,14 @@ onMounted(() => {
     <div class="test-library-page__header">
       <div>
         <Typography.Title :level="4" class="test-library-page__title">
-          {{ t('quality.testDefinitions.pageTitle') }}
+          {{ t('label.test-library') }}
         </Typography.Title>
         <Typography.Paragraph type="secondary" class="test-library-page__lead">
-          {{ t('quality.testDefinitions.lead') }}
+          {{ t('message.page-sub-header-for-test-definitions') }}
         </Typography.Paragraph>
       </div>
       <Button type="primary" data-testid="create-test-definition" @click="openCreate">
-        {{ t('quality.testDefinitions.create') }}
+        {{ t('label.add-entity', { entity: t('label.test-definition') }) }}
       </Button>
     </div>
 
@@ -318,16 +319,16 @@ onMounted(() => {
         @keydown.enter="onSearchPressEnter"
       />
       <TestLibraryFilterDropdown
-        :label="t('quality.testDefinitions.entityType')"
-        :search-placeholder="t('quality.testDefinitions.searchEntityType')"
+        :label="t('label.entity-type')"
+        :search-placeholder="t('label.search-entity', { entity: t('label.entity-type') })"
         :options="entityTypeOptions"
         :model-value="entityType"
         test-id="test-library-filter-entity"
         @update:model-value="(value) => { entityType = value; resetAndLoad(); }"
       />
       <TestLibraryFilterDropdown
-        :label="t('quality.testDefinitions.platforms')"
-        :search-placeholder="t('quality.testDefinitions.searchPlatform')"
+        :label="t('label.test-platform-plural')"
+        :search-placeholder="t('label.search-entity', { entity: t('label.test-platform-plural') })"
         :options="platformOptions"
         :model-value="testPlatform"
         test-id="test-library-filter-platform"

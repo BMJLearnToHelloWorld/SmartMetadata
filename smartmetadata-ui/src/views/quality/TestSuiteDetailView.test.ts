@@ -97,7 +97,7 @@ describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', ()
     await wrapper.find('[data-testid="add-test-suite-ingestion"]').trigger('click');
     await flushPromises();
     // The Drawer teleports to document.body.
-    expect(document.body.textContent).toContain('Add test suite ingestion');
+    expect(document.body.textContent).toContain('Add Pipeline');
     vi.unstubAllGlobals();
   });
 });

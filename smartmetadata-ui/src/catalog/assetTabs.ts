@@ -24,7 +24,9 @@ export type AssetTabKey =
 const SHARED_TAIL: AssetTabKey[] = ['lineage', 'activity', 'customProperties'];
 
 export function assetTabKeys(entityType: string): AssetTabKey[] {
-  const keys: AssetTabKey[] = ['overview'];
+  // Official Pipeline TabsIds (PipelineClassBase.getPipelineDetailPageTabsIds)
+  // have no OVERVIEW. Do not invent a product fallback overview tab.
+  const keys: AssetTabKey[] = entityType === 'pipeline' ? [] : ['overview'];
   switch (entityType) {
     case 'table':
     case 'topic':

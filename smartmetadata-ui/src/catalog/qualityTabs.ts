@@ -35,32 +35,32 @@ export type QualityPage =
 
 export const QUALITY_PAGE_TABS: Record<QualityPage, QualityTab[]> = {
   dqLanding: [
-    { key: 'dashboard', labelKey: 'quality.landing.tabs.dashboard', supported: true },
-    { key: 'test-cases', labelKey: 'quality.landing.tabs.testCases', supported: true },
-    { key: 'test-suites', labelKey: 'quality.landing.tabs.testSuites', supported: true },
+    { key: 'dashboard', labelKey: 'label.summary', supported: true },
+    { key: 'test-cases', labelKey: 'label.test-case-plural', supported: true },
+    { key: 'test-suites', labelKey: 'label.test-suite-plural', supported: true },
   ],
   testCase: [
     { key: 'overview', labelKey: 'crud.overview', supported: true },
-    { key: 'results', labelKey: 'quality.testCases.resultsTab', supported: true },
-    { key: 'issues', labelKey: 'quality.tabs.issues', supported: true },
+    { key: 'results', labelKey: 'label.test-case-result', supported: true },
+    { key: 'issues', labelKey: 'label.incident', supported: true },
     {
       key: 'dimensionality',
-      labelKey: 'quality.tabs.dimensionality',
+      labelKey: 'label.dimensionality',
       supported: true,
     },
     {
       key: 'sql-query',
-      labelKey: 'quality.tabs.sqlQuery',
+      labelKey: 'label.sql-uppercase-query',
       supported: false,
       residualReason: 'quality.testCases.residualSqlQuery',
     },
   ],
   testSuite: [
     { key: 'overview', labelKey: 'crud.overview', supported: true },
-    { key: 'tests', labelKey: 'quality.testSuites.testsTab', supported: true },
+    { key: 'tests', labelKey: 'label.test-case-plural', supported: true },
     {
       key: 'pipeline',
-      labelKey: 'quality.tabs.pipeline',
+      labelKey: 'label.pipeline-plural',
       supported: true,
     },
   ],

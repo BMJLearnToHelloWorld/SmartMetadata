@@ -44,8 +44,8 @@ const readOnlyExceptDimension = computed(
 
 const title = computed(() =>
   isEdit.value
-    ? t('quality.testDefinitions.editTitle')
-    : t('quality.testDefinitions.createTitle'),
+    ? t('label.edit-entity', { entity: t('label.test-definition') })
+    : t('label.add-entity', { entity: t('label.test-definition') }),
 );
 
 watch(
@@ -100,10 +100,10 @@ function save(): void {
     <template #footer>
       <Space>
         <Button data-testid="test-definition-cancel" @click="close">
-          {{ t('quality.testDefinitions.cancel') }}
+          {{ t('label.cancel') }}
         </Button>
         <Button type="primary" :loading="saving" data-testid="test-definition-save" @click="save">
-          {{ t('quality.testDefinitions.save') }}
+          {{ isEdit ? t('label.update') : t('label.create') }}
         </Button>
       </Space>
     </template>

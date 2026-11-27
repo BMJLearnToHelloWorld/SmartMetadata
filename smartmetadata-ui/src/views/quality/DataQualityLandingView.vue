@@ -52,7 +52,7 @@ import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
 import IncidentMetricsSection from '@/components/quality/IncidentMetricsSection.vue';
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -78,26 +78,26 @@ const productOptions = computed(() => facetOptions(facets.value, 'dataProduct'))
 
 const coverageSeries = computed(() =>
   coverage.value && coverage.value.total
-    ? namedSeries(t('quality.landing.coverage'), [
-        { label: t('quality.landing.covered'), value: coverage.value.covered },
-        { label: t('quality.landing.notCovered'), value: coverage.value.notCovered },
+    ? namedSeries(t('label.data-asset-plural-coverage'), [
+        { label: t('label.covered'), value: coverage.value.covered },
+        { label: t('label.uncovered'), value: coverage.value.notCovered },
       ])
     : [],
 );
 const healthSeries = computed(() =>
   health.value && health.value.total
-    ? namedSeries(t('quality.landing.healthyAssets'), [
-        { label: t('quality.landing.healthy'), value: health.value.healthy },
-        { label: t('quality.landing.unhealthy'), value: health.value.unhealthy },
+    ? namedSeries(t('label.healthy-data-asset-plural'), [
+        { label: t('label.healthy'), value: health.value.healthy },
+        { label: t('label.unhealthy'), value: health.value.unhealthy },
       ])
     : [],
 );
 const resultsSeries = computed(() =>
   results.value && results.value.total
-    ? namedSeries(t('quality.landing.testResults'), [
-        { label: t('quality.landing.success'), value: results.value.success },
-        { label: t('quality.landing.failed'), value: results.value.failed },
-        { label: t('quality.landing.aborted'), value: results.value.aborted },
+    ? namedSeries(t('label.total-entity', { entity: t('label.test-plural') }), [
+        { label: t('label.success'), value: results.value.success },
+        { label: t('label.failed'), value: results.value.failed },
+        { label: t('label.aborted'), value: results.value.aborted },
       ])
     : [],
 );
@@ -156,7 +156,11 @@ const listDrill = computed(() => ({
 
 /** Official StatusCardWidget: raw dimension title, only NoDimension is translated. */
 function dimensionLabel(id: string): string {
-  return id === NO_DIMENSION ? t('quality.landing.dimensions.none') : id;
+  if (id === NO_DIMENSION) {
+    return t('label.no-dimension');
+  }
+  const key = `label.${id.toLowerCase()}`;
+  return te(key) ? t(key) : id;
 }
 
 function onAddMenu({ key }: { key: string | number }): void {
@@ -346,26 +350,26 @@ onMounted(() => {
   <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
     <div class="dq-landing__head">
       <div data-testid="dq-landing-title">
-        <PageHeader :header="t('quality.landing.title')" :sub-header="t('quality.landing.lead')" />
+        <PageHeader :header="t('label.data-quality')" :sub-header="t('message.page-sub-header-for-data-quality')" />
       </div>
       <Dropdown :trigger="['click']">
         <Button type="primary" data-testid="dq-landing-add">
-          {{ t('quality.landing.add') }}
+          {{ t('label.add') }}
           <SmIcon icon-key="action-chevron-down" />
         </Button>
         <template #overlay>
           <Menu @click="onAddMenu">
-            <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('quality.landing.addCase') }}</Menu.Item>
-            <Menu.Item key="suite" data-testid="dq-landing-add-suite">{{ t('quality.landing.addSuite') }}</Menu.Item>
+            <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('label.add-a-entity', { entity: t('label.test-case') }) }}</Menu.Item>
+            <Menu.Item key="suite" data-testid="dq-landing-add-suite">{{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}</Menu.Item>
           </Menu>
         </template>
       </Dropdown>
     </div>
 
     <Tabs :active-key="activeTab" data-testid="dq-landing-tabs" @change="onTabChange">
-      <Tabs.TabPane key="dashboard" :tab="t('quality.landing.tabs.dashboard')" />
-      <Tabs.TabPane key="test-cases" :tab="t('quality.landing.tabs.testCases')" />
-      <Tabs.TabPane key="test-suites" :tab="t('quality.landing.tabs.testSuites')" />
+      <Tabs.TabPane key="dashboard" :tab="t('label.summary')" />
+      <Tabs.TabPane key="test-cases" :tab="t('label.test-case-plural')" />
+      <Tabs.TabPane key="test-suites" :tab="t('label.test-suite-plural')" />
     </Tabs>
 
     <div class="dq-landing__filters" data-testid="dq-landing-filters">
@@ -373,7 +377,7 @@ onMounted(() => {
         :value="filters.owner"
         allow-clear
         show-search
-        :placeholder="t('quality.landing.filters.owner')"
+        :placeholder="t('label.owner')"
         :options="ownerOptions"
         data-testid="dq-filter-owner"
         class="dq-landing__filter"
@@ -383,7 +387,7 @@ onMounted(() => {
         :value="filters.tier"
         allow-clear
         show-search
-        :placeholder="t('quality.landing.filters.tier')"
+        :placeholder="t('label.tier')"
         :options="tierOptions"
         data-testid="dq-filter-tier"
         class="dq-landing__filter"
@@ -393,7 +397,7 @@ onMounted(() => {
         :value="filters.certification"
         allow-clear
         show-search
-        :placeholder="t('quality.landing.filters.certification')"
+        :placeholder="t('label.certification')"
         :options="certOptions"
         data-testid="dq-filter-certification"
         class="dq-landing__filter"
@@ -403,7 +407,7 @@ onMounted(() => {
         :value="filters.tag"
         allow-clear
         show-search
-        :placeholder="t('quality.landing.filters.tag')"
+        :placeholder="t('label.tag')"
         :options="tagOptions"
         data-testid="dq-filter-tag"
         class="dq-landing__filter"
@@ -413,7 +417,7 @@ onMounted(() => {
         :value="filters.glossaryTerm"
         allow-clear
         show-search
-        :placeholder="t('quality.landing.filters.glossaryTerm')"
+        :placeholder="t('label.glossary-term')"
         :options="glossaryOptions"
         data-testid="dq-filter-glossary"
         class="dq-landing__filter"
@@ -423,7 +427,7 @@ onMounted(() => {
         :value="filters.dataProduct"
         allow-clear
         show-search
-        :placeholder="t('quality.landing.filters.dataProduct')"
+        :placeholder="t('label.data-product')"
         :options="productOptions"
         data-testid="dq-filter-data-product"
         class="dq-landing__filter"
@@ -433,91 +437,91 @@ onMounted(() => {
         v-model:value="rangeDays"
         data-testid="dq-filter-range"
         class="dq-landing__filter dq-landing__filter--range"
-        :aria-label="t('quality.landing.filters.range')"
+        :aria-label="t('label.last-run')"
       >
-        <Select.Option :value="7">{{ t('quality.landing.range7') }}</Select.Option>
-        <Select.Option :value="30">{{ t('quality.landing.range30') }}</Select.Option>
+        <Select.Option :value="7">{{ t('label.last-7-days') }}</Select.Option>
+        <Select.Option :value="30">{{ t('label.last-30-days') }}</Select.Option>
       </Select>
     </div>
 
     <div v-if="activeTab === 'dashboard'">
       <Spin :spinning="loading">
         <Space direction="vertical" size="middle" style="width: 100%">
-          <Card data-testid="dq-health" :title="t('quality.landing.healthTitle')">
-            <Typography.Paragraph type="secondary">{{ t('quality.landing.healthLead') }}</Typography.Paragraph>
+          <Card data-testid="dq-health" :title="t('label.data-health')">
+            <Typography.Paragraph type="secondary">{{ t('message.data-health-sub-header') }}</Typography.Paragraph>
             <Empty
               v-if="!loading && !coverage?.total && !health?.total && !results?.total"
               data-testid="dq-health-empty"
-              :description="t('quality.landing.healthEmpty')"
+              :description="t('label.no-data')"
             >
               <Button type="primary" data-testid="dq-health-empty-cta" @click="openCreateCase">
-                {{ t('quality.testCases.create') }}
+                {{ t('label.new-entity', { entity: t('label.test-case') }) }}
               </Button>
             </Empty>
             <Row v-else :gutter="[16, 16]">
               <Col :xs="24" :lg="8">
                 <div class="dq-donut" data-testid="dq-coverage-card">
-                  <div class="dq-donut__title">{{ t('quality.landing.coverage') }}</div>
-                  <div class="dq-donut__center">{{ t('quality.landing.tables', { count: coverage?.total ?? 0 }) }}</div>
+                  <div class="dq-donut__title">{{ t('label.data-asset-plural-coverage') }}</div>
+                  <div class="dq-donut__center">{{ coverage?.total ?? 0 }}</div>
                   <SmChart
                     kind="donut"
                     test-id="dq-coverage-chart"
                     :series="coverageSeries"
-                    :empty="t('quality.landing.chartEmpty')"
+                    :empty="t('label.no-data')"
                     :height="200"
                     segment-clickable
                     @segment-click="openCoverageSegment"
                   />
                   <div class="dq-donut__legend">
-                    {{ t('quality.landing.covered') }} {{ coverage?.covered ?? 0 }} ·
-                    {{ t('quality.landing.notCovered') }} {{ coverage?.notCovered ?? 0 }}
+                    {{ t('label.covered') }} {{ coverage?.covered ?? 0 }} ·
+                    {{ t('label.uncovered') }} {{ coverage?.notCovered ?? 0 }}
                   </div>
                 </div>
               </Col>
               <Col :xs="24" :lg="8">
                 <div class="dq-donut" data-testid="dq-healthy-card">
-                  <div class="dq-donut__title">{{ t('quality.landing.healthyAssets') }}</div>
-                  <div class="dq-donut__center">{{ t('quality.landing.entities', { count: health?.total ?? 0 }) }}</div>
+                  <div class="dq-donut__title">{{ t('label.healthy-data-asset-plural') }}</div>
+                  <div class="dq-donut__center">{{ health?.total ?? 0 }}</div>
                   <SmChart
                     kind="donut"
                     test-id="dq-healthy-chart"
                     :series="healthSeries"
-                    :empty="t('quality.landing.chartEmpty')"
+                    :empty="t('label.no-data')"
                     :height="200"
                     segment-clickable
                     @segment-click="openHealthSegment"
                   />
                   <div class="dq-donut__legend">
-                    {{ t('quality.landing.healthy') }} {{ health?.healthy ?? 0 }} ·
-                    {{ t('quality.landing.unhealthy') }} {{ health?.unhealthy ?? 0 }}
+                    {{ t('label.healthy') }} {{ health?.healthy ?? 0 }} ·
+                    {{ t('label.unhealthy') }} {{ health?.unhealthy ?? 0 }}
                   </div>
                 </div>
               </Col>
               <Col :xs="24" :lg="8">
                 <div class="dq-donut" data-testid="dq-results-card">
-                  <div class="dq-donut__title">{{ t('quality.landing.testResults') }}</div>
-                  <div class="dq-donut__center">{{ t('quality.landing.tests', { count: results?.total ?? 0 }) }}</div>
+                  <div class="dq-donut__title">{{ t('label.total-entity', { entity: t('label.test-plural') }) }}</div>
+                  <div class="dq-donut__center">{{ results?.total ?? 0 }}</div>
                   <SmChart
                     kind="donut"
                     test-id="dq-results-chart"
                     :series="resultsSeries"
-                    :empty="t('quality.landing.chartEmpty')"
+                    :empty="t('label.no-data')"
                     :height="200"
                     segment-clickable
                     @segment-click="openResultsSegment"
                   />
                   <div class="dq-donut__legend">
-                    {{ t('quality.landing.success') }} {{ results?.success ?? 0 }} ·
-                    {{ t('quality.landing.failed') }} {{ results?.failed ?? 0 }} ·
-                    {{ t('quality.landing.aborted') }} {{ results?.aborted ?? 0 }}
+                    {{ t('label.success') }} {{ results?.success ?? 0 }} ·
+                    {{ t('label.failed') }} {{ results?.failed ?? 0 }} ·
+                    {{ t('label.aborted') }} {{ results?.aborted ?? 0 }}
                   </div>
                 </div>
               </Col>
             </Row>
           </Card>
 
-          <Card data-testid="dq-dimensions" :title="t('quality.landing.dimensionsTitle')">
-            <Typography.Paragraph type="secondary">{{ t('quality.landing.dimensionsLead') }}</Typography.Paragraph>
+          <Card data-testid="dq-dimensions" :title="t('label.data-dimensions')">
+            <Typography.Paragraph type="secondary">{{ t('message.data-dimensions-sub-header') }}</Typography.Paragraph>
             <div class="dq-dims">
               <button
                 v-for="card in dimensions"
@@ -538,24 +542,24 @@ onMounted(() => {
             </div>
           </Card>
 
-          <Card data-testid="dq-status" :title="t('quality.landing.statusTitle')">
-            <Typography.Paragraph type="secondary">{{ t('quality.landing.statusLead') }}</Typography.Paragraph>
+          <Card data-testid="dq-status" :title="t('label.test-case-status')">
+            <Typography.Paragraph type="secondary">{{ t('message.test-case-status-sub-header') }}</Typography.Paragraph>
             <Row :gutter="[16, 16]">
               <Col :xs="24" :md="8">
                 <button class="dq-status" type="button" data-testid="dq-status-success" @click="openDonutCases({ testCaseStatus: 'Success' })">
-                  <div class="dq-status__label">{{ t('quality.landing.success') }}</div>
+                  <div class="dq-status__label">{{ t('label.success') }}</div>
                   <div class="dq-status__value">{{ results?.success ?? 0 }}</div>
                 </button>
               </Col>
               <Col :xs="24" :md="8">
                 <button class="dq-status" type="button" data-testid="dq-status-aborted" @click="openDonutCases({ testCaseStatus: 'Aborted' })">
-                  <div class="dq-status__label">{{ t('quality.landing.aborted') }}</div>
+                  <div class="dq-status__label">{{ t('label.aborted') }}</div>
                   <div class="dq-status__value">{{ results?.aborted ?? 0 }}</div>
                 </button>
               </Col>
               <Col :xs="24" :md="8">
                 <button class="dq-status" type="button" data-testid="dq-status-failed" @click="openDonutCases({ testCaseStatus: 'Failed' })">
-                  <div class="dq-status__label">{{ t('quality.landing.failed') }}</div>
+                  <div class="dq-status__label">{{ t('label.failed') }}</div>
                   <div class="dq-status__value">{{ results?.failed ?? 0 }}</div>
                 </button>
               </Col>

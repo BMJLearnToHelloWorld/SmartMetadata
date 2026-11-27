@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRoute, useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
@@ -55,8 +56,8 @@ const editForm = reactive({
 });
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('quality.testSuites.title'), to: { name: 'quality-test-cases', query: { tab: 'test-suites' } } },
-  { label: entityLabel(suite.value) || t('quality.testSuites.title') },
+  { label: t('label.data-quality'), to: { name: 'quality-test-cases', query: { tab: 'test-suites' } } },
+  { label: entityLabel(suite.value) || t('label.entity-detail-plural', { entity: t('label.test-suite') }) },
 ]);
 
 const tabs = computed<EntityDetailTab[]>(() =>
@@ -68,9 +69,9 @@ const tabs = computed<EntityDetailTab[]>(() =>
 );
 
 const testColumns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-  { title: t('crud.actions'), key: 'actions', width: 120 },
+  { title: t('label.name'), dataIndex: 'name', key: 'name' },
+  { title: t('label.fully-qualified-name'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+  { title: t('label.action-plural'), key: 'actions', width: 120 },
 ]);
 
 async function load(): Promise<void> {
@@ -80,7 +81,7 @@ async function load(): Promise<void> {
     suite.value = await getTestSuite(props.id);
   } catch (error) {
     suite.value = null;
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-suite') }));
   } finally {
     loading.value = false;
   }
@@ -91,20 +92,20 @@ async function onDeleteTestSuite(): Promise<void> {
     return;
   }
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: entityLabel(suite.value) }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
+    title: t('label.delete'),
+    content: t('message.delete-entity-message', { entity: entityLabel(suite.value) }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
   });
   if (!confirmed) {
     return;
   }
   try {
     await deleteTestSuite(suite.value.id, { hardDelete: true });
-    message.success(t('crud.deletedName', { name: entityLabel(suite.value) }));
+    message.success(t('server.entity-deleted-successfully', { entity: entityLabel(suite.value) }));
     await router.push({ name: 'quality-test-suites' });
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+    message.error(getErrorText(error, t('server.delete-entity-error', { entity: t('label.test-suite') })));
   }
 }
 
@@ -129,10 +130,10 @@ async function onSave(): Promise<void> {
       displayName: editForm.displayName.trim() || undefined,
     });
     editOpen.value = false;
-    message.success(t('quality.testSuites.updated'));
+    message.success(t('server.update-entity-success', { entity: t('label.test-suite') }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-suite') })));
   } finally {
     saving.value = false;
   }
@@ -144,9 +145,9 @@ const pipelinesError = ref('');
 const pipelinesLoaded = ref(false);
 
 const pipelineColumns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
-  { title: t('crud.actions'), key: 'actions', width: 160 },
+  { title: t('label.name'), dataIndex: 'name', key: 'name' },
+  { title: t('label.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
+  { title: t('label.action-plural'), key: 'actions', width: 160 },
 ]);
 
 async function loadPipelines(): Promise<void> {
@@ -165,7 +166,7 @@ async function loadPipelines(): Promise<void> {
     pipelinesLoaded.value = true;
   } catch {
     suitePipelines.value = [];
-    pipelinesError.value = t('crud.loadFailed');
+    pipelinesError.value = t('server.entity-fetch-error', { entity: t('label.pipeline-plural') });
   } finally {
     pipelinesLoading.value = false;
   }
@@ -183,7 +184,7 @@ async function openEditPipeline(fqn: string): Promise<void> {
     editingPipeline.value = await getIngestionPipelineByFqn(fqn);
     pipelineDrawerOpen.value = true;
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    message.error(getErrorText(error, t('server.unexpected-error')));
   }
 }
 
@@ -220,10 +221,10 @@ async function onAddTests(): Promise<void> {
   try {
     await addTestCasesToLogicalTestSuite(suite.value.id, selectedCaseIds.value);
     addOpen.value = false;
-    message.success(t('quality.testSuites.testsAdded'));
+    message.success(t('server.update-entity-success', { entity: t('label.test-suite') }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-suite') })));
   } finally {
     adding.value = false;
   }
@@ -234,20 +235,20 @@ async function onRemoveTest(testCaseId: string, testCaseName: string): Promise<v
     return;
   }
   const confirmed = await confirmDelete({
-    title: t('quality.testSuites.removeTest'),
-    content: t('crud.deleteConfirm', { name: testCaseName }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
+    title: t('label.delete'),
+    content: t('message.delete-entity-message', { entity: testCaseName }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
   });
   if (!confirmed) {
     return;
   }
   try {
     await removeTestCaseFromTestSuite(suite.value.id, testCaseId);
-    message.success(t('quality.testSuites.testRemoved'));
+    message.success(t('server.entity-deleted-successfully', { entity: testCaseName }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-suite') })));
   }
 }
 
@@ -273,10 +274,10 @@ onMounted(() => {
 
 <template>
   <EntityDetailShell
-    :title="entityLabel(suite) || t('quality.testSuites.title')"
+    :title="entityLabel(suite) || t('label.entity-detail-plural', { entity: t('label.test-suite') })"
     :name="suite?.name"
     :fqn="suite?.fullyQualifiedName"
-    :lead="t('quality.testSuites.lead')"
+    :lead="t('label.entity-detail-plural', { entity: t('label.test-suite') })"
     :loading="loading"
     :error="errorMessage"
     :empty="!suite && !loading && !errorMessage"
@@ -285,20 +286,20 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button data-testid="edit-test-suite" :disabled="!suite" @click="openEdit">{{ t('crud.edit') }}</Button>
-      <Button danger data-testid="delete-test-suite" :disabled="!suite" @click="onDeleteTestSuite">{{ t('crud.delete') }}</Button>
+      <Button data-testid="edit-test-suite" :disabled="!suite" @click="openEdit">{{ t('label.edit') }}</Button>
+      <Button danger data-testid="delete-test-suite" :disabled="!suite" @click="onDeleteTestSuite">{{ t('label.delete') }}</Button>
       <Button v-if="isLogical" data-testid="add-tests-to-suite" :disabled="!suite" @click="openAddTests">
-        {{ t('quality.testSuites.addTests') }}
+        {{ t('label.add-entity', { entity: t('label.test-case-plural') }) }}
       </Button>
     </template>
     <template #overview>
       <Descriptions v-if="suite" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ suite.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.fqn')">{{ suite.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('quality.testSuites.suiteType')">
-          {{ suite.basic ? t('quality.testSuites.basic') : t('quality.testSuites.logical') }}
+        <Descriptions.Item :label="t('label.name')">{{ suite.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.fully-qualified-name')">{{ suite.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.type')">
+          {{ suite.basic ? t('label.table-suite-plural') : t('label.bundle-suite') }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('quality.testSuites.summary')">
+        <Descriptions.Item :label="t('label.summary')">
           {{
             t('quality.testSuites.summaryValue', {
               success: suite.summary?.success ?? '—',
@@ -308,7 +309,7 @@ onMounted(() => {
             })
           }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ suite.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.description')">{{ suite.description || '—' }}</Descriptions.Item>
       </Descriptions>
     </template>
     <template #pipeline>
@@ -318,7 +319,7 @@ onMounted(() => {
         style="margin-bottom: 16px"
         @click="openAddPipeline"
       >
-        {{ t('quality.testSuites.addIngestion') }}
+        {{ t('label.add-entity', { entity: t('label.pipeline-plural') }) }}
       </Button>
       <SmState v-if="pipelinesError" state="error" test-id="test-suite-pipelines-error" :error-text="pipelinesError" />
       <SmTable
@@ -346,7 +347,7 @@ onMounted(() => {
               :data-testid="`edit-test-suite-pipeline-${(record as IngestionPipeline).id}`"
               @click="openEditPipeline((record as IngestionPipeline).fullyQualifiedName ?? '')"
             >
-              {{ t('crud.edit') }}
+              {{ t('label.edit') }}
             </Button>
           </template>
         </template>
@@ -369,7 +370,7 @@ onMounted(() => {
               :data-testid="`remove-test-${(record as EntityRef).id}`"
               @click="onRemoveTest((record as EntityRef).id as string, entityLabel(record as EntityRef))"
             >
-              {{ t('quality.testSuites.removeTest') }}
+              {{ t('label.delete') }}
             </Button>
           </template>
           <template v-else-if="column.key === 'name'">
@@ -395,32 +396,32 @@ onMounted(() => {
   />
   <FormModal
     :open="editOpen"
-    :title="t('quality.testSuites.editTitle')"
-    :ok-text="t('crud.edit')"
-    :cancel-text="t('crud.cancel')"
+    :title="t('label.edit-entity', { entity: t('label.test-suite') })"
+    :ok-text="t('label.update')"
+    :cancel-text="t('label.cancel')"
     :confirm-loading="saving"
     @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
+      <Form.Item :label="t('label.display-name')">
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
+      <Form.Item :label="t('label.description')">
         <Input.TextArea v-model:value="editForm.description" :rows="3" />
       </Form.Item>
     </Form>
   </FormModal>
   <FormModal
     :open="addOpen"
-    :title="t('quality.testSuites.addTestsTitle')"
-    :ok-text="t('quality.testSuites.addTests')"
-    :cancel-text="t('crud.cancel')"
+    :title="t('label.add-entity', { entity: t('label.test-case-plural') })"
+    :ok-text="t('label.add-entity', { entity: t('label.test-case-plural') })"
+    :cancel-text="t('label.cancel')"
     :confirm-loading="adding"
     @ok="onAddTests"
     @cancel="addOpen = false"
   >
     <p>{{ t('quality.testSuites.addTestsLead') }}</p>
     <Form layout="vertical">
-      <Form.Item :label="t('quality.testSuites.tests')">
+      <Form.Item :label="t('label.test-case-plural')">
         <Select
           v-model:value="selectedCaseIds"
           mode="multiple"

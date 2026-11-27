@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { DatePicker, Select, Typography } from 'ant-design-vue';
 import dayjs, { type Dayjs } from 'dayjs';
 import SmTable from '@/components/shared/SmTable.vue';
@@ -65,10 +66,10 @@ const latestRows = computed(() => {
 });
 
 const columns = computed(() => [
-  { title: t('crud.status'), dataIndex: 'status', key: 'status' },
+  { title: t('label.status'), dataIndex: 'status', key: 'status' },
   { title: t('quality.testCases.impactScore'), dataIndex: 'impactScore', key: 'impactScore' },
-  { title: t('quality.tabs.dimensionality'), dataIndex: 'value', key: 'value' },
-  { title: t('quality.testCases.timestamp'), dataIndex: 'timestamp', key: 'timestamp' },
+  { title: t('label.dimensionality'), dataIndex: 'value', key: 'value' },
+  { title: t('label.last-run'), dataIndex: 'timestamp', key: 'timestamp' },
 ]);
 
 async function load(): Promise<void> {
@@ -87,7 +88,7 @@ async function load(): Promise<void> {
     rows.value = page.data;
   } catch (error) {
     rows.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
     loading.value = false;
   }
@@ -113,7 +114,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="test-case-dimensionality">
-    <p class="entity-detail__tab-lead">{{ t('quality.testCases.dimensionalityLead') }}</p>
+    <p class="entity-detail__tab-lead">{{ t('label.dimensionality') }}</p>
     <div style="display: flex; gap: 16px; margin-bottom: 16px">
       <Select
         v-model:value="selected"
@@ -128,7 +129,7 @@ onMounted(() => {
       v-else-if="!loading && latestRows.length === 0"
       state="empty"
       test-id="dimensionality-empty"
-      :empty-text="t('quality.testCases.noDimensionData')"
+      :empty-text="t('label.no-data')"
     />
     <SmTable
       v-else

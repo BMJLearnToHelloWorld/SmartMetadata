@@ -61,10 +61,21 @@ const glossaryOptions = ref<{ value: string; label: string; source: 'Glossary' }
 const isEdit = computed(() => Boolean(props.testCase));
 const title = computed(() =>
   isEdit.value
-    ? t('quality.testCases.editTitle', { name: props.testCase?.displayName || props.testCase?.name })
-    : t('quality.testCases.createTitle'),
+    ? t('label.edit-entity', { entity: t('label.test-case') })
+    : t('label.add-entity', { entity: t('label.test-case') }),
 );
-const okText = computed(() => (isEdit.value ? t('crud.update') : t('quality.testCases.createOk')));
+const okText = computed(() => (isEdit.value ? t('label.update') : t('label.create')));
+
+const LEVEL_LABEL: Record<string, string> = {
+  [TEST_LEVEL.TABLE]: 'label.table-level',
+  [TEST_LEVEL.COLUMN]: 'label.column-level',
+  [TEST_LEVEL.COLUMN_DIMENSION]: 'label.column-with-dimension',
+};
+const LEVEL_HINT_ENTITY: Record<string, string> = {
+  [TEST_LEVEL.TABLE]: 'label.table-lowercase',
+  [TEST_LEVEL.COLUMN]: 'label.column-lowercase',
+  [TEST_LEVEL.COLUMN_DIMENSION]: 'label.column-lowercase',
+};
 const showDimensionFields = computed(
   () => form.testLevel === TEST_LEVEL.COLUMN_DIMENSION || (isEdit.value && form.testLevel === TEST_LEVEL.COLUMN && form.dimensionColumns.length > 0),
 );
@@ -289,7 +300,7 @@ watch(
         <Spin :spinning="loadingTable">
           <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 16px" />
           <Form layout="vertical">
-            <Form.Item v-if="!isEdit" required :label="t('quality.testCases.form.levelLabel')">
+            <Form.Item v-if="!isEdit" required :label="t('message.select-test-level')">
               <div class="tc-form__levels" data-testid="test-case-levels">
                 <button
                   v-for="level in [TEST_LEVEL.TABLE, TEST_LEVEL.COLUMN, TEST_LEVEL.COLUMN_DIMENSION]"
@@ -302,19 +313,19 @@ watch(
                   @focus="activeField = 'testLevel'"
                 >
                   <div class="tc-form__level-title">
-                    {{ t(`quality.testCases.form.level.${level}`) }}
-                    <span v-if="level === TEST_LEVEL.COLUMN_DIMENSION" class="tc-form__beta">{{ t('quality.testCases.form.beta') }}</span>
+                    {{ t(LEVEL_LABEL[level]) }}
+                    <span v-if="level === TEST_LEVEL.COLUMN_DIMENSION" class="tc-form__beta">{{ t('shared.beta') }}</span>
                   </div>
-                  <div class="tc-form__level-desc">{{ t(`quality.testCases.form.levelHint.${level}`) }}</div>
+                  <div class="tc-form__level-desc">{{ t('label.test-applied-on-entity', { entity: t(LEVEL_HINT_ENTITY[level]) }) }}</div>
                 </button>
               </div>
             </Form.Item>
-            <Form.Item :label="t('quality.testCases.form.table')" required>
+            <Form.Item :label="t('label.table')" required>
               <Select
                 v-model:value="form.selectedTable"
                 show-search
                 :filter-option="false"
-                :placeholder="t('quality.testCases.form.tablePlaceholder')"
+                :placeholder="t('label.select-entity', { entity: t('label.table') })"
                 :options="tableOptions"
                 :disabled="isEdit"
                 allow-clear
@@ -323,11 +334,11 @@ watch(
                 @focus="activeField = 'table'"
               />
             </Form.Item>
-            <Form.Item v-if="form.testLevel !== TEST_LEVEL.TABLE" :label="t('quality.testCases.form.column')" required>
+            <Form.Item v-if="form.testLevel !== TEST_LEVEL.TABLE" :label="t('label.column')" required>
               <Select
                 v-model:value="form.selectedColumn"
                 show-search
-                :placeholder="t('quality.testCases.form.columnPlaceholder')"
+                :placeholder="t('label.select-entity', { entity: t('label.column') })"
                 :options="columnOptions"
                 :disabled="isEdit || !form.selectedTable"
                 allow-clear
@@ -336,18 +347,18 @@ watch(
               />
             </Form.Item>
             <template v-if="showDimensionFields">
-              <Form.Item :label="t('quality.testCases.form.dimensionColumns')">
+              <Form.Item :label="t('label.dimension-plural')">
                 <Select
                   v-model:value="form.dimensionColumns"
                   mode="multiple"
                   show-search
-                  :placeholder="t('quality.testCases.form.dimensionPlaceholder')"
+                  :placeholder="t('label.select-entity', { entity: t('label.dimension-plural') })"
                   :options="dimensionOptions"
                   data-testid="test-case-dimensions"
                   @focus="activeField = 'dimensionColumns'"
                 />
               </Form.Item>
-              <Form.Item :label="t('quality.testCases.form.topDimensions')">
+              <Form.Item :label="t('label.top-dimension-plural')">
                 <InputNumber
                   v-model:value="form.topDimensions"
                   :min="MIN_TOP_DIMENSIONS"
@@ -357,13 +368,13 @@ watch(
                 />
               </Form.Item>
             </template>
-            <Form.Item :label="t('quality.testCases.form.testType')" required>
+            <Form.Item :label="t('label.test-type')" required>
               <div class="tc-form__type-row">
                 <Select
                   v-model:value="form.testTypeId"
                   show-search
                   option-filter-prop="label"
-                  :placeholder="t('quality.testCases.form.testTypePlaceholder')"
+                  :placeholder="t('label.select-test-type')"
                   :disabled="isEdit"
                   data-testid="test-case-type"
                   @focus="activeField = 'testType'"
@@ -379,7 +390,7 @@ watch(
                   </Select.Option>
                 </Select>
                 <Button type="link" data-testid="test-case-custom-sql" @click="useCustomSql">
-                  {{ t('quality.testCases.form.customSql') }}
+                  {{ t('label.custom-query') }}
                 </Button>
               </div>
             </Form.Item>
@@ -405,18 +416,18 @@ watch(
                 />
               </Form.Item>
             </template>
-            <Form.Item :label="t('crud.name')">
+            <Form.Item :label="t('label.name')">
               <Input
                 v-model:value="form.testName"
-                :placeholder="t('quality.testCases.form.namePlaceholder')"
+                :placeholder="t('message.enter-test-case-name')"
                 data-testid="test-case-name"
                 @focus="activeField = 'name'"
               />
             </Form.Item>
-            <Form.Item v-if="isEdit" :label="t('crud.displayName')">
+            <Form.Item v-if="isEdit" :label="t('label.display-name')">
               <Input v-model:value="form.displayName" data-testid="test-case-display-name" />
             </Form.Item>
-            <Form.Item :label="t('crud.description')">
+            <Form.Item :label="t('label.description')">
               <SmRichTextEditor
                 :key="testCase?.id || 'create'"
                 :initial-value="form.description"
@@ -424,25 +435,25 @@ watch(
                 @text-change="form.description = $event"
               />
             </Form.Item>
-            <Form.Item :label="t('quality.testCases.form.tags')">
+            <Form.Item :label="t('label.tag-plural')">
               <Select
                 v-model:value="selectedTagFqns"
                 mode="multiple"
                 show-search
                 :filter-option="false"
-                :placeholder="t('quality.testCases.form.tagsPlaceholder')"
+                :placeholder="t('label.select-field', { field: t('label.tag-plural') })"
                 :options="tagOptions"
                 data-testid="test-case-tags"
                 @search="searchTagOptions"
               />
             </Form.Item>
-            <Form.Item :label="t('quality.testCases.form.glossaryTerms')">
+            <Form.Item :label="t('label.glossary-term-plural')">
               <Select
                 v-model:value="selectedGlossaryFqns"
                 mode="multiple"
                 show-search
                 :filter-option="false"
-                :placeholder="t('quality.testCases.form.glossaryPlaceholder')"
+                :placeholder="t('label.select-field', { field: t('label.glossary-term-plural') })"
                 :options="glossaryOptions"
                 data-testid="test-case-glossary"
                 @search="searchGlossaryOptions"
@@ -454,9 +465,9 @@ watch(
       <aside class="tc-form__side" data-testid="test-case-form-side">
         <template v-if="isEdit && tableDetail">
           <Typography.Title :level="5">{{ tableDetail.displayName || tableDetail.name }}</Typography.Title>
-          <Typography.Paragraph type="secondary">{{ tableDetail.description || t('quality.testCases.form.noDescription') }}</Typography.Paragraph>
-          <p>{{ t('quality.testCases.form.tableType') }}: {{ tableDetail.tableType || '—' }}</p>
-          <p>{{ t('quality.testCases.form.columns') }}: {{ tableDetail.schemaRows.length }}</p>
+          <Typography.Paragraph type="secondary">{{ tableDetail.description || t('label.no-description') }}</Typography.Paragraph>
+          <p>{{ t('label.table-type') }}: {{ tableDetail.tableType || '—' }}</p>
+          <p>{{ t('label.column-plural') }}: {{ tableDetail.schemaRows.length }}</p>
         </template>
         <template v-else>
           <Typography.Title :level="4">Data Quality</Typography.Title>
@@ -467,7 +478,7 @@ watch(
     </div>
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
-        <Button data-testid="test-case-form-cancel" @click="close">{{ t('crud.cancel') }}</Button>
+        <Button data-testid="test-case-form-cancel" @click="close">{{ t('label.cancel') }}</Button>
         <Button type="primary" :loading="saving" data-testid="test-case-form-submit" @click="onSubmit">{{ okText }}</Button>
       </Space>
     </template>

@@ -2406,11 +2406,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('keeps the preserved overview tab on a catalog Pipeline page listing tasks alone (F-2)', async () => {
-    // Official Pipeline TabsIds have no Quality tab. The catalog
-    // Pipeline fallback still preserves `overview` (no Pipeline TabsId
-    // resolves to it); executions, lineage, activity, and custom
-    // properties are removed when unlisted.
+  it('does not keep a product-invented overview tab on a catalog Pipeline page listing tasks alone (F-2)', async () => {
+    // Official Pipeline TabsIds have no Quality tab and no OVERVIEW.
+    // A tasks-only customization therefore renders Tasks alone; the
+    // product must not preserve a fallback overview official does not have.
     stubWithDoc(
       docWithPage('Pipeline', [{ id: 'tasks', name: 'tasks' }]),
       (url) => {
@@ -2435,7 +2434,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
     await settle(wrapper);
-    expect(tabLabels(wrapper)).toEqual(['Tasks', 'Overview']);
+    expect(tabLabels(wrapper)).toEqual(['Tasks']);
     expect(wrapper.find('[data-testid="asset-tab-quality"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(false);
     wrapper.unmount();

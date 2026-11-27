@@ -45,16 +45,16 @@ export const TEST_CASE_ADVANCED_FILTER_MENU: TestCaseFilterKey[] = [
 ];
 
 export const TEST_CASE_FILTER_I18N: Record<TestCaseFilterKey, string> = {
-  tableFqn: 'quality.testCases.tableFilter',
-  testPlatforms: 'quality.testCases.platformFilter',
-  testCaseType: 'quality.testCases.typeFilter',
-  testCaseStatus: 'quality.testCases.statusFilter',
-  lastRunRange: 'quality.testCases.lastRunFilter',
-  tier: 'quality.testCases.tierFilter',
-  tags: 'quality.testCases.tagFilter',
-  serviceName: 'quality.testCases.serviceFilter',
-  dataQualityDimension: 'quality.testCases.dimensionFilter',
-  dataProductFqn: 'quality.testCases.dataProductFilter',
+  tableFqn: 'label.table',
+  testPlatforms: 'label.platform',
+  testCaseType: 'label.type',
+  testCaseStatus: 'label.status',
+  lastRunRange: 'label.last-run',
+  tier: 'label.tier',
+  tags: 'label.tag-plural',
+  serviceName: 'label.service',
+  dataQualityDimension: 'label.dimension',
+  dataProductFqn: 'label.data-product-plural',
 };
 
 /** Official TEST_CASE_PLATFORM_OPTION: label is the enum value. */

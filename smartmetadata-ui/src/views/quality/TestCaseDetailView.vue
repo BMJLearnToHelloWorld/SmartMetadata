@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
@@ -71,8 +72,8 @@ const editEntity = computed(() => {
 const resultSeries = computed(() => testResultsToTimeline(results.value));
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('quality.testCases.title'), to: { name: 'quality-test-cases' } },
-  { label: entityLabel(testCase.value) || t('quality.testCases.title') },
+  { label: t('label.data-quality'), to: { name: 'quality-test-cases' } },
+  { label: entityLabel(testCase.value) || t('label.entity-detail-plural', { entity: t('label.test-case') }) },
 ]);
 
 const tabs = computed<EntityDetailTab[]>(() =>
@@ -84,15 +85,15 @@ const tabs = computed<EntityDetailTab[]>(() =>
 );
 
 const issueColumns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.status'), dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
+  { title: t('label.status'), dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
   { title: t('observability.incidents.severity'), dataIndex: 'severity', key: 'severity', width: 120 },
   { title: t('observability.incidents.updated'), key: 'timestamp', width: 200 },
 ]);
 
 const resultColumns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.status'), dataIndex: 'testCaseStatus', key: 'testCaseStatus', width: 120 },
-  { title: t('quality.testCases.timestamp'), key: 'timestamp', width: 200 },
-  { title: t('quality.testCases.result'), dataIndex: 'result', key: 'result' },
+  { title: t('label.status'), dataIndex: 'testCaseStatus', key: 'testCaseStatus', width: 120 },
+  { title: t('label.last-run'), key: 'timestamp', width: 200 },
+  { title: t('label.test-case-result'), dataIndex: 'result', key: 'result' },
   // 只呈现运行实际算出的命名值（removedRows / addedRows / diffCount 等）；
   // 未算出的字段不占位、不补假值。ADR:2026-11-08-data-diff-p2-5-p2-6-bindings-and-form
   { title: t('quality.testCases.diffValues'), key: 'values', width: 220 },
@@ -139,7 +140,7 @@ async function load(): Promise<void> {
         issuesError.value = '';
       } catch {
         issues.value = [];
-        issuesError.value = t('crud.loadFailed');
+        issuesError.value = t('server.entity-fetch-error', { entity: t('label.incident') });
       }
     } else {
       results.value = [];
@@ -150,7 +151,7 @@ async function load(): Promise<void> {
     editDefinition.value = null;
     results.value = [];
     issues.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case') }));
   } finally {
     loading.value = false;
   }
@@ -161,20 +162,20 @@ async function onDeleteTestCase(): Promise<void> {
     return;
   }
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: entityLabel(testCase.value) }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
+    title: t('label.delete'),
+    content: t('message.delete-entity-message', { entity: entityLabel(testCase.value) }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
   });
   if (!confirmed) {
     return;
   }
   try {
     await deleteTestCase(testCase.value.id, { hardDelete: true });
-    message.success(t('crud.deletedName', { name: entityLabel(testCase.value) }));
+    message.success(t('server.entity-deleted-successfully', { entity: entityLabel(testCase.value) }));
     await router.push({ name: 'quality-test-cases' });
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+    message.error(getErrorText(error, t('server.delete-entity-error', { entity: t('label.test-case') })));
   }
 }
 
@@ -240,10 +241,10 @@ async function onSave(): Promise<void> {
       parameterValues,
     });
     editOpen.value = false;
-    message.success(t('quality.testCases.updated'));
+    message.success(t('server.update-entity-success', { entity: t('label.test-case') }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-case') })));
   } finally {
     saving.value = false;
   }
@@ -288,10 +289,10 @@ onMounted(() => {
 
 <template>
   <EntityDetailShell
-    :title="entityLabel(testCase) || t('quality.testCases.title')"
+    :title="entityLabel(testCase) || t('label.entity-detail-plural', { entity: t('label.test-case') })"
     :name="testCase?.name"
     :fqn="testCase?.fullyQualifiedName"
-    :lead="t('quality.testCases.lead')"
+    :lead="t('label.entity-detail-plural', { entity: t('label.test-case') })"
     :loading="loading"
     :error="errorMessage"
     :empty="!testCase && !loading && !errorMessage"
@@ -300,9 +301,9 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('label.edit') }}</Button>
       <Button data-testid="test-case-versions" :disabled="!testCase" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('crud.delete') }}</Button>
+      <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('label.delete') }}</Button>
       <Button :disabled="!testCase?.entityLink && !testCase?.entityFQN" @click="openAsset">
         {{ t('quality.testCases.openAsset') }}
       </Button>
@@ -316,18 +317,18 @@ onMounted(() => {
     </template>
     <template #overview>
       <Descriptions v-if="testCase" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ testCase.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.fqn')">{{ testCase.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.name')">{{ testCase.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.fully-qualified-name')">{{ testCase.fullyQualifiedName }}</Descriptions.Item>
         <Descriptions.Item :label="t('quality.testCases.entityLink')">
           {{ testCase.entityLink || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('quality.testCases.latestStatus')">
+        <Descriptions.Item :label="t('label.status')">
           {{ testCase.testCaseResult?.testCaseStatus || testCase.testCaseStatus || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('quality.testCases.latestResult')">
+        <Descriptions.Item :label="t('label.test-case-result')">
           {{ testCase.testCaseResult?.result || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ testCase.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.description')">{{ testCase.description || '—' }}</Descriptions.Item>
       </Descriptions>
     </template>
     <template #results>
@@ -413,25 +414,25 @@ onMounted(() => {
         v-else
         state="empty"
         test-id="test-case-dimensionality-residual"
-        :empty-text="t('quality.testCases.residualDimensionality')"
+        :empty-text="t('label.no-data')"
       />
     </template>
     <template #sql-query>
-      <SmState state="empty" test-id="test-case-sql-query-residual" :empty-text="t('quality.testCases.residualSqlQuery')" />
+      <SmState state="empty" test-id="test-case-sql-query-residual" :empty-text="t('label.sql-uppercase-query')" />
     </template>
   </EntityDetailShell>
   <FormModal
     :open="editOpen"
-    :title="t('quality.testCases.editTitle')"
-    :ok-text="t('crud.edit')"
-    :cancel-text="t('crud.cancel')"
+    :title="t('label.edit-entity', { entity: t('label.test-case') })"
+    :ok-text="t('label.update')"
+    :cancel-text="t('label.cancel')"
     :confirm-loading="saving"
     @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
+      <Form.Item :label="t('label.display-name')">
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
+      <Form.Item :label="t('label.description')">
         <Input.TextArea v-model:value="editForm.description" :rows="3" />
       </Form.Item>
       <TableDiffFields
@@ -442,7 +443,7 @@ onMounted(() => {
         :model-value="editForm.parameterValues"
         @update:model-value="editForm.parameterValues = $event"
       />
-      <Form.Item v-else :label="t('quality.testCases.parameters')">
+      <Form.Item v-else :label="t('label.parameter-plural')">
         <Input.TextArea v-model:value="editForm.parameterText" :rows="3" />
       </Form.Item>
     </Form>
