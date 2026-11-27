@@ -148,6 +148,8 @@ export function getColumnCustomMetric(
 
 interface ColumnCustomMetricDef {
   name: string;
+  expression?: string;
+  columnName?: string;
 }
 
 /**

@@ -225,7 +225,7 @@ onMounted(() => {
           </template>
         </Tabs.TabPane>
       </Tabs>
-      <div v-if="!deleted" class="asset-dq__header-actions">
+      <div v-if="!deleted && showIncidentTab" class="asset-dq__header-actions">
         <Dropdown :trigger="['click']">
           <Button type="primary" data-testid="asset-dq-add">
             {{ t('quality.asset.add') }}

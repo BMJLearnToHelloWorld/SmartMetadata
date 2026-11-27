@@ -4,9 +4,8 @@
   Official SingleColumnProfile: column summary, data-quality test pie,
   count/proportion/math/sum/quartile charts, optional histogram and
   cardinality, and column custom-metric graphs. Vue3 + ant-design-vue +
-  existing SmChart. No CCL React/CSS copy. Official CustomMetricGraphs
-  overflow edit/delete menus are not invented here; they stay a leftover
-  unless landed with the official drawer/delete path.
+  existing SmChart. No CCL React/CSS copy. Official CustomMetricGraphs overflow edit/delete menus follow
+  TableProfilerProvider permissions.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
@@ -28,6 +27,9 @@ import {
 import { defaultProfilerRange, pointsForKey } from '@/quality/tableProfilerChart';
 import type { ColumnProfile } from '@/types/quality';
 import type { TestCaseCountByStatus } from '@/quality/testCaseSummary';
+import type { OperationPermissions } from '@/api/permissions';
+import type { CustomMetricRecord } from '@/api/customMetrics';
+import CustomMetricGraphs from './CustomMetricGraphs.vue';
 import ColumnSummary from './ColumnSummary.vue';
 
 const props = defineProps<{
@@ -35,6 +37,13 @@ const props = defineProps<{
   columns: ColumnProfileRecord[];
   isProfilingEnabled: boolean;
   testCaseSummary?: Record<string, TestCaseCountByStatus>;
+  tableId?: string;
+  permissions?: OperationPermissions;
+}>();
+
+const emit = defineEmits<{
+  (event: 'edit-metric', metric: CustomMetricRecord): void;
+  (event: 'metric-deleted'): void;
 }>();
 
 const { t } = useI18n();
@@ -50,7 +59,12 @@ const selectedColumn = computed(() =>
   props.columns.find((column) => column.fullyQualifiedName === props.activeColumnFqn),
 );
 
-const customMetrics = computed(() => getColumnCustomMetric(props.columns, props.activeColumnFqn));
+const customMetrics = computed(() =>
+  getColumnCustomMetric(props.columns, props.activeColumnFqn).map((metric) => ({
+    ...metric,
+    columnName: metric.columnName ?? selectedColumn.value?.name,
+  })),
+);
 
 const metricTitles = computed<ColumnMetricsCollections>(() => ({
   countMetrics: {
@@ -275,15 +289,15 @@ watch(
         :height="240"
       />
     </div>
-    <div
-      v-for="series in customSeries"
-      :key="series.name"
-      class="single-column-profile__card"
-      :data-testid="`custom-metric-graph-${series.name}`"
-    >
-      <Typography.Text strong>{{ series.name }}</Typography.Text>
-      <SmChart kind="area" :test-id="`custom-metric-chart-${series.name}`" :series="[series]" :empty="noProfilerMessage" :height="240" />
-    </div>
+    <CustomMetricGraphs
+      :series="customSeries"
+      :custom-metrics="customMetrics"
+      :empty-text="noProfilerMessage"
+      :permissions="permissions"
+      :table-id="tableId"
+      @edit="emit('edit-metric', $event)"
+      @deleted="emit('metric-deleted')"
+    />
     <Typography.Paragraph v-if="!isProfilingEnabled" type="secondary" class="single-column-profile__docs">
       <a :href="PROFILER_WORKFLOW_DOCS" rel="noreferrer" target="_blank">{{ t('label.documentation') }}</a>
     </Typography.Paragraph>

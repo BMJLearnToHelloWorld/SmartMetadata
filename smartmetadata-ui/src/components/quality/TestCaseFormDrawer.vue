@@ -36,6 +36,9 @@ import {
 const props = defineProps<{
   open: boolean;
   testCase?: TestCase;
+  /** Official TabFilters onTestCaseDrawerOpen(formType) seeds the create form. */
+  initialTableFqn?: string;
+  initialTestLevel?: TestLevel;
 }>();
 
 const emit = defineEmits<{
@@ -119,6 +122,14 @@ async function resetForm(): Promise<void> {
   errorMessage.value = '';
   activeField.value = isEdit.value ? 'table' : 'testLevel';
   Object.assign(form, props.testCase ? formValuesFromTestCase(props.testCase) : createEmptyTestCaseForm());
+  if (!props.testCase) {
+    if (props.initialTestLevel) {
+      form.testLevel = props.initialTestLevel;
+    }
+    if (props.initialTableFqn) {
+      form.selectedTable = props.initialTableFqn;
+    }
+  }
   tableDetail.value = undefined;
   if (form.selectedTable) {
     await loadTable(form.selectedTable);

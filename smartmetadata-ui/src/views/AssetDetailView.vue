@@ -2307,6 +2307,9 @@ onMounted(() => {
               :deleted="Boolean(asset.deleted)"
               :table-id="asset.id"
               :columns="asset.schemaRows"
+              :permissions-loaded="!loading"
+              :view-data-profile="assetOps?.ViewDataProfile === true"
+              :permissions="assetOps ?? undefined"
             />
           </template>
       </template>

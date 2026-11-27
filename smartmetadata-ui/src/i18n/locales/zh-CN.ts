@@ -382,7 +382,7 @@ const zhCN = {
     no: '否',
     'no-anomaly-plural': '无异常',
     'not-null': '非空',
-    null: '可空',
+    null: '无效的',
     'no-assets-linked-yet': '尚未关联任何资产',
     'no-audit-logs-yet': '暂无审计日志',
     'no-authentication': '无认证',

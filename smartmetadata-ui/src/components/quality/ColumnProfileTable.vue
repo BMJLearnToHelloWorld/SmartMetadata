@@ -16,6 +16,8 @@ import { fetchTestCaseResultByTestSuiteId } from '@/api/dataQualityReports';
 import { getTableColumnsByFQN, searchTableColumnsByFQN } from '@/api/columns';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import NoSearchResultsPlaceholder from '@/components/shared/NoSearchResultsPlaceholder.vue';
+import type { OperationPermissions } from '@/api/permissions';
+import type { CustomMetricRecord } from '@/api/customMetrics';
 import type { TableProfile } from '@/types/quality';
 import { aggregateTestResultsByEntity, type TestCaseCountByStatus } from '@/quality/testCaseSummary';
 import {
@@ -46,17 +48,23 @@ const props = withDefaults(
     entityFqn: string;
     testSuiteId?: string;
     tableProfile: TableProfile | null;
+    tableId?: string;
     permissionsLoaded?: boolean;
     viewDataProfile?: boolean;
+    permissions?: OperationPermissions;
   }>(),
   {
+    tableId: undefined,
     permissionsLoaded: false,
     viewDataProfile: false,
+    permissions: undefined,
   },
 );
 
 const emit = defineEmits<{
   (event: 'open-data-quality'): void;
+  (event: 'edit-metric', metric: CustomMetricRecord): void;
+  (event: 'metric-deleted'): void;
 }>();
 
 const { t } = useI18n();
@@ -230,6 +238,10 @@ onBeforeUnmount(() => {
       :columns="data"
       :is-profiling-enabled="isProfilingEnabled"
       :test-case-summary="testCaseSummary"
+      :table-id="tableId"
+      :permissions="permissions"
+      @edit-metric="emit('edit-metric', $event)"
+      @metric-deleted="emit('metric-deleted')"
     />
 
     <div v-else class="column-profile-table__list">

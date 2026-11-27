@@ -47,3 +47,39 @@ export async function listTableCustomMetricNames(tableId: string): Promise<strin
   const metrics = (payload as { customMetrics?: Array<{ name?: string }> } | null)?.customMetrics ?? [];
   return metrics.map((metric) => metric.name).filter((name): name is string => Boolean(name));
 }
+
+export interface CustomMetricRecord {
+  name: string;
+  expression?: string;
+  columnName?: string;
+}
+
+/**
+ * Official CustomMetricGraphs and CustomMetricForm read table.customMetrics
+ * (name, expression, columnName) from GET /v1/tables/{id}?fields=customMetrics.
+ */
+export async function listTableCustomMetrics(tableId: string): Promise<CustomMetricRecord[]> {
+  const payload = await apiRequest<unknown>(`/v1/tables/${encodeURIComponent(tableId)}`, {
+    query: { fields: 'customMetrics' },
+  });
+  const metrics = (payload as { customMetrics?: CustomMetricRecord[] } | null)?.customMetrics ?? [];
+  return metrics.filter((metric): metric is CustomMetricRecord => Boolean(metric?.name));
+}
+
+/**
+ * Official deleteCustomMetric: DELETE
+ * /v1/tables/{tableId}/customMetric/{columnName?}/{customMetricName}?recursive=true&hardDelete=true
+ */
+export async function deleteCustomMetric(options: {
+  tableId: string;
+  customMetricName: string;
+  columnName?: string;
+}): Promise<void> {
+  const url = options.columnName
+    ? `${encodeURIComponent(options.columnName)}/${encodeURIComponent(options.customMetricName)}`
+    : encodeURIComponent(options.customMetricName);
+  await apiRequest(`/v1/tables/${encodeURIComponent(options.tableId)}/customMetric/${url}`, {
+    method: 'DELETE',
+    query: { recursive: true, hardDelete: true },
+  });
+}

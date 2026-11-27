@@ -11,13 +11,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Form, Input, message } from 'ant-design-vue';
+import { Form, Input, Select, message } from 'ant-design-vue';
 import type { FormInstance, Rule } from 'ant-design-vue/es/form';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import SmCodeEditor from '@/components/shared/SmCodeEditor.vue';
 import ShowHintToggle from '@/components/quality/ShowHintToggle.vue';
 import TableProfilerChartPreview from '@/components/quality/TableProfilerChartPreview.vue';
-import { listTableCustomMetricNames, putCustomMetric } from '@/api/customMetrics';
+import { listTableCustomMetricNames, putCustomMetric, type CustomMetricRecord } from '@/api/customMetrics';
 import { ENTITY_NAME_REGEX } from '@/utils/entityName';
 import { CSMode } from '@/utils/codeMirrorUtils';
 
@@ -30,12 +30,20 @@ const props = withDefaults(
     /** Official isColumnMetric; QualityTab 添加 always opens table-level (false). */
     isColumnMetric?: boolean;
     existingNames?: string[];
+    /** Official metric being edited; omit to add a new one. */
+    metric?: CustomMetricRecord;
+    /** Official activeColumnFqn seeds a new column metric's columnName. */
+    activeColumnFqn?: string;
+    columns?: Array<{ name: string; dataType?: string; fullyQualifiedName?: string; displayName?: string }>;
   }>(),
   {
     tableId: undefined,
     entityFqn: undefined,
     isColumnMetric: false,
     existingNames: () => [],
+    metric: undefined,
+    activeColumnFqn: undefined,
+    columns: () => [],
   },
 );
 
@@ -46,7 +54,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const formRef = ref<FormInstance>();
-const form = reactive({ name: '', expression: '' });
+const form = reactive({ name: '', expression: '', columnName: '' });
+const isEditMode = computed(() => Boolean(props.metric));
 const submitting = ref(false);
 const loadedNames = ref<string[]>([]);
 /** Official ShowHintToggle default is true. */
@@ -57,10 +66,18 @@ const previewMetrics = computed(() => metricNames.value.map((name) => ({ name })
 const drawerWidthKey = computed(() => (showHint.value ? 'formWithHint' : 'formWithoutHint'));
 
 const title = computed(() =>
-  t('label.add-entity-metric', {
-    entity: props.isColumnMetric ? t('label.column') : t('label.table'),
-  }),
+  isEditMode.value
+    ? t('label.edit-entity', { entity: props.metric?.name })
+    : t('label.add-entity-metric', {
+        entity: props.isColumnMetric ? t('label.column') : t('label.table'),
+      }),
 );
+const submitLabel = computed(() => (isEditMode.value ? t('label.save') : t('label.create')));
+
+function columnNameFromActiveFqn(): string {
+  const match = props.columns.find((column) => column.fullyQualifiedName === props.activeColumnFqn);
+  return match?.name || props.metric?.columnName || '';
+}
 
 const nameRules: Rule[] = [
   { required: true, message: t('label.field-required', { field: t('label.name') }) },
@@ -74,7 +91,7 @@ const nameRules: Rule[] = [
   },
   {
     validator: async (_rule, value: string) => {
-      if (value && metricNames.value.includes(value)) {
+      if (value && !isEditMode.value && metricNames.value.includes(value)) {
         return Promise.reject(new Error(t('message.entity-already-exists', { entity: t('label.custom-metric') })));
       }
       return Promise.resolve();
@@ -88,8 +105,9 @@ watch(
     if (!open) {
       return;
     }
-    form.name = '';
-    form.expression = '';
+    form.name = props.metric?.name ?? '';
+    form.expression = props.metric?.expression ?? '';
+    form.columnName = props.metric?.columnName ?? columnNameFromActiveFqn();
     showHint.value = true;
     loadedNames.value = [...props.existingNames];
     if (props.tableId) {
@@ -107,6 +125,7 @@ watch(
 function onClose(): void {
   form.name = '';
   form.expression = '';
+  form.columnName = '';
   emit('close');
 }
 
@@ -128,15 +147,20 @@ async function onSubmit(): Promise<void> {
     await putCustomMetric(props.tableId, {
       name: form.name.trim(),
       expression: form.expression,
+      ...(props.isColumnMetric && form.columnName ? { columnName: form.columnName } : {}),
     });
-    message.success(t('server.create-entity-success', { entity: form.name.trim() }));
+    message.success(
+      t(isEditMode.value ? 'server.update-entity-success' : 'server.create-entity-success', {
+        entity: form.name.trim(),
+      }),
+    );
     emit('success');
     onClose();
   } catch (error) {
     message.error(
       error instanceof Error
         ? error.message
-        : t('server.create-entity-error', { entity: form.name.trim() || t('label.custom-metric') }),
+        : t(isEditMode.value ? 'server.update-entity-error' : 'server.create-entity-error', { entity: form.name.trim() || t('label.custom-metric') }),
     );
   } finally {
     submitting.value = false;
@@ -148,7 +172,7 @@ async function onSubmit(): Promise<void> {
   <SmDrawer
     :open="open"
     :title="title"
-    :ok-text="t('label.create')"
+    :ok-text="submitLabel"
     :cancel-text="t('label.cancel')"
     :confirm-loading="submitting"
     :ok-disabled="!tableId"
@@ -177,7 +201,23 @@ async function onSubmit(): Promise<void> {
         <Input
           v-model:value="form.name"
           data-testid="custom-metric-name"
+          :disabled="isEditMode"
           :placeholder="t('label.enter-entity', { entity: t('label.name') })"
+        />
+      </Form.Item>
+      <Form.Item
+        v-if="isColumnMetric"
+        name="columnName"
+        :label="t('label.column')"
+        required
+        :rules="[{ required: true, message: t('label.field-required', { field: t('label.column') }) }]"
+      >
+        <Select
+          v-model:value="form.columnName"
+          data-testid="custom-metric-column"
+          :disabled="isEditMode"
+          :placeholder="t('label.enter-entity', { entity: t('label.column') })"
+          :options="columns.map((column) => ({ value: column.name, label: column.displayName || column.name }))"
         />
       </Form.Item>
       <Form.Item :label="t('label.sql-uppercase-query')" required>

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { listTableCustomMetricNames, putCustomMetric } from './customMetrics';
+import { deleteCustomMetric, listTableCustomMetricNames, putCustomMetric } from './customMetrics';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const call = vi.mocked(fetch).mock.calls.at(-1);
@@ -56,5 +56,18 @@ describe('customMetrics API (official customMetricAPI)', () => {
       }),
     );
     await expect(listTableCustomMetricNames('tbl-1')).resolves.toEqual(['row_ratio', 'dup']);
+  });
+  it('DELETEs official table-level customMetric with recursive and hardDelete', async () => {
+    await deleteCustomMetric({ tableId: 'tbl-1', customMetricName: 'row_ratio' });
+    const call = lastFetch();
+    expect(call.url).toContain('/api/v1/tables/tbl-1/customMetric/row_ratio');
+    expect(call.url).toContain('recursive=true');
+    expect(call.url).toContain('hardDelete=true');
+    expect(call.init?.method).toBe('DELETE');
+  });
+
+  it('includes official columnName in the delete path for column metrics', async () => {
+    await deleteCustomMetric({ tableId: 'tbl-1', customMetricName: 'nulls', columnName: 'id' });
+    expect(lastFetch().url).toContain('/api/v1/tables/tbl-1/customMetric/id/nulls');
   });
 });

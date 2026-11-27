@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { persistSession } from '@/auth/token';
 import { createTestI18n } from '@/test/i18n';
 import TableProfilerChartPreview from './TableProfilerChartPreview.vue';
@@ -50,14 +51,18 @@ describe('TableProfilerChartPreview (official showHeader=false TableProfilerChar
   });
 
   it('loads official tableProfile and systemProfile ranges and renders data-volume, volume-change, and custom metric charts', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] });
+    await router.push('/');
+    await router.isReady();
     const wrapper = mount(TableProfilerChartPreview, {
       props: { entityFqn: 'db.schema.tbl', customMetrics: [{ name: 'row_ratio' }] },
-      global: { plugins: [Antd, createTestI18n('zh-CN')] },
+      global: { plugins: [Antd, router, createTestI18n('zh-CN')] },
     });
     await flushPromises();
     expect(wrapper.get('[data-testid="table-profiler-chart-container"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="table-profiler-chart-metrics"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="row-metrics"]').text()).toContain('数据量');
+    expect(wrapper.find('[data-testid="row_ratio-custom-metrics-menu"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="table-profiler-row-count-chart"]').attributes('data-kind')).toBe('area');
     expect(wrapper.get('[data-testid="operation-metrics"]').text()).toContain('数据量变化');
     expect(wrapper.get('[data-testid="table-profiler-operation-chart"]').attributes('data-kind')).toBe('bar');
