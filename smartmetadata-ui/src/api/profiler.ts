@@ -293,3 +293,15 @@ export async function listSystemProfiles(fqn: string, startTs: number, endTs: nu
   });
   return parsePaged(raw, mapSystemProfile).data;
 }
+
+/** Official getColumnProfilerList: GET /v1/tables/{columnFqn}/columnProfile?startTs&endTs. */
+export async function listColumnProfiles(
+  columnFqn: string,
+  startTs: number,
+  endTs: number,
+): Promise<ColumnProfile[]> {
+  const raw = await apiRequest<unknown>(`/v1/tables/${encodeURIComponent(columnFqn)}/columnProfile`, {
+    query: { startTs, endTs },
+  });
+  return parsePaged(raw, (row) => mapColumnProfile(row, asString(row.name) || columnFqn)).data;
+}

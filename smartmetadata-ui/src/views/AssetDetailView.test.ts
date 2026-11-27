@@ -327,7 +327,7 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Activity feed');
     expect(wrapper.text()).toContain('Schema');
     expect(wrapper.text()).toContain('Lineage');
-    expect(wrapper.text()).toContain('Profiler');
+    expect(wrapper.text()).toContain('Data Observability');
   });
 
   it('passes the fetched EditLineage flag into the lineage tab canvas (L6)', async () => {
@@ -345,7 +345,9 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.find('[data-testid="asset-rowcount-chart"]').attributes('data-points')).toBe('1');
     expect(wrapper.find('[data-testid="asset-usage-chart"]').attributes('data-points')).toBe('1');
     expect(wrapper.find('[data-testid="asset-column-null-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="asset-test-status-chart"]').attributes('data-points')).toBe('1');
+    // Official TableProfilerChart does not host the test-status chart;
+    // tests live on QualityTab (AssetDataQualityTab).
+    expect(wrapper.find('[data-testid="asset-test-status-chart"]').exists()).toBe(false);
     expect(lastMatchingFetch((url) => url.includes('/tableProfile') && !url.includes('/latest')).url).toContain(
       'startTs=',
     );
@@ -1246,7 +1248,7 @@ describe('AssetDetailView persona tab customization (C-4)', () => {
       'Activity feed',
       'Sample data',
       'Queries',
-      'Profiler',
+      'Data Observability',
       'Lineage',
       'dbt',
       'View definition',

@@ -28,7 +28,7 @@ const TABLE_TABS: EntityDetailTabDef[] = [
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'sample_data', labelKey: 'sampleData', slot: 'sample' },
   { key: 'table_queries', labelKey: 'tableQueries', slot: 'tableQueries' },
-  { key: 'profiler', labelKey: 'profiler', slot: 'profiler' },
+  { key: 'profiler', labelKey: 'dataObservability', slot: 'profiler' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'dbt', labelKey: 'dbt', slot: 'residual', residual: 'asset.tabResidual.dbt' },
   { key: 'view_definition', labelKey: 'viewDefinition', slot: 'residual', residual: 'asset.tabResidual.viewDefinition' },

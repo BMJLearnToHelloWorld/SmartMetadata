@@ -104,9 +104,6 @@ async function mountPanel(profile: TableProfile | null) {
   await router.isReady();
   const wrapper = mount(AssetProfilerPanel, {
     props: {
-      tests: [],
-      testsError: '',
-      testStatusSeries: [],
       tableProfile: profile,
       rowCountSeries: [],
       usageSeries: [],
@@ -155,6 +152,13 @@ describe('AssetProfilerPanel', () => {
     expect(text).toContain('avg_age=42');
     expect(text).toContain('1-50: 7');
     expect(text).toContain('a: 6 (60%)');
+    wrapper.unmount();
+  });
+
+  it('does not host the test list on Table Profile', async () => {
+    const wrapper = await mountPanel(fullProfile);
+    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-test-status-chart"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
