@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import type { FacetBucket, SearchFacet } from './searchFacets';
+import type { SearchFacet } from './searchFacets';
 import type { SearchFilters } from './searchQuery';
 
 export interface EstateStaticChild {
@@ -39,7 +39,7 @@ export const ESTATE_CATEGORIES: EstateCategory[] = [
   {
     id: 'databases',
     titleKey: 'explore.estate.databases',
-    entityTypes: ['database', 'databaseSchema', 'storedProcedure', 'table'],
+    entityTypes: ['database', 'databaseSchema', 'storedProcedure', 'table', 'tableColumn'],
     expandable: true,
   },
   {
@@ -120,6 +120,7 @@ export const ESTATE_CATEGORIES: EstateCategory[] = [
 export interface EstateNode {
   key: string;
   categoryId: string;
+  serviceType?: string;
   service?: string;
   database?: string;
   schema?: string;
@@ -127,6 +128,12 @@ export interface EstateNode {
   titleKey: string;
   title?: string;
   count: number;
+  /**
+   * Official service-instance logo: service.style.iconURL from
+   * POST /v1/search/aggregate top-hits. Absent when the connector
+   * has no custom style; the tree falls back to the serviceType logo.
+   */
+  iconUrl?: string;
   /**
    * Official ExploreTree rule, mirrored: the expand chevron shows while a
    * node's children are unknown or present, never once it is known to be a
@@ -159,12 +166,14 @@ export function countForTypes(facets: SearchFacet[], entityTypes: string[]): num
 }
 
 /**
- * Next drill level for a node, following the official ExploreTree bucket
- * chain. Databases drill service → database → schema → entity type; every
- * other expandable category drills service → entity type, and entity-type
- * buckets are leaves (selecting one filters to that type).
+ * Next drill level for a node, following official
+ * ExplorePureUtils.getSubLevelHierarchyKey: category → SERVICE_TYPE →
+ * SERVICE → (databases only) DATABASE → SCHEMA → ENTITY_TYPE leaf.
+ * Entity-type buckets are leaves (selecting one filters to that type).
  */
-export function estateChildLevel(node: EstateNode): 'service' | 'database' | 'schema' | 'entityType' | null {
+export type EstateChildLevel = 'serviceType' | 'service' | 'database' | 'schema' | 'entityType';
+
+export function estateChildLevel(node: EstateNode): EstateChildLevel | null {
   if (node.entityType) {
     return null;
   }
@@ -177,53 +186,92 @@ export function estateChildLevel(node: EstateNode): 'service' | 'database' | 'sc
   if (node.service) {
     return node.categoryId === 'databases' ? 'database' : 'entityType';
   }
-  return 'service';
+  if (node.serviceType) {
+    return 'service';
+  }
+  return 'serviceType';
 }
 
-export function estateChildNodes(parent: EstateNode, buckets: FacetBucket[]): EstateNode[] {
+export interface EstateBucket {
+  key: string;
+  count: number;
+  iconUrl?: string;
+}
+
+/**
+ * Official ExploreTree sorts aggregation buckets by key, case-insensitive
+ * (localeCompare with sensitivity: 'base'), before building children.
+ */
+export function sortEstateBuckets(buckets: EstateBucket[]): EstateBucket[] {
+  return [...buckets].sort((left, right) => left.key.localeCompare(right.key, undefined, { sensitivity: 'base' }));
+}
+
+export function estateChildNodes(parent: EstateNode, buckets: EstateBucket[]): EstateNode[] {
   const level = estateChildLevel(parent);
   if (!level) {
     return [];
   }
-  return buckets.map((bucket) => {
+  return sortEstateBuckets(buckets).map((bucket) => {
     const base = {
       categoryId: parent.categoryId,
+      serviceType: parent.serviceType,
+      service: parent.service,
+      database: parent.database,
+      schema: parent.schema,
       titleKey: '',
       title: bucket.key,
       count: bucket.count,
+      iconUrl: bucket.iconUrl,
     };
     switch (level) {
+      case 'serviceType':
+        return {
+          ...base,
+          key: `${parent.key}:serviceType:${bucket.key}`,
+          serviceType: bucket.key,
+          service: undefined,
+          database: undefined,
+          schema: undefined,
+          iconUrl: undefined,
+          isLeaf: false,
+        };
       case 'service':
-        return { ...base, key: `${parent.key}:service:${bucket.key}`, service: bucket.key, isLeaf: false };
+        return {
+          ...base,
+          key: `${parent.key}:service:${bucket.key}`,
+          service: bucket.key,
+          database: undefined,
+          schema: undefined,
+          isLeaf: false,
+        };
       case 'database':
         return {
           ...base,
           key: `${parent.key}:database:${bucket.key}`,
-          service: parent.service,
           database: bucket.key,
+          schema: undefined,
+          iconUrl: undefined,
           isLeaf: false,
         };
       case 'schema':
         return {
           ...base,
           key: `${parent.key}:schema:${bucket.key}`,
-          service: parent.service,
-          database: parent.database,
           schema: bucket.key,
+          iconUrl: undefined,
           isLeaf: false,
         };
       case 'entityType':
         return {
           ...base,
           key: `${parent.key}:entityType:${bucket.key}`,
-          service: parent.service,
-          database: parent.database,
-          schema: parent.schema,
           entityType: bucket.key,
+          titleKey: `explore.entity.${bucket.key}`,
+          title: undefined,
+          iconUrl: undefined,
           isLeaf: true,
         };
       default:
-        // Unreachable: estateChildLevel only returns the four levels above.
         return { ...base, key: parent.key, isLeaf: true };
     }
   });
@@ -231,7 +279,7 @@ export function estateChildNodes(parent: EstateNode, buckets: FacetBucket[]): Es
 
 /** Facet to fetch and filters to scope it with for a node's next level. */
 export function estateDrill(node: EstateNode): {
-  facet: 'service' | 'database' | 'schema' | 'entityType';
+  facet: EstateChildLevel;
   filters: SearchFilters;
 } | null {
   const level = estateChildLevel(node);
@@ -245,6 +293,9 @@ export function estateDrill(node: EstateNode): {
     return null;
   }
   const filters: SearchFilters = { entityType: [...category.entityTypes] };
+  if (node.serviceType) {
+    filters.serviceType = [node.serviceType];
+  }
   if (node.service) {
     filters.service = [node.service];
   }
@@ -338,6 +389,11 @@ export function filtersForEstateNode(node: EstateNode, current: SearchFilters): 
   } else {
     delete next.entityType;
   }
+  if (node.serviceType) {
+    next.serviceType = [node.serviceType];
+  } else {
+    delete next.serviceType;
+  }
   if (node.service) {
     next.service = [node.service];
   } else {
@@ -374,6 +430,10 @@ export function browsePathLabels(
   if (category) {
     crumbs.push({ key: category.id, label: category.titleKey });
   }
+  const serviceType = filters.serviceType?.[0];
+  if (serviceType) {
+    crumbs.push({ key: `serviceType:${serviceType}`, label: serviceType });
+  }
   const service = filters.service?.[0];
   if (service) {
     crumbs.push({ key: `service:${service}`, label: service });
@@ -387,4 +447,53 @@ export function browsePathLabels(
     crumbs.push({ key: `schema:${schema}`, label: schema });
   }
   return crumbs;
+}
+
+export function serviceStyleIconUrl(bucket: {
+  'top_hits#top'?: { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } };
+}): string | undefined {
+  const source = bucket['top_hits#top']?.hits?.hits?.[0]?._source;
+  const service =
+    source && typeof source.service === 'object' && source.service !== null
+      ? (source.service as Record<string, unknown>)
+      : undefined;
+  const style =
+    service && typeof service.style === 'object' && service.style !== null
+      ? (service.style as Record<string, unknown>)
+      : undefined;
+  const iconURL = style?.iconURL;
+  return typeof iconURL === 'string' && iconURL.trim() ? iconURL : undefined;
+}
+
+/** Official ExploreTree service-level aggregate size (SIZE.X_LARGE = 166). */
+export const ESTATE_SERVICE_AGGREGATE_SIZE = 166;
+
+/** Map POST /v1/search/aggregate buckets, including service.style iconURL top-hits. */
+export function estateBucketsFromAggregate(payload: unknown, fieldName: string): EstateBucket[] {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+  const aggregations = (payload as { aggregations?: Record<string, { buckets?: Array<Record<string, unknown>> }> })
+    .aggregations;
+  if (!aggregations) {
+    return [];
+  }
+  for (const [rawName, node] of Object.entries(aggregations)) {
+    const name = rawName.startsWith('sterms#') ? rawName.slice('sterms#'.length) : rawName;
+    if (name !== fieldName || !node || !Array.isArray(node.buckets)) {
+      continue;
+    }
+    return node.buckets.flatMap((item) => {
+      const key = item.key === undefined || item.key === null ? '' : String(item.key);
+      if (!key) {
+        return [];
+      }
+      const count = typeof item.doc_count === 'number' ? item.doc_count : 0;
+      const iconUrl = serviceStyleIconUrl(
+        item as { 'top_hits#top'?: { hits?: { hits?: Array<{ _source?: Record<string, unknown> }> } } },
+      );
+      return iconUrl ? [{ key, count, iconUrl }] : [{ key, count }];
+    });
+  }
+  return [];
 }

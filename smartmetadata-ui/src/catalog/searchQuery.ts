@@ -11,7 +11,7 @@ import type { FacetId } from './searchFacets';
 import { aggregationFieldNamesForFacet, NULL_OPTION_KEY } from './searchFacets';
 import { estateFromQuery } from './browseEstate';
 import { escapeESReservedCharacters } from './escapeESReservedCharacters';
-import { exploreTabForIndex } from './exploreTabs';
+import { exploreSortQueryParams, exploreTabForIndex, type ExploreTab } from './exploreTabs';
 
 export type SearchFilters = Partial<Record<FacetId, string[]>>;
 
@@ -347,9 +347,14 @@ export function pageFromQuery(value: unknown): number {
 
 export function sortFromQuery(query: Record<string, unknown>): SearchSort {
   const raw = Array.isArray(query.sort) ? query.sort[0] : query.sort;
-  const option = SORT_OPTIONS.find((item) => item.id === raw) ?? SORT_OPTIONS[0];
-  const rawOrder = Array.isArray(query.order) ? query.order[0] : query.order;
-  const order: SortOrder = rawOrder === 'asc' || rawOrder === 'desc' ? rawOrder : option.defaultOrder;
+  const option =
+    (typeof raw === 'string'
+      ? SORT_OPTIONS.find((item) => item.field === raw) ?? SORT_OPTIONS.find((item) => item.id === raw)
+      : undefined) ?? SORT_OPTIONS.find((item) => item.id === 'popularity') ?? SORT_OPTIONS[0];
+  const rawOrder = Array.isArray(query.sortOrder) ? query.sortOrder[0] : query.sortOrder;
+  const legacyOrder = Array.isArray(query.order) ? query.order[0] : query.order;
+  const chosen = rawOrder ?? legacyOrder;
+  const order: SortOrder = chosen === 'asc' || chosen === 'desc' ? chosen : option.defaultOrder;
   return { id: option.id, order };
 }
 
@@ -395,21 +400,18 @@ export function searchRouteQuery(
   if (page > 0) {
     next.page = String(page);
   }
-  const sort = options.sort ?? DEFAULT_SORT;
-  if (sort.id !== DEFAULT_SORT.id) {
-    next.sort = sort.id;
-  }
-  const option = SORT_OPTIONS.find((item) => item.id === sort.id) ?? SORT_OPTIONS[0];
-  if (sort.order !== option.defaultOrder) {
-    next.sort = sort.id;
-    next.order = sort.order;
+  // Official GlobalSearchBar always writes sort=_score when submitting a
+  // query. A missing sort is official popularity (totalVotes) on Explore.
+  const tab = options.tab ? exploreTabForIndex(options.tab) : null;
+  const sort = options.sort ?? (trimmed ? DEFAULT_SORT : undefined);
+  if (sort) {
+    Object.assign(next, exploreSortQueryParams(sort, tab));
   }
   const estate = options.estate ?? '';
   if (estate) {
     next.estate = estate;
   }
   const params: Record<string, string> = {};
-  const tab = options.tab ? exploreTabForIndex(options.tab) : undefined;
   if (tab) {
     params.tab = tab.slug;
   }

@@ -3,10 +3,12 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, h, type VNode } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Empty, Tree, Typography } from 'ant-design-vue';
+import { entityIconFor } from '@/catalog/entityIcons';
 import type { EstateNode } from '@/catalog/browseEstate';
+import ServiceLogo from '@/components/ingestion/ServiceLogo.vue';
 
 const props = defineProps<{
   nodes: EstateNode[];
@@ -21,6 +23,27 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
+/**
+ * Official getExploreTree / getEntityIcon keys for category roots.
+ * Drive uses the directory glyph (official uses DRIVE_SERVICE); governance
+ * has no dedicated product entity icon, so it uses the tag glyph also
+ * used for official Governance children.
+ */
+const CATEGORY_ICON_TYPE: Record<string, string> = {
+  databases: 'database',
+  dashboards: 'dashboard',
+  pipelines: 'pipeline',
+  topics: 'topic',
+  mlmodels: 'mlmodel',
+  containers: 'container',
+  searchIndexes: 'searchIndex',
+  apis: 'apiCollection',
+  drive: 'directory',
+  governance: 'tag',
+  domains: 'domain',
+  contextCenter: 'page',
+};
+
 interface TreeItem {
   key: string;
   title: string;
@@ -30,8 +53,6 @@ interface TreeItem {
   children?: TreeItem[];
 }
 
-// Recursive so lazily loaded levels below services render too; isLeaf is
-// passed through so unloaded expandable nodes keep their switcher.
 function toTreeItem(node: EstateNode): TreeItem {
   return {
     key: node.key,
@@ -72,6 +93,38 @@ function onExpand(keys: (string | number)[]): void {
     keys.map((key) => String(key)),
   );
 }
+
+function nodeIcon(node: EstateNode): VNode {
+  if (node.service && !node.database) {
+    return h(ServiceLogo, {
+      source: {
+        serviceType: node.serviceType,
+        style: node.iconUrl ? { iconURL: node.iconUrl } : undefined,
+      },
+      size: 18,
+      testId: `explore-estate-logo-${node.key}`,
+    });
+  }
+  if (node.serviceType && !node.service) {
+    return h(ServiceLogo, {
+      source: { serviceType: node.serviceType },
+      size: 18,
+      testId: `explore-estate-logo-${node.key}`,
+    });
+  }
+  const entityType =
+    node.entityType ??
+    (node.schema ? 'databaseSchema' : undefined) ??
+    (node.database ? 'database' : undefined) ??
+    CATEGORY_ICON_TYPE[node.categoryId] ??
+    'database';
+  const icon = entityIconFor(entityType);
+  return h(icon, {
+    class: 'estate__icon',
+    style: { fontSize: '16px' },
+    'data-testid': `explore-estate-icon-${node.key}`,
+  });
+}
 </script>
 
 <template>
@@ -92,8 +145,11 @@ function onExpand(keys: (string | number)[]): void {
       @select="onSelect"
       @expand="onExpand"
     >
-      <template #title="{ title, count, key }">
+      <template #title="{ title, count, key, node }">
         <span class="estate__row" :data-testid="`explore-estate-${key}`">
+          <span class="estate__icon-wrap" :data-testid="`explore-estate-icon-${key}`">
+            <component :is="nodeIcon(node)" />
+          </span>
           <span class="estate__label">{{ title }}</span>
           <span v-if="count" class="estate__count">{{ count }}</span>
         </span>
@@ -110,10 +166,17 @@ function onExpand(keys: (string | number)[]): void {
 .estate__row {
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+.estate__icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 .estate__label {
   overflow: hidden;
@@ -121,6 +184,7 @@ function onExpand(keys: (string | number)[]): void {
   white-space: nowrap;
 }
 .estate__count {
+  margin-left: auto;
   flex-shrink: 0;
   min-width: 20px;
   padding: 0 6px;
@@ -130,5 +194,15 @@ function onExpand(keys: (string | number)[]): void {
   font-size: 11px;
   line-height: 18px;
   text-align: center;
+}
+.estate__icon {
+  color: var(--sm-text-secondary);
+}
+:deep(.ant-tree-iconEle) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
 }
 </style>

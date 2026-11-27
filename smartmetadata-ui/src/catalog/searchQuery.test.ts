@@ -94,12 +94,15 @@ describe('searchQuery', () => {
         entityType: 'table,topic',
         tagFqn: 'PII.Sensitive',
         page: '2',
+        sort: '_score',
       },
     });
   });
 
   it('keeps sort and estate on the search route and maps them to API fields', () => {
     expect(sortFromQuery({ sort: 'popularity' })).toEqual({ id: 'popularity', order: 'desc' });
+    expect(sortFromQuery({ sort: 'totalVotes' })).toEqual({ id: 'popularity', order: 'desc' });
+    expect(sortFromQuery({ sort: 'name', sortOrder: 'desc' })).toEqual({ id: 'name', order: 'desc' });
     expect(sortFromQuery({ sort: 'name', order: 'desc' })).toEqual({ id: 'name', order: 'desc' });
     expect(
       searchRouteQuery('orders', { entityType: ['table'] }, 0, {
@@ -111,7 +114,7 @@ describe('searchQuery', () => {
       query: {
         q: 'orders',
         entityType: 'table',
-        sort: 'updated',
+        sort: 'updatedAt',
         estate: 'databases',
       },
     });
@@ -122,7 +125,6 @@ describe('searchQuery', () => {
       query: {
         q: 'customers',
         entityType: 'table',
-        sort: 'popularity',
         estate: 'databases',
       },
     });
@@ -131,10 +133,16 @@ describe('searchQuery', () => {
   it('carries the global-search scope as the /explore/:tab param and omits it for All (D13)', () => {
     expect(searchRouteQuery('orders', {}, 0, { tab: 'table' })).toEqual({
       params: { tab: 'tables' },
-      query: { q: 'orders' },
+      query: { q: 'orders', sort: '_score' },
     });
-    expect(searchRouteQuery('orders', {}, 0, { tab: '' })).toEqual({ params: {}, query: { q: 'orders' } });
-    expect(searchRouteQuery('orders', {}, 0)).toEqual({ params: {}, query: { q: 'orders' } });
+    expect(searchRouteQuery('orders', {}, 0, { tab: '' })).toEqual({
+      params: {},
+      query: { q: 'orders', sort: '_score' },
+    });
+    expect(searchRouteQuery('orders', {}, 0)).toEqual({
+      params: {},
+      query: { q: 'orders', sort: '_score' },
+    });
     expect(
       searchRouteFromLocation('orders', { q: 'old', tab: 'topic' }, 0, { tab: 'table' }),
     ).toEqual({ params: { tab: 'tables' }, query: { q: 'orders' } });

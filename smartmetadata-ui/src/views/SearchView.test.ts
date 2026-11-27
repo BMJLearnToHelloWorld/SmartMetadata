@@ -171,7 +171,7 @@ describe('SearchView', () => {
   it('renders Browse Estate, filter chips, result cards, and a preview pane', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="explore-estate"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Browse Estate');
+    expect(wrapper.text()).toContain('Browse estate');
     expect(wrapper.text()).toContain('Databases');
     expect(wrapper.find('[data-testid="explore-chips"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="explore-chip-entityType"]').exists()).toBe(true);
@@ -359,6 +359,80 @@ describe('SearchView', () => {
     expect(lastUrl?.searchParams.get('q')).toContain('entityType:table');
   });
 
+  it('loads official serviceType children, then service instances from aggregate top-hits', async () => {
+    const { wrapper, router } = await mountView();
+    const tree = wrapper.findComponent({ name: 'ExploreEstateTree' });
+    tree.vm.$emit('select', {
+      key: 'databases',
+      categoryId: 'databases',
+      titleKey: 'explore.estate.databases',
+      count: 1,
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="explore-estate-logo-databases:serviceType:BigQuery"]').exists()).toBe(true);
+    expect(router.currentRoute.value.query.estate).toBe('databases');
+
+    tree.vm.$emit('select', {
+      key: 'databases:serviceType:BigQuery',
+      categoryId: 'databases',
+      serviceType: 'BigQuery',
+      titleKey: '',
+      title: 'BigQuery',
+      count: 1,
+      isLeaf: false,
+    });
+    await flushPromises();
+    expect(router.currentRoute.value.query.serviceType).toBe('BigQuery');
+
+    const previous = vi.mocked(fetch);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/v1/search/aggregate' && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body ?? '{}')) as {
+            fieldName?: string;
+            sourceFields?: string[];
+            size?: number;
+          };
+          expect(body.fieldName).toBe('service.displayName.keyword');
+          expect(body.sourceFields).toEqual(['service.style']);
+          expect(body.size).toBe(166);
+          return jsonResponse({
+            aggregations: {
+              'sterms#service.displayName.keyword': {
+                buckets: [
+                  {
+                    key: 'isales_mysql',
+                    doc_count: 2,
+                    'top_hits#top': {
+                      hits: {
+                        hits: [{ _source: { service: { style: { iconURL: 'https://cdn.example/logo.svg' } } } }],
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        return previous(input, init);
+      }),
+    );
+    tree.vm.$emit('expand', ['databases', 'databases:serviceType:BigQuery']);
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="explore-estate-logo-databases:serviceType:BigQuery:service:isales_mysql"]').exists(),
+    ).toBe(true);
+    const aggregate = vi
+      .mocked(fetch)
+      .mock.calls.filter(([input, init]) => {
+        const url = new URL(String(input), 'http://localhost');
+        return url.pathname === '/api/v1/search/aggregate' && (init as RequestInit | undefined)?.method === 'POST';
+      });
+    expect(aggregate).toHaveLength(1);
+  });
+
   it('toggles a chip into Lucene q= the same way the old facet list did', async () => {
     // The all-tab chip set (with the entityType chip) only renders
     // when no tab auto-selects: empty counts leave the auto-select
@@ -402,23 +476,37 @@ describe('SearchView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('search');
     expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('events');
-    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('No description');
+    expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('No description added');
     // E-3c: the Overview sections now render through the detail-page widget
     // cells, whose empty state is the detail-page '—' marker, not the old
     // preview-only 'No owners assigned' text.
     expect(wrapper.get('[data-testid="explore-preview-owners"]').text()).toContain('—');
   });
 
-  it('sends sort_field when Popularity is chosen', async () => {
+  it('defaults the no-tab landing to official popularity (totalVotes) and writes ES fields', async () => {
     const { wrapper, router } = await mountView();
-    emitSelect(wrapper, 'explore-sort', 'popularity');
+    expect(wrapper.find('[data-testid="explore-show-deleted"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="explore-advanced-search"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="explore-tools-trigger"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.query.sort).toBe('popularity');
+    expect(document.body.querySelector('[data-testid="explore-export"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="explore-show-deleted"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="explore-advanced-search"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="explore-ranking-details"]')).not.toBeNull();
+    expect(router.currentRoute.value.query.sort).toBeUndefined();
     const mock = vi.mocked(fetch);
     const sorted = mock.mock.calls
       .map((call) => new URL(String(call[0]), 'http://localhost'))
-      .find((url) => url.searchParams.get('sort_field') === 'totalVotes');
+      .find((url) => url.pathname.includes('/v1/search/query') && url.searchParams.get('sort_field') === 'totalVotes');
     expect(sorted?.searchParams.get('sort_order')).toBe('desc');
+
+    await wrapper.find('[data-testid="explore-sort-trigger"]').trigger('click');
+    await flushPromises();
+    const relevance = document.body.querySelector('[data-testid="explore-sort-relevance"]');
+    expect(relevance).not.toBeNull();
+    relevance?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(router.currentRoute.value.query.sort).toBe('_score');
   });
 
   it('searches the Context Center estate instead of showing a residual empty state', async () => {
@@ -563,8 +651,11 @@ describe('SearchView Explore result area (R3)', () => {
 
   it('toggles showDeleted into the URL and the deleted search param', async () => {
     const { wrapper, router } = await mountView();
-    const toggle = wrapper.findComponent('[data-testid="explore-show-deleted"]');
-    toggle.vm.$emit('change', true);
+    await wrapper.find('[data-testid="explore-tools-trigger"]').trigger('click');
+    await flushPromises();
+    const item = document.body.querySelector('[data-testid="explore-show-deleted"]');
+    expect(item).not.toBeNull();
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     expect(router.currentRoute.value.query.showDeleted).toBe('true');
     const deleted = vi
@@ -601,7 +692,11 @@ describe('SearchView Explore result area (R3)', () => {
       }),
     );
     const { wrapper, router } = await mountView({ q: 'orders' });
-    await wrapper.get('[data-testid="explore-advanced-search"]').trigger('click');
+    await wrapper.get('[data-testid="explore-tools-trigger"]').trigger('click');
+    await flushPromises();
+    const advanced = document.body.querySelector('[data-testid="explore-advanced-search"]');
+    expect(advanced).not.toBeNull();
+    advanced?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     const valueSelect = wrapper.findComponent('[data-testid="advanced-search-rule-0-value"]');
     expect(valueSelect.exists()).toBe(true);
@@ -975,8 +1070,9 @@ describe('SearchView explore tabs (Stage 2)', () => {
     const { wrapper, router } = await mountView();
     await wrapper.get('[data-testid="explore-sort-order"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.query.sort).toBe('relevance');
-    expect(router.currentRoute.value.query.order).toBe('asc');
+    expect(router.currentRoute.value.query.sort).toBe('totalVotes');
+    expect(router.currentRoute.value.query.sortOrder).toBe('asc');
+    expect(router.currentRoute.value.query.order).toBeUndefined();
   });
 });
 
@@ -1414,7 +1510,7 @@ describe('SearchView tab-switch semantics (D30)', () => {
       q: 'orders',
       owner: 'alice',
       tagFqn: 'PII.Sensitive',
-      sort: 'relevance',
+      sort: '_score',
     });
     // The tab switch navigates to /explore/:tab — the tab is a path
     // param now, not a query param.
@@ -2009,9 +2105,10 @@ describe('SearchView preview open/close (E-3a)', () => {
     wrapper.unmount();
   });
 
-  it('closes from the preview X button and reopens on a card click', async () => {
+  it('has no preview X in Explore mode and reopens on a card click after Escape', async () => {
     const { wrapper } = await mountView();
-    await wrapper.get('[data-testid="explore-preview-close"]').trigger('click');
+    expect(wrapper.find('[data-testid="explore-preview-close"]').exists()).toBe(false);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     await flushPromises();
     expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(false);
     await wrapper.find('[data-testid="search-card-kafka.events"]').trigger('click');

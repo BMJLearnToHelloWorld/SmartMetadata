@@ -262,7 +262,7 @@ describe('AppShell', () => {
     expect(router.currentRoute.value.query).toMatchObject({
       q: 'customers',
       entityType: 'table',
-      sort: 'popularity',
+      sort: '_score',
       estate: 'databases',
     });
   });

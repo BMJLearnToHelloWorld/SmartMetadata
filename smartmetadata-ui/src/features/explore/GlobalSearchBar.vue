@@ -201,14 +201,11 @@ function submitSearch(value: string): void {
   }
   const tab = scope.value || undefined;
   if (route.name === 'search') {
-    // The tab comes from the scope selector, but the sort is deliberately
-    // NOT forced to _score here: the shell's sort-preservation lock
-    // (AppShell.test.ts, "keeps Explore sort and estate query params")
-    // keeps the Explore sort the user already chose, so the location
-    // sort survives the submit instead of being reset.
+    // Official GlobalSearchBar.searchHandler always writes sort=_score
+    // on submit (isPersistFilters keeps the other Explore query params).
     void router.push({
       name: 'search',
-      ...searchRouteFromLocation(trimmed, route.query, 0, { tab }),
+      ...searchRouteFromLocation(trimmed, route.query, 0, { tab, sort: DEFAULT_SORT }),
     });
     return;
   }

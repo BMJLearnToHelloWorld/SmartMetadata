@@ -169,7 +169,7 @@ describe('GlobalSearchBar', () => {
     await wrapper.find('[data-testid="global-search"]').trigger('keydown.enter');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('search');
-    expect(router.currentRoute.value.query).toEqual({ q: 'orders' });
+    expect(router.currentRoute.value.query).toEqual({ q: 'orders', sort: '_score' });
     expect(router.currentRoute.value.params.tab).toBe('tables');
     expect(useSearchStore().isNLPEnabled).toBe(false);
   });
@@ -184,7 +184,7 @@ describe('GlobalSearchBar', () => {
     expect(recents.map((recent) => recent.text())).toEqual(['events', 'orders']);
     await recents[0]?.trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.query).toEqual({ q: 'events' });
+    expect(router.currentRoute.value.query).toEqual({ q: 'events', sort: '_score' });
   });
 
   it('shows the enter hint when a query has no suggestions', async () => {
