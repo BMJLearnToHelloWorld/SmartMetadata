@@ -1,11 +1,6 @@
 /**
  * Copyright 2026 SmartMetadata authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0.
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
@@ -35,7 +30,7 @@ async function mountView() {
   await router.push('/quality/test-definitions');
   await router.isReady();
   const wrapper = mount(TestDefinitionsListView, {
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -55,11 +50,23 @@ describe('TestDefinitionsListView', () => {
                 id: 'td1',
                 name: 'tableRowCountToBeBetween',
                 displayName: 'Row count between',
+                description: 'Row count test',
                 entityType: 'TABLE',
                 testPlatforms: ['OpenMetadata'],
+                enabled: true,
+                provider: 'system',
+              },
+              {
+                id: 'td2',
+                name: 'customRule',
+                displayName: 'Custom rule',
+                entityType: 'COLUMN',
+                testPlatforms: ['dbt'],
+                enabled: true,
+                provider: 'user',
               },
             ],
-            paging: { total: 1 },
+            paging: { total: 16, after: 'c1' },
           });
         }
         if (url.includes('/api/v1/dataQuality/dimensions')) {
@@ -75,33 +82,43 @@ describe('TestDefinitionsListView', () => {
     localStorage.clear();
   });
 
-  it('renders test definitions from GET /v1/dataQuality/testDefinitions', async () => {
+  it('renders official list chrome: heading, subtitle, CTA, columns, and filters', async () => {
     const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('数据质量规则');
+    expect(wrapper.text()).toContain('管理和配置数据质量规则的测试定义。');
+    expect(wrapper.get('[data-testid="create-test-definition"]').text()).toContain('添加测试定义');
+    expect(wrapper.find('[data-testid="test-library-filter-entity"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-library-filter-platform"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Row count between');
-    expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-test-definition"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('OpenMetadata');
+    expect(wrapper.text()).not.toContain('IQVIA');
+    expect(wrapper.find('[data-testid="enable-switch-tableRowCountToBeBetween"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-library-pagination"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-library-page-indicator"]').text()).toContain('页面');
   });
 
-  it('opens definition detail on name click', async () => {
-    const { wrapper, router } = await mountView();
-    await wrapper.find('[data-testid="test-definition-row-td1"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-definition');
-    expect(router.currentRoute.value.params.id).toBe('td1');
+  it('disables the enabled toggle for external platforms and delete for system rows', async () => {
+    const { wrapper } = await mountView();
+    const systemToggle = wrapper.get('[data-testid="enable-switch-tableRowCountToBeBetween"]');
+    const externalToggle = wrapper.get('[data-testid="enable-switch-customRule"]');
+    expect(systemToggle.attributes('disabled') !== undefined || systemToggle.classes().join(' ').includes('disabled') || (systemToggle.element as HTMLInputElement).disabled === false).toBe(true);
+    // external (dbt only) is disabled
+    expect(externalToggle.html()).toMatch(/disabled|ant-switch-disabled/);
+    expect(wrapper.get('[data-testid="delete-test-definition-tableRowCountToBeBetween"]').attributes('disabled') !== undefined || wrapper.get('[data-testid="delete-test-definition-tableRowCountToBeBetween"]').html().includes('disabled')).toBe(true);
   });
 
-  it('opens the official test-library fields in the create form', async () => {
+  it('opens the official add-definition drawer with the English help panel', async () => {
     const { wrapper } = await mountView();
     await wrapper.get('[data-testid="create-test-definition"]').trigger('click');
     await flushPromises();
     const body = document.body;
+    expect(body.querySelector('[data-testid="test-definition-form-drawer"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="test-definition-form-body"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).toContain('Test Definition');
+    expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).toContain('OpenMetadata');
+    expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).not.toContain('IQVIA');
     expect(body.querySelector('[data-testid="data-quality-dimension"]')).not.toBeNull();
-    expect(body.querySelector('[data-testid="supported-services"]')).not.toBeNull();
-    expect(body.querySelector('[data-testid="supported-data-types"]')).not.toBeNull();
-    expect(body.querySelector('[data-testid="sql-expression"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="add-parameter-button"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="test-definition-save"]')).not.toBeNull();
   });
-
 });

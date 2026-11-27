@@ -22,6 +22,8 @@ import { getDerivedPermissionFlags } from '@/api/permissions';
 import { listTestCasesBySearch } from '@/api/testCases';
 import { listTestCaseIncidentsFromSearch } from '@/api/testIncidents';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
+import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
+import { INCIDENT_SEVERITY_OPTIONS, officialSeverityLabel } from '@/quality/incidentSeverity';
 import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -35,7 +37,6 @@ import {
   mergeAssigneeCandidates,
   reopenResolvedIncident,
   resolveAssigneeRef,
-  severityLevel,
   submitIncidentSeverity,
   submitIncidentStatusChange,
   tableFqnFromTestCaseFqn,
@@ -61,7 +62,6 @@ const domainStore = useDomainStore();
 const PAGE_SIZE = 10;
 
 const RESOLVE_REASONS = ['FalsePositive', 'MissingData', 'Duplicates', 'OutOfBounds', 'Other'] as const;
-const SEVERITY_OPTIONS = ['Severity1', 'Severity2', 'Severity3', 'Severity4', 'Severity5'] as const;
 const STATUS_OPTIONS: IncidentStatus[] = ['New', 'Ack', 'Assigned', 'Resolved'];
 const DATE_FIELD_OPTIONS = ['timestamp', 'updatedAt'] as const;
 
@@ -515,6 +515,34 @@ async function onSeveritySelect(record: TestIncident, severity: string | undefin
   }
 }
 
+async function onInlineAssigneeChange(record: TestIncident, assignee: EntityRef | undefined): Promise<void> {
+  const current = record.testCaseResolutionStatusDetails?.assignee;
+  if ((current?.name ?? undefined) === (assignee?.name ?? undefined) && (current?.type ?? undefined) === (assignee?.type ?? undefined)) {
+    return;
+  }
+  writingById.value[record.id] = 'assignee';
+  try {
+    if (assignee === undefined) {
+      const latest = await submitIncidentStatusChange(record, record.testCaseResolutionStatusType, { assignee: undefined });
+      incidents.value = incidents.value.map((item) =>
+        item.id === record.id
+          ? latest ?? {
+              ...item,
+              testCaseResolutionStatusDetails: { ...item.testCaseResolutionStatusDetails, assignee: undefined },
+            }
+          : item,
+      );
+    } else {
+      const latest = await submitIncidentStatusChange(record, 'Assigned', { assignee });
+      incidents.value = incidents.value.map((item) => (item.id === record.id ? latest ?? item : item));
+    }
+  } finally {
+    const next = { ...writingById.value };
+    delete next[record.id];
+    writingById.value = next;
+  }
+}
+
 function openAssigneeModal(record: TestIncident): void {
   const assignee = record.testCaseResolutionStatusDetails?.assignee;
   assigneeModalSelection.value = assignee !== undefined ? [assignee] : [];
@@ -581,9 +609,7 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
 }
 
 function severityLabel(severity: string | undefined): string {
-  if (severity === undefined) return t('observability.incidents.noSeverity');
-  const level = severityLevel(severity);
-  return level === undefined ? severity : `${t('observability.incidents.severity')} ${level}`;
+  return officialSeverityLabel(severity, t('observability.incidents.noSeverity'));
 }
 </script>
 
@@ -813,17 +839,17 @@ function severityLabel(severity: string | undefined): string {
                 @click="({ key }) => onSeveritySelect(record as TestIncident, key === 'none' ? undefined : String(key))"
               >
                 <Menu.Item
-                  v-for="option in SEVERITY_OPTIONS"
-                  :key="option"
-                  :data-testid="`incident-severity-option-${option}`"
-                >
-                  {{ severityLabel(option) }}
-                </Menu.Item>
-                <Menu.Item
                   key="none"
                   data-testid="incident-severity-option-none"
                 >
                   {{ t('observability.incidents.noSeverity') }}
+                </Menu.Item>
+                <Menu.Item
+                  v-for="option in INCIDENT_SEVERITY_OPTIONS"
+                  :key="option"
+                  :data-testid="`incident-severity-option-${option}`"
+                >
+                  {{ severityLabel(option) }}
                 </Menu.Item>
               </Menu>
             </template>
@@ -839,25 +865,21 @@ function severityLabel(severity: string | undefined): string {
             :paragraph="false"
             :title="{ width: 72 }"
           />
-          <Space v-else>
-            <span>
-              {{
-                assigneeDisplayName(record.testCaseResolutionStatusDetails?.assignee) ||
-                t('observability.incidents.noAssignee')
-              }}
-            </span>
-            <Button
-              v-if="canEditRow(record as TestIncident)"
-              size="small"
-              type="text"
-              :loading="writingById[record.id] === 'assignee'"
-              :disabled="writingById[record.id] !== undefined"
-              :data-testid="`incident-assignee-edit-${record.id}`"
-              @click="openAssigneeModal(record as TestIncident)"
-            >
-              {{ t('crud.edit') }}
-            </Button>
-          </Space>
+          <span v-else-if="!canEditRow(record as TestIncident)">
+            {{
+              assigneeDisplayName((record as TestIncident).testCaseResolutionStatusDetails?.assignee) ||
+              t('observability.incidents.noAssignee')
+            }}
+          </span>
+          <IncidentAssigneePicker
+            v-else
+            :model-value="(record as TestIncident).testCaseResolutionStatusDetails?.assignee"
+            :candidates="assigneeCandidates"
+            :disabled="writingById[(record as TestIncident).id] !== undefined"
+            :loading="writingById[(record as TestIncident).id] === 'assignee'"
+            :test-id="`incident-assignee-edit-${(record as TestIncident).id}`"
+            @change="(value) => onInlineAssigneeChange(record as TestIncident, value)"
+          />
         </template>
       </template>
     </EntityListShell>

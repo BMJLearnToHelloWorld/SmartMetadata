@@ -69,8 +69,8 @@ describe('DestinationSelectItem', () => {
     expect(values).toContain('Teams');
     expect(values).toContain('Users');
     expect(values).not.toContain('Admins');
-    expect(values).toContain('Email');
-    expect(values).toContain('Webhook');
+    expect(values).not.toContain('Email');
+    expect(values).not.toContain('Webhook');
   });
 
   it('keeps the current category offered before the capabilities answer lands', () => {

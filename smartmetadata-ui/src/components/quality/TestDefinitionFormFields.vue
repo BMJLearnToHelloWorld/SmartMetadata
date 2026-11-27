@@ -61,18 +61,30 @@ function removeParameter(index: number): void {
 
 <template>
   <Form layout="vertical" data-testid="test-definition-form-body">
-    <Form.Item :label="t('crud.name')" required>
+    <Form.Item :label="t('quality.testDefinitions.fieldName')" required>
       <Input
         v-model:value="form.name"
         :disabled="isEdit || locked"
+        :placeholder="t('quality.testDefinitions.namePlaceholder')"
         data-testid="test-definition-name"
       />
     </Form.Item>
-    <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-      <Input v-model:value="form.displayName" :disabled="locked" data-testid="display-name" />
+    <Form.Item :label="t('quality.testDefinitions.fieldDisplayName')">
+      <Input
+        v-model:value="form.displayName"
+        :disabled="locked"
+        :placeholder="t('quality.testDefinitions.displayNamePlaceholder')"
+        data-testid="display-name"
+      />
     </Form.Item>
-    <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-      <Input.TextArea v-model:value="form.description" :rows="3" :disabled="locked" data-testid="description" />
+    <Form.Item :label="t('quality.testDefinitions.fieldDescription')">
+      <Input.TextArea
+        v-model:value="form.description"
+        :rows="3"
+        :disabled="locked"
+        :placeholder="t('quality.testDefinitions.descriptionPlaceholder')"
+        data-testid="description"
+      />
     </Form.Item>
     <Form.Item
       :label="t('quality.testDefinitions.sqlExpression')"
@@ -86,14 +98,25 @@ function removeParameter(index: number): void {
       />
     </Form.Item>
     <Form.Item :label="t('quality.testDefinitions.entityType')" required>
-      <Select v-model:value="form.entityType" :disabled="locked" data-testid="entity-type">
+      <Select
+        v-model:value="form.entityType"
+        :disabled="locked"
+        :placeholder="t('quality.testDefinitions.entityTypePlaceholder')"
+        data-testid="entity-type"
+      >
         <Select.Option v-for="type in TEST_DEFINITION_ENTITY_TYPES" :key="type" :value="type">
           {{ type }}
         </Select.Option>
       </Select>
     </Form.Item>
     <Form.Item :label="t('quality.testDefinitions.platforms')" required>
-      <Select v-model:value="form.testPlatforms" mode="multiple" :disabled="locked" data-testid="test-platforms">
+      <Select
+        v-model:value="form.testPlatforms"
+        mode="multiple"
+        :disabled="locked"
+        :placeholder="t('quality.testDefinitions.platformsPlaceholder')"
+        data-testid="test-platforms"
+      >
         <Select.Option v-for="platform in TEST_PLATFORMS" :key="platform" :value="platform">
           {{ platform }}
         </Select.Option>
@@ -162,16 +185,36 @@ function removeParameter(index: number): void {
           </Button>
         </div>
         <Form.Item :label="t('quality.testDefinitions.parameterName')" required>
-          <Input v-model:value="param.name" :disabled="locked" :data-testid="`parameter-name-${index}`" />
+          <Input
+            v-model:value="param.name"
+            :disabled="locked"
+            :placeholder="t('quality.testDefinitions.paramNamePlaceholder')"
+            :data-testid="`parameter-name-${index}`"
+          />
         </Form.Item>
-        <Form.Item :label="t('crud.displayName')">
-          <Input v-model:value="param.displayName" :disabled="locked" :data-testid="`parameter-display-name-${index}`" />
+        <Form.Item :label="t('quality.testDefinitions.fieldDisplayName')">
+          <Input
+            v-model:value="param.displayName"
+            :disabled="locked"
+            :placeholder="t('quality.testDefinitions.paramDisplayNamePlaceholder')"
+            :data-testid="`parameter-display-name-${index}`"
+          />
         </Form.Item>
-        <Form.Item :label="t('crud.description')">
-          <Input v-model:value="param.description" :disabled="locked" :data-testid="`parameter-description-${index}`" />
+        <Form.Item :label="t('quality.testDefinitions.fieldDescription')">
+          <Input
+            v-model:value="param.description"
+            :disabled="locked"
+            :placeholder="t('quality.testDefinitions.paramDescriptionPlaceholder')"
+            :data-testid="`parameter-description-${index}`"
+          />
         </Form.Item>
         <Form.Item :label="t('quality.testDefinitions.parameterDataType')">
-          <Select v-model:value="param.dataType" :disabled="locked" :data-testid="`parameter-data-type-${index}`">
+          <Select
+            v-model:value="param.dataType"
+            :disabled="locked"
+            :placeholder="t('quality.testDefinitions.paramDataTypePlaceholder')"
+            :data-testid="`parameter-data-type-${index}`"
+          >
             <Select.Option v-for="type in TEST_DATA_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
           </Select>
         </Form.Item>

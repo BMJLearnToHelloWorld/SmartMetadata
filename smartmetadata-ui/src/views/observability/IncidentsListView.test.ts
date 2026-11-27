@@ -405,13 +405,9 @@ describe('IncidentsListView (W2-2 classic list)', () => {
   it('edits the assignee inline through resolveTask and the read-back', async () => {
     getByStateId.mockResolvedValueOnce({ ...inc1, testCaseResolutionStatusDetails: { assignee: bob } });
     const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="incident-assignee-edit-inc1"]').trigger('click');
-    await flushPromises();
-    expect(document.querySelector('[data-testid="incident-assignee-modal-picker"]')).not.toBeNull();
-    await openSelectInBody('incident-assignee-modal-picker');
-    await clickOptionByText('Bob');
-    await flushPromises();
-    modalOkButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const picker = wrapper.findComponent({ name: 'IncidentAssigneePicker' });
+    expect(picker.exists()).toBe(true);
+    await picker.vm.$emit('change', bob);
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith(
       'task-1',

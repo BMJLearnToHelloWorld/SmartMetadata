@@ -22,6 +22,7 @@ import { SUBSCRIPTION_CATEGORIES } from '@/types/quality';
 import { ALERT_AI_DEFAULT_DOWNSTREAM_DEPTH, EXTERNAL_CATEGORY_OPTIONS } from './alertConstants';
 import { getConfigFieldFromDestinationType } from './alertDestinations';
 import type { TranslateFn } from './alertUtils';
+import { officialConditionDisplayName } from '@/quality/alertCatalogDisplay';
 
 /**
  * Form field helpers, ported from pin
@@ -157,14 +158,14 @@ export const getRuleItems = (
     .map((rule) => ({
       id: rule.name,
       isDisabled: selectedRules.some((selectedRule) => selectedRule.name === rule.name),
-      label: rule.displayName ?? rule.name,
+      label: officialConditionDisplayName(rule.name, rule.displayName),
     }));
   const seen = new Set<string>();
   const unknown: RuleItem[] = [];
   for (const rule of selectedRules) {
     if (rule.name && !offered.some((item) => item.id === rule.name) && !seen.has(rule.name)) {
       seen.add(rule.name);
-      unknown.push({ id: rule.name, isDisabled: true, label: rule.name });
+      unknown.push({ id: rule.name, isDisabled: true, label: officialConditionDisplayName(rule.name) });
     }
   }
   return [...offered, ...unknown];

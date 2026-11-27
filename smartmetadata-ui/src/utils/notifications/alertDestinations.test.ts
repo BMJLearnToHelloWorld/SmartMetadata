@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alignDestinationsWithTestStatus,
   buildGroupedOptions,
+  destinationOptionsForTab,
   checkIfDestinationIsInternal,
   getConfigFieldFromDestinationType,
   getDestinationStatusDetails,
@@ -171,5 +172,15 @@ describe('getDestinationStatusDetails', () => {
     expect(getDestinationStatusLabel('Success', t)).toBe('label.success');
     expect(getDestinationStatusLabel('Failed', t)).toBe('label.failed');
     expect(getDestinationStatusLabel(undefined, t)).toBe('label.failed');
+  });
+});
+
+describe('destinationOptionsForTab', () => {
+  it('lists official internal and external destination labels, including G Chat', () => {
+    const internal = destinationOptionsForTab('internal', ['Admins', 'Followers', 'Owners', 'Teams', 'Users']);
+    expect(internal.map((item) => item.label)).toEqual(['Admins', 'Followers', 'Owners', 'Teams', 'Users']);
+    const external = destinationOptionsForTab('external');
+    expect(external.map((item) => item.id)).toEqual(['Email', 'GChat', 'MsTeams', 'Slack', 'Webhook']);
+    expect(external.map((item) => item.label)).toEqual(['Email', 'G Chat', 'Ms Teams', 'Slack', 'Webhook']);
   });
 });
