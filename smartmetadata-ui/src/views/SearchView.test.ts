@@ -111,9 +111,8 @@ async function mountView(query: Record<string, string> = {}, params: Record<stri
 }
 
 function emitSelect(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'], testId: string, value: unknown) {
-  const select = wrapper.findComponent(`[data-testid="${testId}"]`);
-  select.vm.$emit('change', value);
-  select.vm.$emit('update:value', value);
+  const chip = wrapper.findComponent(`[data-testid="${testId}"]`);
+  chip.vm.$emit('change', value);
 }
 
 describe('SearchView', () => {
@@ -173,7 +172,9 @@ describe('SearchView', () => {
     expect(wrapper.find('[data-testid="explore-estate"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Browse estate');
     expect(wrapper.text()).toContain('Databases');
+    expect(wrapper.find('[data-testid="explore-toolbar-card"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="explore-chips"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="explore-query-filter-chips"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="explore-chip-entityType"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="explore-chip-dataProduct"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="explore-preview"]').exists()).toBe(true);
@@ -431,6 +432,41 @@ describe('SearchView', () => {
         return url.pathname === '/api/v1/search/aggregate' && (init as RequestInit | undefined)?.method === 'POST';
       });
     expect(aggregate).toHaveLength(1);
+  });
+
+  it('keeps the estate tree expanded and highlights the official selected key after a node click', async () => {
+    const { wrapper, router } = await mountView();
+    const tree = wrapper.findComponent({ name: 'ExploreEstateTree' });
+    tree.vm.$emit('expand', ['databases', 'databases:serviceType:BigQuery']);
+    await flushPromises();
+    tree.vm.$emit('select', {
+      key: 'databases:serviceType:BigQuery',
+      categoryId: 'databases',
+      serviceType: 'BigQuery',
+      title: 'BigQuery',
+      titleKey: '',
+      count: 1,
+      isLeaf: false,
+    });
+    await flushPromises();
+    expect(router.currentRoute.value.query.serviceType).toBe('BigQuery');
+    expect(router.currentRoute.value.query.estate).toBe('databases');
+    expect(tree.props('selectedKeys')).toEqual(['databases:serviceType:BigQuery']);
+    expect(tree.props('expandedKeys')).toEqual(
+      expect.arrayContaining(['databases', 'databases:serviceType:BigQuery']),
+    );
+    expect(wrapper.find('[data-testid="explore-estate"]').exists()).toBe(true);
+  });
+
+  it('keeps active filter chips inside the toolbar card query bar, not as a detached row', async () => {
+    const { wrapper } = await mountView({ serviceType: 'doris', entityType: 'tableColumn' });
+    const card = wrapper.get('[data-testid="explore-toolbar-card"]');
+    const bar = card.get('[data-testid="explore-query-filter-chips"]');
+    expect(bar.text()).toContain('Query');
+    expect(bar.get('[data-testid="search-active-serviceType-doris"]').text()).toContain('doris');
+    expect(bar.get('[data-testid="search-active-entityType-tableColumn"]').text()).toContain('Type');
+    expect(bar.get('[data-testid="search-clear-filters"]').text()).toBe('Clear All');
+    expect(wrapper.find('.explore__active').exists()).toBe(false);
   });
 
   it('toggles a chip into Lucene q= the same way the old facet list did', async () => {
@@ -1098,9 +1134,9 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
 
   function chipTestIds(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
     return wrapper
-      .findAllComponents(Select)
-      .map((select) => String(select.attributes('data-testid') ?? ''))
-      .filter((testId) => testId.startsWith('explore-chip-'));
+      .findAll('[data-testid^="explore-chip-"]')
+      .map((el) => String(el.attributes('data-testid') ?? ''))
+      .filter((testId) => testId.startsWith('explore-chip-') && !testId.includes('-option-'));
   }
 
   it('shows the table-tab set without entityType or certification', async () => {
@@ -1166,7 +1202,7 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
     emitSelect(wrapper, 'explore-chip-owner', ['OM_NULL_FIELD']);
     await flushPromises();
     expect(wrapper.find('[data-testid="search-active-owner-OM_NULL_FIELD"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="search-active-owner-OM_NULL_FIELD"]').text()).toBe('No Owners');
+    expect(wrapper.find('[data-testid="search-active-owner-OM_NULL_FIELD"]').text()).toBe('Owners No Owners');
     const urls = vi
       .mocked(fetch)
       .mock.calls.map(([input]) => new URL(String(input), 'http://localhost'));
@@ -1186,7 +1222,7 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
     expect(chipTestIds(wrapper)).not.toContain('explore-chip-tableType');
     const tag = wrapper.find('[data-testid="search-active-tableType-Regular"]');
     expect(tag.exists()).toBe(true);
-    expect(tag.text()).toBe('Table Type: Regular');
+    expect(tag.text()).toBe('Table Type Regular');
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1235,13 +1271,11 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
   it('keeps Metric in the entityType chip after Tag is selected', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => facetOptionsFetch(input)));
     const { wrapper } = await mountView({ q: 'orders', entityType: 'tag', service: 'mysql' });
-    const select = wrapper
-      .findAllComponents(Select)
-      .find((item) => item.attributes('data-testid') === 'explore-chip-entityType');
+    const select = wrapper.findComponent('[data-testid="explore-chip-entityType"]');
     // Only calls issued by opening the chip count: mounting also issues
     // size-0 calls (estate presence, estate drill) with overlapping q.
     const callsBefore = vi.mocked(fetch).mock.calls.length;
-    select?.vm.$emit('dropdownVisibleChange', true);
+    select.vm.$emit('open', true);
     await flushPromises();
     const facetCalls = vi
       .mocked(fetch)
@@ -1261,11 +1295,9 @@ describe('SearchView per-tab filter sets (D5/D8/D9)', () => {
   it('keeps other services in the service chip after one service is selected', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => facetOptionsFetch(input)));
     const { wrapper } = await mountView({ q: 'orders', entityType: 'tag', service: 'mysql' });
-    const select = wrapper
-      .findAllComponents(Select)
-      .find((item) => item.attributes('data-testid') === 'explore-chip-service');
+    const select = wrapper.findComponent('[data-testid="explore-chip-service"]');
     const callsBefore = vi.mocked(fetch).mock.calls.length;
-    select?.vm.$emit('dropdownVisibleChange', true);
+    select.vm.$emit('open', true);
     await flushPromises();
     const facetCalls = vi
       .mocked(fetch)

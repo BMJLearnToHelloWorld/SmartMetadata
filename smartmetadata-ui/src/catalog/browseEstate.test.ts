@@ -20,6 +20,8 @@ import {
   filtersForEstateNode,
   findEstateNode,
   selectedEstateFromFilters,
+  selectedEstateNodeKey,
+  selectedEstatePathKeys,
   serviceStyleIconUrl,
   type EstateNode,
 } from './browseEstate';
@@ -341,5 +343,28 @@ describe('browseEstate', () => {
         'service.displayName.keyword',
       ),
     ).toEqual([{ key: 'isales_mysql', count: 10, iconUrl: 'https://cdn.example/logo.svg' }]);
+  });
+
+  it('builds official selectedKeys including the serviceType segment', () => {
+    expect(
+      selectedEstateNodeKey(
+        {
+          entityType: ['table'],
+          serviceType: ['mysql'],
+          service: ['isales_mysql'],
+          database: ['analytics'],
+          schema: ['marts'],
+        },
+        'databases',
+      ),
+    ).toEqual([
+      'databases:serviceType:mysql:service:isales_mysql:database:analytics:schema:marts:entityType:table',
+    ]);
+    expect(
+      selectedEstatePathKeys(
+        { entityType: ['table', 'storedProcedure'], serviceType: ['mysql'] },
+        'databases',
+      ),
+    ).toEqual(['databases', 'databases:serviceType:mysql']);
   });
 });

@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Tooltip } from 'ant-design-vue';
 import { describe, expect, it } from 'vitest';
 import { createTestI18n } from '@/test/i18n';
 import type { EstateNode } from '@/catalog/browseEstate';
@@ -90,5 +90,45 @@ describe('ExploreEstateTree', () => {
         .exists(),
     ).toBe(true);
     expect(wrapper.text()).toContain('Table');
+  });
+
+  it('ellipsizes a long node title and exposes it as a tooltip, matching official ExploreTreeTitle', () => {
+    const longName = 'very-long-schema-name-that-must-not-overflow-the-browse-estate-section';
+    const nodes: EstateNode[] = [
+      {
+        key: 'databases',
+        categoryId: 'databases',
+        titleKey: 'explore.estate.databases',
+        count: 1,
+        isLeaf: false,
+        children: [
+          {
+            key: 'databases:serviceType:mysql:service:prod:database:analytics:schema:' + longName,
+            categoryId: 'databases',
+            serviceType: 'mysql',
+            service: 'prod',
+            database: 'analytics',
+            schema: longName,
+            title: longName,
+            count: 1,
+            isLeaf: false,
+          },
+        ],
+      },
+    ];
+    const wrapper = mount(ExploreEstateTree, {
+      props: {
+        nodes,
+        selectedKeys: [],
+        expandedKeys: ['databases'],
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const label = wrapper.findAll('.estate__label').find((node) => node.text() === longName);
+    expect(label).toBeDefined();
+    expect(label!.text()).toBe(longName);
+    expect(label.classes()).toContain('estate__label');
+    const tooltip = wrapper.findAllComponents(Tooltip).find((item) => String(item.props('title') ?? '') === longName);
+    expect(tooltip).toBeDefined();
   });
 });

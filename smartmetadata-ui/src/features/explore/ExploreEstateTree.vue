@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, h, type VNode } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Empty, Tree, Typography } from 'ant-design-vue';
+import { Empty, Tooltip, Tree, Typography } from 'ant-design-vue';
 import { entityIconFor } from '@/catalog/entityIcons';
 import type { EstateNode } from '@/catalog/browseEstate';
 import ServiceLogo from '@/components/ingestion/ServiceLogo.vue';
@@ -129,7 +129,7 @@ function nodeIcon(node: EstateNode): VNode {
 
 <template>
   <section class="estate" data-testid="explore-estate">
-    <Typography.Text strong class="estate__title">{{ t('explore.browseEstate') }}</Typography.Text>
+    <Typography.Text strong class="estate__heading">{{ t('explore.browseEstate') }}</Typography.Text>
     <Empty
       v-if="!nodes.length"
       data-testid="explore-estate-empty"
@@ -150,8 +150,12 @@ function nodeIcon(node: EstateNode): VNode {
           <span class="estate__icon-wrap" :data-testid="`explore-estate-icon-${key}`">
             <component :is="nodeIcon(node)" />
           </span>
-          <span class="estate__label">{{ title }}</span>
-          <span v-if="count" class="estate__count">{{ count }}</span>
+          <Tooltip :title="title" placement="topLeft">
+            <span class="estate__title">
+              <span class="estate__label">{{ title }}</span>
+              <span v-if="count" class="estate__count">{{ count }}</span>
+            </span>
+          </Tooltip>
         </span>
       </template>
     </Tree>
@@ -159,12 +163,24 @@ function nodeIcon(node: EstateNode): VNode {
 </template>
 
 <style scoped>
+.estate {
+  min-width: 0;
+  overflow: hidden;
+}
 .estate__title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.estate__heading {
   display: block;
   margin-bottom: 8px;
 }
 .estate__row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -179,12 +195,25 @@ function nodeIcon(node: EstateNode): VNode {
   height: 18px;
 }
 .estate__label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+:deep(.ant-tree),
+:deep(.ant-tree-list),
+:deep(.ant-tree-list-holder-inner),
+:deep(.ant-tree-treenode),
+:deep(.ant-tree-node-content-wrapper),
+:deep(.ant-tree-title) {
+  min-width: 0;
+}
+:deep(.ant-tree-node-content-wrapper),
+:deep(.ant-tree-title) {
+  overflow: hidden;
+}
 .estate__count {
-  margin-left: auto;
   flex-shrink: 0;
   min-width: 20px;
   padding: 0 6px;

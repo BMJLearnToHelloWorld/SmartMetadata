@@ -7,7 +7,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, DownloadOutlined, DownOutlined, FilterOutlined, InfoCircleOutlined } from '@ant-design/icons-vue';
-import { Alert, Button, Divider, Dropdown, Empty, Input, Menu, Pagination, Space, Switch, Tag, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Divider, Dropdown, Empty, Input, Menu, Pagination, Space, Switch, Typography, message } from 'ant-design-vue';
 import { prefetchAssetDetail } from '@/api/entities';
 import { ApiError, readErrorMessage } from '@/api/client';
 import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
@@ -57,6 +57,8 @@ import {
   filtersForEstateNode,
   findEstateNode,
   selectedEstateFromFilters,
+  selectedEstateNodeKey,
+  selectedEstatePathKeys,
   type EstateNode,
 } from '@/catalog/browseEstate';
 import { assetLocation, assetTabLocation, detailLocationForHit, openSearchHit, parentTableLocation } from '@/catalog/entityRoutes';
@@ -69,7 +71,7 @@ import {
   shouldPrefetchCard,
 } from '@/catalog/exploreCard';
 import { entityIconFor } from '@/catalog/entityIcons';
-import { NULL_OPTION_KEY, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { buildRankingDetails, type RankingDetails } from '@/catalog/rankingDetails';
 import { hitLocation } from '@/catalog/searchHits';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
@@ -100,6 +102,7 @@ import AdvancedSearchBuilder from '@/features/explore/AdvancedSearchBuilder.vue'
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
 import ExploreExportScopeModal, { type ExportScope } from '@/features/explore/ExploreExportScopeModal.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
+import ExploreQueryFilterBar from '@/features/explore/ExploreQueryFilterBar.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import ExploreRankingDetails from '@/features/explore/ExploreRankingDetails.vue';
 import { useAdvancedSearchFields } from '@/features/explore/useAdvancedSearchFields';
@@ -163,6 +166,8 @@ const estateFacets = ref<SearchFacet[]>([]);
 const estateChildMap = ref<Record<string, EstateNode[]>>({});
 const estateLoadingKeys = ref<Set<string>>(new Set());
 const expandedKeys = ref<string[]>([]);
+/** Official treeSelectRef: a tree click must not rebuild/collapse the tree. */
+const treeSelectPreserving = ref(false);
 const selectedFqn = ref('');
 /**
  * E-3a: pin `ExploreV1.component.tsx:654` keeps the summary panel closed
@@ -312,21 +317,6 @@ const chipFacetIds = computed<FacetId[]>(() => {
   return ids.filter((id) => id !== 'entityStatus');
 });
 
-/**
- * Active-filter tags cover the current tab's chips plus any filter that
- * is active but belongs to another tab: tab switches keep filters (D30
- * is a separate lane), so an off-tab filter must stay visible and
- * removable instead of silently applied.
- */
-const activeFilterIds = computed<FacetId[]>(() => {
-  const active = (Object.keys(filters.value) as FacetId[]).filter(
-    (id) => (filters.value[id]?.length ?? 0) > 0,
-  );
-  const inChips = chipFacetIds.value.filter((id) => active.includes(id));
-  const offTab = active.filter((id) => !chipFacetIds.value.includes(id));
-  return [...inChips, ...offTab];
-});
-
 // Pin ExploreQuickFilters hasReviewedStatus effect: re-check whether any
 // glossary entity has left Unprocessed whenever the glossary context
 // (tab, saved filter, deleted flag) changes.
@@ -442,13 +432,13 @@ function rankingFor(hit: SearchHit): RankingDetails | null {
 }
 
 const estateNodes = computed(() => buildEstateTree(estateFacets.value, estateChildMap.value));
-const selectedEstateKeys = computed(() => {
-  const service = filters.value.service?.[0];
-  if (estateId.value && service) {
-    return [`${estateId.value}:service:${service}`];
-  }
-  return estateId.value ? [estateId.value] : [];
-});
+const selectedEstateKeys = computed(() => selectedEstateNodeKey(filters.value, estateId.value));
+const shouldShowQueryBar = computed(
+  () =>
+    hasActiveFilters(filters.value) ||
+    Boolean(estateFromQuery(route.query)) ||
+    !query.value.trim(),
+);
 const crumbs = computed(() => browsePathLabels(filters.value, estateId.value));
 const selectedHit = computed(
   () => hits.value.find((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value) ?? null,
@@ -516,18 +506,6 @@ function usagePercentileText(hit: SearchHit): string {
     true,
     (key) => t(key),
   );
-}
-
-function facetTitle(id: FacetId): string {
-  return t(`explore.facets.${id}`);
-}
-
-function activeFilterLabel(id: FacetId, value: string): string {
-  if (value === NULL_OPTION_KEY) {
-    return t('explore.noEntity', { entity: facetTitle(id) });
-  }
-  const display = id === 'entityType' ? entityLabel(value) : value;
-  return `${facetTitle(id)}: ${display}`;
 }
 
 function crumbLabel(label: string): string {
@@ -826,7 +804,41 @@ async function handleExportScopeConfirm(): Promise<void> {
 }
 
 function onEstateSelect(node: EstateNode): void {
+  treeSelectPreserving.value = true;
   pushSearch(query.value, filtersForEstateNode(node, filters.value), 0, currentSort.value, node.categoryId);
+}
+
+function onBrowseChip(next: { filters: SearchFilters; estateId: string }): void {
+  pushSearch(query.value, next.filters, 0, currentSort.value, next.estateId);
+}
+
+async function loadSelectedEstatePath(preserveTree: boolean): Promise<void> {
+  const id = estateId.value;
+  if (!id) {
+    return;
+  }
+  const pathKeys = selectedEstatePathKeys(filters.value, id);
+  // Ancestors must stay expanded so the selected node remains visible.
+  // On a tree click, union them with the user's expandedKeys (official
+  // preserveExpandedTree) instead of replacing, so other branches stay open.
+  const ancestors = pathKeys.length > 1 ? pathKeys.slice(0, -1) : [id];
+  if (preserveTree) {
+    const current = new Set(expandedKeys.value);
+    for (const key of ancestors) {
+      current.add(key);
+    }
+    expandedKeys.value = [...current];
+  } else {
+    expandedKeys.value = ancestors;
+  }
+  for (const key of new Set([...expandedKeys.value, ...pathKeys])) {
+    const node =
+      findEstateNode(estateNodes.value, key) ??
+      (key === id ? { key: id, categoryId: id, titleKey: '', count: 0 } : undefined);
+    if (node && !node.isLeaf && node.children === undefined) {
+      await loadEstateChildren(node);
+    }
+  }
 }
 
 function onEstateExpand(keys: string[]): void {
@@ -1078,9 +1090,14 @@ async function runSearch(): Promise<void> {
   indexNotFound.value = false;
   try {
     const estatePromise = loadEstatePresence();
-    // A new search rebuilds the tree and drops previously loaded children,
-    // matching the official tree's rebuild behaviour.
-    estateChildMap.value = {};
+    // Official ExploreTree keeps loaded children and expandedKeys when the
+    // URL update came from a tree click (treeSelectRef / preserveExpandedTree).
+    // A non-tree search still rebuilds, as official does.
+    const preserveTree = treeSelectPreserving.value;
+    treeSelectPreserving.value = false;
+    if (!preserveTree) {
+      estateChildMap.value = {};
+    }
     const trimmedQuery = query.value.trim();
     // D11 NLQ (pin ExploreUtils.fetchEntityData): NLP active + a
     // non-empty query goes through nlqSearch instead of the keyword
@@ -1168,11 +1185,7 @@ async function runSearch(): Promise<void> {
     nlqAppliedFilters.value = pageResult.appliedQuickFilters?.fieldList ?? [];
     await countsPromise;
     if (estateId.value) {
-      expandedKeys.value = [estateId.value];
-      await Promise.all([
-        estatePromise,
-        loadEstateChildren({ key: estateId.value, categoryId: estateId.value, titleKey: '', count: 0 }),
-      ]);
+      await Promise.all([estatePromise, loadSelectedEstatePath(preserveTree)]);
     } else {
       await estatePromise;
     }
@@ -1237,6 +1250,7 @@ watch(expandedKeys, (keys) => {
 
 <template>
   <div class="explore" data-tour-step="explore-search" data-tour-page>
+    <div class="explore__toolbar-card" data-testid="explore-toolbar-card">
     <div class="explore__toolbar">
       <div class="explore__toolbar-filters">
         <ExploreFilterChips
@@ -1374,32 +1388,18 @@ watch(expandedKeys, (keys) => {
       {{ t('explore.nlqAppliedFilters', { fields: nlqAppliedFilters.join(', ') }) }}
     </Typography.Text>
     <div
-      v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
+      v-if="shouldShowQueryBar || advancedSql || indexNotFound"
       class="explore__filter-status"
     >
-      <Button
-        type="link"
-        size="small"
-        data-testid="search-clear-filters"
-        :aria-label="t('explore.clearFiltersHelp')"
-        @click="onClearFilters"
-      >
-        {{ t('explore.clearFilters') }}
-      </Button>
-    </div>
-    <Space v-if="hasActiveFilters(filters)" wrap class="explore__active">
-      <template v-for="id in activeFilterIds" :key="id">
-        <Tag
-          v-for="value in filters[id] ?? []"
-          :key="`${id}:${value}`"
-          closable
-          :data-testid="`search-active-${id}-${value}`"
-          @close="onToggleFacet(id, value)"
-        >
-          {{ activeFilterLabel(id, value) }}
-        </Tag>
-      </template>
-    </Space>
+      <ExploreQueryFilterBar
+        v-if="shouldShowQueryBar"
+        :filters="filters"
+        :estate-id="estateFromQuery(route.query)"
+        :empty-text="hasActiveFilters(filters) || estateFromQuery(route.query) ? undefined : t('explore.queryBarPlaceholder')"
+        @remove="onToggleFacet"
+        @browse="onBrowseChip"
+        @clear="onClearFilters"
+      />
     <div v-if="advancedSql" class="explore__applied-filter" data-testid="advance-search-filter-container">
       <Typography.Text type="secondary">{{ t('explore.advancedSearch') }}</Typography.Text>
       <span class="explore__applied-filter-text" data-testid="advance-search-filter-text">{{ advancedSql }}</span>
@@ -1420,9 +1420,26 @@ watch(expandedKeys, (keys) => {
         {{ t('explore.advancedClear') }}
       </Button>
     </div>
-    <!-- D35 (pin ExploreV1:413): the active-domain chip sits directly under
-         the filter-chips row. It renders nothing without an active domain. -->
+    <!-- D35 (pin ExploreV1:413 / ExploreFilterStatusRow): the active-domain
+         chip sits in the filter card, under the query bar. -->
     <DomainFilterChip class="explore__domain-chip" />
+      <Alert
+        v-if="indexNotFound"
+        type="error"
+        show-icon
+        closable
+        data-testid="explore-index-not-found"
+        :message="t('explore.indexNotFoundTitle')"
+        class="explore__error"
+        @close="indexNotFound = false"
+      >
+        <template #description>
+          {{ t('explore.indexNotFoundMessage') }}
+          <router-link :to="{ name: 'settings-preferences-search' }">{{ t('explore.indexNotFoundSettings') }}</router-link>
+        </template>
+      </Alert>
+    </div>
+    </div>
     <div class="explore__split" :class="{ 'explore__split--no-preview': !previewOpen }">
       <aside class="explore__pane explore__pane--estate">
         <!-- D14 (pin ExploreV1 exploreLeftPanel): a query turns the left
@@ -1465,21 +1482,6 @@ watch(expandedKeys, (keys) => {
             {{ crumbLabel(crumb.label) }}
           </span>
         </nav>
-        <Alert
-          v-if="indexNotFound"
-          type="error"
-          show-icon
-          closable
-          data-testid="explore-index-not-found"
-          :message="t('explore.indexNotFoundTitle')"
-          class="explore__error"
-          @close="indexNotFound = false"
-        >
-          <template #description>
-            {{ t('explore.indexNotFoundMessage') }}
-            <router-link :to="{ name: 'settings-preferences-search' }">{{ t('explore.indexNotFoundSettings') }}</router-link>
-          </template>
-        </Alert>
         <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="explore__error" />
         <div
           v-if="shardedFamilies.length"
@@ -1727,11 +1729,22 @@ watch(expandedKeys, (keys) => {
   gap: 12px;
   min-height: calc(100vh - 120px);
 }
+.explore__toolbar-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
+  padding: 8px;
+}
 .explore__toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px 12px;
+  flex: 1 1 100%;
+  width: 100%;
 }
 .explore__toolbar-filters {
   flex: 1 1 0%;
@@ -1761,7 +1774,10 @@ watch(expandedKeys, (keys) => {
 }
 .explore__filter-status {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 100%;
+  width: 100%;
 }
 /* E2's applied-filter SQL text row (kept) + E4's Tools menu / old advanced-row
    rules (kept; .explore__advanced-row is currently unused — E2 replaced the
@@ -1868,10 +1884,23 @@ watch(expandedKeys, (keys) => {
 }
 .explore__split {
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(360px, 440px);
   gap: 12px;
   align-items: stretch;
   min-height: 520px;
+}
+.explore__pane--preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.explore__pane--preview :deep(.preview) {
+  flex: 1;
+  height: 100%;
 }
 .explore__split--no-preview {
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
