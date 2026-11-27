@@ -6,7 +6,9 @@ import {
   TAG_FILTER_PAGE_SIZE,
   TAG_FILTER_QUERY_FILTER,
   TIER_CATEGORY,
+  DIMENSION_FILTER_PAGE_SIZE,
   fetchDataProductFilterOptions,
+  fetchDimensionFilterOptions,
   fetchServiceFilterOptions,
   fetchTableFilterOptions,
   fetchTagFilterOptions,
@@ -143,5 +145,47 @@ describe('testCaseFilterOptions (official useTestCaseFilterOptions)', () => {
     vi.stubGlobal('fetch', fetchMock);
     const options = await fetchTagFilterOptions('pii');
     expect(options).toEqual([{ value: 'PII.Sensitive', label: 'PII.Sensitive' }]);
+  });
+
+  it('uses official AGGREGATE_PAGE_SIZE_LARGE for dimensions', () => {
+    expect(DIMENSION_FILTER_PAGE_SIZE).toBe(1000);
+  });
+
+  it('loads dimension options from GET /dataQuality/dimensions with NoDimension first', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://local.test');
+      expect(url.pathname).toBe('/api/v1/dataQuality/dimensions');
+      expect(url.searchParams.get('limit')).toBe('1000');
+      return jsonResponse({
+        data: [
+          { id: 'd1', name: 'Accuracy', displayName: 'Accuracy' },
+          { id: 'd2', name: 'Integrity', displayName: '完整性' },
+        ],
+        paging: { total: 2 },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const options = await fetchDimensionFilterOptions('无维度');
+    expect(options[0]).toEqual({ value: 'NoDimension', label: '无维度' });
+    expect(options.slice(1)).toEqual([
+      { value: 'Accuracy', label: 'Accuracy' },
+      { value: 'Integrity', label: '完整性' },
+    ]);
+  });
+
+  it('falls back to the shipped dimension enum when the dimensions API fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
+    const options = await fetchDimensionFilterOptions('No Dimension');
+    expect(options[0]).toEqual({ value: 'NoDimension', label: 'No Dimension' });
+    expect(options.map((option) => option.value)).toEqual([
+      'NoDimension',
+      'Accuracy',
+      'Completeness',
+      'Consistency',
+      'Integrity',
+      'SQL',
+      'Uniqueness',
+      'Validity',
+    ]);
   });
 });

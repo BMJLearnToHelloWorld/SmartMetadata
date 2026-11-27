@@ -378,6 +378,7 @@ onMounted(() => {
     <CustomMetricFormDrawer
       :open="metricDrawerOpen"
       :table-id="tableId"
+      :entity-fqn="entityFqn"
       @close="metricDrawerOpen = false"
       @success="metricDrawerOpen = false"
     />

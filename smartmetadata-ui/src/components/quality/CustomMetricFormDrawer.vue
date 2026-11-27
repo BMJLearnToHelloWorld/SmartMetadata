@@ -4,9 +4,9 @@
   Official CustomMetricForm + CustomMetricFormDrawer (table-level from
   the QualityTab 添加 menu, where formType is TABLE unless the caller
   is on COLUMN_PROFILE). Vue3 + ant-design-vue. No CCL React/CSS copy.
-  Official also shows a ShowHintToggle + TableProfilerChart preview;
-  this drawer lands official fields, validation, and PUT, and does not
-  invent a preview chart the product does not already have.
+  Official ShowHintToggle + TableProfilerChart (showHeader=false)
+  preview for the table-level QualityTab path. Column-level
+  SingleColumnProfile stays on the official column-profile path.
 -->
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
@@ -15,6 +15,8 @@ import { Form, Input, message } from 'ant-design-vue';
 import type { FormInstance, Rule } from 'ant-design-vue/es/form';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import SmCodeEditor from '@/components/shared/SmCodeEditor.vue';
+import ShowHintToggle from '@/components/quality/ShowHintToggle.vue';
+import TableProfilerChartPreview from '@/components/quality/TableProfilerChartPreview.vue';
 import { listTableCustomMetricNames, putCustomMetric } from '@/api/customMetrics';
 import { ENTITY_NAME_REGEX } from '@/utils/entityName';
 import { CSMode } from '@/utils/codeMirrorUtils';
@@ -23,12 +25,15 @@ const props = withDefaults(
   defineProps<{
     open: boolean;
     tableId?: string;
+    /** Official entityFqn passed into TableProfilerChart for the preview. */
+    entityFqn?: string;
     /** Official isColumnMetric; QualityTab 添加 always opens table-level (false). */
     isColumnMetric?: boolean;
     existingNames?: string[];
   }>(),
   {
     tableId: undefined,
+    entityFqn: undefined,
     isColumnMetric: false,
     existingNames: () => [],
   },
@@ -44,8 +49,12 @@ const formRef = ref<FormInstance>();
 const form = reactive({ name: '', expression: '' });
 const submitting = ref(false);
 const loadedNames = ref<string[]>([]);
+/** Official ShowHintToggle default is true. */
+const showHint = ref(true);
 
 const metricNames = computed(() => (loadedNames.value.length > 0 ? loadedNames.value : props.existingNames));
+const previewMetrics = computed(() => metricNames.value.map((name) => ({ name })));
+const drawerWidthKey = computed(() => (showHint.value ? 'formWithHint' : 'formWithoutHint'));
 
 const title = computed(() =>
   t('label.add-entity-metric', {
@@ -81,6 +90,7 @@ watch(
     }
     form.name = '';
     form.expression = '';
+    showHint.value = true;
     loadedNames.value = [...props.existingNames];
     if (props.tableId) {
       void listTableCustomMetricNames(props.tableId)
@@ -138,6 +148,7 @@ async function onSubmit(): Promise<void> {
     :cancel-text="t('label.cancel')"
     :confirm-loading="submitting"
     :ok-disabled="!tableId"
+    :width-key="drawerWidthKey"
     test-id="custom-metric-form-drawer"
     ok-test-id="submit-button"
     cancel-test-id="cancel-button"
@@ -146,6 +157,10 @@ async function onSubmit(): Promise<void> {
     @cancel="onClose"
     @ok="onSubmit"
   >
+    <template #headerActions>
+      <ShowHintToggle v-model="showHint" />
+    </template>
+    <div class="custom-metric-form-layout">
     <Form
       id="custom-metric-form"
       ref="formRef"
@@ -174,5 +189,29 @@ async function onSubmit(): Promise<void> {
         </div>
       </Form.Item>
     </Form>
+    <div
+      v-if="showHint && !isColumnMetric"
+      class="custom-metric-form-layout__preview"
+      data-testid="custom-metric-profile-preview"
+    >
+      <TableProfilerChartPreview :entity-fqn="entityFqn" :custom-metrics="previewMetrics" />
+    </div>
+    </div>
   </SmDrawer>
 </template>
+
+<style scoped>
+.custom-metric-form-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.custom-metric-form-layout > form {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.custom-metric-form-layout__preview {
+  flex: 1 1 0;
+  min-width: 0;
+}
+</style>

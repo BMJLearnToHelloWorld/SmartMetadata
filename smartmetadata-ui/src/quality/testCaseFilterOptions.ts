@@ -9,7 +9,9 @@
  * is searchable locally. tags: official tagClassBase.getTags against
  * index=tag (PAGE_SIZE 10), excluding Tier and Certification.
  */
+import { listDataQualityDimensions } from '@/api/dataQualityDimensions';
 import { listTierTags } from '@/api/tags';
+import { DQ_DIMENSIONS, NO_DIMENSION } from '@/quality/landing';
 import { searchAssets } from '@/api/search';
 import { escapeESReservedCharacters } from '@/catalog/escapeESReservedCharacters';
 import type { SearchHit } from '@/types/api';
@@ -160,5 +162,32 @@ export async function fetchTagFilterOptions(search = ''): Promise<TestCaseFilter
       });
   } catch {
     return [];
+  }
+}
+
+/** Official AGGREGATE_PAGE_SIZE_LARGE used by fetchDimensionOptions. */
+export const DIMENSION_FILTER_PAGE_SIZE = 1000;
+
+/**
+ * Official fetchDimensionOptions: GET /dataQuality/dimensions?limit=1000,
+ * NoDimension first, then API displayName||name. On error, fall back to
+ * the shipped TEST_CASE_DIMENSIONS_OPTION enum. Locally searchable
+ * (no server search), same as tier.
+ */
+export async function fetchDimensionFilterOptions(
+  noDimensionLabel = 'No Dimension',
+): Promise<TestCaseFilterOption[]> {
+  const noDimension: TestCaseFilterOption = { value: NO_DIMENSION, label: noDimensionLabel };
+  try {
+    const page = await listDataQualityDimensions({ limit: DIMENSION_FILTER_PAGE_SIZE });
+    const rest = page.data
+      .filter((dimension) => dimension.name && dimension.name !== NO_DIMENSION)
+      .map((dimension) => ({
+        value: dimension.name,
+        label: dimension.displayName || dimension.name,
+      }));
+    return [noDimension, ...rest];
+  } catch {
+    return [noDimension, ...DQ_DIMENSIONS.map((name) => ({ value: name, label: name }))];
   }
 }

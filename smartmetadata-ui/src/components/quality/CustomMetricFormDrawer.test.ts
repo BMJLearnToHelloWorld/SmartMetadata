@@ -10,6 +10,13 @@ vi.mock('@/utils/codeMirrorUtils', () => ({
   CSMode: { SQL: 'sql' },
 }));
 
+vi.mock('@/features/charts/SmChart.vue', () => ({
+  default: {
+    props: ['kind', 'series', 'empty', 'height', 'testId'],
+    template: '<div :data-testid="testId || \'sm-chart-stub\'"></div>',
+  },
+}));
+
 vi.mock('@/components/shared/SmCodeEditor.vue', () => ({
   default: {
     props: ['value', 'variant', 'mode', 'showCopyButton', 'className'],
@@ -115,6 +122,24 @@ describe('CustomMetricFormDrawer (official table-level QualityTab form)', () => 
     expect(put).toBeUndefined();
     const explain = document.body.querySelector('.ant-form-item-explain-error, .ant-form-item-explain');
     expect((explain?.textContent ?? document.body.textContent) ?? '').toMatch(/已存在|already exists/);
+    wrapper.unmount();
+  });
+
+  it('shows official Show Hint toggle and table profiler preview, and hides the preview when the toggle is off', async () => {
+    const wrapper = await mountDrawer({ entityFqn: 'db.schema.tbl' });
+    const toggle = document.body.querySelector('[data-testid="show-hint-toggle"]');
+    expect(toggle).not.toBeNull();
+    expect(document.body.textContent).toContain('显示提示');
+    expect(document.body.querySelector('[data-testid="custom-metric-profile-preview"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="table-profiler-chart-container"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="row-metrics"]')).not.toBeNull();
+    const drawer = document.body.querySelector('.ant-drawer-content-wrapper') as HTMLElement | null;
+    expect(drawer?.style.width || '').toContain('80vw');
+    (toggle as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="custom-metric-profile-preview"]')).toBeNull();
+    const narrowed = document.body.querySelector('.ant-drawer-content-wrapper') as HTMLElement | null;
+    expect(narrowed?.style.width || '').toContain('60vw');
     wrapper.unmount();
   });
 });

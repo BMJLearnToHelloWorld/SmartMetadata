@@ -19,13 +19,13 @@ import TestCaseInsightDonuts from '@/components/quality/TestCaseInsightDonuts.vu
 import TestCaseFilterAsyncSelect from '@/components/quality/TestCaseFilterAsyncSelect.vue';
 import {
   fetchDataProductFilterOptions,
+  fetchDimensionFilterOptions,
   fetchServiceFilterOptions,
   fetchTableFilterOptions,
   fetchTagFilterOptions,
   fetchTierFilterOptions,
 } from '@/quality/testCaseFilterOptions';
 import type { IncidentDateRange } from '@/quality/incidentDatePresets';
-import { DQ_DIMENSIONS, NO_DIMENSION } from '@/quality/landing';
 import {
   DEFAULT_VISIBLE_TEST_CASE_FILTERS,
   TEST_CASE_ADVANCED_FILTER_MENU,
@@ -543,20 +543,16 @@ defineExpose({ openCreate });
         :fetch-options="fetchServiceFilterOptions"
         @change="onFilterChange"
       />
-      <Select
+      <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dimension)"
-        v-model:value="dimensionFilter"
-        allow-clear
+        v-model="dimensionFilter"
         :placeholder="t('quality.testCases.dimensionFilter')"
-        data-testid="test-cases-dimension-filter"
-        style="width: 160px"
+        test-id="test-cases-dimension-filter"
+        width="160px"
+        :remote="false"
+        :fetch-options="() => fetchDimensionFilterOptions(t('label.no-dimension'))"
         @change="onFilterChange"
-      >
-        <Select.Option v-for="dimension in DQ_DIMENSIONS" :key="dimension" :value="dimension">
-          {{ dimension }}
-        </Select.Option>
-        <Select.Option :value="NO_DIMENSION">{{ t('quality.landing.dimensions.none') }}</Select.Option>
-      </Select>
+      />
       <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dataProduct)"
         v-model="dataProductFilter"

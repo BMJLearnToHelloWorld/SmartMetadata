@@ -5,9 +5,9 @@
   测试库), filters, columns, enabled toggle, edit/delete, page size 15.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
+import { Button, Input, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -53,7 +53,11 @@ const currentPage = ref(1);
 const pageSize = ref(TEST_LIBRARY_PAGE_SIZE);
 const entityType = ref<string | undefined>();
 const testPlatform = ref<string | undefined>();
+const searchInput = ref('');
 const searchQuery = ref('');
+/** Official useListSearchInput SEARCH_DEBOUNCE_MS. */
+const SEARCH_DEBOUNCE_MS = 300;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
 const drawerOpen = ref(false);
 const editing = ref<TestDefinition | undefined>();
 const saving = ref(false);
@@ -114,6 +118,37 @@ function resetAndLoad(): void {
   cursorBefore.value = undefined;
   void load();
 }
+
+function applySearch(value: string, immediate = false): void {
+  searchInput.value = value;
+  const run = () => {
+    searchQuery.value = value;
+    resetAndLoad();
+  };
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = undefined;
+  }
+  if (immediate) {
+    run();
+    return;
+  }
+  searchTimer = setTimeout(run, SEARCH_DEBOUNCE_MS);
+}
+
+function onSearchUpdate(value: string): void {
+  applySearch(value, value === '');
+}
+
+function onSearchPressEnter(): void {
+  applySearch(searchInput.value, true);
+}
+
+onUnmounted(() => {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+  }
+});
 
 function onNext(): void {
   if (!pageAfter.value) {
@@ -261,6 +296,16 @@ onMounted(() => {
     </div>
 
     <div class="test-library-page__filters">
+      <Input
+        allow-clear
+        data-testid="test-definition-search"
+        class="test-library-page__search"
+        :placeholder="t('label.search-entity', { entity: t('label.test-definition-plural') })"
+        :value="searchInput"
+        @update:value="onSearchUpdate"
+        @pressEnter="onSearchPressEnter"
+        @keydown.enter="onSearchPressEnter"
+      />
       <TestLibraryFilterDropdown
         :label="t('quality.testDefinitions.entityType')"
         :search-placeholder="t('quality.testDefinitions.searchEntityType')"
@@ -385,8 +430,13 @@ onMounted(() => {
 }
 .test-library-page__filters {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+.test-library-page__search {
+  width: 18rem;
 }
 .test-library-page__pager {
   display: flex;

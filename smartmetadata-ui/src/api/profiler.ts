@@ -268,3 +268,28 @@ export async function getLatestTableProfile(fqn: string): Promise<TableProfile> 
     columns,
   };
 }
+
+/** Official rest/tableAPI.ts SystemProfile row from GET /tables/{fqn}/systemProfile. */
+export interface SystemProfile {
+  timestamp?: number;
+  operation?: string;
+  rowsAffected?: number;
+}
+
+function mapSystemProfile(raw: Record<string, unknown>): SystemProfile | null {
+  const timestamp = asNumber(raw.timestamp);
+  const operation = asString(raw.operation) || undefined;
+  const rowsAffected = asNumber(raw.rowsAffected);
+  if (timestamp === undefined && !operation && rowsAffected === undefined) {
+    return null;
+  }
+  return { timestamp, operation, rowsAffected };
+}
+
+/** Official getSystemProfileList: GET /v1/tables/{fqn}/systemProfile?startTs&endTs. */
+export async function listSystemProfiles(fqn: string, startTs: number, endTs: number): Promise<SystemProfile[]> {
+  const raw = await apiRequest<unknown>(`/v1/tables/${encodeURIComponent(fqn)}/systemProfile`, {
+    query: { startTs, endTs },
+  });
+  return parsePaged(raw, mapSystemProfile).data;
+}

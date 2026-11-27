@@ -89,6 +89,8 @@ describe('TestDefinitionsListView', () => {
     expect(wrapper.get('[data-testid="create-test-definition"]').text()).toContain('添加测试定义');
     expect(wrapper.find('[data-testid="test-library-filter-entity"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-library-filter-platform"]').exists()).toBe(true);
+    const search = wrapper.get('[data-testid="test-definition-search"]');
+    expect(search.attributes('placeholder') || search.html()).toContain('搜索测试定义');
     expect(wrapper.text()).toContain('Row count between');
     expect(wrapper.text()).toContain('OpenMetadata');
     expect(wrapper.text()).not.toContain('IQVIA');
@@ -120,5 +122,31 @@ describe('TestDefinitionsListView', () => {
     expect(body.querySelector('[data-testid="data-quality-dimension"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="add-parameter-button"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="test-definition-save"]')).not.toBeNull();
+  });
+
+  it('sends official q after the 300ms debounce and immediately when the box is cleared', async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapper } = await mountView();
+      vi.mocked(fetch).mockClear();
+      const input = wrapper.get('[data-testid="test-definition-search"]');
+      await input.setValue('row count');
+      await flushPromises();
+      const beforeDebounce = vi.mocked(fetch).mock.calls.filter((call) => String(call[0]).includes('/testDefinitions'));
+      expect(beforeDebounce.length).toBe(0);
+      await vi.advanceTimersByTimeAsync(300);
+      await flushPromises();
+      const afterDebounce = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('q='));
+      expect(decodeURIComponent(String(afterDebounce?.[0] ?? ''))).toMatch(/q=row[+ ]count/);
+      vi.mocked(fetch).mockClear();
+      const native = input.element instanceof HTMLInputElement ? input : input.get('input');
+      await native.setValue('');
+      await flushPromises();
+      const afterClear = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('/testDefinitions'));
+      expect(afterClear).toBeDefined();
+      expect(decodeURIComponent(String(afterClear?.[0] ?? ''))).not.toMatch(/[?&]q=/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

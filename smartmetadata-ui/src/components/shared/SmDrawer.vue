@@ -77,7 +77,6 @@ watch(
   <Drawer
     :data-testid="testId"
     :open="open"
-    :title="title"
     placement="right"
     :width="DRAWER_WIDTHS[widthKey]"
     :mask-closable="maskClosable"
@@ -85,6 +84,12 @@ watch(
     :destroy-on-close="true"
     @close="close"
   >
+    <template #title>
+      <div class="sm-drawer__title">
+        <span class="sm-drawer__title-text">{{ title }}</span>
+        <slot name="headerActions" />
+      </div>
+    </template>
     <slot />
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
@@ -103,3 +108,20 @@ watch(
     </template>
   </Drawer>
 </template>
+
+<style scoped>
+.sm-drawer__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding-right: 40px;
+}
+.sm-drawer__title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

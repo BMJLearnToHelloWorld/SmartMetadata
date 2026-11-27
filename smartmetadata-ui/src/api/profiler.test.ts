@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { getLatestTableProfile, getTableProfilerConfig, getTableSampleData, getTopicSampleData, listTableProfiles, putTableProfilerConfig } from './profiler';
+import { getLatestTableProfile, getTableProfilerConfig, getTableSampleData, getTopicSampleData, listSystemProfiles, listTableProfiles, putTableProfilerConfig } from './profiler';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -252,5 +252,25 @@ describe('profiler API', () => {
     expect(call.url).toContain('/api/v1/tables/tbl-1/tableProfilerConfig');
     expect(call.init?.method).toBe('PUT');
     expect(call.init?.body).toBe(JSON.stringify({ sampleDataCount: 10 }));
+  });
+
+  it('reads official system profiles from GET /v1/tables/{fqn}/systemProfile', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ timestamp: 1, operation: 'Insert', rowsAffected: 4 }],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const rows = await listSystemProfiles('db.schema.tbl', 1, 2);
+    expect(rows).toEqual([{ timestamp: 1, operation: 'Insert', rowsAffected: 4 }]);
+    expect(lastFetch().url).toContain('/api/v1/tables/db.schema.tbl/systemProfile');
+    expect(lastFetch().url).toContain('startTs=1');
+    expect(lastFetch().url).toContain('endTs=2');
   });
 });
