@@ -378,6 +378,61 @@ export function selectedEstateFromFilters(filters: SearchFilters): string {
   return ESTATE_CATEGORIES.find((category) => category.entityTypes.some((type) => typeSet.has(type)))?.id ?? '';
 }
 
+
+/**
+ * Official ExploreTree selectedKeys follow the full browse-path key, including
+ * the serviceType segment (`category:serviceType:x:service:y:…`). The selected
+ * key is the deepest path segment present in the current filters.
+ */
+export function selectedEstatePathKeys(filters: SearchFilters, estateId: string): string[] {
+  if (!estateId) {
+    return [];
+  }
+  const category = estateCategory(estateId);
+  const keys = [estateId];
+  if (!category) {
+    return keys;
+  }
+  if (category.staticChildren?.length) {
+    const types = filters.entityType ?? [];
+    if (types.length === 1) {
+      const child = category.staticChildren.find((item) => item.entityType === types[0]);
+      if (child) {
+        keys.push(`${estateId}:static:${types[0]}`);
+      }
+    }
+    return keys;
+  }
+  const serviceType = filters.serviceType?.[0];
+  const service = filters.service?.[0];
+  const database = filters.database?.[0];
+  const schema = filters.schema?.[0];
+  if (serviceType) {
+    keys.push(`${keys[keys.length - 1]}:serviceType:${serviceType}`);
+  }
+  if (service) {
+    keys.push(`${keys[keys.length - 1]}:service:${service}`);
+  }
+  if (database) {
+    keys.push(`${keys[keys.length - 1]}:database:${database}`);
+  }
+  if (schema) {
+    keys.push(`${keys[keys.length - 1]}:schema:${schema}`);
+  }
+  const types = filters.entityType ?? [];
+  const categoryWide =
+    types.length === category.entityTypes.length &&
+    category.entityTypes.every((type) => types.includes(type));
+  if (types.length === 1 && !categoryWide) {
+    keys.push(`${keys[keys.length - 1]}:entityType:${types[0]}`);
+  }
+  return keys;
+}
+
+export function selectedEstateNodeKey(filters: SearchFilters, estateId: string): string[] {
+  const keys = selectedEstatePathKeys(filters, estateId);
+  return keys.length ? [keys[keys.length - 1]] : [];
+}
 export function filtersForEstateNode(node: EstateNode, current: SearchFilters): SearchFilters {
   const category = estateCategory(node.categoryId);
   if (!category) {

@@ -641,6 +641,7 @@ watch(
 <template>
   <aside class="preview" data-testid="explore-preview">
     <template v-if="merged">
+      <div class="preview__body">
       <div class="preview__bar">
         <Tag :color="entityTypeColor(merged.entityType)">{{ entityLabel(merged.entityType) }}</Tag>
         <!-- Pin EntityTitleSection.tsx:177-179: the display name is a link
@@ -670,7 +671,6 @@ watch(
           <EditOutlined />
         </Button>
       </div>
-      <div class="preview__shell">
         <div class="preview__content">
           <Spin v-if="isViewGated && isPermissionLoading" data-testid="explore-preview-loading" />
           <PermissionPlaceholder
@@ -886,7 +886,8 @@ watch(
             :on-save="saveCustomProperties"
           />
         </div>
-        <nav class="preview__nav" :aria-label="t('explore.overview')">
+      </div>
+        <nav class="preview__nav" data-testid="explore-preview-nav" :aria-label="t('explore.overview')">
           <button
             v-for="tab in tabs"
             :key="tab.key"
@@ -901,7 +902,6 @@ watch(
             <span class="preview__nav-label">{{ t(tab.labelKey) }}</span>
           </button>
         </nav>
-      </div>
     </template>
     <!-- E-3c: pin EntityTitleSection.tsx:206 `EntityNameModal` (display
          name only; the entity `name` is immutable). A failed save
@@ -939,9 +939,25 @@ watch(
 <style scoped>
 .preview {
   display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+}
+.preview__body {
+  display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 100%;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
+  padding: 12px;
 }
 .preview__bar {
   display: flex;
@@ -966,25 +982,24 @@ watch(
   flex-shrink: 0;
   color: var(--sm-text-tertiary);
 }
-.preview__shell {
-  display: flex;
-  gap: 8px;
-  min-height: 0;
-}
 .preview__content {
   display: flex;
   flex-direction: column;
   gap: 10px;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 .preview__nav {
   display: flex;
   flex-direction: column;
   align-items: center;
+  align-self: stretch;
   gap: 20px;
   flex-shrink: 0;
   width: 80px;
+  height: auto;
   padding-top: 20px;
   border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius);

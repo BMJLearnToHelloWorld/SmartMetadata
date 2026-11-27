@@ -8,11 +8,12 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { mount } from '@vue/test-utils';
-import Antd, { Select } from 'ant-design-vue';
+import Antd, { Button } from 'ant-design-vue';
 import { describe, expect, it } from 'vitest';
 import { ARTICLE_QUICK_FILTER_FACET_IDS } from '@/catalog/contextCenterArticles';
 import type { SearchFacet } from '@/catalog/searchFacets';
 import { createTestI18n } from '@/test/i18n';
+import ExploreFilterChipField from './ExploreFilterChipField.vue';
 import ExploreFilterChips from './ExploreFilterChips.vue';
 
 const FACETS: SearchFacet[] = [
@@ -23,17 +24,20 @@ const FACETS: SearchFacet[] = [
   { id: 'entityType', field: 'entityType', buckets: [{ key: 'table', count: 9 }] },
 ];
 
+function chipFields(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAllComponents(ExploreFilterChipField);
+}
+
 function chipIds(wrapper: ReturnType<typeof mount>): string[] {
-  return wrapper
-    .findAllComponents(Select)
-    .map((select) => String(select.attributes('data-testid') ?? '').replace('explore-chip-', ''));
+  return chipFields(wrapper).map((chip) => String(chip.attributes('data-testid') ?? '').replace('explore-chip-', ''));
+}
+
+function chipById(wrapper: ReturnType<typeof mount>, id: string) {
+  return chipFields(wrapper).find((item) => item.attributes('data-testid') === `explore-chip-${id}`);
 }
 
 function chipOptions(wrapper: ReturnType<typeof mount>, id: string): Array<{ value: string; label: unknown }> {
-  const select = wrapper
-    .findAllComponents(Select)
-    .find((item) => item.attributes('data-testid') === `explore-chip-${id}`);
-  return (select?.props('options') ?? []) as Array<{ value: string; label: unknown }>;
+  return (chipById(wrapper, id)?.props('options') ?? []) as Array<{ value: string; label: unknown }>;
 }
 
 /** Plain text inside a VNode label (icons contribute no text). */
@@ -60,10 +64,7 @@ describe('ExploreFilterChips facetIds', () => {
       global: { plugins: [Antd, createTestI18n()] },
     });
     expect(chipIds(wrapper)).toEqual(['domain', 'owner', 'tagFqn', 'tier']);
-    const tagChip = wrapper
-      .findAllComponents(Select)
-      .find((select) => select.attributes('data-testid') === 'explore-chip-tagFqn');
-    expect(tagChip?.props('placeholder')).toBeTruthy();
+    expect(chipById(wrapper, 'tagFqn')?.props('title')).toBeTruthy();
   });
 
   it('renders every top-bar chip by default', () => {
@@ -75,12 +76,24 @@ describe('ExploreFilterChips facetIds', () => {
     expect(chipIds(wrapper).length).toBeGreaterThan(4);
   });
 
+  it('uses official text-button triggers, not boxed multi-selects, and shows a selected count', () => {
+    const wrapper = mount(ExploreFilterChips, {
+      props: { facets: FACETS, filters: { entityType: ['table'] }, facetIds: ['entityType'] },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    const trigger = wrapper.findComponent(Button);
+    expect(trigger.props('type')).toBe('text');
+    expect(trigger.text()).toContain('Data Assets:(1)');
+    expect(wrapper.find('.ant-select').exists()).toBe(false);
+    expect(trigger.text()).not.toContain('Table (9)');
+  });
+
   it('emits change with the selected values for the right facet', async () => {
     const wrapper = mount(ExploreFilterChips, {
       props: { facets: FACETS, filters: {}, facetIds: ['domain'] },
       global: { plugins: [Antd, createTestI18n()] },
     });
-    await wrapper.findComponent(Select).vm.$emit('change', ['d1']);
+    await chipById(wrapper, 'domain')?.vm.$emit('change', ['d1']);
     expect(wrapper.emitted('change')).toEqual([['domain', ['d1']]]);
   });
 
@@ -89,7 +102,7 @@ describe('ExploreFilterChips facetIds', () => {
       props: { facets: FACETS, filters: {}, facetIds: ['domain'] },
       global: { plugins: [Antd, createTestI18n()] },
     });
-    await wrapper.findComponent(Select).vm.$emit('dropdownVisibleChange', true);
+    await chipById(wrapper, 'domain')?.vm.$emit('open', true);
     expect(wrapper.emitted('open')).toEqual([['domain', true]]);
   });
 });
@@ -198,10 +211,7 @@ describe('ExploreFilterChips option icons and dropdown search (D6/D7)', () => {
       props: { facets: FACETS, filters: {}, facetIds: ['domain'] },
       global: { plugins: [Antd, createTestI18n()] },
     });
-    const select = wrapper.findComponent(Select);
-    expect(select.props('showSearch')).toBe(true);
-    expect(select.props('filterOption')).toBe(false);
-    await select.vm.$emit('search', 'd1');
+    await chipById(wrapper, 'domain')?.vm.$emit('search', 'd1');
     expect(wrapper.emitted('search')).toEqual([['domain', 'd1']]);
   });
 
@@ -210,8 +220,7 @@ describe('ExploreFilterChips option icons and dropdown search (D6/D7)', () => {
       props: { facets: FACETS, filters: {}, facetIds: ['domain', 'owner'], searchingFacetIds: ['domain'] },
       global: { plugins: [Antd, createTestI18n()] },
     });
-    const selects = wrapper.findAllComponents(Select);
-    expect(selects[0].props('loading')).toBe(true);
-    expect(selects[1].props('loading')).toBe(false);
+    expect(chipById(wrapper, 'domain')?.props('searching')).toBe(true);
+    expect(chipById(wrapper, 'owner')?.props('searching')).toBe(false);
   });
 });

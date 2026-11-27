@@ -5,7 +5,6 @@
 <script setup lang="ts">
 import { computed, h, type Component, type VNode } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Select } from 'ant-design-vue';
 import {
   CHIP_FACET_IDS,
   NULL_OPTION_KEY,
@@ -18,6 +17,7 @@ import SmIcon from '@/components/shared/SmIcon.vue';
 import { serviceTypeIcon } from '@/features/home/serviceTypeIcon';
 import { formatTierLabel } from '@/ingestion/tierTags';
 import { navIcon } from '@/layouts/navIcons';
+import ExploreFilterChipField, { type FilterChipOption } from './ExploreFilterChipField.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -131,7 +131,7 @@ function optionLabel(id: FacetId, key: string, count: number): string | VNode {
 const chips = computed(() =>
   props.facetIds.map((id) => {
     const facet = props.facets.find((item) => item.id === id);
-    const options: Array<{ value: string; label: string | VNode }> = [];
+    const options: FilterChipOption[] = [];
     // Pin's "No X" option (NULL_OPTION_KEY): offered for the
     // SUPPORTED_EMPTY_FILTER_FIELDS only, ahead of the buckets, and
     // shown even when the facet has no buckets yet.
@@ -156,8 +156,7 @@ const chips = computed(() =>
   }),
 );
 
-function onChange(id: FacetId, value: unknown): void {
-  const values = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+function onChange(id: FacetId, values: string[]): void {
   emit('change', id, values);
 }
 
@@ -172,26 +171,17 @@ function onSearch(id: FacetId, text: string): void {
 
 <template>
   <div class="chips" data-testid="explore-chips">
-    <Select
+    <ExploreFilterChipField
       v-for="chip in chips"
       :key="chip.id"
       :data-testid="`explore-chip-${chip.id}`"
-      class="chips__select"
-      mode="multiple"
-      allow-clear
-      max-tag-count="responsive"
-      size="small"
-      show-search
-      :filter-option="false"
-      :loading="chip.searching"
-      :placeholder="chip.title"
-      :value="filters[chip.id] ?? []"
+      :title="chip.title"
       :options="chip.options"
-      :not-found-content="t('explore.chipEmpty')"
-      :aria-label="chip.title"
-      @change="(value) => onChange(chip.id, value)"
-      @dropdownVisibleChange="(open: boolean) => onOpen(chip.id, open)"
-      @search="(text: string) => onSearch(chip.id, text)"
+      :value="filters[chip.id] ?? []"
+      :searching="chip.searching"
+      @change="(values) => onChange(chip.id, values)"
+      @open="(open) => onOpen(chip.id, open)"
+      @search="(text) => onSearch(chip.id, text)"
     />
   </div>
 </template>
@@ -200,12 +190,8 @@ function onSearch(id: FacetId, text: string): void {
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px 0;
   align-items: center;
-}
-.chips__select {
-  min-width: 132px;
-  max-width: 220px;
 }
 .chips__option {
   display: inline-flex;
