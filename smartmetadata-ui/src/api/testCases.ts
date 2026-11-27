@@ -31,6 +31,8 @@ export interface ListTestCasesQuery {
   includeAllTests?: boolean;
   /** Pin TestCaseResource: a list — several statuses at once via repeated params. */
   testCaseStatus?: string | string[];
+  include?: 'non-deleted' | 'deleted' | 'all';
+  testCaseType?: string;
 }
 
 export interface SearchTestCasesQuery {
@@ -59,6 +61,10 @@ export interface SearchTestCasesQuery {
   entityLink?: string;
   entityFQN?: string;
   columnName?: string;
+  /** Official ListTestCaseParamsBySearch.tableFqn — sent as entityFQN when entityFQN is empty. */
+  tableFqn?: string;
+  testPlatforms?: string | string[];
+  include?: 'non-deleted' | 'deleted' | 'all';
 }
 
 function mapEntityRef(value: unknown): EntityRef | undefined {
@@ -136,8 +142,28 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     incidentId: asString(raw.incidentId) || undefined,
     incidentStatus: asString(raw.incidentStatus) || undefined,
     owners: mapEntityRefs(raw.owners),
+    deleted: raw.deleted === true,
+    topDimensions: asNumber(raw.topDimensions),
     dimensionColumns: Array.isArray(raw.dimensionColumns)
       ? raw.dimensionColumns.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    tags: Array.isArray(raw.tags)
+      ? raw.tags.flatMap((item) => {
+          const rec = asRecord(item);
+          if (!rec) {
+            return [];
+          }
+          const tagFQN = asString(rec.tagFQN) || asString(rec.fullyQualifiedName) || asString(rec.name);
+          return tagFQN
+            ? [
+                {
+                  tagFQN,
+                  name: asString(rec.name) || tagFQN,
+                  source: asString(rec.source) === 'Glossary' ? 'Glossary' : asString(rec.source) === 'Classification' ? 'Classification' : undefined,
+                },
+              ]
+            : [];
+        })
       : undefined,
   };
 }
@@ -198,6 +224,8 @@ export function listTestCases(query: ListTestCasesQuery = {}): Promise<Paged<Tes
       testSuiteId: query.testSuiteId,
       includeAllTests: query.includeAllTests,
       testCaseStatus: query.testCaseStatus,
+      include: query.include,
+      testCaseType: query.testCaseType,
     },
   }).then((payload) => parsePaged(payload, mapTestCase));
 }
@@ -276,8 +304,10 @@ export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise
       includeAllTests: query.includeAllTests ?? true,
       testSuiteId: query.testSuiteId,
       entityLink: query.entityLink,
-      entityFQN: query.entityFQN,
+      entityFQN: query.entityFQN ?? query.tableFqn,
       columnName: query.columnName,
+      testPlatforms: query.testPlatforms,
+      include: query.include,
       sortField: query.sortField,
       sortType: query.sortType,
     },
@@ -326,4 +356,14 @@ export function removeTestCaseFromTestSuite(testSuiteId: string, testCaseId: str
     `/v1/dataQuality/testCases/logicalTestCases/${encodeURIComponent(testSuiteId)}/${encodeURIComponent(testCaseId)}`,
     { method: 'DELETE' },
   );
+}
+
+/** Official exportTestCasesInCSV (rest/testAPI.ts): GET /dataQuality/testCases/name/{fqn}/exportAsync. */
+export function exportTestCasesInCSV(
+  name: string,
+  params: Record<string, string | boolean | number | undefined> = {},
+): Promise<unknown> {
+  return apiRequest(`/v1/dataQuality/testCases/name/${encodeURIComponent(name)}/exportAsync`, {
+    query: params,
+  });
 }

@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {Button, Form, Input, Radio, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
+import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
 import { ApiError } from '@/api/client';
 import { createTestSuite, deleteTestSuite, listTestSuites, listTestSuitesBySearch } from '@/api/testSuites';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -194,6 +195,12 @@ function openCreate(): void {
   createOpen.value = true;
 }
 
+function onBundleCreated(): void {
+  createOpen.value = false;
+  resetPager();
+  void load();
+}
+
 watch(subTab, () => {
   resetPager();
   void load();
@@ -331,25 +338,10 @@ defineExpose({ openCreate });
       </template>
     </template>
   </EntityListShell>
-  <FormModal
+  <LogicalTestSuiteDrawer
     :open="createOpen"
-    :title="t('quality.testSuites.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
     @cancel="createOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-test-suite-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="3" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="form.displayName" />
-      </Form.Item>
-    </Form>
-  </FormModal>
+    @submitted="onBundleCreated"
+  />
+  
 </template>

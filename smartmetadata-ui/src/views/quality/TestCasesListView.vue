@@ -3,18 +3,19 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Select, message } from 'ant-design-vue';
-import FormModal from '@/components/shared/FormModal.vue';
-import { createTestCase, deleteTestCase, listTestCases, listTestCasesBySearch } from '@/api/testCases';
-import { confirmDelete } from '@/features/crud/confirmDelete';
-import { listTestDefinitions } from '@/api/testDefinitions';
+import { Button, Dropdown, Input, Menu, Select, Switch, message } from 'ant-design-vue';
+import { deleteTestCase, exportTestCasesInCSV, listTestCases, listTestCasesBySearch } from '@/api/testCases';
+import { notifyCsvJobsRefresh } from '@/api/csvJobs';
 import { ApiError } from '@/api/client';
 import { formatChartTs } from '@/features/charts/series';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { requiredField } from '@/features/crud/formRules';
+import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
+import TestCaseDeleteModal from '@/components/quality/TestCaseDeleteModal.vue';
+import { columnFromEntity, tableFqnFromEntity, TEST_CASE_TYPES } from '@/quality/testCaseForm';
+import type { CoverageCounts, HealthCounts, StatusCounts } from '@/quality/landing';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -27,10 +28,7 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import { filterCasesForSearch } from '@/quality/landing';
-import { toEntityLink } from '@/quality/entityLink';
-import TableDiffFields from '@/features/quality/TableDiffFields.vue';
-import { TABLE2_PARAM, isTableDiffDefinition } from '@/features/quality/tableDiffParams';
-import { TEST_CASE_STATUSES, type TestCase, type TestDefinition } from '@/types/quality';
+import { TEST_CASE_STATUSES, type TestCase } from '@/types/quality';
 
 const props = withDefaults(
   defineProps<{
@@ -48,6 +46,9 @@ const props = withDefaults(
     dataQualityDimension?: string;
     /** Dashboard drill-down (pin getTestCaseListPath tableFqn): search-path entity scope. */
     entityFqn?: string;
+    coverage?: CoverageCounts | null;
+    health?: HealthCounts | null;
+    results?: StatusCounts | null;
   }>(),
   {
     embedded: false,
@@ -83,82 +84,42 @@ function onStatusFilterChange(value: unknown): void {
   onFilterChange();
 }
 const searchValue = ref('');
-const definitions = ref<TestDefinition[]>([]);
-const createOpen = ref(false);
-const creating = ref(false);
-const form = reactive({
-  name: '',
-  displayName: '',
-  description: '',
-  testDefinition: '',
-  entityType: 'table',
-  entityFqn: '',
-  column: '',
-  parameterText: '',
-  /** Values for the selected definition's parameterDefinition, keyed by parameter name. */
-  parameterValues: {} as Record<string, string>,
-});
-
-/** The selected definition's declared parameters; empty when none selected or none declared. */
-const selectedParameters = computed(() => {
-  const definition = definitions.value.find(
-    (item) => (item.fullyQualifiedName || item.name) === form.testDefinition,
-  );
-  return definition?.parameterDefinition ?? [];
-});
-
-const selectedDefinition = computed(() =>
-  definitions.value.find(
-    (item) => (item.fullyQualifiedName || item.name) === form.testDefinition,
-  ),
-);
-
-/** tableDiff 用专属字段表单（TableDiffFields），其余定义沿用通用文本输入。 */
-const isTableDiff = computed(() =>
-  isTableDiffDefinition(selectedDefinition.value?.name, selectedDefinition.value?.fullyQualifiedName),
-);
-
-/** Switching definitions must not carry the previous definition's values forward. */
-function onDefinitionChange(): void {
-  form.parameterValues = {};
-}
-
-function collectParameterValues(): Array<{ name: string; value: string }> {
-  if (selectedParameters.value.length > 0) {
-    return selectedParameters.value
-      .map((param) => ({ name: param.name, value: (form.parameterValues[param.name] ?? '').trim() }))
-      .filter((entry) => entry.value.length > 0);
-  }
-  return parseParameterValues(form.parameterText);
-}
-
+const typeFilter = ref<string | undefined>();
+const tableFilter = ref(props.entityFqn ?? '');
+const tagFilter = ref(props.tags ?? '');
+const showDeleted = ref(false);
+const showAdvanced = ref(false);
+const formOpen = ref(false);
+const editing = ref<TestCase | undefined>();
+const deleting = ref<TestCase | undefined>();
 const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.status'), key: 'status', width: 110 },
+  { title: t('quality.testCases.failureReason'), key: 'failureReason', ellipsis: true },
+  {
+    title: t('quality.testCases.lastRun'),
+    key: 'lastRun',
+    width: 170,
+    sorter: (left, right) =>
+      ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
+  },
   {
     title: t('crud.name'),
     dataIndex: 'name',
     key: 'name',
-    sorter: (left, right) =>
-      entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
+    sorter: (left, right) => entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
   },
   { title: t('quality.testCases.asset'), key: 'entityFQN' },
-  { title: t('quality.testCases.definition'), key: 'testDefinition' },
-  {
-    title: t('quality.testCases.latestStatus'),
-    key: 'status',
-    width: 140,
-    sorter: (left, right) =>
-      String((left as TestCase).testCaseResult?.testCaseStatus || (left as TestCase).testCaseStatus || '').localeCompare(
-        String((right as TestCase).testCaseResult?.testCaseStatus || (right as TestCase).testCaseStatus || ''),
-      ),
-  },
-  {
-    title: t('quality.testCases.lastRun'),
-    key: 'lastRun',
-    width: 160,
-    sorter: (left, right) =>
-      ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
-  },
+  { title: t('quality.testCases.column'), key: 'column', width: 140 },
+  { title: t('quality.testCases.incident'), key: 'incident', width: 120 },
 ]);
+
+function includeMode(): 'non-deleted' | 'deleted' {
+  return showDeleted.value ? 'deleted' : 'non-deleted';
+}
+
+function incidentLabel(record: TestCase): string {
+  return record.incidentStatus || (record.incidentId ? 'New' : '');
+}
 
 const visibleCases = computed(() =>
   usingSearch.value ? cases.value : filterCasesForSearch(cases.value, searchValue.value),
@@ -171,20 +132,6 @@ const hasNext = computed(() =>
     : canGoNext(pageAfter.value),
 );
 const hasPrev = computed(() => (usingSearch.value ? offset.value > 0 : canGoPrev(cursor.value)));
-
-function parseParameterValues(text: string) {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      const eq = line.indexOf('=');
-      if (eq <= 0) {
-        return [];
-      }
-      return [{ name: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() }];
-    });
-}
 
 function resetPager(): void {
   cursor.value = createCursorPager();
@@ -204,12 +151,14 @@ async function load(): Promise<void> {
           offset: offset.value,
           includeAllTests: true,
           testCaseStatus: statusFilter.value,
+          testCaseType: typeFilter.value,
           owner: props.ownerFqn,
           tier: props.tier,
-          tags: props.tags,
+          tags: tagFilter.value || props.tags,
           dataProductFqn: props.dataProductFqn,
           dataQualityDimension: props.dataQualityDimension,
-          entityFQN: props.entityFqn,
+          entityFQN: tableFilter.value.trim() || props.entityFqn,
+          include: includeMode(),
           startTimestamp: props.startTs,
           endTimestamp: props.endTs,
           sortField: 'testCaseResult.timestamp',
@@ -231,9 +180,11 @@ async function load(): Promise<void> {
       after: cursor.value.after,
       includeAllTests: true,
       testCaseStatus: statusFilter.value,
+      testCaseType: typeFilter.value,
+      include: includeMode(),
       // No dimension parameter on the plain list endpoint: a dimension
       // drill-down only narrows the search path above.
-      entityFQN: props.entityFqn,
+      entityFQN: tableFilter.value.trim() || props.entityFqn,
     });
     cases.value = page.data;
     total.value = page.total;
@@ -276,34 +227,43 @@ function onSearch(): void {
   }
 }
 
-async function onCreate(): Promise<void> {
-  if (isTableDiff.value && !(form.parameterValues[TABLE2_PARAM] ?? '').trim()) {
-    message.error(t('quality.testCases.tableDiffTable2Required'));
-    return;
-  }
-  creating.value = true;
-  try {
-    const created = await createTestCase({
-      name: form.name.trim(),
-      testDefinition: form.testDefinition,
-      entityLink: toEntityLink(form.entityType, form.entityFqn, form.column),
-      description: form.description.trim() || undefined,
-      displayName: form.displayName.trim() || undefined,
-      parameterValues: collectParameterValues(),
-    });
-    createOpen.value = false;
-    message.success(t('quality.testCases.created', { name: created.name }));
-    resetPager();
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
+function openCreate(): void {
+  editing.value = undefined;
+  formOpen.value = true;
+}
+
+function openEdit(record: TestCase): void {
+  editing.value = record;
+  formOpen.value = true;
+}
+
+async function onFormSubmitted(saved: TestCase): Promise<void> {
+  const wasEdit = Boolean(editing.value);
+  formOpen.value = false;
+  editing.value = undefined;
+  message.success(t(wasEdit ? 'quality.testCases.updated' : 'quality.testCases.created', { name: saved.name }));
+  resetPager();
+  await load();
+}
+
+function onManageMenu({ key }: { key: string | number }): void {
+  if (key === 'import') {
+    void router.push({ path: '/bulk/import/testCase/*' });
+  } else if (key === 'export') {
+    void exportCases();
+  } else if (key === 'bulk') {
+    void router.push({ path: '/bulk/edit/testCase/*' });
   }
 }
 
-function openCreate(): void {
-  createOpen.value = true;
+async function exportCases(): Promise<void> {
+  try {
+    await exportTestCasesInCSV('*', { recursive: true });
+    notifyCsvJobsRefresh();
+    message.success(t('quality.testCases.exportStarted'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  }
 }
 
 watch(
@@ -335,18 +295,18 @@ watch(
   },
 );
 
-async function onDelete(record: TestCase): Promise<void> {
-  const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
-  });
-  if (!confirmed) {
+function openDelete(record: TestCase): void {
+  deleting.value = record;
+}
+
+async function onDeleteConfirm(mode: 'soft' | 'hard'): Promise<void> {
+  const record = deleting.value;
+  if (!record) {
     return;
   }
   try {
-    await deleteTestCase(record.id, { hardDelete: true });
+    await deleteTestCase(record.id, { hardDelete: mode === 'hard', recursive: mode === 'hard' });
+    deleting.value = undefined;
     message.success(t('crud.deletedName', { name: record.displayName || record.name }));
     await load();
   } catch (error) {
@@ -356,17 +316,27 @@ async function onDelete(record: TestCase): Promise<void> {
 
 onMounted(() => {
   void load();
-  void listTestDefinitions({ limit: 100 })
-    .then((page) => {
-      definitions.value = page.data;
-    })
-    .catch(() => undefined);
 });
 
 defineExpose({ openCreate });
 </script>
 
 <template>
+  <div>
+    <div v-if="embedded && (results || health || coverage)" class="tc-insights" data-testid="test-cases-insights">
+      <div class="tc-insights__card" data-testid="test-cases-insight-all">
+        <div>{{ t('quality.testCases.allTests') }}</div>
+        <strong>{{ results?.total ?? visibleCases.length }}</strong>
+      </div>
+      <div class="tc-insights__card" data-testid="test-cases-insight-health">
+        <div>{{ t('quality.landing.healthyAssets') }}</div>
+        <strong>{{ health?.healthy ?? 0 }}</strong>
+      </div>
+      <div class="tc-insights__card" data-testid="test-cases-insight-coverage">
+        <div>{{ t('quality.landing.coverage') }}</div>
+        <strong>{{ coverage?.covered ?? 0 }}</strong>
+      </div>
+    </div>
   <EntityListShell
     :title="t('quality.testCases.title')"
     :lead="t('quality.testCases.lead')"
@@ -391,15 +361,44 @@ defineExpose({ openCreate });
     @next="onNext"
     @prev="onPrev"
     @view="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
-    @edit="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
-    @delete="(record) => onDelete(record as TestCase)"
+    @edit="(record) => openEdit(record as TestCase)"
+    @delete="(record) => openDelete(record as TestCase)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-test-case" @click="openCreate">
         {{ t('quality.testCases.create') }}
       </Button>
+      <Dropdown :trigger="['click']">
+        <Button data-testid="test-cases-manage">⋯</Button>
+        <template #overlay>
+          <Menu @click="onManageMenu">
+            <Menu.Item key="import" data-testid="test-cases-import">{{ t('quality.testCases.import') }}</Menu.Item>
+            <Menu.Item key="export" data-testid="test-cases-export">{{ t('quality.testCases.export') }}</Menu.Item>
+            <Menu.Item key="bulk" data-testid="test-cases-bulk-edit">{{ t('quality.testCases.bulkEdit') }}</Menu.Item>
+          </Menu>
+        </template>
+      </Dropdown>
     </template>
     <template #filters>
+      <Button data-testid="test-cases-advanced" @click="showAdvanced = !showAdvanced">{{ t('quality.testCases.advanced') }}</Button>
+      <Input
+        v-model:value="tableFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.tableFilter')"
+        data-testid="test-cases-table-filter"
+        style="width: 200px"
+        @change="onFilterChange"
+      />
+      <Select
+        v-model:value="typeFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.typeFilter')"
+        data-testid="test-cases-type-filter"
+        style="width: 140px"
+        @change="onFilterChange"
+      >
+        <Select.Option v-for="type in TEST_CASE_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
+      </Select>
       <Select
         :value="statusSelectValue"
         allow-clear
@@ -412,6 +411,21 @@ defineExpose({ openCreate });
           {{ status }}
         </Select.Option>
       </Select>
+      <Input
+        v-model:value="tagFilter"
+        :placeholder="t('quality.testCases.tagFilter')"
+        data-testid="test-cases-tag-filter"
+        style="width: 160px"
+        @change="onFilterChange"
+      />
+      <span v-if="showAdvanced" data-testid="test-cases-advanced-filters">
+        <Switch v-model:checked="showDeleted" data-testid="test-cases-show-deleted" @change="onFilterChange" />
+        {{ t('quality.testCases.showDeleted') }}
+      </span>
+      <span v-else class="tc-deleted-toggle">
+        <Switch v-model:checked="showDeleted" data-testid="test-cases-show-deleted" @change="onFilterChange" />
+        {{ t('quality.testCases.showDeleted') }}
+      </span>
     </template>
     <template #emptyExtra>
       <Button type="primary" data-testid="test-cases-empty-cta" @click="openCreate">
@@ -429,14 +443,19 @@ defineExpose({ openCreate });
         </a>
       </template>
       <template v-else-if="column.key === 'entityFQN'">
-        {{ (record as TestCase).entityFQN || (record as TestCase).entityLink || '—' }}
+        {{ tableFqnFromEntity(record as TestCase) || (record as TestCase).entityFQN || '—' }}
       </template>
-      <template v-else-if="column.key === 'testDefinition'">
-        {{
-          (record as TestCase).testDefinition?.fullyQualifiedName ||
-          (record as TestCase).testDefinition?.name ||
-          '—'
-        }}
+      <template v-else-if="column.key === 'column'">
+        {{ columnFromEntity(record as TestCase) || '—' }}
+      </template>
+      <template v-else-if="column.key === 'failureReason'">
+        {{ (record as TestCase).testCaseResult?.result || '—' }}
+      </template>
+      <template v-else-if="column.key === 'incident'">
+        <span v-if="incidentLabel(record as TestCase)" :data-testid="`test-case-incident-${(record as TestCase).id}`">
+          {{ incidentLabel(record as TestCase) }}
+        </span>
+        <span v-else>—</span>
       </template>
       <template v-else-if="column.key === 'status'">
         {{
@@ -448,77 +467,37 @@ defineExpose({ openCreate });
       </template>
     </template>
   </EntityListShell>
-  <FormModal
-    :open="createOpen"
-    :title="t('quality.testCases.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
-    @cancel="createOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-test-case-name" />
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.definition')" required>
-        <Select
-          v-model:value="form.testDefinition"
-          show-search
-          option-filter-prop="label"
-          data-testid="create-test-case-definition"
-          @change="onDefinitionChange"
-        >
-          <Select.Option
-            v-for="definition in definitions"
-            :key="definition.id"
-            :value="definition.fullyQualifiedName || definition.name"
-            :label="entityLabel(definition)"
-          >
-            {{ entityLabel(definition) }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.entityType')" required>
-        <Select v-model:value="form.entityType">
-          <Select.Option value="table">table</Select.Option>
-          <Select.Option value="topic">topic</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.entityFqn')" required>
-        <Input v-model:value="form.entityFqn" data-testid="create-test-case-fqn" />
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.column')">
-        <Input v-model:value="form.column" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="2" />
-      </Form.Item>
-      <TableDiffFields
-        v-if="isTableDiff"
-        :definitions="selectedParameters"
-        :entity-fqn="form.entityFqn"
-        :entity-type="form.entityType"
-        :model-value="form.parameterValues"
-        @update:model-value="form.parameterValues = $event"
-      />
-      <template v-else-if="selectedParameters.length > 0">
-        <Form.Item
-          v-for="param in selectedParameters"
-          :key="param.name"
-          :label="param.displayName || param.name"
-          :required="param.required === true"
-          :extra="param.description"
-        >
-          <Input
-            v-model:value="form.parameterValues[param.name]"
-            :data-testid="`create-test-case-param-${param.name}`"
-          />
-        </Form.Item>
-      </template>
-      <Form.Item v-else :label="t('quality.testCases.parameters')">
-        <Input.TextArea v-model:value="form.parameterText" :rows="3" placeholder="minValue=1&#10;maxValue=100" />
-      </Form.Item>
-    </Form>
-  </FormModal>
+  <TestCaseFormDrawer
+    :open="formOpen"
+    :test-case="editing"
+    @cancel="formOpen = false; editing = undefined"
+    @submitted="onFormSubmitted"
+  />
+  <TestCaseDeleteModal
+    :open="Boolean(deleting)"
+    :name="deleting?.displayName || deleting?.name || ''"
+    @cancel="deleting = undefined"
+    @confirm="onDeleteConfirm"
+  />
+  </div>
 </template>
+
+<style scoped>
+.tc-insights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.tc-insights__card {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+.tc-deleted-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+</style>

@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import type { EntityRef } from './api';
+import type { EntityRef, TagRef } from './api';
 import type { EntityReferenceInput } from './admin';
 
 export const TEST_DEFINITION_ENTITY_TYPES = ['TABLE', 'COLUMN'] as const;
@@ -95,6 +95,11 @@ export interface TestDefinition {
   dataQualityDimension?: string;
   parameterDefinition: TestParameterDefinition[];
   provider?: string;
+  supportedDataTypes?: string[];
+  supportedServices?: string[];
+  enabled?: boolean;
+  /** Official testDefinition.sqlExpression / custom SQL body. */
+  sqlExpression?: string;
 }
 
 export interface CreateTestDefinitionRequest {
@@ -103,6 +108,13 @@ export interface CreateTestDefinitionRequest {
   testPlatforms: string[];
   description?: string;
   displayName?: string;
+  dataQualityDimension?: string;
+  supportedDataTypes?: string[];
+  supportedServices?: string[];
+  enabled?: boolean;
+  parameterDefinition?: TestParameterDefinition[];
+  sqlExpression?: string;
+  validatorClass?: string;
 }
 
 export interface TestCase {
@@ -123,6 +135,10 @@ export interface TestCase {
   /** Incident workflow state riding on the row (official fields list). */
   incidentStatus?: string;
   owners?: EntityRef[];
+  tags?: TagRef[];
+  deleted?: boolean;
+  /** Official testCase.topDimensions (dimension-level tests). */
+  topDimensions?: number;
   /** Columns to group results by dimensions (testCase.json dimensionColumns). */
   dimensionColumns?: string[];
 }
@@ -148,6 +164,11 @@ export interface CreateTestCaseRequest {
   description?: string;
   displayName?: string;
   parameterValues?: TestParameterValue[];
+  tags?: Array<{ tagFQN: string; source?: string; name?: string; labelType?: string; state?: string }>;
+  dimensionColumns?: string[];
+  topDimensions?: number;
+  dataQualityDimension?: string;
+  computePassedFailedRowCount?: boolean;
 }
 
 export interface TestSuite {

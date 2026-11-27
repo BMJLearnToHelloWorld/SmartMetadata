@@ -1,0 +1,205 @@
+<!--
+  Copyright 2026 SmartMetadata authors.
+  Licensed under the Apache License, Version 2.0.
+  Official TestDefinitionFormBody fields (Vue3 + ant-design-vue). No CCL React/CSS copy.
+-->
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { Button, Form, Input, Select, Switch } from 'ant-design-vue';
+import { listDataQualityDimensions } from '@/api/dataQualityDimensions';
+import { TEST_DEFINITION_ENTITY_TYPES, TEST_PLATFORMS } from '@/types/quality';
+import type { DataQualityDimension } from '@/types/admin';
+import {
+  COLUMN_DATA_TYPES,
+  DATABASE_SERVICE_TYPES,
+  TEST_DATA_TYPES,
+  emptyParameter,
+  type TestDefinitionFormValues,
+} from '@/quality/testDefinitionForm';
+
+const props = defineProps<{
+  form: TestDefinitionFormValues;
+  isEdit?: boolean;
+  readOnlyExceptDimension?: boolean;
+}>();
+
+const { t } = useI18n();
+const dimensions = ref<DataQualityDimension[]>([]);
+
+const dimensionOptions = computed(() => {
+  const options = dimensions.value.map((item) => ({
+    value: item.name,
+    label: item.displayName || item.name,
+  }));
+  const current = props.form.dataQualityDimension;
+  if (current && !options.some((item) => item.value === current)) {
+    options.unshift({ value: current, label: current });
+  }
+  return options;
+});
+
+const locked = computed(() => Boolean(props.readOnlyExceptDimension));
+
+onMounted(async () => {
+  try {
+    const page = await listDataQualityDimensions({ limit: 100 });
+    dimensions.value = page.data;
+  } catch {
+    dimensions.value = [];
+  }
+});
+
+function addParameter(): void {
+  props.form.parameterDefinition.push(emptyParameter());
+}
+
+function removeParameter(index: number): void {
+  props.form.parameterDefinition.splice(index, 1);
+}
+</script>
+
+<template>
+  <Form layout="vertical" data-testid="test-definition-form-body">
+    <Form.Item :label="t('crud.name')" required>
+      <Input
+        v-model:value="form.name"
+        :disabled="isEdit || locked"
+        data-testid="test-definition-name"
+      />
+    </Form.Item>
+    <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
+      <Input v-model:value="form.displayName" :disabled="locked" data-testid="display-name" />
+    </Form.Item>
+    <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
+      <Input.TextArea v-model:value="form.description" :rows="3" :disabled="locked" data-testid="description" />
+    </Form.Item>
+    <Form.Item
+      :label="t('quality.testDefinitions.sqlExpression')"
+      :extra="t('quality.testDefinitions.sqlExpressionHelp')"
+    >
+      <Input.TextArea
+        v-model:value="form.sqlExpression"
+        :rows="6"
+        :disabled="locked"
+        data-testid="sql-expression"
+      />
+    </Form.Item>
+    <Form.Item :label="t('quality.testDefinitions.entityType')" required>
+      <Select v-model:value="form.entityType" :disabled="locked" data-testid="entity-type">
+        <Select.Option v-for="type in TEST_DEFINITION_ENTITY_TYPES" :key="type" :value="type">
+          {{ type }}
+        </Select.Option>
+      </Select>
+    </Form.Item>
+    <Form.Item :label="t('quality.testDefinitions.platforms')" required>
+      <Select v-model:value="form.testPlatforms" mode="multiple" :disabled="locked" data-testid="test-platforms">
+        <Select.Option v-for="platform in TEST_PLATFORMS" :key="platform" :value="platform">
+          {{ platform }}
+        </Select.Option>
+      </Select>
+    </Form.Item>
+    <Form.Item :label="t('quality.testDefinitions.dimension')">
+      <Select
+        v-model:value="form.dataQualityDimension"
+        allow-clear
+        :options="dimensionOptions"
+        :placeholder="t('quality.testDefinitions.dimensionPlaceholder')"
+        data-testid="data-quality-dimension"
+      />
+    </Form.Item>
+    <Form.Item
+      :label="t('quality.testDefinitions.supportedServices')"
+      :extra="t('quality.testDefinitions.supportedServicesHelp')"
+    >
+      <Select
+        v-model:value="form.supportedServices"
+        mode="multiple"
+        allow-clear
+        :disabled="locked"
+        :placeholder="t('quality.testDefinitions.emptyMeansAllServices')"
+        data-testid="supported-services"
+      >
+        <Select.Option v-for="service in DATABASE_SERVICE_TYPES" :key="service" :value="service">
+          {{ service }}
+        </Select.Option>
+      </Select>
+    </Form.Item>
+    <Form.Item
+      :label="t('quality.testDefinitions.supportedDataTypes')"
+      :extra="t('quality.testDefinitions.supportedDataTypesHelp')"
+    >
+      <Select
+        v-model:value="form.supportedDataTypes"
+        mode="multiple"
+        allow-clear
+        :disabled="locked"
+        :placeholder="t('quality.testDefinitions.emptyMeansAllDataTypes')"
+        data-testid="supported-data-types"
+      >
+        <Select.Option v-for="type in COLUMN_DATA_TYPES" :key="type" :value="type">
+          {{ type }}
+        </Select.Option>
+      </Select>
+    </Form.Item>
+    <div data-testid="parameter-definition">
+      <div
+        v-for="(param, index) in form.parameterDefinition"
+        :key="index"
+        class="td-param"
+        :data-testid="`parameter-card-${index}`"
+      >
+        <div class="td-param__head">
+          <strong>{{ t('quality.testDefinitions.parameterCard', { index: index + 1 }) }}</strong>
+          <Button
+            type="link"
+            danger
+            :disabled="locked"
+            :data-testid="`remove-parameter-${index}`"
+            @click="removeParameter(index)"
+          >
+            {{ t('crud.delete') }}
+          </Button>
+        </div>
+        <Form.Item :label="t('quality.testDefinitions.parameterName')" required>
+          <Input v-model:value="param.name" :disabled="locked" :data-testid="`parameter-name-${index}`" />
+        </Form.Item>
+        <Form.Item :label="t('crud.displayName')">
+          <Input v-model:value="param.displayName" :disabled="locked" :data-testid="`parameter-display-name-${index}`" />
+        </Form.Item>
+        <Form.Item :label="t('crud.description')">
+          <Input v-model:value="param.description" :disabled="locked" :data-testid="`parameter-description-${index}`" />
+        </Form.Item>
+        <Form.Item :label="t('quality.testDefinitions.parameterDataType')">
+          <Select v-model:value="param.dataType" :disabled="locked" :data-testid="`parameter-data-type-${index}`">
+            <Select.Option v-for="type in TEST_DATA_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
+          </Select>
+        </Form.Item>
+        <Form.Item :label="t('quality.testDefinitions.parameterRequired')">
+          <Switch v-model:checked="param.required" :disabled="locked" :data-testid="`parameter-required-${index}`" />
+        </Form.Item>
+      </div>
+      <Button :disabled="locked" data-testid="add-parameter-button" @click="addParameter">
+        {{ t('quality.testDefinitions.addParameter') }}
+      </Button>
+    </div>
+    <Form.Item v-if="isEdit" :label="t('quality.testDefinitions.enabled')">
+      <Switch v-model:checked="form.enabled" :disabled="locked" data-testid="enabled-toggle" />
+    </Form.Item>
+  </Form>
+</template>
+
+<style scoped>
+.td-param {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.td-param__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+</style>

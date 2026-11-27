@@ -6,11 +6,16 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Form, Input, Select, message} from 'ant-design-vue';
+import { Button, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createTestDefinition, listTestDefinitions } from '@/api/testDefinitions';
+import TestDefinitionFormFields from '@/components/quality/TestDefinitionFormFields.vue';
+import {
+  createEmptyTestDefinitionForm,
+  toCreateTestDefinitionRequest,
+  type TestDefinitionFormValues,
+} from '@/quality/testDefinitionForm';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -22,7 +27,7 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
-import { TEST_DEFINITION_ENTITY_TYPES, TEST_PLATFORMS, type TestDefinition } from '@/types/quality';
+import type { TestDefinition } from '@/types/quality';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -34,13 +39,7 @@ const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
-const form = reactive({
-  name: '',
-  displayName: '',
-  description: '',
-  entityType: 'TABLE',
-  testPlatforms: ['OpenMetadata'] as string[],
-});
+const form = reactive<TestDefinitionFormValues>(createEmptyTestDefinitionForm());
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -88,14 +87,9 @@ function onPrev(): void {
 async function onCreate(): Promise<void> {
   creating.value = true;
   try {
-    const created = await createTestDefinition({
-      name: form.name.trim(),
-      entityType: form.entityType,
-      testPlatforms: form.testPlatforms,
-      description: form.description.trim() || undefined,
-      displayName: form.displayName.trim() || undefined,
-    });
+    const created = await createTestDefinition(toCreateTestDefinitionRequest(form));
     createOpen.value = false;
+    Object.assign(form, createEmptyTestDefinitionForm());
     message.success(t('quality.testDefinitions.created', { name: created.name }));
     await load();
   } catch (error) {
@@ -159,30 +153,6 @@ onMounted(() => {
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate" @cancel="createOpen = false">
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-test-definition-name" />
-      </Form.Item>
-      <Form.Item :label="t('quality.testDefinitions.entityType')" required>
-        <Select v-model:value="form.entityType" data-testid="create-test-definition-entity-type">
-          <Select.Option v-for="type in TEST_DEFINITION_ENTITY_TYPES" :key="type" :value="type">
-            {{ type }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('quality.testDefinitions.platforms')" required>
-        <Select v-model:value="form.testPlatforms" mode="multiple">
-          <Select.Option v-for="platform in TEST_PLATFORMS" :key="platform" :value="platform">
-            {{ platform }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="3" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="form.displayName" />
-      </Form.Item>
-    </Form>
+    <TestDefinitionFormFields :form="form" />
   </FormModal>
 </template>

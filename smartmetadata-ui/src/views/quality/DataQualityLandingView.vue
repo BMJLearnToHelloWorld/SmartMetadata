@@ -61,6 +61,7 @@ import {
 import type { TestCase, TestSuite } from '@/types/quality';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
+import IncidentMetricsSection from '@/components/quality/IncidentMetricsSection.vue';
 
 const { t, te } = useI18n();
 const route = useRoute();
@@ -661,6 +662,8 @@ onMounted(() => {
               </Col>
             </Row>
           </Card>
+
+          <IncidentMetricsSection :start-ts="range.startTs" :end-ts="range.endTs" />
         </Space>
       </Spin>
     </div>
@@ -679,6 +682,9 @@ onMounted(() => {
       :status="listDrill.testCaseStatus"
       :data-quality-dimension="listDrill.dataQualityDimension"
       :entity-fqn="listDrill.tableFqn"
+      :coverage="coverage"
+      :health="health"
+      :results="results"
     />
 
     <TestSuitesListView

@@ -99,6 +99,7 @@ const IncidentDetailView = () => import('@/views/observability/IncidentDetailVie
 const IncidentsListView = () => import('@/views/observability/IncidentsListView.vue');
 const DataQualityLandingView = () => import('@/views/quality/DataQualityLandingView.vue');
 const TestCaseDetailView = () => import('@/views/quality/TestCaseDetailView.vue');
+const TestCaseDimensionsView = () => import('@/views/quality/TestCaseDimensionsView.vue');
 const TestDefinitionDetailView = () => import('@/views/quality/TestDefinitionDetailView.vue');
 const TestDefinitionsListView = () => import('@/views/quality/TestDefinitionsListView.vue');
 const TestSuiteDetailView = () => import('@/views/quality/TestSuiteDetailView.vue');
@@ -959,6 +960,18 @@ export const router = createRouter({
           redirect: (to) => ({
             name: 'quality-test-case-version-tab',
             params: { id: to.params.fqn, version: to.params.version, tab: to.params.tab },
+          }),
+        },
+        {
+          path: 'test-case/:fqn/dimensions/:dimensionKey/:tab?',
+          name: 'quality-test-case-dimensions',
+          component: TestCaseDimensionsView,
+        },
+        {
+          path: 'quality/test-cases/:id/dimensions/:dimensionKey/:tab?',
+          redirect: (to) => ({
+            name: 'quality-test-case-dimensions',
+            params: { fqn: to.params.id, dimensionKey: to.params.dimensionKey, tab: to.params.tab },
           }),
         },
         // G-03 (visual comparison), tab half: official

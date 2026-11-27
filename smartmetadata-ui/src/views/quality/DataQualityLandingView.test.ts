@@ -301,10 +301,13 @@ describe('DataQualityLandingView', () => {
     rangeSelect?.vm.$emit('update:value', 7);
     await flushPromises();
     expect(batchRequests.length).toBeGreaterThanOrEqual(1);
-    const rerun = batchRequests[batchRequests.length - 1] as {
-      requests: Array<{ key: string; q?: string }>;
-    };
-    const statusRequest = rerun.requests.find((item) => item.key === 'status');
+    const rerun = [...batchRequests]
+      .reverse()
+      .find((item) => Array.isArray((item as { requests?: unknown }).requests)
+        && (item as { requests: Array<{ key: string }> }).requests.some((request) => request.key === 'status')) as
+      | { requests: Array<{ key: string; q?: string }> }
+      | undefined;
+    const statusRequest = rerun?.requests.find((item) => item.key === 'status');
     expect(statusRequest?.q).toContain('testCaseResult.timestamp');
     // The table-index item never carries the time clause (official table
     // builder has none), even when the range drives the dashboard items.

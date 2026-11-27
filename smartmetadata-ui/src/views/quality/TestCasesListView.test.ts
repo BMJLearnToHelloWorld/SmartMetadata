@@ -15,6 +15,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import TestCasesListView from './TestCasesListView.vue';
 
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -97,45 +98,44 @@ describe('TestCasesListView', () => {
   });
 });
 
-describe('TestCasesListView definition-driven parameters (Fix5)', () => {
-  let postedBody: Record<string, unknown> | null = null;
+vi.mock('@/components/quality/TestCaseFormDrawer.vue', () => ({
+  default: {
+    name: 'TestCaseFormDrawer',
+    props: ['open', 'testCase'],
+    emits: ['cancel', 'submitted'],
+    template: '<div v-if="open" data-testid="test-case-form-drawer" />',
+  },
+}));
 
+vi.mock('@/components/quality/TestCaseDeleteModal.vue', () => ({
+  default: {
+    name: 'TestCaseDeleteModal',
+    props: ['open', 'name'],
+    emits: ['cancel', 'confirm'],
+    template: '<div v-if="open" data-testid="test-case-delete-modal" />',
+  },
+}));
+
+describe('TestCasesListView official list chrome', () => {
   beforeEach(() => {
     localStorage.clear();
-    postedBody = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (init?.method === 'POST' && url.includes('/api/v1/dataQuality/testCases')) {
-          postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
-          return jsonResponse({ id: 'tc2', name: 'col_range', testDefinition: 'tableColumnValueLengthsToBeBetween' });
-        }
         if (url.includes('/api/v1/dataQuality/testCases')) {
-          return jsonResponse({ data: [], paging: { total: 0 } });
-        }
-        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
           return jsonResponse({
             data: [
               {
-                id: 'td1',
-                name: 'tableColumnValueLengthsToBeBetween',
-                fullyQualifiedName: 'tableColumnValueLengthsToBeBetween',
-                parameterDefinition: [
-                  { name: 'minValue', displayName: 'Min value', required: true },
-                  { name: 'maxValue', displayName: 'Max value' },
-                ],
-              },
-              {
-                id: 'td2',
-                name: 'tableRowCountToBeBetween',
-                fullyQualifiedName: 'tableRowCountToBeBetween',
-                parameterDefinition: [
-                  { name: 'minCount', displayName: 'Min count', required: true },
-                  { name: 'maxCount', displayName: 'Max count' },
-                ],
+                id: 'tc1',
+                name: 'row_count',
+                entityFQN: 'svc.db.schema.orders',
+                entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
+                testCaseResult: { testCaseStatus: 'Failed', result: 'expected 10 got 12', timestamp: 1 },
+                incidentStatus: 'New',
               },
             ],
+            paging: { total: 1 },
           });
         }
         return new Response('not found', { status: 404 });
@@ -146,257 +146,54 @@ describe('TestCasesListView definition-driven parameters (Fix5)', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
-    document.body.innerHTML = '';
   });
 
-  async function openCreateAndSelectDefinition(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
+  it('shows official filters, deleted toggle, manage actions, and result columns', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="test-cases-advanced"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-table-filter"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-type-filter"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-tag-filter"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-show-deleted"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-manage"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('expected 10 got 12');
+    expect(wrapper.find('[data-testid="test-case-incident-tc1"]').text()).toContain('New');
+  });
+
+  it('opens the official add-test drawer instead of the thin create modal', async () => {
+    const { wrapper } = await mountView();
     await wrapper.get('[data-testid="create-test-case"]').trigger('click');
     await flushPromises();
-    // The create FormModal renders into document.body (Ant portal), so the
-    // definition select lives outside the wrapper tree.
-    const definitionSelect = document.body.querySelector(
-      '[data-testid="create-test-case-definition"]',
-    ) as HTMLElement | null;
-    expect(definitionSelect).not.toBeNull();
-    // Ant Select listens on its inner selector, not the root element.
-    const selector = definitionSelect?.querySelector('.ant-select-selector') as HTMLElement | null;
-    expect(selector).not.toBeNull();
-    selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find((el) =>
-      el.textContent?.includes('tableColumnValueLengthsToBeBetween'),
-    ) as HTMLElement | undefined;
-    expect(option).toBeDefined();
-    option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-  }
-
-  function setDomInput(testid: string, value: string): void {
-    const input = document.body.querySelector(`[data-testid="${testid}"]`) as HTMLInputElement | null;
-    expect(input).not.toBeNull();
-    if (input) {
-      input.focus();
-      input.value = value;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-  }
-
-  it('renders one input per declared parameter and posts their values', async () => {
-    const { wrapper } = await mountView();
-    await openCreateAndSelectDefinition(wrapper);
-    expect(document.body.querySelector('[data-testid="create-test-case-param-minValue"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="create-test-case-param-maxValue"]')).not.toBeNull();
-    // Free-text fallback must not render once parameters are declared.
-    expect(wrapper.text()).not.toContain('minValue=1');
-    setDomInput('create-test-case-name', 'col_range');
-    setDomInput('create-test-case-fqn', 'svc.db.schema.orders');
-    setDomInput('create-test-case-param-minValue', '1');
-    setDomInput('create-test-case-param-maxValue', '100');
-    await flushPromises();
-    const okButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Create'),
-    );
-    expect(okButton).toBeDefined();
-    okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    expect(postedBody?.parameterValues).toEqual([
-      { name: 'minValue', value: '1' },
-      { name: 'maxValue', value: '100' },
-    ]);
+    expect(wrapper.find('[data-testid="test-case-form-drawer"]').exists()).toBe(true);
   });
 
-  it('clears the previous definition values when switching definitions', async () => {
-    const { wrapper } = await mountView();
-    await openCreateAndSelectDefinition(wrapper);
-    setDomInput('create-test-case-param-minValue', '1');
+  it('navigates to the existing CSV import wizard from the manage menu', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/quality/test-cases', name: 'quality-test-cases', component: TestCasesListView },
+        { path: '/bulk/import/:entityType/:fqn', name: 'bulk-import', component: { template: '<div>import</div>' } },
+      ],
+    });
+    await router.push('/quality/test-cases');
+    await router.isReady();
+    const wrapper = mount(TestCasesListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
     await flushPromises();
-    // Switch to the second definition, whose parameters have different names.
-    const definitionSelect = document.body.querySelector(
-      '[data-testid="create-test-case-definition"]',
-    ) as HTMLElement | null;
-    const selector = definitionSelect?.querySelector('.ant-select-selector') as HTMLElement | null;
-    selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wrapper.get('[data-testid="test-cases-manage"]').trigger('click');
     await flushPromises();
-    const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find((el) =>
-      el.textContent?.includes('tableRowCountToBeBetween'),
-    ) as HTMLElement | undefined;
-    expect(option).toBeDefined();
-    option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const importItem = document.body.querySelector('[data-testid="test-cases-import"]');
+    expect(importItem).not.toBeNull();
+    (importItem as HTMLElement).click();
     await flushPromises();
-    expect(document.body.querySelector('[data-testid="create-test-case-param-minValue"]')).toBeNull();
-    expect(document.body.querySelector('[data-testid="create-test-case-param-minCount"]')).not.toBeNull();
-    setDomInput('create-test-case-name', 'row_range');
-    setDomInput('create-test-case-fqn', 'svc.db.schema.orders');
-    setDomInput('create-test-case-param-minCount', '5');
-    await flushPromises();
-    const okButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Create'),
-    );
-    okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    expect(postedBody?.parameterValues).toEqual([{ name: 'minCount', value: '5' }]);
+    expect(router.currentRoute.value.path).toBe('/bulk/import/testCase/*');
+    wrapper.unmount();
   });
 });
 
-describe('TestCasesListView tableDiff fields (P2-6)', () => {
-  let postedBody: Record<string, unknown> | null = null;
-
-  const tableDiffDefinition = {
-    id: 'td-diff',
-    name: 'tableDiff',
-    fullyQualifiedName: 'tableDiff',
-    parameterDefinition: [
-      { name: 'keyColumns', displayName: "Table 1's key columns", dataType: 'ARRAY' },
-      { name: 'table2', displayName: 'Table 2', dataType: 'STRING', required: true },
-      { name: 'table2.keyColumns', displayName: "Table 2's key columns", dataType: 'ARRAY' },
-      { name: 'threshold', displayName: 'Threshold', dataType: 'NUMBER' },
-      { name: 'useColumns', displayName: 'Use Columns', dataType: 'ARRAY' },
-      { name: 'where', displayName: 'SQL Where Clause', dataType: 'STRING' },
-      { name: 'caseSensitiveColumns', displayName: 'Case sensitive columns', dataType: 'BOOLEAN' },
-      { name: 'parallelQueries', displayName: 'Parallel queries per database', dataType: 'NUMBER' },
-    ],
-  };
-
-  beforeEach(() => {
-    localStorage.clear();
-    postedBody = null;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (init?.method === 'POST' && url.includes('/api/v1/dataQuality/testCases')) {
-          postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
-          return jsonResponse({ id: 'tc-diff', name: 'orders_diff', testDefinition: 'tableDiff' });
-        }
-        if (url.includes('/api/v1/search/query')) {
-          return jsonResponse({
-            hits: {
-              total: { value: 1 },
-              hits: [
-                {
-                  _index: 'table_search_index',
-                  _source: {
-                    fullyQualifiedName: 'svc.db.schema.orders_copy',
-                    displayName: 'orders_copy',
-                    name: 'orders_copy',
-                  },
-                },
-              ],
-            },
-          });
-        }
-        if (url.includes('/api/v1/dataQuality/testCases')) {
-          return jsonResponse({ data: [], paging: { total: 0 } });
-        }
-        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
-          return jsonResponse({ data: [tableDiffDefinition] });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    localStorage.clear();
-    document.body.innerHTML = '';
-  });
-
-  function setDomInput(testid: string, value: string): void {
-    const input = document.body.querySelector(`[data-testid="${testid}"]`) as HTMLInputElement | null;
-    expect(input).not.toBeNull();
-    if (input) {
-      input.focus();
-      input.value = value;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-  }
-
-  async function openCreateAndSelectTableDiff(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
-    await wrapper.get('[data-testid="create-test-case"]').trigger('click');
-    await flushPromises();
-    const definitionSelect = document.body.querySelector(
-      '[data-testid="create-test-case-definition"]',
-    ) as HTMLElement | null;
-    const selector = definitionSelect?.querySelector('.ant-select-selector') as HTMLElement | null;
-    selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find((el) =>
-      el.textContent?.includes('tableDiff'),
-    ) as HTMLElement | undefined;
-    expect(option).toBeDefined();
-    option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-  }
-
-  async function pickTable2(): Promise<void> {
-    const table2Select = document.body.querySelector(
-      '[data-testid="table-diff-param-table2"]',
-    ) as HTMLElement | null;
-    expect(table2Select).not.toBeNull();
-    const selector = table2Select?.querySelector('.ant-select-selector') as HTMLElement | null;
-    selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find((el) =>
-      el.textContent?.includes('orders_copy'),
-    ) as HTMLElement | undefined;
-    expect(option).toBeDefined();
-    option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-  }
-
-  async function clickCreate(): Promise<void> {
-    const okButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Create'),
-    );
-    expect(okButton).toBeDefined();
-    okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-  }
-
-  it('renders the tableDiff fields instead of the generic text inputs', async () => {
-    const { wrapper } = await mountView();
-    await openCreateAndSelectTableDiff(wrapper);
-    expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="table-diff-param-keyColumns"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="table-diff-param-table2.keyColumns"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="table-diff-param-where"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="create-test-case-param-table2"]')).toBeNull();
-  });
-
-  it('posts table2 and the typed values; untouched array parameters are omitted', async () => {
-    const { wrapper } = await mountView();
-    await openCreateAndSelectTableDiff(wrapper);
-    await pickTable2();
-    setDomInput('create-test-case-name', 'orders_diff');
-    setDomInput('create-test-case-fqn', 'svc.db.schema.orders');
-    setDomInput('table-diff-param-where', 'id > 0');
-    await flushPromises();
-    await clickCreate();
-    expect(postedBody?.parameterValues).toEqual([
-      { name: 'table2', value: 'svc.db.schema.orders_copy' },
-      { name: 'where', value: 'id > 0' },
-    ]);
-  });
-
-  it('blocks submit while table2 is empty', async () => {
-    const { wrapper } = await mountView();
-    await openCreateAndSelectTableDiff(wrapper);
-    setDomInput('create-test-case-name', 'orders_diff');
-    setDomInput('create-test-case-fqn', 'svc.db.schema.orders');
-    await flushPromises();
-    await clickCreate();
-    expect(postedBody).toBeNull();
-  });
-});
 
 describe('TestCasesListView dashboard drill-down', () => {
   const requestedUrls: string[] = [];

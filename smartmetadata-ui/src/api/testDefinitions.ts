@@ -66,6 +66,14 @@ function mapTestDefinition(raw: Record<string, unknown>): TestDefinition | null 
     dataQualityDimension: asString(raw.dataQualityDimension) || undefined,
     parameterDefinition: mapParameterDefinition(raw.parameterDefinition),
     provider: asString(raw.provider) || undefined,
+    supportedDataTypes: Array.isArray(raw.supportedDataTypes)
+      ? raw.supportedDataTypes.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    supportedServices: Array.isArray(raw.supportedServices)
+      ? raw.supportedServices.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    enabled: raw.enabled === undefined ? undefined : Boolean(raw.enabled),
+    sqlExpression: asString(raw.sqlExpression) || undefined,
   };
 }
 
@@ -113,6 +121,22 @@ export async function updateTestDefinition(body: CreateTestDefinitionRequest): P
   const mapped = mapTestDefinition(raw);
   if (!mapped) {
     throw new Error('Update test definition succeeded but the response had no definition');
+  }
+  return mapped;
+}
+
+export async function patchTestDefinition(
+  id: string,
+  operations: Array<{ op: string; path: string; value?: unknown }>,
+): Promise<TestDefinition> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/dataQuality/testDefinitions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: operations,
+    contentType: 'application/json-patch+json',
+  });
+  const mapped = mapTestDefinition(raw);
+  if (!mapped) {
+    throw new Error('Patch test definition succeeded but the response had no definition');
   }
   return mapped;
 }

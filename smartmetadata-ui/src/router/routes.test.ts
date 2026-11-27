@@ -94,6 +94,26 @@ describe('incident-manager aliases (W2-2)', () => {
     const resolved = router.resolve('/test-case/some-case/issues');
     expect(resolved.params).toMatchObject({ fqn: 'some-case', tab: 'issues' });
   });
+
+  it('resolves the official dimension-results page', () => {
+    const resolved = router.resolve('/test-case/some-case/dimensions/region');
+    expect(resolved.name).toBe('quality-test-case-dimensions');
+    expect(resolved.params).toMatchObject({ fqn: 'some-case', dimensionKey: 'region' });
+  });
+
+  it('redirects the product dimension path onto the official route', () => {
+    const resolved = router.resolve('/quality/test-cases/some-case/dimensions/region/test-case-results');
+    const record = resolved.matched[resolved.matched.length - 1];
+    expect(record).toBeDefined();
+    expect(typeof record.redirect).toBe('function');
+    const target = (record.redirect as (to: typeof resolved) => { name: string; params: Record<string, unknown> })(
+      resolved,
+    );
+    expect(target).toMatchObject({
+      name: 'quality-test-case-dimensions',
+      params: { fqn: 'some-case', dimensionKey: 'region', tab: 'test-case-results' },
+    });
+  });
 });
 
 // Route-pattern manifest (DESIGN §4.5 / §15.1). Classification key is

@@ -62,6 +62,9 @@ describe('TestDefinitionsListView', () => {
             paging: { total: 1 },
           });
         }
+        if (url.includes('/api/v1/dataQuality/dimensions')) {
+          return jsonResponse({ data: [{ id: 'd1', name: 'Accuracy', displayName: 'Accuracy' }], paging: { total: 1 } });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -87,4 +90,18 @@ describe('TestDefinitionsListView', () => {
     expect(router.currentRoute.value.name).toBe('quality-test-definition');
     expect(router.currentRoute.value.params.id).toBe('td1');
   });
+
+  it('opens the official test-library fields in the create form', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="create-test-definition"]').trigger('click');
+    await flushPromises();
+    const body = document.body;
+    expect(body.querySelector('[data-testid="test-definition-form-body"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="data-quality-dimension"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="supported-services"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="supported-data-types"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="sql-expression"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="add-parameter-button"]')).not.toBeNull();
+  });
+
 });
