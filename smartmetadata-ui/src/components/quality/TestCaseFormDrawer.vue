@@ -16,6 +16,7 @@ import { createTestCase, updateTestCase } from '@/api/testCases';
 import { listTestDefinitions } from '@/api/testDefinitions';
 import type { AssetDetail, SearchHit, TagRef } from '@/types/api';
 import TableDiffFields from '@/features/quality/TableDiffFields.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import type { TestCase, TestDefinition } from '@/types/quality';
 import {
   DEFAULT_TOP_DIMENSIONS,
@@ -399,7 +400,12 @@ watch(
               <Input v-model:value="form.displayName" data-testid="test-case-display-name" />
             </Form.Item>
             <Form.Item :label="t('crud.description')">
-              <Input.TextArea v-model:value="form.description" :rows="4" data-testid="test-case-description" />
+              <SmRichTextEditor
+                :key="testCase?.id || 'create'"
+                :initial-value="form.description"
+                data-testid="test-case-description"
+                @text-change="form.description = $event"
+              />
             </Form.Item>
             <Form.Item :label="t('quality.testCases.form.tags')">
               <Select

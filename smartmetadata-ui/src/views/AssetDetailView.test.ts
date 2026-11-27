@@ -355,8 +355,8 @@ describe('AssetDetailView governance', () => {
     const { wrapper, router } = await mountView();
     expect(wrapper.text()).toContain('row_count');
     expect(wrapper.text()).toContain('Failed');
-    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="asset-test-tc1"]').trigger('click');
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="test-case-row-tc1"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('quality-test-case');
   });
@@ -1726,7 +1726,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
     // Non-mount tabs keep their existing panes.
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-sample-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
     // The queries pane mounts only while its tab is selected: switch

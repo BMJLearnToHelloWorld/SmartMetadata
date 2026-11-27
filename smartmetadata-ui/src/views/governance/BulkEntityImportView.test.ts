@@ -113,8 +113,10 @@ describe('BulkEntityImportView', () => {
 
   it('loads documentation and keeps the preview action disabled until a file is chosen', async () => {
     const view = await mountView();
-    expect(view.text()).toContain('Entity name');
     expect(view.find('[data-testid="bulk-import-preview-button"]').attributes('disabled')).toBeDefined();
+    await view.find('[data-testid="bulk-import-column-reference"]').trigger('click');
+    await flushPromises();
+    expect(document.body.textContent).toContain('Entity name');
   });
 
   it('uploads, validates, and echoes per-row results without failing the file', async () => {
@@ -182,5 +184,16 @@ describe('BulkEntityImportView', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="bulk-import-cell-0-owners"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="bulk-import-cell-0-glossaryTerms"]').exists()).toBe(true);
+  });
+
+  it('shows official upload-step chrome: template, column reference, drop zone, tip, and Next', async () => {
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="bulk-import-template-button"]').text()).toContain('CSV');
+    expect(wrapper.find('[data-testid="bulk-import-column-reference"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="bulk-import-dropzone"]').exists() || wrapper.find('[data-testid="bulk-import-drop-label"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="bulk-import-csv-tip"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="bulk-import-preview-button"]').text().length).toBeGreaterThan(0);
+    expect(wrapper.find('[data-testid="bulk-import-cancel"]').exists()).toBe(true);
+    wrapper.unmount();
   });
 });

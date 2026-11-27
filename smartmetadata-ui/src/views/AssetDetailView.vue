@@ -81,6 +81,7 @@ import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPan
 import AssetOverviewFields from '@/features/crud/AssetOverviewFields.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import AssetProfilerPanel from '@/features/crud/AssetProfilerPanel.vue';
+import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -2299,23 +2300,10 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetProfilerPanel
-              :tests="tests"
-              :tests-error="testsError"
-              :test-status-series="testStatusSeries"
-              :table-profile="tableProfile"
-              :row-count-series="rowCountSeries"
-              :usage-series="usageSeries"
-              :column-null-series="columnNullSeries"
-              :entity-type="entityType"
-              :table-id="asset.id"
-              :columns="asset.schemaRows"
-            />
-            <AssetSamplePanel
-              :table-sample="tableSample"
-              :topic-sample="topicSample"
-              :observability-error="observabilityError"
-              :entity-type="entityType"
+            <AssetDataQualityTab
+              :entity-fqn="asset.fullyQualifiedName"
+              :test-suite-fqn="asset.testSuite?.fullyQualifiedName"
+              :deleted="Boolean(asset.deleted)"
             />
           </template>
       </template>

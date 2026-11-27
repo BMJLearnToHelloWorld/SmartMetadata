@@ -14,6 +14,21 @@ import { formatChartTs } from '@/features/charts/series';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
 import TestCaseDeleteModal from '@/components/quality/TestCaseDeleteModal.vue';
+import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
+import TestCaseInsightDonuts from '@/components/quality/TestCaseInsightDonuts.vue';
+import type { IncidentDateRange } from '@/quality/incidentDatePresets';
+import { DQ_DIMENSIONS, NO_DIMENSION } from '@/quality/landing';
+import {
+  DEFAULT_VISIBLE_TEST_CASE_FILTERS,
+  TEST_CASE_ADVANCED_FILTER_MENU,
+  TEST_CASE_FILTER_I18N,
+  TEST_CASE_FILTER_KEYS,
+  TEST_CASE_PLATFORMS,
+  type TestCaseFilterKey,
+  isTestCaseFilterVisible,
+  requiresSearchPath,
+  toggleTestCaseFilter,
+} from '@/quality/testCaseFilters';
 import { columnFromEntity, tableFqnFromEntity, TEST_CASE_TYPES } from '@/quality/testCaseForm';
 import type { CoverageCounts, HealthCounts, StatusCounts } from '@/quality/landing';
 import {
@@ -83,12 +98,48 @@ function onStatusFilterChange(value: unknown): void {
   statusFilter.value = typeof value === 'string' && value ? value : undefined;
   onFilterChange();
 }
+
+function isFilterVisible(key: TestCaseFilterKey): boolean {
+  return isTestCaseFilterVisible(visibleFilters.value, key);
+}
+
+function onAdvancedMenu({ key }: { key: string | number }): void {
+  visibleFilters.value = toggleTestCaseFilter(visibleFilters.value, String(key) as TestCaseFilterKey);
+}
+
+function onLastRunApply(range: IncidentDateRange): void {
+  lastRunStartTs.value = range.startTs;
+  lastRunEndTs.value = range.endTs;
+  lastRunKey.value = range.key;
+  lastRunTitle.value = range.title;
+  onFilterChange();
+}
+
+function onLastRunClear(): void {
+  lastRunStartTs.value = undefined;
+  lastRunEndTs.value = undefined;
+  lastRunKey.value = undefined;
+  lastRunTitle.value = undefined;
+  onFilterChange();
+}
+
+const startTimestamp = computed(() => lastRunStartTs.value ?? props.startTs);
+const endTimestamp = computed(() => lastRunEndTs.value ?? props.endTs);
 const searchValue = ref('');
 const typeFilter = ref<string | undefined>();
 const tableFilter = ref(props.entityFqn ?? '');
 const tagFilter = ref(props.tags ?? '');
 const showDeleted = ref(false);
-const showAdvanced = ref(false);
+const visibleFilters = ref<TestCaseFilterKey[]>([...DEFAULT_VISIBLE_TEST_CASE_FILTERS]);
+const platformFilter = ref<string[]>([]);
+const lastRunStartTs = ref<number | undefined>();
+const lastRunEndTs = ref<number | undefined>();
+const lastRunKey = ref<string | undefined>();
+const lastRunTitle = ref<string | undefined>();
+const tierFilter = ref(props.tier ?? '');
+const serviceFilter = ref('');
+const dimensionFilter = ref(props.dataQualityDimension ?? '');
+const dataProductFilter = ref(props.dataProductFqn ?? '');
 const formOpen = ref(false);
 const editing = ref<TestCase | undefined>();
 const deleting = ref<TestCase | undefined>();
@@ -143,7 +194,18 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    if (props.preferSearch) {
+    const useSearch =
+      props.preferSearch ||
+      requiresSearchPath({
+        testPlatforms: platformFilter.value,
+        lastRunStartTs: lastRunStartTs.value,
+        lastRunEndTs: lastRunEndTs.value,
+        tier: tierFilter.value,
+        serviceName: serviceFilter.value,
+        dataQualityDimension: dimensionFilter.value,
+        dataProductFqn: dataProductFilter.value,
+      });
+    if (useSearch) {
       try {
         const page = await listTestCasesBySearch({
           q: searchValue.value.trim() || undefined,
@@ -155,12 +217,15 @@ async function load(): Promise<void> {
           owner: props.ownerFqn,
           tier: props.tier,
           tags: tagFilter.value || props.tags,
-          dataProductFqn: props.dataProductFqn,
-          dataQualityDimension: props.dataQualityDimension,
+          dataProductFqn: dataProductFilter.value || props.dataProductFqn,
+          dataQualityDimension: dimensionFilter.value || props.dataQualityDimension,
           entityFQN: tableFilter.value.trim() || props.entityFqn,
           include: includeMode(),
-          startTimestamp: props.startTs,
-          endTimestamp: props.endTs,
+          startTimestamp: startTimestamp.value,
+          endTimestamp: endTimestamp.value,
+          testPlatforms: platformFilter.value.length ? platformFilter.value : undefined,
+          tier: tierFilter.value || props.tier,
+          serviceName: serviceFilter.value || undefined,
           sortField: 'testCaseResult.timestamp',
           sortType: 'desc',
         });
@@ -323,20 +388,12 @@ defineExpose({ openCreate });
 
 <template>
   <div>
-    <div v-if="embedded && (results || health || coverage)" class="tc-insights" data-testid="test-cases-insights">
-      <div class="tc-insights__card" data-testid="test-cases-insight-all">
-        <div>{{ t('quality.testCases.allTests') }}</div>
-        <strong>{{ results?.total ?? visibleCases.length }}</strong>
-      </div>
-      <div class="tc-insights__card" data-testid="test-cases-insight-health">
-        <div>{{ t('quality.landing.healthyAssets') }}</div>
-        <strong>{{ health?.healthy ?? 0 }}</strong>
-      </div>
-      <div class="tc-insights__card" data-testid="test-cases-insight-coverage">
-        <div>{{ t('quality.landing.coverage') }}</div>
-        <strong>{{ coverage?.covered ?? 0 }}</strong>
-      </div>
-    </div>
+    <TestCaseInsightDonuts
+      v-if="embedded && (results || health || coverage)"
+      :results="results"
+      :health="health"
+      :coverage="coverage"
+    />
   <EntityListShell
     :title="t('quality.testCases.title')"
     :lead="t('quality.testCases.lead')"
@@ -380,8 +437,32 @@ defineExpose({ openCreate });
       </Dropdown>
     </template>
     <template #filters>
-      <Button data-testid="test-cases-advanced" @click="showAdvanced = !showAdvanced">{{ t('quality.testCases.advanced') }}</Button>
+      <Dropdown :trigger="['click']">
+        <Button data-testid="test-cases-advanced">{{ t('quality.testCases.advanced') }}</Button>
+        <template #overlay>
+          <Menu data-testid="test-cases-advanced-menu" @click="onAdvancedMenu">
+            <Menu.Item
+              v-for="key in TEST_CASE_ADVANCED_FILTER_MENU"
+              :key="key"
+              :data-testid="`test-cases-advanced-${key}`"
+            >
+              <span v-if="isFilterVisible(key)">✓ </span>{{ t(TEST_CASE_FILTER_I18N[key]) }}
+            </Menu.Item>
+          </Menu>
+        </template>
+      </Dropdown>
+      <IncidentDateRangeFilter
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.lastRun)"
+        :start-ts="lastRunStartTs"
+        :end-ts="lastRunEndTs"
+        :range-key="lastRunKey"
+        :range-title="lastRunTitle"
+        test-id="test-cases-last-run-filter"
+        @apply="onLastRunApply"
+        @clear="onLastRunClear"
+      />
       <Input
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.table)"
         v-model:value="tableFilter"
         allow-clear
         :placeholder="t('quality.testCases.tableFilter')"
@@ -390,6 +471,21 @@ defineExpose({ openCreate });
         @change="onFilterChange"
       />
       <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.platform)"
+        v-model:value="platformFilter"
+        mode="multiple"
+        allow-clear
+        :placeholder="t('quality.testCases.platformFilter')"
+        data-testid="test-cases-platform-filter"
+        style="width: 180px"
+        @change="onFilterChange"
+      >
+        <Select.Option v-for="platform in TEST_CASE_PLATFORMS" :key="platform" :value="platform">
+          {{ platform }}
+        </Select.Option>
+      </Select>
+      <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.type)"
         v-model:value="typeFilter"
         allow-clear
         :placeholder="t('quality.testCases.typeFilter')"
@@ -400,6 +496,7 @@ defineExpose({ openCreate });
         <Select.Option v-for="type in TEST_CASE_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
       </Select>
       <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.status)"
         :value="statusSelectValue"
         allow-clear
         :placeholder="t('quality.testCases.statusFilter')"
@@ -412,17 +509,55 @@ defineExpose({ openCreate });
         </Select.Option>
       </Select>
       <Input
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tags)"
         v-model:value="tagFilter"
         :placeholder="t('quality.testCases.tagFilter')"
         data-testid="test-cases-tag-filter"
         style="width: 160px"
         @change="onFilterChange"
       />
-      <span v-if="showAdvanced" data-testid="test-cases-advanced-filters">
-        <Switch v-model:checked="showDeleted" data-testid="test-cases-show-deleted" @change="onFilterChange" />
-        {{ t('quality.testCases.showDeleted') }}
-      </span>
-      <span v-else class="tc-deleted-toggle">
+      <Input
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tier)"
+        v-model:value="tierFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.tierFilter')"
+        data-testid="test-cases-tier-filter"
+        style="width: 140px"
+        @change="onFilterChange"
+      />
+      <Input
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.service)"
+        v-model:value="serviceFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.serviceFilter')"
+        data-testid="test-cases-service-filter"
+        style="width: 160px"
+        @change="onFilterChange"
+      />
+      <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dimension)"
+        v-model:value="dimensionFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.dimensionFilter')"
+        data-testid="test-cases-dimension-filter"
+        style="width: 160px"
+        @change="onFilterChange"
+      >
+        <Select.Option v-for="dimension in DQ_DIMENSIONS" :key="dimension" :value="dimension">
+          {{ dimension }}
+        </Select.Option>
+        <Select.Option :value="NO_DIMENSION">{{ t('quality.landing.dimensions.none') }}</Select.Option>
+      </Select>
+      <Input
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dataProduct)"
+        v-model:value="dataProductFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.dataProductFilter')"
+        data-testid="test-cases-data-product-filter"
+        style="width: 180px"
+        @change="onFilterChange"
+      />
+      <span class="tc-deleted-toggle">
         <Switch v-model:checked="showDeleted" data-testid="test-cases-show-deleted" @change="onFilterChange" />
         {{ t('quality.testCases.showDeleted') }}
       </span>
@@ -483,18 +618,6 @@ defineExpose({ openCreate });
 </template>
 
 <style scoped>
-.tc-insights {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.tc-insights__card {
-  border: 1px solid #f0f0f0;
-  border-radius: 8px;
-  padding: 12px;
-  background: #fff;
-}
 .tc-deleted-toggle {
   display: inline-flex;
   align-items: center;

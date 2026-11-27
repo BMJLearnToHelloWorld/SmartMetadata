@@ -52,6 +52,8 @@ const router = useRouter();
 const permissionStore = usePermissionStore();
 const domainStore = useDomainStore();
 
+
+
 /**
  * Official default page size for the incident list
  * (getListTestCaseIncidentStatusFromSearch defaults limit to 10).
@@ -76,7 +78,15 @@ interface IncidentFilters {
 
 type PermState = 'loading' | 'denied' | 'error' | 'ready';
 
-const columns = computed(() => [
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean;
+    originEntityFqn?: string;
+  }>(),
+  { embedded: false },
+);
+
+const allColumns = computed(() => [
   { key: 'testCase', title: t('observability.incidents.testCaseName') },
   { key: 'table', title: t('observability.incidents.table') },
   { key: 'timestamp', title: t('observability.incidents.lastUpdated') },
@@ -84,6 +94,10 @@ const columns = computed(() => [
   { key: 'severity', title: t('observability.incidents.severity') },
   { key: 'assignee', title: t('observability.incidents.assignee') },
 ]);
+const columns = computed(() =>
+  props.originEntityFqn ? allColumns.value.filter((column) => column.key !== 'table') : allColumns.value,
+);
+
 
 const permState = ref<PermState>('loading');
 const permError = ref('');
@@ -323,6 +337,7 @@ async function load(): Promise<void> {
       endTs: value.endTs,
       dateField: value.dateField,
       domain: domainStore.activeDomain?.fullyQualifiedName ?? undefined,
+      originEntityFQN: props.originEntityFqn,
     });
     if (seq !== loadSeq.value) return;
     incidents.value = page.data;
@@ -603,6 +618,7 @@ function severityLabel(severity: string | undefined): string {
       v-else
       :title="t('observability.incidents.title')"
       :lead="t('observability.incidents.lead')"
+      :hide-heading="embedded"
       :loading="loading"
       :error="errorMessage"
       :columns="columns"

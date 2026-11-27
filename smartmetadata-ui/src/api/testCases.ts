@@ -64,6 +64,8 @@ export interface SearchTestCasesQuery {
   /** Official ListTestCaseParamsBySearch.tableFqn — sent as entityFQN when entityFQN is empty. */
   tableFqn?: string;
   testPlatforms?: string | string[];
+  /** Official ListTestCaseParamsBySearch.serviceName. */
+  serviceName?: string;
   include?: 'non-deleted' | 'deleted' | 'all';
 }
 
@@ -307,6 +309,7 @@ export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise
       entityFQN: query.entityFQN ?? query.tableFqn,
       columnName: query.columnName,
       testPlatforms: query.testPlatforms,
+      serviceName: query.serviceName,
       include: query.include,
       sortField: query.sortField,
       sortType: query.sortType,

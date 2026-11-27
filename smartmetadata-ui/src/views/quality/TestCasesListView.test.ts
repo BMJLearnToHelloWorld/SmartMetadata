@@ -23,7 +23,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountView() {
+async function mountView(options: { props?: Record<string, unknown> } = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -36,6 +36,7 @@ async function mountView() {
   await router.push('/quality/test-cases');
   await router.isReady();
   const wrapper = mount(TestCasesListView, {
+    props: options.props,
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
@@ -279,6 +280,57 @@ describe('TestCasesListView dashboard drill-down', () => {
     // filtered by both.
     const select = wrapper.findAllComponents({ name: 'ASelect' })[0];
     expect(select.props('value')).toBeUndefined();
+    wrapper.unmount();
+  });
+});
+
+
+describe('TestCasesListView official insight donuts and advanced filters', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders official pie insight cards instead of count-only tiles', async () => {
+    const { wrapper } = await mountView({
+      props: {
+        embedded: true,
+        results: { success: 20, aborted: 3, failed: 7, queued: 0, total: 30 },
+        health: { healthy: 5, unhealthy: 7, total: 12 },
+        coverage: { covered: 12, notCovered: 14988, total: 15000 },
+      },
+    });
+    expect(wrapper.find('[data-testid="test-cases-insights"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-insight-all-chart"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-insight-all"]').text()).toContain('66.67%');
+    expect(wrapper.find('[data-testid="test-cases-insight-health"]').text()).toContain('41.67%');
+    expect(wrapper.find('[data-testid="test-cases-insight-coverage"]').text()).toContain('0.08%');
+    wrapper.unmount();
+  });
+
+  it('keeps lastRun off by default and reveals official 高级 filters from the menu', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="test-cases-last-run-filter"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="test-cases-platform-filter"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="test-cases-advanced"]').trigger('click');
+    await flushPromises();
+    const platformItem = document.body.querySelector('[data-testid="test-cases-advanced-testPlatforms"]') as HTMLElement | null;
+    expect(platformItem).not.toBeNull();
+    platformItem?.click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-cases-platform-filter"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

@@ -77,6 +77,8 @@ export interface ListIngestionPipelinesQuery {
    * group and are filtered out of the Agents tab list.
    */
   agentType?: 'metadata' | 'application';
+  /** Official getIngestionPipelines testSuite (QualityTab workflows). */
+  testSuite?: string;
 }
 
 function mapSourceConfig(value: unknown): PipelineSourceConfig | undefined {
@@ -269,6 +271,7 @@ export function listIngestionPipelines(
       pipelineType: query.pipelineType,
       serviceType: query.serviceType,
       agentType: query.agentType,
+      testSuite: query.testSuite,
       // Official toSortOrder guard: only the two legal values are
       // forwarded; anything else is dropped, never sent.
       sortField: query.sortField === 'displayName' ? 'displayName' : undefined,
