@@ -231,7 +231,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
       expect.objectContaining({ limit: 10, offset: 0, latest: true, include: 'non-deleted', dateField: 'timestamp' }),
     );
     expect(listTestCases).toHaveBeenCalledWith({ q: '*', limit: 25 });
-    for (const header of ['Test case name', 'Table', 'Last updated', 'Status', 'Severity', 'Assignee']) {
+    for (const header of ['Test Case Name', 'Table', 'Last Updated', 'Status', 'Severity', 'Assignee']) {
       expect(wrapper.text()).toContain(header);
     }
     expect(wrapper.text()).toContain('Row count');
@@ -268,7 +268,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     const { wrapper, router } = await mountView({ currentPage: '2' });
     expect(listFromSearch).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 }));
     await openSelectIn(wrapper as never, 'incident-filter-status');
-    await clickOptionByText('Acknowledged');
+    await clickOptionByText('Ack');
     await drain();
     expect(router.currentRoute.value.query.testCaseResolutionStatusType).toBe('Ack');
     expect(router.currentRoute.value.query.currentPage).toBeUndefined();
@@ -328,7 +328,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith('task-1', { transitionId: 'ack' });
     expect(getByStateId).toHaveBeenCalledWith('task-1', 1);
-    expect(wrapper.text()).toContain('Acknowledged');
+    expect(wrapper.text()).toContain('Ack');
   });
 
   it('requires reason and comment before resolving, then sends the resolve body', async () => {

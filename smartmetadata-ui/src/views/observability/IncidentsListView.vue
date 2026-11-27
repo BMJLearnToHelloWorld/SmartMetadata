@@ -698,8 +698,10 @@ function severityLabel(severity: string | undefined): string {
             <IncidentDateRangeFilter
               :start-ts="filters.startTs"
               :end-ts="filters.endTs"
+              :range-key="filters.key"
+              :range-title="filters.title"
               test-id="incident-filter-date-range"
-              @apply="(range) => updateFilters({ startTs: range.startTs, endTs: range.endTs })"
+              @apply="(range) => updateFilters({ startTs: range.startTs, endTs: range.endTs, key: range.key, title: range.title })"
               @clear="() => updateFilters({ startTs: undefined, endTs: undefined, key: undefined, title: undefined })"
             />
           </Space>

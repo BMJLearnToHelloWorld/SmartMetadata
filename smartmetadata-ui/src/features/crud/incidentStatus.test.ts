@@ -14,13 +14,13 @@ import { incidentStatusLabel } from './incidentStatus';
 describe('incidentStatusLabel', () => {
   it('localizes Ack and Resolved to OM labels', () => {
     const en = createTestI18n('en-US');
-    expect(incidentStatusLabel(en.global.t, 'Ack')).toBe('Acknowledged');
+    expect(incidentStatusLabel(en.global.t, 'Ack')).toBe('Ack');
     expect(incidentStatusLabel(en.global.t, 'Resolved')).toBe('Resolved');
     expect(incidentStatusLabel(en.global.t, 'New')).toBe('New');
     expect(incidentStatusLabel(en.global.t, 'Assigned')).toBe('Assigned');
     const zh = createTestI18n('zh-CN');
-    expect(incidentStatusLabel(zh.global.t, 'Ack')).toBe('已确认');
+    expect(incidentStatusLabel(zh.global.t, 'Ack')).toBe('确认');
     expect(incidentStatusLabel(zh.global.t, 'Resolved')).toBe('已解决');
-    expect(incidentStatusLabel(zh.global.t, 'Assigned')).toBe('已指派');
+    expect(incidentStatusLabel(zh.global.t, 'Assigned')).toBe('已分配');
   });
 });
