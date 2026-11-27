@@ -2303,6 +2303,7 @@ onMounted(() => {
             <AssetDataQualityTab
               :entity-fqn="asset.fullyQualifiedName"
               :test-suite-fqn="asset.testSuite?.fullyQualifiedName"
+              :test-suite-id="asset.testSuite?.id"
               :deleted="Boolean(asset.deleted)"
             />
           </template>

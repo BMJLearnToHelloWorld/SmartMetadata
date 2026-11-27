@@ -8,7 +8,6 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import {
-  Alert,
   Button,
   Card,
   Col,
@@ -24,8 +23,6 @@ import {
 } from 'ant-design-vue';
 import { listGlossaryTerms } from '@/api/glossaryTerms';
 import { searchAssets } from '@/api/search';
-import { isTestCaseSearchListAvailable, listTestCases } from '@/api/testCases';
-import { isTestSuiteSearchListAvailable, listTestSuites } from '@/api/testSuites';
 import type { SearchFacet } from '@/catalog/searchFacets';
 import SmChart from '@/features/charts/SmChart.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
@@ -33,22 +30,15 @@ import PageLayout from '@/components/shared/PageLayout.vue';
 import { namedSeries } from '@/features/charts/series';
 import { seriesWindow } from '@/features/charts/types';
 import {
-  coverageFrom,
-  dimensionCards,
   facetOptions,
-  governanceFiltersActive,
-  healthFromCases,
-  healthFromTableSuites,
   parseDqTab,
-  statusCountsFromCases,
-  tableCountFromFacets,
-  uniqueCoveredAssets,
   type CoverageCounts,
   type DimensionCard,
   type DqGovernanceFilters,
   type DqLandingTab,
   type HealthCounts,
   type StatusCounts,
+  NO_DIMENSION,
 } from '@/quality/landing';
 import {
   buildDqTestCaseListQuery,
@@ -58,12 +48,11 @@ import {
   type DqDashboardChartFilters,
   type DqTestCaseListDrill,
 } from '@/quality/dashboard';
-import type { TestCase, TestSuite } from '@/types/quality';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
 import IncidentMetricsSection from '@/components/quality/IncidentMetricsSection.vue';
 
-const { t, te } = useI18n();
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -74,20 +63,12 @@ const range = ref(seriesWindow(30));
 const filters = reactive<DqGovernanceFilters>({});
 const facets = ref<SearchFacet[]>([]);
 const glossaryOptions = ref<Array<{ value: string; label: string }>>([]);
-const preferCaseSearch = ref(false);
-const preferSuiteSearch = ref(false);
-const residualNotes = ref<string[]>([]);
-const casesError = ref('');
 const coverage = ref<CoverageCounts | null>(null);
 const health = ref<HealthCounts | null>(null);
 const results = ref<StatusCounts | null>(null);
 const dimensions = ref<DimensionCard[]>([]);
 const casesView = ref<{ openCreate: () => void } | null>(null);
 const suitesView = ref<{ openCreate: () => void } | null>(null);
-// Last listed rows, reused only as the aggregation fallback when a filter
-// change re-runs the batch and the batch itself fails.
-const lastCases = ref<TestCase[]>([]);
-const lastSuites = ref<{ data: TestSuite[]; total?: number }>({ data: [] });
 
 const ownerOptions = computed(() => facetOptions(facets.value, 'owner'));
 const tierOptions = computed(() => facetOptions(facets.value, 'tier'));
@@ -119,11 +100,6 @@ const resultsSeries = computed(() =>
         { label: t('quality.landing.aborted'), value: results.value.aborted },
       ])
     : [],
-);
-
-const governanceActive = computed(() => governanceFiltersActive(filters));
-const searchListResidual = computed(
-  () => governanceActive.value && !(preferCaseSearch.value || preferSuiteSearch.value),
 );
 
 const caseSearchTags = computed(() =>
@@ -178,9 +154,9 @@ const listDrill = computed(() => ({
   endTs: queryNumber(route.query.endTs),
 }));
 
+/** Official StatusCardWidget: raw dimension title, only NoDimension is translated. */
 function dimensionLabel(id: string): string {
-  const key = id === 'No Dimension' ? 'quality.landing.dimensions.none' : `quality.landing.dimensions.${id.toLowerCase()}`;
-  return te(key) ? t(key) : id;
+  return id === NO_DIMENSION ? t('quality.landing.dimensions.none') : id;
 }
 
 function onAddMenu({ key }: { key: string | number }): void {
@@ -191,111 +167,58 @@ function onAddMenu({ key }: { key: string | number }): void {
   }
 }
 
-async function settle<T>(promise: Promise<T>, fallback: T, residualKey?: string): Promise<T> {
+async function loadFilterOptions(): Promise<void> {
   try {
-    return await promise;
-  } catch (error) {
-    if (residualKey) {
-      residualNotes.value.push(residualKey);
-    }
-    if (!casesError.value && residualKey === 'quality.landing.residualCases') {
-      casesError.value = error instanceof Error ? error.message : t('crud.loadFailed');
-    }
-    return fallback;
+    const searchPage = await searchAssets('*', 0, 1);
+    facets.value = searchPage.facets ?? [];
+  } catch {
+    facets.value = [];
+  }
+  try {
+    const glossaryPage = await listGlossaryTerms({ limit: 50 });
+    glossaryOptions.value = glossaryPage.data.map((term) => ({
+      value: term.fullyQualifiedName || term.name,
+      label: term.displayName || term.name,
+    }));
+  } catch {
+    glossaryOptions.value = [];
   }
 }
 
 /**
- * Aggregation cards only. Split out of loadSummary so a governance-filter
- * or range change re-runs exactly the official dashboard batch — status,
- * dimensions and coverage — with the filter-built `q` payloads (landing.ts)
- * plus the official time-range clause on the testCase-index items, instead
- * of only re-rendering the search-list path. Health deliberately stays
- * out of this path: it is still list-derived under residualHealthCap
- * (live ES casing check owed), so a filter change must not silently
- * re-derive it from an aggregation it does not read.
+ * Official dashboard aggregations (fetchEntityCoveredWithDQ,
+ * fetchTestCaseSummary, fetchTotalEntityCount — one dataQualityReport
+ * batch). Health uses the official covered / unhealthy-covered
+ * cardinalities (unhealthy must-filter Failed/Aborted, official
+ * DataQualityPureUtils). A failed batch leaves the cards empty; it
+ * does not fall back to a capped list or a residual banner.
  */
-async function loadAggregations(
-  cases: TestCase[],
-  suites: { data: TestSuite[]; total?: number },
-): Promise<void> {
-  residualNotes.value = residualNotes.value.filter(
-    (note) => note !== 'quality.landing.residualAggregationFallback',
-  );
-  // Status, dimensions and coverage come from the shared dashboard
-  // batch (quality/dashboard.ts: fetchDqDashboardAggregations — the
-  // official mechanism, one dataQualityReport batch), not from the
-  // capped lists. If the batch fails, the cards fall back to the
-  // listed rows and say so — never silently. The shared batch also
-  // carries an unhealthy-covered item for the dashboard's health pie;
-  // the landing view ignores it and keeps its list-derived health
-  // plus the residualHealthCap note. The glossaryTerm filter is
-  // deliberately NOT carried into the shared chart filters: this
-  // view's documented contract keeps it on the search-list path only
-  // (quality.landing.residualSearchList), while the shared dashboard
-  // merges glossaryTerms into tags per the pin hook.
+async function loadAggregations(): Promise<void> {
+  const chartFilters: DqDashboardChartFilters = {
+    ownerFqn: filters.owner,
+    tags: filters.tag ? [filters.tag] : undefined,
+    tier: filters.tier ? [filters.tier] : undefined,
+    certification: filters.certification ? [filters.certification] : undefined,
+    dataProductFqns: filters.dataProduct ? [filters.dataProduct] : undefined,
+  };
   try {
-    const chartFilters: DqDashboardChartFilters = {
-      ownerFqn: filters.owner,
-      tags: filters.tag ? [filters.tag] : undefined,
-      tier: filters.tier ? [filters.tier] : undefined,
-      certification: filters.certification ? [filters.certification] : undefined,
-      dataProductFqns: filters.dataProduct ? [filters.dataProduct] : undefined,
-    };
-    const agg = await fetchDqDashboardAggregations(chartFilters, range.value, {
-      totalTablesFallback: tableCountFromFacets(facets.value),
-    });
+    const agg = await fetchDqDashboardAggregations(chartFilters, range.value);
     results.value = agg.results;
     dimensions.value = agg.dimensions;
     coverage.value = agg.coverage;
+    health.value = agg.health;
   } catch {
-    residualNotes.value.push('quality.landing.residualAggregationFallback');
-    const status = statusCountsFromCases(cases);
-    results.value = status.total ? status : null;
-    const tableCount = tableCountFromFacets(facets.value);
-    const coveredFromSuites = suites.total ?? (suites.data.length || undefined);
-    const coveredFromCases = uniqueCoveredAssets(cases) || undefined;
-    coverage.value = coverageFrom(coveredFromSuites ?? coveredFromCases, tableCount);
-    dimensions.value = dimensionCards(cases, []);
+    results.value = null;
+    dimensions.value = [];
+    coverage.value = null;
+    health.value = null;
   }
 }
 
 async function loadSummary(): Promise<void> {
   loading.value = true;
-  residualNotes.value = [];
-  casesError.value = '';
   try {
-    const [casesPage, suitesPage, searchPage, caseSearch, suiteSearch, glossaryPage] = await Promise.all([
-      settle(listTestCases({ limit: 100, includeAllTests: true }), { data: [] as TestCase[], total: undefined }, 'quality.landing.residualCases'),
-      settle(listTestSuites({ limit: 100, includeEmptyTestSuites: true, testSuiteType: 'basic' }), { data: [] as TestSuite[], total: undefined }, 'quality.landing.residualSuites'),
-      settle(searchAssets('*', 0, 1), { total: 0, hits: [], facets: [] as SearchFacet[] }, 'quality.landing.residualSearch'),
-      settle(isTestCaseSearchListAvailable(), false, undefined),
-      settle(isTestSuiteSearchListAvailable(), false, undefined),
-      settle(listGlossaryTerms({ limit: 50 }), { data: [] }, undefined),
-    ]);
-    preferCaseSearch.value = caseSearch;
-    preferSuiteSearch.value = suiteSearch;
-    facets.value = searchPage.facets ?? [];
-    glossaryOptions.value = glossaryPage.data.map((term) => ({
-      value: term.fullyQualifiedName || term.name,
-      label: term.displayName || term.name,
-    }));
-    // Health is still list-derived: per-asset healthy/unhealthy needs the
-    // official unhealthy must-filter (terms on testCaseResult.testCaseStatus
-    // with capitalized Failed/Aborted), whose casing against the live index
-    // is unverified — the aggregation rows the official dashboard transform
-    // reads are lowercase. Until the live ES check lands, health keeps the
-    // listed-suites/cases computation and says so (residualHealthCap).
-    const suiteHealth = healthFromTableSuites(suitesPage.data);
-    const caseHealth = healthFromCases(casesPage.data);
-    health.value = suiteHealth.total ? suiteHealth : caseHealth.total ? caseHealth : null;
-    residualNotes.value.push('quality.landing.residualHealthCap');
-    lastCases.value = casesPage.data;
-    lastSuites.value = suitesPage;
-    await loadAggregations(casesPage.data, suitesPage);
-    if (!caseSearch) {
-      residualNotes.value.push('quality.landing.residualSearchList');
-    }
+    await Promise.all([loadFilterOptions(), loadAggregations()]);
   } finally {
     loading.value = false;
   }
@@ -322,10 +245,6 @@ function onTabChange(key: string | number): void {
 
 function setFilter(id: keyof DqGovernanceFilters, value: unknown): void {
   filters[id] = typeof value === 'string' && value ? value : undefined;
-}
-
-function openCases(): void {
-  onTabChange('test-cases');
 }
 
 function openSuites(): void {
@@ -396,7 +315,7 @@ async function openCreateSuite(): Promise<void> {
 
 watch(rangeDays, (days) => {
   range.value = seriesWindow(days);
-  void loadAggregations(lastCases.value, lastSuites.value);
+  void loadAggregations();
 });
 
 // Governance-filter change re-runs the aggregation batch with the new
@@ -405,7 +324,7 @@ watch(rangeDays, (days) => {
 watch(
   filters,
   () => {
-    void loadAggregations(lastCases.value, lastSuites.value);
+    void loadAggregations();
   },
   { deep: true },
 );
@@ -521,29 +440,9 @@ onMounted(() => {
       </Select>
     </div>
 
-    <Alert
-      v-if="searchListResidual"
-      type="info"
-      show-icon
-      class="dq-landing__alert"
-      data-testid="dq-landing-filter-residual"
-      :message="t('quality.landing.residualFilterApply')"
-    />
-
     <div v-if="activeTab === 'dashboard'">
       <Spin :spinning="loading">
         <Space direction="vertical" size="middle" style="width: 100%">
-          <Alert
-            v-for="note in residualNotes"
-            :key="note"
-            type="info"
-            show-icon
-            class="dq-landing__alert"
-            :data-testid="`dq-residual-${note.split('.').pop()}`"
-            :message="t(note)"
-          />
-          <Alert v-if="casesError" type="error" show-icon :message="casesError" data-testid="dq-landing-cases-error" />
-
           <Card data-testid="dq-health" :title="t('quality.landing.healthTitle')">
             <Typography.Paragraph type="secondary">{{ t('quality.landing.healthLead') }}</Typography.Paragraph>
             <Empty
@@ -626,7 +525,7 @@ onMounted(() => {
                 class="dq-dim"
                 type="button"
                 :data-testid="`dq-dimension-${card.id}`"
-                @click="openCases"
+                @click="openDonutCases({ dataQualityDimension: card.id })"
               >
                 <div class="dq-dim__name">{{ dimensionLabel(card.id) }}</div>
                 <div class="dq-dim__total">{{ card.total }}</div>
@@ -643,19 +542,19 @@ onMounted(() => {
             <Typography.Paragraph type="secondary">{{ t('quality.landing.statusLead') }}</Typography.Paragraph>
             <Row :gutter="[16, 16]">
               <Col :xs="24" :md="8">
-                <button class="dq-status" type="button" data-testid="dq-status-success" @click="openCases">
+                <button class="dq-status" type="button" data-testid="dq-status-success" @click="openDonutCases({ testCaseStatus: 'Success' })">
                   <div class="dq-status__label">{{ t('quality.landing.success') }}</div>
                   <div class="dq-status__value">{{ results?.success ?? 0 }}</div>
                 </button>
               </Col>
               <Col :xs="24" :md="8">
-                <button class="dq-status" type="button" data-testid="dq-status-aborted" @click="openCases">
+                <button class="dq-status" type="button" data-testid="dq-status-aborted" @click="openDonutCases({ testCaseStatus: 'Aborted' })">
                   <div class="dq-status__label">{{ t('quality.landing.aborted') }}</div>
                   <div class="dq-status__value">{{ results?.aborted ?? 0 }}</div>
                 </button>
               </Col>
               <Col :xs="24" :md="8">
-                <button class="dq-status" type="button" data-testid="dq-status-failed" @click="openCases">
+                <button class="dq-status" type="button" data-testid="dq-status-failed" @click="openDonutCases({ testCaseStatus: 'Failed' })">
                   <div class="dq-status__label">{{ t('quality.landing.failed') }}</div>
                   <div class="dq-status__value">{{ results?.failed ?? 0 }}</div>
                 </button>
@@ -672,13 +571,13 @@ onMounted(() => {
       v-if="activeTab === 'test-cases'"
       ref="casesView"
       embedded
-      :prefer-search="preferCaseSearch"
+      :prefer-search="true"
       :owner-fqn="filters.owner"
       :tier="listDrill.tier ?? filters.tier"
       :tags="listDrill.tags ?? caseSearchTags"
       :data-product-fqn="listDrill.dataProductFqn ?? filters.dataProduct"
-      :start-ts="listDrill.startTs ?? range.startTs"
-      :end-ts="listDrill.endTs ?? range.endTs"
+      :start-ts="listDrill.startTs"
+      :end-ts="listDrill.endTs"
       :status="listDrill.testCaseStatus"
       :data-quality-dimension="listDrill.dataQualityDimension"
       :entity-fqn="listDrill.tableFqn"
@@ -691,7 +590,7 @@ onMounted(() => {
       v-if="activeTab === 'test-suites'"
       ref="suitesView"
       embedded
-      :prefer-search="preferSuiteSearch"
+      :prefer-search="true"
       :owner-fqn="filters.owner"
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
     />

@@ -16,6 +16,13 @@ import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
 import TestCaseDeleteModal from '@/components/quality/TestCaseDeleteModal.vue';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import TestCaseInsightDonuts from '@/components/quality/TestCaseInsightDonuts.vue';
+import TestCaseFilterAsyncSelect from '@/components/quality/TestCaseFilterAsyncSelect.vue';
+import {
+  fetchDataProductFilterOptions,
+  fetchServiceFilterOptions,
+  fetchTableFilterOptions,
+  fetchTierFilterOptions,
+} from '@/quality/testCaseFilterOptions';
 import type { IncidentDateRange } from '@/quality/incidentDatePresets';
 import { DQ_DIMENSIONS, NO_DIMENSION } from '@/quality/landing';
 import {
@@ -422,7 +429,7 @@ defineExpose({ openCreate });
     @delete="(record) => openDelete(record as TestCase)"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-test-case" @click="openCreate">
+      <Button v-if="!embedded" type="primary" data-testid="create-test-case" @click="openCreate">
         {{ t('quality.testCases.create') }}
       </Button>
       <Dropdown :trigger="['click']">
@@ -461,13 +468,12 @@ defineExpose({ openCreate });
         @apply="onLastRunApply"
         @clear="onLastRunClear"
       />
-      <Input
+      <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.table)"
-        v-model:value="tableFilter"
-        allow-clear
+        v-model="tableFilter"
         :placeholder="t('quality.testCases.tableFilter')"
-        data-testid="test-cases-table-filter"
-        style="width: 200px"
+        test-id="test-cases-table-filter"
+        :fetch-options="fetchTableFilterOptions"
         @change="onFilterChange"
       />
       <Select
@@ -516,22 +522,23 @@ defineExpose({ openCreate });
         style="width: 160px"
         @change="onFilterChange"
       />
-      <Input
+      <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tier)"
-        v-model:value="tierFilter"
-        allow-clear
+        v-model="tierFilter"
         :placeholder="t('quality.testCases.tierFilter')"
-        data-testid="test-cases-tier-filter"
-        style="width: 140px"
+        test-id="test-cases-tier-filter"
+        width="140px"
+        :remote="false"
+        :fetch-options="fetchTierFilterOptions"
         @change="onFilterChange"
       />
-      <Input
+      <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.service)"
-        v-model:value="serviceFilter"
-        allow-clear
+        v-model="serviceFilter"
         :placeholder="t('quality.testCases.serviceFilter')"
-        data-testid="test-cases-service-filter"
-        style="width: 160px"
+        test-id="test-cases-service-filter"
+        width="160px"
+        :fetch-options="fetchServiceFilterOptions"
         @change="onFilterChange"
       />
       <Select
@@ -548,13 +555,13 @@ defineExpose({ openCreate });
         </Select.Option>
         <Select.Option :value="NO_DIMENSION">{{ t('quality.landing.dimensions.none') }}</Select.Option>
       </Select>
-      <Input
+      <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dataProduct)"
-        v-model:value="dataProductFilter"
-        allow-clear
+        v-model="dataProductFilter"
         :placeholder="t('quality.testCases.dataProductFilter')"
-        data-testid="test-cases-data-product-filter"
-        style="width: 180px"
+        test-id="test-cases-data-product-filter"
+        width="180px"
+        :fetch-options="fetchDataProductFilterOptions"
         @change="onFilterChange"
       />
       <span class="tc-deleted-toggle">

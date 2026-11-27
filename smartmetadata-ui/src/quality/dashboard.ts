@@ -421,11 +421,9 @@ function domainOf(filters: DqDashboardChartFilters): string | undefined {
 /**
  * The six-item aggregation batch: status, dimensions (+ no-dimension),
  * coverage, unhealthy-covered (health pie), total tables. One POST,
- * shared by the dashboard and the landing view — the landing view
- * ignores `health` and keeps its list-derived health plus its
- * residual note. `totalTablesFallback` is the landing view's facet
- * table count, used only when the batch's totalTables cardinality
- * comes back without rows; the dashboard passes none.
+ * shared by the dashboard and the landing view. Landing health comes
+ * from the official covered / unhealthy-covered cardinalities
+ * (fetchEntityCoveredWithDQ, Failed/Aborted must-filter).
  */
 export async function fetchDqDashboardAggregations(
   filters: DqDashboardChartFilters,

@@ -166,7 +166,7 @@ function stubFetch(mode: 'ok' | 'quality-404' = 'ok'): void {
   );
 }
 
-async function mountLanding(path = '/quality/test-cases') {
+async function mountLanding(path = '/quality/test-cases', locale?: 'zh-CN' | 'en-US') {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -187,7 +187,7 @@ async function mountLanding(path = '/quality/test-cases') {
   await router.push(path);
   await router.isReady();
   const wrapper = mount(DataQualityLandingView, {
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n(locale)] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -205,7 +205,7 @@ describe('DataQualityLandingView', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders Summary / Test Cases / Test Suites and health cards from listed APIs', async () => {
+  it('renders Summary / Test Cases / Test Suites and health cards from the official report batch', async () => {
     const { wrapper } = await mountLanding();
     expect(wrapper.get('[data-testid="dq-landing-title"]').text()).toContain('Data Quality');
     expect(wrapper.get('[data-testid="dq-landing-tabs"]').text()).toContain('Summary');
@@ -216,10 +216,11 @@ describe('DataQualityLandingView', () => {
     expect(wrapper.get('[data-testid="dq-results-card"]').text()).toContain('Success');
     expect(wrapper.get('[data-testid="dq-dimension-Completeness"]').text()).toMatch(/Completeness/);
     expect(wrapper.get('[data-testid="dq-status-failed"]').text()).toContain('1');
-    expect(wrapper.get('[data-testid="dq-residual-residualHealthCap"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="dq-residual-residualSearchList"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-residual-residualHealthCap"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="dq-residual-residualSearchList"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="dq-filter-owner"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="dq-filter-range"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-incident-metrics"]').exists()).toBe(true);
   });
 
   it('opens Test Cases from the tab bar and rows navigate to the existing detail route', async () => {
@@ -258,7 +259,7 @@ describe('DataQualityLandingView', () => {
     const { wrapper } = await mountLanding();
     expect(wrapper.find('[data-testid="dq-health-empty"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="dq-health-empty"]').text()).toMatch(/empty|Add a test|no test/i);
-    expect(wrapper.find('[data-testid="dq-residual-residualCases"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid^="dq-residual-"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('20897');
   });
 
@@ -315,13 +316,15 @@ describe('DataQualityLandingView', () => {
     expect(totalTables?.q).not.toContain('testCaseResult.timestamp');
   });
 
-  it('shows an honest residual when governance filters are used without search/list', async () => {
+  it('does not invent a residual banner when a governance filter is applied', async () => {
     const { wrapper } = await mountLanding();
+    const initialBatchCount = batchRequests.length;
     const ownerSelect = wrapper.findAllComponents({ name: 'ASelect' })[0];
     ownerSelect.vm.$emit('change', 'alice');
     await flushPromises();
-    expect(wrapper.find('[data-testid="dq-landing-filter-residual"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="dq-landing-filter-residual"]').text()).toMatch(/search index|unfiltered/i);
+    expect(wrapper.find('[data-testid="dq-landing-filter-residual"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid^="dq-residual-"]').exists()).toBe(false);
+    expect(batchRequests.length).toBeGreaterThan(initialBatchCount);
   });
 
   it('forwards a dashboard drill-down query to the test-case list', async () => {
@@ -388,5 +391,56 @@ describe('DataQualityLandingView', () => {
     expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
     expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
     expect(wrapper.findComponent(TestCasesListView).props('status')).toBe('Failed');
+  });
+
+  it('writes official dataQualityDimension and the dashboard last-run range when a dimension card is clicked', async () => {
+    const { wrapper, router } = await mountLanding();
+    await wrapper.get('[data-testid="dq-dimension-Completeness"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.query.dataQualityDimension).toBe('Completeness');
+    expect(router.currentRoute.value.query.startTs).toBeDefined();
+    expect(router.currentRoute.value.query.endTs).toBeDefined();
+    const list = wrapper.findComponent(TestCasesListView);
+    expect(list.props('dataQualityDimension')).toBe('Completeness');
+    expect(list.props('startTs')).toEqual(expect.any(Number));
+    expect(list.props('endTs')).toEqual(expect.any(Number));
+  });
+
+  it('writes official testCaseStatus when a status card is clicked', async () => {
+    const { wrapper, router } = await mountLanding();
+    await wrapper.get('[data-testid="dq-status-failed"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
+    expect(wrapper.findComponent(TestCasesListView).props('status')).toBe('Failed');
+  });
+
+  it('does not apply the dashboard date range as a last-run filter when the Test Cases tab is opened from the tab bar', async () => {
+    const { wrapper } = await mountLanding();
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    await tabs[1].trigger('click');
+    await flushPromises();
+    const list = wrapper.findComponent(TestCasesListView);
+    expect(list.exists()).toBe(true);
+    expect(list.props('startTs')).toBeUndefined();
+    expect(list.props('endTs')).toBeUndefined();
+    const searchCalls = vi.mocked(fetch).mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/v1/dataQuality/testCases/search'));
+    expect(searchCalls.length).toBeGreaterThan(0);
+    expect(searchCalls.every((url) => !url.includes('startTimestamp=') && !url.includes('endTimestamp='))).toBe(true);
+  });
+
+  it('keeps official English dimension names in zh-CN and labels the add menu 包套件', async () => {
+    const { wrapper } = await mountLanding('/quality/test-cases', 'zh-CN');
+    expect(wrapper.get('[data-testid="dq-dimension-Completeness"]').text()).toContain('Completeness');
+    expect(wrapper.get('[data-testid="dq-dimension-Integrity"]').text()).toContain('Integrity');
+    expect(wrapper.get('[data-testid="dq-dimension-Completeness"]').text()).not.toContain('完整性');
+    expect(wrapper.get('[data-testid="dq-landing-tabs"]').text()).toContain('概要');
+    expect(wrapper.get('[data-testid="dq-landing-tabs"]').text()).toContain('质控测试集');
+    await wrapper.get('[data-testid="dq-landing-add"]').trigger('click');
+    await flushPromises();
+    const suiteItem = document.body.querySelector('[data-testid="dq-landing-add-suite"]');
+    expect(suiteItem?.textContent).toContain('包套件');
   });
 });

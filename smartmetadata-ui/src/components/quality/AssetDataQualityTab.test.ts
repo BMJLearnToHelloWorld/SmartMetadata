@@ -18,13 +18,14 @@ async function mountTab() {
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div />' } },
+      { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
     ],
   });
   await router.push('/');
   await router.isReady();
   const wrapper = mount(AssetDataQualityTab, {
-    props: { entityFqn: 'svc.db.schema.orders', testSuiteFqn: 'suite.orders' },
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    props: { entityFqn: 'svc.db.schema.orders', testSuiteFqn: 'suite.orders', testSuiteId: 'suite-id' },
+    global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
   });
   await flushPromises();
   return wrapper;
@@ -36,13 +37,23 @@ describe('AssetDataQualityTab', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testSuites/dataQualityReport')) {
+          return jsonResponse({
+            metadata: { keys: [], dimensions: ['entityFQN', 'testCaseResult.testCaseStatus'], metrics: ['document_count'] },
+            data: [
+              { document_count: '1', entityFQN: 'svc.db.schema.orders', 'testCaseResult.testCaseStatus': 'success' },
+              { document_count: '1', entityFQN: 'svc.db.schema.orders', 'testCaseResult.testCaseStatus': 'failed' },
+            ],
+          });
+        }
         if (url.includes('/api/v1/dataQuality/testCases/search')) {
           return jsonResponse({
             data: [
               { id: 'tc1', name: 'row_count', testCaseResult: { testCaseStatus: 'Failed' } },
               { id: 'tc2', name: 'ok', testCaseResult: { testCaseStatus: 'Success' } },
+              { id: 'tc3', name: 'extra', testCaseResult: { testCaseStatus: 'Aborted' } },
             ],
-            paging: { total: 2 },
+            paging: { total: 3 },
           });
         }
         if (url.includes('/api/v1/dataQuality/testCases')) {
@@ -51,8 +62,19 @@ describe('AssetDataQualityTab', () => {
         if (url.includes('/api/v1/services/ingestionPipelines')) {
           expect(url).toContain('testSuite=');
           expect(url).toContain('pipelineType=TestSuite');
+          expect(url).toContain('fields=');
           return jsonResponse({
-            data: [{ id: 'p1', name: 'orders-dq', pipelineType: 'TestSuite', airflowConfig: { scheduleInterval: '0 * * * *' } }],
+            data: [
+              {
+                id: 'p1',
+                name: 'orders-dq',
+                displayName: 'orders-dq',
+                pipelineType: 'TestSuite',
+                enabled: true,
+                airflowConfig: { scheduleInterval: '0 * * * *' },
+                pipelineStatuses: [{ runId: 'r1', timestamp: 1, status: [{ records: 2, errors: 0, warnings: 0 }] }],
+              },
+            ],
             paging: { total: 1 },
           });
         }
@@ -72,10 +94,51 @@ describe('AssetDataQualityTab', () => {
     expect(wrapper.find('[data-testid="asset-dq-success"]').text()).toContain('1');
     expect(wrapper.find('[data-testid="asset-dq-failed"]').text()).toContain('1');
     expect(wrapper.find('[data-testid="asset-dq-incidents-tab"]').exists()).toBe(true);
+    const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/api/v1/dataQuality/testSuites/dataQualityReport'))).toBe(true);
     wrapper.unmount();
   });
 
-  it('lists TestSuite workflows when the inner 工作流 tab is opened', async () => {
+  it('leaves official summary cards empty when the asset has no testSuite.id', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div />' } },
+        { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
+      ],
+    });
+    await router.push('/');
+    await router.isReady();
+    const wrapper = mount(AssetDataQualityTab, {
+      props: { entityFqn: 'svc.db.schema.orders' },
+      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="asset-dq-total"]').text()).toContain('0');
+    expect(wrapper.find('[data-testid="asset-dq-success"]').text()).toContain('0');
+    const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('/api/v1/dataQuality/testSuites/dataQualityReport'))).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('exposes the official 添加 dropdown with 测试用例 and 自定义指标', async () => {
+    const wrapper = await mountTab();
+    const add = wrapper.find('[data-testid="asset-dq-add"]');
+    expect(add.exists()).toBe(true);
+    expect(add.text()).toContain('添加');
+    await add.trigger('click');
+    await flushPromises();
+    const testCaseItem = document.body.querySelector('[data-testid="asset-dq-add-test-case"]');
+    const metricItem = document.body.querySelector('[data-testid="asset-dq-add-custom-metric"]');
+    expect(testCaseItem?.textContent).toContain('测试用例');
+    expect(metricItem?.textContent).toContain('自定义指标');
+    wrapper.unmount();
+  });
+
+  it('lists TestSuite workflows with official columns, test-case tooltip, and 添加管道', async () => {
     const wrapper = await mountTab();
     const workflowsTab = wrapper.find('[data-testid="asset-dq-workflows-tab"]');
     expect(workflowsTab.exists()).toBe(true);
@@ -83,6 +146,11 @@ describe('AssetDataQualityTab', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="asset-dq-workflows"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('orders-dq');
+    expect(wrapper.find('[data-testid="asset-dq-test-cases-info"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-count-orders-dq"]').text()).toContain('全部');
+    expect(wrapper.find('[data-testid="asset-dq-add-pipeline"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-dq-add-pipeline"]').text()).toContain('添加管道');
+    expect(wrapper.find('[data-testid="asset-dq-workflow-actions"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

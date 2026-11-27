@@ -173,7 +173,7 @@ function averageValue(points: ChartPoint[]): string {
 
 function dimensionLabel(id: string): string {
   const key =
-    id === 'No Dimension'
+    id === 'NoDimension'
       ? 'quality.landing.dimensions.none'
       : `quality.landing.dimensions.${id.toLowerCase()}`;
   return te(key) ? t(key) : id;

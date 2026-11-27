@@ -39,7 +39,7 @@ export const DQ_DIMENSIONS = [
   'Validity',
 ] as const;
 
-export const NO_DIMENSION = 'No Dimension';
+export const NO_DIMENSION = 'NoDimension';
 
 export const DQ_GOVERNANCE_FILTERS = [
   'owner',

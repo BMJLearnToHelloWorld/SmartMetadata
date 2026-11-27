@@ -2817,7 +2817,7 @@ const enUS = {
       lead: 'Build trust in your data with quality tests and create reliable data products.',
       add: 'Add',
       addCase: 'Test case',
-      addSuite: 'Test suite',
+      addSuite: 'Bundle Suite',
       tabs: {
         dashboard: 'Summary',
         testCases: 'Test Cases',
@@ -2835,7 +2835,7 @@ const enUS = {
       range7: 'Last 7 days',
       range30: 'Last 30 days',
       healthTitle: 'Data Health',
-      healthLead: 'Track coverage, quality, and test results of your data assets.',
+      healthLead: 'Track the coverage, quality, and test results of your data assets to monitor overall data health and identify areas for improvement.',
       healthEmpty: 'No test cases or table suites listed yet. Add a test to start tracking data health.',
       coverage: 'Data Assets Coverage',
       healthyAssets: 'Healthy Data Assets',
@@ -2852,7 +2852,7 @@ const enUS = {
       aborted: 'Aborted',
       chartEmpty: 'No values in the listed tests for this card.',
       dimensionsTitle: 'Data Dimensions',
-      dimensionsLead: 'Accuracy, completeness, consistency, and integrity from listed test definitions.',
+      dimensionsLead: 'Gain insights into key data quality dimensions—such as accuracy, consistency, and integrity—to assess the completeness and reliability of your data.',
       dimensions: {
         accuracy: 'Accuracy',
         completeness: 'Completeness',
@@ -2864,24 +2864,13 @@ const enUS = {
         none: 'No Dimension',
       },
       statusTitle: 'Test Case Status',
-      statusLead: 'Catalog-wide counts from dataQualityReport aggregations.',
+      statusLead: 'Visualize the health of your data validation tests with a breakdown of success, failure, and aborted cases.',
       incidentTitle: 'Incident Metrics',
-      incidentLead: 'Track the number, responsiveness, and resolution of data-related incidents to improve operational reliability.',
+      incidentLead: 'Track the volume, responsiveness, and resolution efficiency of data-related incidents to improve operational reliability.',
       openIncidents: 'Open Incidents',
       resolvedIncidents: 'Resolved Incidents',
       responseTime: 'Response Time',
       resolutionTime: 'Resolution Time',
-      residualCases: 'GET /v1/dataQuality/testCases did not return rows. Health cards stay empty instead of inventing counts.',
-      residualSuites: 'GET /v1/dataQuality/testSuites did not return table suites. Coverage uses listed test-case assets when present.',
-      residualSearch: 'Search aggregations did not return a table count. Coverage denominator stays residual.',
-      residualHealthCap:
-        'Health is still computed from listed suites and cases (up to 100). The per-asset healthy/unhealthy aggregation split needs a live index check first.',
-      residualAggregationFallback:
-        'The dataQualityReport batch did not return, so status, dimension and coverage cards fall back to listed rows (up to 100).',
-      residualSearchList:
-        'GET /v1/dataQuality/testCases/search/list is residual on this server. Owner, tier, tag, glossary, data product, and date filters apply only when that index is present.',
-      residualFilterApply:
-        'Those filters need the test-case search index. Listed rows stay unfiltered rather than faking a catalog-wide slice.',
     },
     dashboard: {
       statusLead: 'Daily counts per status in the selected range.',
@@ -2905,6 +2894,12 @@ const enUS = {
       count: 'Count',
       schedule: 'Schedule',
       all: 'All',
+      add: 'Add',
+      addTestCase: 'Test Case',
+      addCustomMetric: 'Custom Metric',
+      addPipeline: 'Add Pipeline',
+      noPipelines: 'No pipelines yet',
+      testCaseCountInfo: "Shows the number of test cases selected for this pipeline. 'All' indicates that all available test cases will be executed.",
     },
     testCases: {
       title: 'Test Cases',
