@@ -94,7 +94,7 @@ function close(): void {
 .tl-filter {
   width: 240px;
   padding: 8px;
-  background: #fff;
+  background: var(--sm-bg-container);
   border-radius: 8px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }

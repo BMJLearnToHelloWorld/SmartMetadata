@@ -32,7 +32,7 @@ import type { TestSuite } from '@/types/quality';
 import { aggregateTestResultsByEntity } from '@/quality/testCaseSummary';
 import { entityLabel } from '@/features/crud/paging';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   entityFqn: string;
   testSuiteFqn?: string;
   testSuiteId?: string;
@@ -40,8 +40,16 @@ const props = defineProps<{
   /** Official QualityTab is a table profiler surface; required to add a custom metric or open profiler settings. */
   tableId?: string;
   columns?: { name: string; dataType: string }[];
-}>();
+  /**
+   * Official QualityTab (DATA_QUALITY sub-tab) does not host Incidents;
+   * official IncidentsTab is a sibling under DataObservabilityTab.
+   * The fallback top-level quality slot still shows both.
+   */
+  showIncidents?: boolean;
+}>(), { showIncidents: true });
 
+
+const showIncidentTab = computed(() => props.showIncidents);
 const { t } = useI18n();
 const router = useRouter();
 const permissionStore = usePermissionStore();
@@ -209,7 +217,7 @@ onMounted(() => {
 <template>
   <div class="asset-dq" data-testid="asset-data-quality-tab">
     <div class="asset-dq__header">
-      <Tabs v-model:activeKey="outerTab" data-testid="asset-dq-outer-tabs">
+      <Tabs v-if="showIncidentTab" v-model:activeKey="outerTab" data-testid="asset-dq-outer-tabs">
         <Tabs.TabPane key="quality" :tab="t('quality.asset.dataQuality')" />
         <Tabs.TabPane key="incidents">
           <template #tab>
@@ -436,13 +444,13 @@ onMounted(() => {
   margin: 8px 0 16px;
 }
 .asset-dq__card {
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
   padding: 12px 16px;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
 }
 .asset-dq__card-title {
-  color: var(--sm-text-secondary, #8c8c8c);
+  color: var(--sm-text-secondary);
   font-size: 13px;
 }
 .asset-dq__card-value {

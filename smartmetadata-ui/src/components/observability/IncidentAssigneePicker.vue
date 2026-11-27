@@ -212,7 +212,7 @@ function clearCurrent(event: Event): void {
   gap: 4px;
 }
 .assignee-picker__item.is-current {
-  background: #f0f5ff;
+  background: var(--sm-color-primary-bg);
   border-radius: 4px;
 }
 .assignee-picker__choose {

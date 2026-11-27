@@ -230,7 +230,14 @@ async function onSave(values: TestDefinitionFormValues): Promise<void> {
     Object.assign(values, createEmptyTestDefinitionForm());
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
+    message.error(
+      error instanceof Error
+        ? error.message
+        : t(
+            editing.value ? 'server.update-entity-error' : 'server.create-entity-error',
+            { entity: t('label.test-definition') },
+          ),
+    );
   } finally {
     saving.value = false;
   }
@@ -247,7 +254,11 @@ async function onEnableToggle(record: TestDefinition, checked: boolean): Promise
       item.id === record.id ? { ...item, enabled: checked } : item,
     );
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.saveFailed'));
+    message.error(
+      error instanceof Error
+        ? error.message
+        : t('server.update-entity-error', { entity: t('label.test-definition') }),
+    );
   } finally {
     togglingId.value = undefined;
   }

@@ -118,10 +118,10 @@ function save(): void {
   min-height: 100%;
 }
 .td-drawer__help {
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 8px;
   padding: 16px;
-  background: #fff;
+  background: var(--sm-bg-container);
   max-height: calc(100vh - 180px);
   overflow: auto;
 }
@@ -137,7 +137,7 @@ function save(): void {
 .td-drawer__help li {
   font-size: 13px;
   line-height: 1.55;
-  color: #3d3d3d;
+  color: var(--sm-text-secondary);
 }
 @media (max-width: 800px) {
   .td-drawer {

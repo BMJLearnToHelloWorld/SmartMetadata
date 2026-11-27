@@ -111,13 +111,13 @@ const coveragePercent = computed(() => insightPercent(props.coverage?.covered ??
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
   padding: 12px 16px;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
 }
 .tc-insights__title {
-  color: var(--sm-text-secondary, #8c8c8c);
+  color: var(--sm-text-secondary);
   font-size: 13px;
 }
 .tc-insights__value {
@@ -127,7 +127,7 @@ const coveragePercent = computed(() => insightPercent(props.coverage?.covered ??
 }
 .tc-insights__legend,
 .tc-insights__percent {
-  color: var(--sm-text-secondary, #8c8c8c);
+  color: var(--sm-text-secondary);
   font-size: 12px;
 }
 .tc-insights__chart {

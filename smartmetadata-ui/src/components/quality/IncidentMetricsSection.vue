@@ -91,9 +91,9 @@ watch(
 .dq-incident {
   width: 100%;
   text-align: left;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--sm-bg-elevated);
   padding: 16px;
   cursor: pointer;
 }

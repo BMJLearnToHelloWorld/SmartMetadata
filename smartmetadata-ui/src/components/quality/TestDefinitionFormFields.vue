@@ -234,7 +234,7 @@ function removeParameter(index: number): void {
 
 <style scoped>
 .td-param {
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 12px;

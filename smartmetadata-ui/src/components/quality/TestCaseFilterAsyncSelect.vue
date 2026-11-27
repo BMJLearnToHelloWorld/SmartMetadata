@@ -141,6 +141,6 @@ onUnmounted(() => {
 <style scoped>
 .tc-filter-option__sub {
   font-size: 12px;
-  color: var(--sm-text-secondary, #8c8c8c);
+  color: var(--sm-text-secondary);
 }
 </style>

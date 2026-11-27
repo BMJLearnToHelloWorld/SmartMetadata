@@ -607,8 +607,8 @@ onMounted(() => {
 .bulk-import__chip {
   padding: 0 8px;
   border-radius: 4px;
-  background: var(--sm-bg-elevated, #fafafa);
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  background: var(--sm-bg-elevated);
+  border: 1px solid var(--sm-border-color);
 }
 .bulk-import__footer {
   display: flex;

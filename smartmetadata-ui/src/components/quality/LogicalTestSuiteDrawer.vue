@@ -108,7 +108,10 @@ async function onSubmit(): Promise<void> {
     }
     emit('submitted', suite);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('crud.saveFailed');
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : t('server.create-entity-error', { entity: t('label.test-suite') });
   } finally {
     saving.value = false;
   }
@@ -263,7 +266,7 @@ watch(
 .bundle-suite__list {
   max-height: 280px;
   overflow: auto;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--sm-border-secondary);
 }
 .bundle-suite__meta {
   color: rgba(0, 0, 0, 0.55);
@@ -281,14 +284,14 @@ watch(
 }
 .bundle-suite__card {
   text-align: left;
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
-  background: #fff;
+  background: var(--sm-bg-container);
   padding: 10px;
   cursor: pointer;
 }
 .bundle-suite__card.is-active {
-  border-color: #1677ff;
-  background: #e6f4ff;
+  border-color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
 }
 </style>

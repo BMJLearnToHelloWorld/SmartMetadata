@@ -80,8 +80,8 @@ import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetOverviewFields from '@/features/crud/AssetOverviewFields.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
-import AssetProfilerPanel from '@/features/crud/AssetProfilerPanel.vue';
 import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
+import AssetDataObservabilityTab from '@/components/quality/AssetDataObservabilityTab.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -2474,7 +2474,11 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetProfilerPanel
+            <AssetDataObservabilityTab
+              :entity-fqn="asset.fullyQualifiedName"
+              :test-suite-fqn="asset.testSuite?.fullyQualifiedName"
+              :test-suite-id="asset.testSuite?.id"
+              :deleted="Boolean(asset.deleted)"
               :tests="tests"
               :tests-error="testsError"
               :test-status-series="testStatusSeries"

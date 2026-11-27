@@ -133,7 +133,11 @@ async function onSubmit(): Promise<void> {
     emit('success');
     onClose();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.saveFailed'));
+    message.error(
+      error instanceof Error
+        ? error.message
+        : t('server.create-entity-error', { entity: form.name.trim() || t('label.custom-metric') }),
+    );
   } finally {
     submitting.value = false;
   }

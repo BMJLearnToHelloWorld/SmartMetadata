@@ -225,7 +225,13 @@ async function onSubmit(): Promise<void> {
     const saved = isEdit.value ? await updateTestCase(body) : await createTestCase(body);
     emit('submitted', saved);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('crud.saveFailed');
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : t(
+            isEdit.value ? 'server.update-entity-error' : 'server.create-entity-error',
+            { entity: t('label.test-case') },
+          );
   } finally {
     saving.value = false;
   }
@@ -471,15 +477,15 @@ watch(
 }
 .tc-form__level {
   text-align: left;
-  border: 1px solid var(--ant-color-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
-  background: #fff;
+  background: var(--sm-bg-container);
   padding: 12px;
   cursor: pointer;
 }
 .tc-form__level--active {
-  border-color: var(--ant-color-primary, #1677ff);
-  background: #e6f4ff;
+  border-color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
 }
 .tc-form__level-title {
   font-weight: 600;
@@ -493,7 +499,7 @@ watch(
   margin-left: 8px;
   font-weight: 400;
   font-size: 12px;
-  color: #d46b08;
+  color: var(--sm-color-warning-text);
 }
 .tc-form__type-row {
   display: flex;
@@ -504,7 +510,7 @@ watch(
   flex: 1;
 }
 .tc-form__side {
-  border-left: 1px solid var(--ant-color-border, #f0f0f0);
+  border-left: 1px solid var(--sm-border-color);
   padding-left: 16px;
 }
 @media (max-width: 900px) {
