@@ -8,6 +8,7 @@ import {
   EXPLORE_TABS,
   defaultSortForTab,
   exploreSortFromQuery,
+  exploreSortQueryParams,
   exploreTabForIndex,
   exploreTabForSlug,
   exploreTabFromQuery,
@@ -130,6 +131,26 @@ describe('exploreTabs', () => {
       id: 'popularity',
       order: 'desc',
       field: 'totalVotes',
+    });
+  });
+
+  it('reads official ES field + sortOrder and still accepts legacy product ids', () => {
+    expect(exploreSortFromQuery({ sort: 'totalVotes' }, null)).toEqual({
+      id: 'popularity',
+      order: 'desc',
+      field: 'totalVotes',
+    });
+    expect(exploreSortFromQuery({ sort: '_score', sortOrder: 'asc' }, null)).toEqual({
+      id: 'relevance',
+      order: 'asc',
+      field: '_score',
+    });
+    expect(exploreSortFromQuery({ sort: 'popularity', order: 'asc' }, null).order).toBe('asc');
+    expect(exploreSortQueryParams({ id: 'popularity', order: 'desc' }, null)).toEqual({});
+    expect(exploreSortQueryParams({ id: 'relevance', order: 'desc' }, null)).toEqual({ sort: '_score' });
+    expect(exploreSortQueryParams({ id: 'popularity', order: 'asc' }, null)).toEqual({
+      sort: 'totalVotes',
+      sortOrder: 'asc',
     });
   });
 });

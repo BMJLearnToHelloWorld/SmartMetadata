@@ -92,7 +92,7 @@ describe('LineageSection (Q-TAB-4)', () => {
       totalDownstreamEntities: 0,
     });
     const { wrapper } = await mountSection();
-    expect(wrapper.find('[data-testid="lineage-section-empty"]').text()).toContain('No lineage available');
+    expect(wrapper.find('[data-testid="lineage-section-empty"]').text()).toContain('No lineage connections found');
     expect(wrapper.find('[data-testid="upstream-lineage"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="downstream-lineage"]').exists()).toBe(false);
     wrapper.unmount();

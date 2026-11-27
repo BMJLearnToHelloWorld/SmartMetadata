@@ -6,11 +6,12 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Dropdown, Empty, Input, Menu, Pagination, Select, Space, Switch, Tag, Typography, message } from 'ant-design-vue';
+import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, DownloadOutlined, DownOutlined, FilterOutlined, InfoCircleOutlined } from '@ant-design/icons-vue';
+import { Alert, Button, Divider, Dropdown, Empty, Input, Menu, Pagination, Space, Switch, Tag, Typography, message } from 'ant-design-vue';
 import { prefetchAssetDetail } from '@/api/entities';
 import { ApiError, readErrorMessage } from '@/api/client';
 import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
-import { EXPORT_ALL_ASSETS_LIMIT, exportSearchResultsAsync } from '@/api/search';
+import { EXPORT_ALL_ASSETS_LIMIT, exportSearchResultsAsync, postAggregateFieldOptions } from '@/api/search';
 import {
   MAX_RESULT_HITS,
   SEARCH_EXCLUDE_SOURCE_FIELDS,
@@ -37,6 +38,7 @@ import {
   EXPLORE_TABS,
   defaultSortForTab,
   exploreSortFromQuery,
+  exploreSortQueryParams,
   exploreTabFromRoute,
   facetsForTab,
   findActiveSearchIndex,
@@ -45,8 +47,10 @@ import {
   type ExploreTab,
 } from '@/catalog/exploreTabs';
 import {
+  ESTATE_SERVICE_AGGREGATE_SIZE,
   browsePathLabels,
   buildEstateTree,
+  estateBucketsFromAggregate,
   estateChildNodes,
   estateDrill,
   estateFromQuery,
@@ -71,9 +75,8 @@ import { hitLocation } from '@/catalog/searchHits';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
   DEFAULT_EXPLORE_PAGE_SIZE,
-  DEFAULT_SORT,
   EXPLORE_PAGE_SIZE_OPTIONS,
-  SORT_OPTIONS,
+  FILTER_LUCENE_FIELD,
   composeSearchQuery,
   filtersFromQuery,
   filtersToQuery,
@@ -83,12 +86,9 @@ import {
   nullExistsQueryFilter,
   pageFromQuery,
   pageSizeFromQuery,
-  sortField,
-  sortFromQuery,
   type SearchFilters,
 } from '@/catalog/searchQuery';
 import FormModal from '@/components/shared/FormModal.vue';
-import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import SmProfilePicture from '@/components/shared/SmProfilePicture.vue';
 import SearchEntityIcon from '@/components/shared/SearchEntityIcon.vue';
@@ -240,25 +240,15 @@ const showDeleted = computed(() => route.query.showDeleted === 'true');
 const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, readGlobalPageSize(window.localStorage, authStore.user?.name)));
 const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
 const sortOptions = computed(() => {
-  const base = effectiveTab.value
-    ? sortOptionsForTab(effectiveTab.value)
-    : SORT_OPTIONS.map((option) => ({ id: option.id, field: option.field, defaultOrder: option.defaultOrder }));
-  if (!effectiveTab.value) {
-    return base;
-  }
-  // D33 pin quirk: the API tabs default to totalVotes although the tag
-  // sorting group has no popularity option. The dropdown carries the
-  // default as well, so the sort label never renders blank.
-  const fallback = defaultSortForTab(effectiveTab.value);
+  const tab = effectiveTab.value;
+  const base = sortOptionsForTab(tab);
+  // Official API-tab quirk: default sortField is totalVotes although the
+  // tag sorting group has no popularity option. Keep the default in the
+  // dropdown so the trigger label never renders blank.
+  const fallback = defaultSortForTab(tab);
   return base.some((option) => option.id === fallback.id) ? base : [...base, fallback];
 });
-const currentSort = computed<ExploreSort>(() => {
-  if (effectiveTab.value) {
-    return exploreSortFromQuery(route.query, effectiveTab.value);
-  }
-  const base = sortFromQuery(route.query);
-  return { id: base.id, order: base.order, field: sortField(base) };
-});
+const currentSort = computed<ExploreSort>(() => exploreSortFromQuery(route.query, effectiveTab.value));
 
 /**
  * Chip options with official's per-facet self-exclusion: the main-search
@@ -576,16 +566,7 @@ function pushSearch(
   if (nextPageSize !== DEFAULT_EXPLORE_PAGE_SIZE) {
     next.pageSize = String(nextPageSize);
   }
-  const options = nextTab ? sortOptionsForTab(nextTab) : SORT_OPTIONS;
-  const option = options.find((item) => item.id === nextSort.id) ?? options[0];
-  const fallback = nextTab ? defaultSortForTab(nextTab) : DEFAULT_SORT;
-  if (nextSort.id !== fallback.id) {
-    next.sort = nextSort.id;
-  }
-  if (nextSort.order !== option.defaultOrder) {
-    next.sort = nextSort.id;
-    next.order = nextSort.order;
-  }
+  Object.assign(next, exploreSortQueryParams(nextSort, nextTab));
   if (nextEstate) {
     next.estate = nextEstate;
   }
@@ -679,7 +660,7 @@ function onTabChange(key: string): void {
   if (filters.value.tagFqn?.length) {
     carried.tagFqn = filters.value.tagFqn;
   }
-  const fallback = tab ? defaultSortForTab(tab) : { id: DEFAULT_SORT.id, defaultOrder: DEFAULT_SORT.order };
+  const fallback = defaultSortForTab(tab);
   const sort = query.value.trim()
     ? { id: 'relevance', order: 'desc' as const }
     : { id: fallback.id, order: fallback.defaultOrder };
@@ -864,8 +845,9 @@ function selectHit(hit: SearchHit): void {
  * ~:1210 calling `handleSummaryPanelDisplay(firstEntity)` — the
  * part-4 report's "opens only on a card action" misread pin by missing
  * that effect; the first-hit auto-display is pin behaviour, kept here).
- * Close is Escape (`ExploreV1.component.tsx:1178`), the panel's X, or
- * navigating away (an in-panel link calls `handleClosePanel`, `:952`).
+ * Close is Escape (`ExploreV1.component.tsx:1178`) or navigating away
+ * (an in-panel link calls `handleClosePanel`). Official Explore mode has
+ * no X close on this panel.
  */
 function openPreview(hit: SearchHit): void {
   selectHit(hit);
@@ -1057,11 +1039,29 @@ async function loadEstateChildren(node: EstateNode): Promise<void> {
   }
   estateLoadingKeys.value.add(node.key);
   try {
-    const pageResult = await searchAssets(composeSearchQuery(query.value, drill.filters), 0, 0, {
-      deleted: showDeleted.value,
-    });
-    const buckets = pageResult.facets.find((facet) => facet.id === drill.facet)?.buckets ?? [];
-    estateChildMap.value = { ...estateChildMap.value, [node.key]: estateChildNodes(node, buckets) };
+    // Official ExploreTree uses POST /v1/search/aggregate with
+    // service.style top-hits only for the SERVICE level, so instance
+    // nodes can render style.iconURL (else the parent connector logo).
+    if (drill.facet === 'service') {
+      const payload = await postAggregateFieldOptions({
+        queryText: composeSearchQuery(query.value, drill.filters),
+        fieldName: FILTER_LUCENE_FIELD.service,
+        fieldValue: '',
+        index: 'dataAsset',
+        deleted: showDeleted.value,
+        size: ESTATE_SERVICE_AGGREGATE_SIZE,
+        sourceFields: ['service.style'],
+        topHits: { size: 1 },
+      });
+      const buckets = estateBucketsFromAggregate(payload, FILTER_LUCENE_FIELD.service);
+      estateChildMap.value = { ...estateChildMap.value, [node.key]: estateChildNodes(node, buckets) };
+    } else {
+      const pageResult = await searchAssets(composeSearchQuery(query.value, drill.filters), 0, 0, {
+        deleted: showDeleted.value,
+      });
+      const buckets = pageResult.facets.find((facet) => facet.id === drill.facet)?.buckets ?? [];
+      estateChildMap.value = { ...estateChildMap.value, [node.key]: estateChildNodes(node, buckets) };
+    }
   } catch {
     // Leave the node unloaded; see the comment above.
   } finally {
@@ -1237,73 +1237,121 @@ watch(expandedKeys, (keys) => {
 
 <template>
   <div class="explore" data-tour-step="explore-search" data-tour-page>
-    <PageHeader :header="t('explore.title')" :sub-header="query ? t('explore.leadQuery', { query }) : t('explore.lead')" />
     <div class="explore__toolbar">
-      <ExploreFilterChips
-        :facets="chipFacets"
-        :filters="filters"
-        :facet-ids="chipFacetIds"
-        :searching-facet-ids="facetOptions.searchingFacets.value"
-        @change="onChipChange"
-        @open="onChipOpen"
-        @search="onChipSearch"
-      />
+      <div class="explore__toolbar-filters">
+        <ExploreFilterChips
+          :facets="chipFacets"
+          :filters="filters"
+          :facet-ids="chipFacetIds"
+          :searching-facet-ids="facetOptions.searchingFacets.value"
+          @change="onChipChange"
+          @open="onChipOpen"
+          @search="onChipSearch"
+        />
+      </div>
       <div class="explore__toolbar-end">
-        <Select
-          data-testid="explore-sort"
-          class="explore__sort"
-          size="small"
-          :value="currentSort.id"
-          :aria-label="t('explore.sort')"
-          @change="onSortChange"
-        >
-          <Select.Option v-for="option in sortOptions" :key="option.id" :value="option.id">
-            {{ t(`explore.sort${option.id.charAt(0).toUpperCase()}${option.id.slice(1)}`) }}
-          </Select.Option>
-        </Select>
         <Button
-          data-testid="explore-sort-order"
+          type="text"
           size="small"
+          class="explore__sort-order"
+          data-testid="explore-sort-order"
           :aria-label="t('explore.sort')"
           @click="onToggleSortOrder"
         >
-          {{ currentSort.order === 'asc' ? t('explore.sortAsc') : t('explore.sortDesc') }}
+          <ArrowUpOutlined v-if="currentSort.order === 'asc'" />
+          <ArrowDownOutlined v-else />
         </Button>
-        <span class="explore__show-deleted">
-          <Switch
-            data-testid="explore-show-deleted"
+        <Divider type="vertical" class="explore__toolbar-divider" />
+        <Dropdown :trigger="['click']" data-testid="explore-sort">
+          <Button
+            type="text"
             size="small"
-            :checked="showDeleted"
-            :aria-label="t('explore.showDeleted')"
-            @change="onShowDeletedChange"
-          />
-          {{ t('explore.showDeleted') }}
-        </span>
-        <Button
-          size="small"
-          data-testid="explore-advanced-search"
-          :aria-label="t('explore.advancedSearch')"
-          @click="openAdvancedSearch"
-        >
-          {{ t('explore.advancedSearch') }}
-        </Button>
+            class="explore__sort"
+            data-testid="explore-sort-trigger"
+            :aria-label="t('explore.sort')"
+          >
+            {{ t(`explore.sort${currentSort.id.charAt(0).toUpperCase()}${currentSort.id.slice(1)}`) }}
+            <DownOutlined />
+          </Button>
+          <template #overlay>
+            <Menu
+              :selectable="true"
+              :selected-keys="[currentSort.id]"
+              data-testid="explore-sort-menu"
+              @click="(info) => onSortChange(info.key)"
+            >
+              <Menu.Item v-for="option in sortOptions" :key="option.id" :data-testid="`explore-sort-${option.id}`">
+                {{ t(`explore.sort${option.id.charAt(0).toUpperCase()}${option.id.slice(1)}`) }}
+              </Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
+        <Divider type="vertical" class="explore__toolbar-divider" />
         <Dropdown v-model:open="toolsOpen" :trigger="['click']" data-testid="explore-tools">
           <Button
+            type="text"
             size="small"
+            class="explore__tools"
             data-testid="explore-tools-trigger"
             :aria-label="t('explore.tools')"
           >
             {{ t('explore.tools') }}
+            <DownOutlined />
           </Button>
           <template #overlay>
             <Menu :selectable="false" data-testid="explore-tools-menu">
+              <Menu.Item
+                key="export"
+                data-testid="explore-export"
+                @click="handleOpenExportScopeModal"
+              >
+                <span class="explore__tools-item">
+                  <span class="explore__tools-label">
+                    <DownloadOutlined />
+                    {{ t('explore.export') }}
+                  </span>
+                </span>
+              </Menu.Item>
+              <Menu.Item
+                key="show-deleted"
+                data-testid="explore-show-deleted"
+                @click="onShowDeletedChange(!showDeleted)"
+              >
+                <span class="explore__tools-item">
+                  <span class="explore__tools-label">
+                    <DeleteOutlined />
+                    {{ t('explore.showDeleted') }}
+                  </span>
+                  <Switch
+                    size="small"
+                    :checked="showDeleted"
+                    class="explore__tools-switch"
+                    :aria-label="t('explore.showDeleted')"
+                  />
+                </span>
+              </Menu.Item>
+              <Menu.Item
+                key="advanced-search"
+                data-testid="explore-advanced-search"
+                @click="openAdvancedSearch"
+              >
+                <span class="explore__tools-item">
+                  <span class="explore__tools-label">
+                    <FilterOutlined />
+                    {{ t('explore.advancedSearch') }}
+                  </span>
+                </span>
+              </Menu.Item>
               <Menu.Item
                 key="ranking-details"
                 data-testid="explore-ranking-details"
                 @click="onToggleRankingDetails"
               >
                 <span class="explore__tools-item">
-                  {{ t('explore.rankingDetails') }}
+                  <span class="explore__tools-label">
+                    <InfoCircleOutlined />
+                    {{ t('explore.rankingDetails') }}
+                  </span>
                   <Switch
                     size="small"
                     :checked="showRankingDetails"
@@ -1312,28 +1360,9 @@ watch(expandedKeys, (keys) => {
                   />
                 </span>
               </Menu.Item>
-              <Menu.Item
-                key="export"
-                data-testid="explore-export"
-                @click="handleOpenExportScopeModal"
-              >
-                <span class="explore__tools-item">
-                  {{ t('explore.export') }}
-                </span>
-              </Menu.Item>
             </Menu>
           </template>
         </Dropdown>
-        <Button
-          v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
-          type="link"
-          size="small"
-          data-testid="search-clear-filters"
-          :aria-label="t('explore.clearFiltersHelp')"
-          @click="onClearFilters"
-        >
-          {{ t('explore.clearFilters') }}
-        </Button>
       </div>
     </div>
     <Typography.Text
@@ -1344,6 +1373,20 @@ watch(expandedKeys, (keys) => {
     >
       {{ t('explore.nlqAppliedFilters', { fields: nlqAppliedFilters.join(', ') }) }}
     </Typography.Text>
+    <div
+      v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
+      class="explore__filter-status"
+    >
+      <Button
+        type="link"
+        size="small"
+        data-testid="search-clear-filters"
+        :aria-label="t('explore.clearFiltersHelp')"
+        @click="onClearFilters"
+      >
+        {{ t('explore.clearFilters') }}
+      </Button>
+    </div>
     <Space v-if="hasActiveFilters(filters)" wrap class="explore__active">
       <template v-for="id in activeFilterIds" :key="id">
         <Tag
@@ -1687,24 +1730,38 @@ watch(expandedKeys, (keys) => {
 .explore__toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+.explore__toolbar-filters {
+  flex: 1 1 0%;
+  min-width: 0;
+  max-width: 100%;
 }
 .explore__toolbar-end {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
+  align-self: flex-start;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
 }
-.explore__sort {
-  min-width: 140px;
+.explore__toolbar-divider {
+  height: 16px;
+  top: 0;
+  margin: 0 4px;
 }
-.explore__show-deleted {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  white-space: nowrap;
+.explore__sort-order,
+.explore__sort,
+.explore__tools {
+  font-size: 14px;
+  color: var(--sm-text-secondary);
+  padding-inline: 6px;
+}
+.explore__filter-status {
+  display: flex;
+  justify-content: flex-end;
 }
 /* E2's applied-filter SQL text row (kept) + E4's Tools menu / old advanced-row
    rules (kept; .explore__advanced-row is currently unused — E2 replaced the
@@ -1726,6 +1783,11 @@ watch(expandedKeys, (keys) => {
   justify-content: space-between;
   gap: 16px;
   width: 100%;
+}
+.explore__tools-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .explore__tools-switch {
   /* Pin's Tools toggle is read-only with pointer-events none: the menu

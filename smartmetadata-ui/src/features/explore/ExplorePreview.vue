@@ -7,7 +7,8 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Input, Modal, Spin, Tag, Typography, message } from 'ant-design-vue';
-import { CloseOutlined, EditOutlined } from '@ant-design/icons-vue';
+import { ApartmentOutlined, AppstoreAddOutlined, EditOutlined, PartitionOutlined, ProfileOutlined, SafetyCertificateOutlined } from '@ant-design/icons-vue';
+import type { Component } from 'vue';
 import { fetchAssetDetail } from '@/api/entities';
 import { getQueryCount } from '@/api/queries';
 import { listTestCases } from '@/api/testCases';
@@ -91,14 +92,24 @@ const PREVIEW_TABS: {
   key: PreviewTabKey;
   labelKey: string;
   testId: string;
+  icon: Component;
   available: (entityType: string) => boolean;
   implemented: boolean;
 }[] = [
-  { key: 'overview', labelKey: 'explore.overview', testId: 'overview-tab', available: () => true, implemented: true },
+  {
+    key: 'overview',
+    labelKey: 'explore.overview',
+    testId: 'overview-tab',
+    icon: ProfileOutlined,
+    available: () => true,
+    implemented: true,
+  },
   {
     key: 'schema',
-    labelKey: 'asset.tabs.schema',
+    // Official EntityRightPanelVerticalNav uses label.schema (数据模式).
+    labelKey: 'explore.previewSchema',
     testId: 'schema-tab',
+    icon: ApartmentOutlined,
     available: (entityType) => PREVIEW_SCHEMA_TAB_TYPES.has(entityType),
     implemented: true,
   },
@@ -106,13 +117,16 @@ const PREVIEW_TABS: {
     key: 'lineage',
     labelKey: 'asset.tabs.lineage',
     testId: 'lineage-tab',
+    icon: PartitionOutlined,
     available: (entityType) => PREVIEW_LINEAGE_TAB_TYPES.has(entityType),
     implemented: true,
   },
   {
     key: 'dataQuality',
+    // Official uses label.data-quality (数据质控), not 数据质量.
     labelKey: 'explore.tabDataQuality',
     testId: 'data-quality-tab',
+    icon: SafetyCertificateOutlined,
     available: (entityType) => entityType === 'table',
     implemented: true,
   },
@@ -120,6 +134,7 @@ const PREVIEW_TABS: {
     key: 'customProperties',
     labelKey: 'asset.tabs.customProperties',
     testId: 'custom-properties-tab',
+    icon: AppstoreAddOutlined,
     available: (entityType) => PREVIEW_CUSTOM_PROPERTIES_TAB_TYPES.has(entityType),
     implemented: true,
   },
@@ -654,20 +669,6 @@ watch(
         >
           <EditOutlined />
         </Button>
-        <!-- X close: pin Explore mode closes on Escape / in-panel link
-             only (the X exists in pin's side-drawer mode); the shell
-             provides one here so the panel can be dismissed by pointer
-             too. -->
-        <Button
-          type="text"
-          size="small"
-          class="preview__close"
-          data-testid="explore-preview-close"
-          :aria-label="t('explore.previewClose')"
-          @click="emit('close')"
-        >
-          <CloseOutlined />
-        </Button>
       </div>
       <div class="preview__shell">
         <div class="preview__content">
@@ -896,7 +897,8 @@ watch(
             :aria-current="activeTab === tab.key ? 'true' : undefined"
             @click="activeTab = tab.key"
           >
-            {{ t(tab.labelKey) }}
+            <component :is="tab.icon" class="preview__nav-icon" />
+            <span class="preview__nav-label">{{ t(tab.labelKey) }}</span>
           </button>
         </nav>
       </div>
@@ -979,23 +981,41 @@ watch(
 .preview__nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 20px;
   flex-shrink: 0;
   width: 80px;
+  padding-top: 20px;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
 }
 .preview__nav-tab {
-  padding: 6px 4px;
-  border: 1px solid transparent;
-  border-radius: var(--sm-border-radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 4px;
+  border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--sm-text-tertiary);
-  font-size: 12px;
-  text-align: center;
   cursor: pointer;
 }
+.preview__nav-icon {
+  font-size: 22px;
+}
+.preview__nav-label {
+  width: 54px;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-word;
+  white-space: normal;
+}
 .preview__nav-tab--active {
-  border-color: var(--sm-border-secondary);
-  background: var(--sm-bg-elevated);
   color: var(--sm-color-primary);
 }
 .preview__block {

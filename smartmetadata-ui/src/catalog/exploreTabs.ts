@@ -270,11 +270,66 @@ export interface ExploreSort {
  * official behaviour: a sort id that is not selectable on the active tab
  * falls back to that tab's default instead of rendering a blank label.
  */
-export function exploreSortFromQuery(query: Record<string, unknown>, tab: ExploreTab | null): ExploreSort {
+function firstQueryValue(query: Record<string, unknown>, key: string): unknown {
+  const raw = query[key];
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+/**
+ * Resolve a URL sort value against a tab. Official writes the Elasticsearch
+ * field (sort=totalVotes); older product links used the option id
+ * (sort=popularity). Both are accepted so existing links keep working.
+ * An unsupported value (or a missing sort) falls back to the tab default,
+ * matching official effectiveSortValue.
+ */
+export function exploreSortOptionFromValue(raw: unknown, tab: ExploreTab | null): ExploreSortOption {
   const options = sortOptionsForTab(tab);
-  const raw = Array.isArray(query.sort) ? query.sort[0] : query.sort;
-  const option = options.find((item) => item.id === raw) ?? defaultSortForTab(tab);
-  const rawOrder = Array.isArray(query.order) ? query.order[0] : query.order;
+  const fallback = defaultSortForTab(tab);
+  if (typeof raw !== 'string' || !raw) {
+    return fallback;
+  }
+  return options.find((item) => item.field === raw) ?? options.find((item) => item.id === raw) ?? fallback;
+}
+
+/**
+ * Official Explore URL contract: sort=<ES field> and sortOrder.
+ * order and option ids are read-only compatibility for older product links.
+ */
+export function exploreSortFromQuery(query: Record<string, unknown>, tab: ExploreTab | null): ExploreSort {
+  const option = exploreSortOptionFromValue(firstQueryValue(query, 'sort'), tab);
+  const rawOrder = firstQueryValue(query, 'sortOrder') ?? firstQueryValue(query, 'order');
   const order = rawOrder === 'asc' || rawOrder === 'desc' ? rawOrder : option.defaultOrder;
   return { id: option.id, order, field: option.field };
+}
+
+function resolveSortOption(sort: { id: string; order: 'asc' | 'desc' }, tab: ExploreTab | null): ExploreSortOption {
+  const options = sortOptionsForTab(tab);
+  const inGroup = options.find((item) => item.id === sort.id);
+  if (inGroup) {
+    return inGroup;
+  }
+  const known = Object.values(EXPLORE_SORT_GROUPS).flat().find((item) => item.id === sort.id);
+  return known ?? defaultSortForTab(tab);
+}
+
+/**
+ * Write official sort / sortOrder query params. The default field and
+ * order for the tab are omitted, matching official parseSearchParams
+ * defaults (	otalVotes / desc for the entity and table groups).
+ */
+export function exploreSortQueryParams(
+  sort: { id: string; order: 'asc' | 'desc' },
+  tab: ExploreTab | null,
+): Record<string, string> {
+  const option = resolveSortOption(sort, tab);
+  const fallback = defaultSortForTab(tab);
+  const next: Record<string, string> = {};
+  if (option.field !== fallback.field) {
+    next.sort = option.field;
+  }
+  if (sort.order !== option.defaultOrder) {
+    next.sort = option.field;
+    next.sortOrder = sort.order;
+  }
+  return next;
 }

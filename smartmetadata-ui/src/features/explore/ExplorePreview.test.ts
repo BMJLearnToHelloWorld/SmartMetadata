@@ -511,10 +511,16 @@ describe('ExplorePreview E-3a shell', () => {
     wrapper.unmount();
   });
 
-  it('emits close from the X button', async () => {
+  it('has no X close in official Explore mode and labels the official tab set', async () => {
     const wrapper = await mountPreview(hitWith(undefined));
-    await wrapper.find('[data-testid="explore-preview-close"]').trigger('click');
-    expect(wrapper.emitted('close')).toBeTruthy();
+    expect(wrapper.find('[data-testid="explore-preview-close"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="overview-tab"]').text()).toContain('Overview');
+    expect(wrapper.get('[data-testid="schema-tab"]').text()).toContain('Schema');
+    expect(wrapper.get('[data-testid="lineage-tab"]').text()).toContain('Lineage');
+    expect(wrapper.get('[data-testid="data-quality-tab"]').text()).toContain('Data Quality');
+    expect(wrapper.get('[data-testid="custom-properties-tab"]').text()).toContain('Custom Properties');
+    expect(wrapper.get('[data-testid="overview-tab"]').find('svg').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="schema-tab"]').find('svg').exists()).toBe(true);
     wrapper.unmount();
   });
 
