@@ -170,10 +170,10 @@ describe('AssetDataQualityTab', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="asset-dq-workflows"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('orders-dq');
-    expect(wrapper.find('[data-testid="asset-dq-test-cases-info"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-info-tooltip-icon"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-case-count-orders-dq"]').text()).toContain('全部');
-    expect(wrapper.find('[data-testid="asset-dq-add-pipeline"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-dq-add-pipeline"]').text()).toContain('添加管道');
+    expect(wrapper.find('[data-testid="add-pipeline-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-pipeline-button"]').text()).toContain('添加管道');
     expect(wrapper.find('[data-testid="asset-dq-workflow-actions"]').exists()).toBe(true);
     wrapper.unmount();
   });
@@ -329,6 +329,17 @@ describe('AssetDataQualityTab', () => {
     });
     await flushPromises();
     expect(wrapper.find('[data-testid="manage-button"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('uses official QualityTab inner tab labels and TabsLabel count badges from list paging', async () => {
+    const wrapper = await mountTab();
+    const testCasesTab = wrapper.get('[data-testid="test-cases"]');
+    expect(testCasesTab.text()).toContain('测试用例');
+    expect(testCasesTab.get('[data-testid="count"]').text()).toBe('3');
+    const pipelineTab = wrapper.get('[data-testid="asset-dq-workflows-tab"]');
+    expect(pipelineTab.get('[data-testid="pipeline"]').text()).toBe('工作流');
+    expect(pipelineTab.get('[data-testid="count"]').text()).toBe('1');
     wrapper.unmount();
   });
 });

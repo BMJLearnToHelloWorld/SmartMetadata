@@ -91,6 +91,15 @@ function customTitle(startTs?: number, endTs?: number): string {
   return props.officialLabels ? t('label.custom-range') : t('observability.incidents.customRange');
 }
 
+const customRangePlaceholders = computed(() =>
+  props.officialLabels
+    ? (['', ''] as [string, string])
+    : ([
+        t('observability.incidents.dateRangePlaceholder'),
+        t('observability.incidents.dateRangePlaceholder'),
+      ] as [string, string]),
+);
+
 const triggerLabel = computed(() => {
   if (props.rangeKey === CUSTOM_DATE_RANGE_KEY || customOpen.value) {
     return props.rangeTitle || customTitle(props.startTs, props.endTs);
@@ -165,14 +174,18 @@ function onCustomChange(dates: unknown): void {
         </Menu>
       </template>
     </Dropdown>
-    <DatePicker.RangePicker
+    <div
       v-if="customOpen"
-      :value="rangeValue ?? undefined"
-      :placeholder="[t('observability.incidents.dateRangePlaceholder'), t('observability.incidents.dateRangePlaceholder')]"
       data-testid="incident-date-custom-range"
-      style="min-width: 260px"
-      @change="onCustomChange"
-    />
+      :aria-label="officialLabels ? t('label.custom-range') : undefined"
+    >
+      <DatePicker.RangePicker
+        :value="rangeValue ?? undefined"
+        :placeholder="customRangePlaceholders"
+        style="min-width: 260px"
+        @change="onCustomChange"
+      />
+    </div>
   </div>
 </template>
 

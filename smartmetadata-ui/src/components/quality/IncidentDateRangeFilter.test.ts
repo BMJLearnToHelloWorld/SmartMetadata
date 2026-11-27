@@ -92,4 +92,28 @@ describe('IncidentDateRangeFilter', () => {
     expect(wrapper.get('[data-testid="date-picker-menu"]').text()).toBe('2026-02-10 -> 2026-02-12');
     wrapper.unmount();
   });
+
+  it('keeps officialLabels custom RangePicker free of incident-page placeholder wording', async () => {
+    const wrapper = mount(IncidentDateRangeFilter, {
+      props: {
+        officialLabels: true,
+        showSelectedCustomRange: true,
+        rangeKey: 'customRange',
+        startTs: dayjs('2026-02-10').startOf('day').valueOf(),
+        endTs: dayjs('2026-02-12').endOf('day').valueOf(),
+        testId: 'profiler-date-range',
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const picker = wrapper.get('[data-testid="incident-date-custom-range"]');
+    expect(picker.attributes('aria-label')).toBe('Custom Range');
+    expect(picker.text()).not.toMatch(/incident|date range|选择日期|日期范围/i);
+    const inputs = picker.findAll('input');
+    for (const input of inputs) {
+      expect(input.attributes('placeholder') ?? '').toBe('');
+    }
+    wrapper.unmount();
+  });
 });

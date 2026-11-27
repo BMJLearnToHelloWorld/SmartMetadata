@@ -76,7 +76,9 @@ const pipelines = ref<IngestionPipeline[]>([]);
 const pipelineTotal = ref(0);
 const pipelineError = ref('');
 const pipelineLoading = ref(false);
-const casesView = ref<{ openCreate: () => void } | null>(null);
+const casesView = ref<{ openCreate: () => void; total?: number } | null>(null);
+/** Official QualityTab TabsLabel count is testCasePaging.paging.total. */
+const listTestCaseTotal = ref(0);
 const pipelineDrawerOpen = ref(false);
 const editingPipeline = ref<IngestionPipeline | null>(null);
 const orchestratorUnavailable = ref(false);
@@ -85,7 +87,7 @@ const settingsOpen = ref(false);
 const testCaseViewAll = ref(false);
 const testCaseEditAll = ref(false);
 
-const testCasesCount = computed(() => summary.value.total);
+const testCasesCount = computed(() => listTestCaseTotal.value);
 const workflowCount = computed(() => pipelineTotal.value);
 const suiteForDrawer = computed<TestSuite | null>(() =>
   props.testSuiteFqn
@@ -94,27 +96,27 @@ const suiteForDrawer = computed<TestSuite | null>(() =>
 );
 
 const summaryCards = computed(() => [
-  { key: 'total', title: t('quality.asset.totalTests'), value: summary.value.total, testId: 'asset-dq-total' },
-  { key: 'success', title: t('quality.asset.successfulTests'), value: summary.value.success, testId: 'asset-dq-success' },
-  { key: 'failed', title: t('quality.asset.failedTests'), value: summary.value.failed, testId: 'asset-dq-failed' },
-  { key: 'aborted', title: t('quality.asset.abortedTests'), value: summary.value.aborted, testId: 'asset-dq-aborted' },
+  { key: 'total', title: t('label.test-plural-type', { type: t('label.total') }), value: summary.value.total, testId: 'asset-dq-total' },
+  { key: 'success', title: t('label.test-plural-type', { type: t('label.successful') }), value: summary.value.success, testId: 'asset-dq-success' },
+  { key: 'failed', title: t('label.test-plural-type', { type: t('label.failed') }), value: summary.value.failed, testId: 'asset-dq-failed' },
+  { key: 'aborted', title: t('label.test-plural-type', { type: t('label.aborted') }), value: summary.value.aborted, testId: 'asset-dq-aborted' },
 ]);
 
 const workflowColumns = computed(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('quality.testCases.title'), key: 'testCases' },
-  { title: t('quality.asset.count'), key: 'count', width: 220 },
-  { title: t('quality.asset.schedule'), key: 'schedule' },
-  { title: t('quality.testCases.lastRun'), key: 'recentRuns', width: 180 },
-  { title: t('crud.status'), key: 'status', width: 120 },
-  { title: t('crud.actions'), key: 'actions', width: 80 },
+  { title: t('label.name'), dataIndex: 'name', key: 'name' },
+  { title: t('label.test-case-plural'), key: 'testCases' },
+  { title: t('label.count'), key: 'count', width: 220 },
+  { title: t('label.schedule'), key: 'schedule' },
+  { title: t('label.recent-run-plural'), key: 'recentRuns', width: 180 },
+  { title: t('label.status'), key: 'status', width: 120 },
+  { title: t('label.action-plural'), key: 'actions', width: 80 },
 ]);
 
 /** Official TestSuitePipelineTab: length or label.all ("全部"). */
 function pipelineTestCases(pipeline: IngestionPipeline): string {
   const config = (pipeline.sourceConfig as { config?: { testCases?: string[] } } | undefined)?.config;
   const names = config?.testCases;
-  return names?.length ? String(names.length) : t('quality.asset.all');
+  return names?.length ? String(names.length) : t('label.all');
 }
 
 function pipelineSchedule(pipeline: IngestionPipeline): string | undefined {
@@ -324,11 +326,19 @@ onMounted(() => {
       <div class="asset-dq__toolbar" data-testid="asset-dq-toolbar">
         <Tabs v-model:activeKey="innerTab" size="small" data-testid="asset-dq-inner-tabs">
           <Tabs.TabPane key="testCases">
-            <template #tab>{{ t('quality.testCases.title') }} {{ testCasesCount }}</template>
+            <template #tab>
+              <span data-testid="test-cases" class="asset-dq__tab-label">
+                {{ t('label.test-case-plural') }}
+                <span data-testid="count" class="asset-dq__tab-count">{{ testCasesCount }}</span>
+              </span>
+            </template>
           </Tabs.TabPane>
           <Tabs.TabPane key="workflows">
             <template #tab>
-              <span data-testid="asset-dq-workflows-tab">{{ t('quality.asset.workflows') }} {{ workflowCount }}</span>
+              <span data-testid="asset-dq-workflows-tab" class="asset-dq__tab-label">
+                <span data-testid="pipeline">{{ t('label.pipeline-plural') }}</span>
+                <span data-testid="count" class="asset-dq__tab-count">{{ workflowCount }}</span>
+              </span>
             </template>
           </Tabs.TabPane>
         </Tabs>
@@ -355,10 +365,10 @@ onMounted(() => {
         </Dropdown>
         <Button
           v-if="innerTab === 'workflows' && testSuiteFqn && pipelines.length > 0"
-          data-testid="asset-dq-add-pipeline"
+          data-testid="add-pipeline-button"
           @click="openAddPipeline"
         >
-          {{ t('quality.asset.addPipeline') }}
+          {{ t('label.add-entity', { entity: t('label.pipeline') }) }}
         </Button>
       </div>
 
@@ -369,15 +379,20 @@ onMounted(() => {
         prefer-search
         :entity-fqn="entityFqn"
         data-testid="asset-dq-test-cases"
+        @update:total="listTestCaseTotal = $event ?? 0"
       />
 
       <div v-if="innerTab === 'workflows'" data-testid="asset-dq-workflows">
         <Typography.Text v-if="pipelineError" type="danger">{{ pipelineError }}</Typography.Text>
         <div v-if="!pipelineLoading && pipelines.length === 0" class="asset-dq__empty" data-testid="asset-dq-workflows-empty">
-          <div>{{ t('quality.asset.noPipelines') }}</div>
-          <Button v-if="testSuiteFqn" type="primary" data-testid="asset-dq-add-pipeline-empty" @click="openAddPipeline">
-            {{ t('quality.asset.addPipeline') }}
-          </Button>
+          <template v-if="testSuiteFqn">
+            <div>{{ t('message.no-pipelines-yet') }}</div>
+            <div class="asset-dq__empty-help">{{ t('message.no-table-pipeline') }}</div>
+            <Button type="primary" data-testid="add-pipeline-button" @click="openAddPipeline">
+              {{ t('label.add-entity', { entity: t('label.pipeline') }) }}
+            </Button>
+          </template>
+          <div v-else data-testid="no-data-placeholder">{{ t('message.no-test-suite-table-pipeline') }}</div>
         </div>
         <Table
           v-else
@@ -391,8 +406,8 @@ onMounted(() => {
           <template #headerCell="{ column }">
             <template v-if="column.key === 'testCases'">
               <span>{{ column.title }}</span>
-              <Tooltip :title="t('quality.asset.testCaseCountInfo')">
-                <QuestionCircleOutlined data-testid="asset-dq-test-cases-info" style="margin-left: 4px" />
+              <Tooltip :title="t('message.test-case-count-info')">
+                <QuestionCircleOutlined data-testid="test-cases-info-tooltip-icon" style="margin-left: 4px" />
               </Tooltip>
             </template>
           </template>

@@ -85,6 +85,7 @@ const loading = ref(false);
 const errorMessage = ref('');
 const cases = ref<TestCase[]>([]);
 const total = ref<number | undefined>();
+const emit = defineEmits<{ 'update:total': [total: number] }>();
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref(0);
@@ -387,11 +388,15 @@ async function onDeleteConfirm(mode: 'soft' | 'hard'): Promise<void> {
   }
 }
 
+watch(total, (value) => {
+  emit('update:total', value ?? 0);
+}, { immediate: true });
+
 onMounted(() => {
   void load();
 });
 
-defineExpose({ openCreate });
+defineExpose({ openCreate, total });
 </script>
 
 <template>
