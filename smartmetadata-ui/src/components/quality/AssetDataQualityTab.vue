@@ -11,12 +11,14 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Dropdown, Menu, Table, Tabs, Tag, Tooltip, Typography } from 'ant-design-vue';
-import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue';
+import { DownOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue';
 import { INGESTION_PIPELINE_FIELDS, getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { fetchTestCaseResultByTestSuiteId } from '@/api/dataQualityReports';
 import IngestionRecentRuns from '@/components/ingestion/IngestionRecentRuns.vue';
 import IngestionStatusCount from '@/components/ingestion/IngestionStatusCount.vue';
 import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
+import CustomMetricFormDrawer from '@/components/quality/CustomMetricFormDrawer.vue';
+import ProfilerSettingsModal from '@/features/crud/ProfilerSettingsModal.vue';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { usePermissionStore } from '@/stores/permissions';
 import TestCasesListView from '@/views/quality/TestCasesListView.vue';
@@ -35,6 +37,9 @@ const props = defineProps<{
   testSuiteFqn?: string;
   testSuiteId?: string;
   deleted?: boolean;
+  /** Official QualityTab is a table profiler surface; required to add a custom metric or open profiler settings. */
+  tableId?: string;
+  columns?: { name: string; dataType: string }[];
 }>();
 
 const { t } = useI18n();
@@ -52,6 +57,8 @@ const casesView = ref<{ openCreate: () => void } | null>(null);
 const pipelineDrawerOpen = ref(false);
 const editingPipeline = ref<IngestionPipeline | null>(null);
 const orchestratorUnavailable = ref(false);
+const metricDrawerOpen = ref(false);
+const settingsOpen = ref(false);
 
 const testCasesCount = computed(() => summary.value.total);
 const workflowCount = computed(() => pipelineTotal.value);
@@ -156,6 +163,9 @@ function onAddMenu({ key }: { key: string | number }): void {
     }
     innerTab.value = 'testCases';
   }
+  if (key === 'custom-metric') {
+    metricDrawerOpen.value = true;
+  }
 }
 
 function openAddPipeline(): void {
@@ -218,12 +228,17 @@ onMounted(() => {
               <Menu.Item key="test-case" data-testid="asset-dq-add-test-case">
                 {{ t('quality.asset.addTestCase') }}
               </Menu.Item>
-              <Menu.Item key="custom-metric" data-testid="asset-dq-add-custom-metric">
+              <Menu.Item v-if="tableId" key="custom-metric" data-testid="asset-dq-add-custom-metric" @click="metricDrawerOpen = true">
                 {{ t('quality.asset.addCustomMetric') }}
               </Menu.Item>
             </Menu>
           </template>
         </Dropdown>
+        <Tooltip v-if="tableId" :title="t('label.setting-plural')">
+          <Button data-testid="profiler-setting-btn" @click="settingsOpen = true">
+            <SettingOutlined />
+          </Button>
+        </Tooltip>
       </div>
     </div>
 
@@ -360,6 +375,20 @@ onMounted(() => {
       data-testid="asset-dq-incidents"
     />
 
+    <CustomMetricFormDrawer
+      :open="metricDrawerOpen"
+      :table-id="tableId"
+      @close="metricDrawerOpen = false"
+      @success="metricDrawerOpen = false"
+    />
+    <ProfilerSettingsModal
+      v-if="tableId"
+      :open="settingsOpen"
+      :table-id="tableId"
+      :columns="columns ?? []"
+      @cancel="settingsOpen = false"
+      @saved="settingsOpen = false"
+    />
     <TestSuitePipelineFormDrawer
       :open="pipelineDrawerOpen"
       :suite="suiteForDrawer"
@@ -394,6 +423,9 @@ onMounted(() => {
   gap: 12px;
 }
 .asset-dq__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding-top: 4px;
 }
 .asset-dq__cards {

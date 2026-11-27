@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Dropdown, Input, Menu, Select, Switch, message } from 'ant-design-vue';
+import { Button, Dropdown, Menu, Select, Switch, message } from 'ant-design-vue';
 import { deleteTestCase, exportTestCasesInCSV, listTestCases, listTestCasesBySearch } from '@/api/testCases';
 import { notifyCsvJobsRefresh } from '@/api/csvJobs';
 import { ApiError } from '@/api/client';
@@ -21,6 +21,7 @@ import {
   fetchDataProductFilterOptions,
   fetchServiceFilterOptions,
   fetchTableFilterOptions,
+  fetchTagFilterOptions,
   fetchTierFilterOptions,
 } from '@/quality/testCaseFilterOptions';
 import type { IncidentDateRange } from '@/quality/incidentDatePresets';
@@ -514,12 +515,13 @@ defineExpose({ openCreate });
           {{ status }}
         </Select.Option>
       </Select>
-      <Input
+      <TestCaseFilterAsyncSelect
         v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tags)"
-        v-model:value="tagFilter"
+        v-model="tagFilter"
         :placeholder="t('quality.testCases.tagFilter')"
-        data-testid="test-cases-tag-filter"
-        style="width: 160px"
+        test-id="test-cases-tag-filter"
+        width="160px"
+        :fetch-options="fetchTagFilterOptions"
         @change="onFilterChange"
       />
       <TestCaseFilterAsyncSelect

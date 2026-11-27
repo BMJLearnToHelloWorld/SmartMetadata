@@ -6,11 +6,12 @@
  * table / service / dataProduct: debounced searchQuery against the
  * official indexes, value keys fullyQualifiedName / name /
  * fullyQualifiedName. tier: one-shot getTags(parent=Tier); the control
- * is searchable locally. tags stay a typed input unless a later change
- * lands official tagClassBase.getTags.
+ * is searchable locally. tags: official tagClassBase.getTags against
+ * index=tag (PAGE_SIZE 10), excluding Tier and Certification.
  */
 import { listTierTags } from '@/api/tags';
 import { searchAssets } from '@/api/search';
+import { escapeESReservedCharacters } from '@/catalog/escapeESReservedCharacters';
 import type { SearchHit } from '@/types/api';
 
 /** Official PAGE_SIZE_BASE used by fetchSearchOptions. */
@@ -20,7 +21,30 @@ export const TEST_CASE_FILTER_SEARCH_INDEX = {
   table: 'table',
   service: 'databaseService',
   dataProduct: 'dataProduct',
+  tag: 'tag',
 } as const;
+
+/** Official constants.ts PAGE_SIZE used by tagClassBase.getTags. */
+export const TAG_FILTER_PAGE_SIZE = 10;
+
+export const TIER_CATEGORY = 'Tier';
+export const CERTIFICATION_CATEGORY = 'Certification';
+
+/**
+ * Official Tag.constants queryFilterToRemoveSomeClassification merged
+ * with getTermQuery({ disabled: 'false' }) as tagClassBase.getTags does.
+ */
+export const TAG_FILTER_QUERY_FILTER = JSON.stringify({
+  query: {
+    bool: {
+      must: [{ term: { disabled: 'false' } }],
+      must_not: [
+        { prefix: { fullyQualifiedName: `${CERTIFICATION_CATEGORY}.` } },
+        { prefix: { fullyQualifiedName: `${TIER_CATEGORY}.` } },
+      ],
+    },
+  },
+});
 
 export interface TestCaseFilterOption {
   value: string;
@@ -96,6 +120,44 @@ export async function fetchTierFilterOptions(): Promise<TestCaseFilterOption[]> 
       const fqn = tag.fullyQualifiedName || tag.name;
       return { value: fqn, label, subLabel: fqn };
     });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Official tagClassBase.getTags query: *{escaped}* (empty → **).
+ * URI encoding is left to apiRequest so the q is not double-encoded.
+ */
+export function tagFilterSearchQuery(search: string): string {
+  return `*${escapeESReservedCharacters(search.trim())}*`;
+}
+
+function isExcludedTag(
+  hit: Pick<SearchHit, 'fullyQualifiedName' | 'name'> & { classification?: { name?: string } },
+): boolean {
+  const fqn = hit.fullyQualifiedName || hit.name || '';
+  return (
+    hit.classification?.name === TIER_CATEGORY ||
+    fqn.startsWith(`${TIER_CATEGORY}.`) ||
+    fqn.startsWith(`${CERTIFICATION_CATEGORY}.`)
+  );
+}
+
+/** Official fetchTagOptions: tagClassBase.getTags, drop Tier, value/label = FQN. */
+export async function fetchTagFilterOptions(search = ''): Promise<TestCaseFilterOption[]> {
+  try {
+    const page = await searchAssets(tagFilterSearchQuery(search), 0, TAG_FILTER_PAGE_SIZE, {
+      index: TEST_CASE_FILTER_SEARCH_INDEX.tag,
+      includeAggregations: false,
+      query_filter: TAG_FILTER_QUERY_FILTER,
+    });
+    return page.hits
+      .filter((hit) => !isExcludedTag(hit))
+      .map((hit) => {
+        const fqn = hit.fullyQualifiedName || hit.name;
+        return { value: fqn, label: fqn };
+      });
   } catch {
     return [];
   }

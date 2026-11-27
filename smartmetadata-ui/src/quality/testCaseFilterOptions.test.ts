@@ -2,12 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   TEST_CASE_FILTER_OPTION_PAGE_SIZE,
   TEST_CASE_FILTER_SEARCH_INDEX,
+  CERTIFICATION_CATEGORY,
+  TAG_FILTER_PAGE_SIZE,
+  TAG_FILTER_QUERY_FILTER,
+  TIER_CATEGORY,
   fetchDataProductFilterOptions,
   fetchServiceFilterOptions,
   fetchTableFilterOptions,
+  fetchTagFilterOptions,
   fetchTierFilterOptions,
   filterSearchQuery,
   mapSearchHitOption,
+  tagFilterSearchQuery,
 } from './testCaseFilterOptions';
 
 function jsonResponse(body: unknown): Response {
@@ -24,6 +30,10 @@ describe('testCaseFilterOptions (official useTestCaseFilterOptions)', () => {
     expect(TEST_CASE_FILTER_SEARCH_INDEX.table).toBe('table');
     expect(TEST_CASE_FILTER_SEARCH_INDEX.service).toBe('databaseService');
     expect(TEST_CASE_FILTER_SEARCH_INDEX.dataProduct).toBe('dataProduct');
+    expect(TEST_CASE_FILTER_SEARCH_INDEX.tag).toBe('tag');
+    expect(TAG_FILTER_PAGE_SIZE).toBe(10);
+    expect(TIER_CATEGORY).toBe('Tier');
+    expect(CERTIFICATION_CATEGORY).toBe('Certification');
   });
 
   it('wraps a typed term in official *term* wildcards and keeps * for an empty term', () => {
@@ -101,5 +111,37 @@ describe('testCaseFilterOptions (official useTestCaseFilterOptions)', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
     await expect(fetchTableFilterOptions('x')).resolves.toEqual([]);
     await expect(fetchTierFilterOptions()).resolves.toEqual([]);
+    await expect(fetchTagFilterOptions('x')).resolves.toEqual([]);
+  });
+
+  it('wraps official tag search as *term* and ** for an empty term', () => {
+    expect(tagFilterSearchQuery('')).toBe('**');
+    expect(tagFilterSearchQuery('pii')).toBe('*pii*');
+    expect(tagFilterSearchQuery('a:b')).toBe('*a\\:b*');
+  });
+
+  it('searches tags through official index, page size, query_filter, and excludes Tier', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://local.test');
+      expect(url.pathname).toBe('/api/v1/search/query');
+      expect(url.searchParams.get('index')).toBe('tag');
+      expect(url.searchParams.get('size')).toBe('10');
+      expect(url.searchParams.get('q')).toBe('*pii*');
+      const filter = JSON.parse(String(url.searchParams.get('query_filter')));
+      expect(filter).toEqual(JSON.parse(TAG_FILTER_QUERY_FILTER));
+      return jsonResponse({
+        hits: {
+          total: { value: 3 },
+          hits: [
+            { _source: { name: 'Sensitive', fullyQualifiedName: 'PII.Sensitive' } },
+            { _source: { name: 'Tier1', fullyQualifiedName: 'Tier.Tier1', classification: { name: 'Tier' } } },
+            { _source: { name: 'Gold', fullyQualifiedName: 'Certification.Gold' } },
+          ],
+        },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const options = await fetchTagFilterOptions('pii');
+    expect(options).toEqual([{ value: 'PII.Sensitive', label: 'PII.Sensitive' }]);
   });
 });

@@ -2305,6 +2305,8 @@ onMounted(() => {
               :test-suite-fqn="asset.testSuite?.fullyQualifiedName"
               :test-suite-id="asset.testSuite?.id"
               :deleted="Boolean(asset.deleted)"
+              :table-id="asset.id"
+              :columns="asset.schemaRows"
             />
           </template>
       </template>

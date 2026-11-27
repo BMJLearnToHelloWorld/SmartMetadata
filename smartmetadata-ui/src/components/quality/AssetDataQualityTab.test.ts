@@ -6,6 +6,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetDataQualityTab from '@/components/quality/AssetDataQualityTab.vue';
 import { createTestI18n } from '@/test/i18n';
 
+vi.mock('@/utils/codeMirrorUtils', () => ({
+  CSMode: { SQL: 'sql' },
+}));
+
+vi.mock('@/components/shared/SmCodeEditor.vue', () => ({
+  default: {
+    props: ['value', 'variant', 'mode', 'showCopyButton', 'className'],
+    emits: ['change'],
+    template: '<textarea data-testid="sql-editor-stub" :value="value" @input="$emit(\'change\', $event.target.value)" />',
+  },
+}));
+
+vi.mock('@/features/crud/ProfilerSettingsModal.vue', () => ({
+  default: {
+    props: ['open', 'tableId', 'columns'],
+    template: '<div v-if="open" data-testid="profiler-settings-modal-stub" />',
+  },
+}));
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
 }
@@ -24,8 +43,9 @@ async function mountTab() {
   await router.push('/');
   await router.isReady();
   const wrapper = mount(AssetDataQualityTab, {
-    props: { entityFqn: 'svc.db.schema.orders', testSuiteFqn: 'suite.orders', testSuiteId: 'suite-id' },
+    props: { entityFqn: 'svc.db.schema.orders', testSuiteFqn: 'suite.orders', testSuiteId: 'suite-id', tableId: 'tbl-1', columns: [{ name: 'id', dataType: 'INT' }] },
     global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    attachTo: document.body,
   });
   await flushPromises();
   return wrapper;
@@ -85,6 +105,7 @@ describe('AssetDataQualityTab', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    document.body.querySelectorAll('.ant-drawer, .ant-dropdown, .ant-message').forEach((node) => node.remove());
   });
 
   it('renders official summary cards and 数据质控 / 事件 tabs', async () => {
@@ -151,6 +172,54 @@ describe('AssetDataQualityTab', () => {
     expect(wrapper.find('[data-testid="asset-dq-add-pipeline"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-dq-add-pipeline"]').text()).toContain('添加管道');
     expect(wrapper.find('[data-testid="asset-dq-workflow-actions"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('opens the official table-level custom metric form from 添加 自定义指标', async () => {
+    const wrapper = await mountTab();
+    await wrapper.get('[data-testid="asset-dq-add"]').trigger('click');
+    await flushPromises();
+    const metricItem = document.body.querySelector('[data-testid="asset-dq-add-custom-metric"]') as HTMLElement | null;
+    expect(metricItem).not.toBeNull();
+    const item = (metricItem?.closest('.ant-dropdown-menu-item') as HTMLElement | null) ?? metricItem;
+    item?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="custom-metric-form"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('添加数据表指标');
+    wrapper.unmount();
+  });
+
+  it('shows the official profiler settings gear on the quality header', async () => {
+    const wrapper = await mountTab();
+    const gear = wrapper.find('[data-testid="profiler-setting-btn"]');
+    expect(gear.exists()).toBe(true);
+    await gear.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="profiler-settings-modal-stub"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the official gear and custom-metric item when the asset is deleted', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div />' } },
+        { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
+      ],
+    });
+    await router.push('/');
+    await router.isReady();
+    const wrapper = mount(AssetDataQualityTab, {
+      props: { entityFqn: 'svc.db.schema.orders', tableId: 'tbl-1', deleted: true },
+      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="profiler-setting-btn"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-dq-add"]').exists()).toBe(false);
     wrapper.unmount();
   });
 });

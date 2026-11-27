@@ -33,6 +33,8 @@ const props = withDefaults(
     showOk?: boolean;
     widthKey?: DrawerWidthKey;
     testId?: string;
+    okTestId?: string;
+    cancelTestId?: string;
     maskClosable?: boolean;
     keyboard?: boolean;
   }>(),
@@ -44,6 +46,8 @@ const props = withDefaults(
     showOk: true,
     widthKey: 'form',
     testId: 'sm-drawer',
+    okTestId: undefined,
+    cancelTestId: undefined,
     maskClosable: true,
     keyboard: true,
   },
@@ -84,11 +88,11 @@ watch(
     <slot />
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
-        <Button :data-testid="`${testId}-cancel`" @click="close">{{ cancelText ?? t('crud.cancel') }}</Button>
+        <Button :data-testid="cancelTestId ?? `${testId}-cancel`" @click="close">{{ cancelText ?? t('crud.cancel') }}</Button>
         <Button
           v-if="showOk"
           type="primary"
-          :data-testid="`${testId}-save`"
+          :data-testid="okTestId ?? `${testId}-save`"
           :loading="confirmLoading"
           :disabled="okDisabled"
           @click="emit('ok')"
