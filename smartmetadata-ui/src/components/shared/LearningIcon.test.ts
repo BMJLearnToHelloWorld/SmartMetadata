@@ -34,6 +34,19 @@ function mountIcon() {
   });
 }
 
+async function waitForResourcesButton(): Promise<HTMLButtonElement> {
+  const start = Date.now();
+  while (Date.now() - start < 3000) {
+    const button = document.querySelector('[data-testid="learning-resources-button"]');
+    if (button) {
+      return button as HTMLButtonElement;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await nextTick();
+  }
+  throw new Error('Timed out waiting for learning-resources-button');
+}
+
 describe('official LearningIcon', () => {
   it('shows the official learning-icon when resources exist', async () => {
     getLearningResourcesByContext.mockReset().mockResolvedValue({ data: [{}], total: 2 });
@@ -79,11 +92,8 @@ describe('official LearningIcon', () => {
     const wrapper = mountIcon();
     await flushPromises();
     await wrapper.get('[data-testid="learning-icon"]').trigger('mouseenter');
-    await nextTick();
-    await flushPromises();
-    const button = document.querySelector('[data-testid="learning-resources-button"]');
-    expect(button).not.toBeNull();
-    (button as HTMLButtonElement).click();
+    const button = await waitForResourcesButton();
+    button.click();
     await flushPromises();
     expect(wrapper.find('[data-testid="learning-drawer"]').exists()).toBe(true);
     wrapper.unmount();

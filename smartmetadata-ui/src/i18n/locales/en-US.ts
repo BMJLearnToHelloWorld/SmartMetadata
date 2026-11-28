@@ -1187,9 +1187,7 @@ const enUS = {
     'export-successful': 'Export completed successfully!',
     exporting: 'Exporting...',
     'external-test-cannot-be-toggled':
-      'External test definitions are managed outside {{brandName}} and cannot be enabled or disabled here. These tests are executed by their respective platforms (e.g., dbt, Great Expectations).',
-    'external-test-cannot-be-toggled':
-      'External test definitions are managed outside {{brandName}} and cannot be enabled or disabled here. These tests are executed by their respective platforms (e.g., dbt, Great Expectations).',
+      'External test definitions are managed outside {brandName} and cannot be enabled or disabled here. These tests are executed by their respective platforms (e.g., dbt, Great Expectations).',
     'external-destination-selection': 'Only external destinations can be tested.',
     'failed-events-description': 'Count of failed events for specific alert.',
     'field-text-is-invalid': '{fieldText} is invalid.',

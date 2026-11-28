@@ -1174,7 +1174,7 @@ const zhCN = {
     'export-entity-help': '以 CSV 文件格式导出下载所有{entity}, 并可与团队共享。',
     'export-successful': '导出成功！',
     exporting: '正在导出...',
-    'external-test-cannot-be-toggled': '外部测试定义在{{brandName}}外部管理，无法在此处启用或禁用。这些测试由各自的平台执行（例如 dbt、Great Expectations）。',
+    'external-test-cannot-be-toggled': '外部测试定义在{brandName}外部管理，无法在此处启用或禁用。这些测试由各自的平台执行（例如 dbt、Great Expectations）。',
     'external-destination-selection': '只能测试外部目标。',
     'failed-events-description': '特定告警的失败事件计数。',
     'field-text-is-invalid': '{fieldText}无效',

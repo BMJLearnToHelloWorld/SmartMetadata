@@ -354,6 +354,11 @@ describe('AssetDetailView governance', () => {
   it('plots profiler history, usage, and latest test status from real GET payloads', async () => {
     const { wrapper } = await mountView('table', 'svc.db.schema.orders', { tab: 'profiler' });
     expect(wrapper.find('[data-testid="table-profiler-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-profiler-chart-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-profiler-chart-metrics"]').exists()).toBe(true);
+    const rowChart = wrapper.find('[data-testid="table-profiler-row-count-chart"]');
+    expect(rowChart.exists()).toBe(true);
+    expect(rowChart.attributes('data-points')).not.toBe('0');
     // Official TableProfilerChart does not host the test-status chart;
     // tests live on QualityTab (AssetDataQualityTab).
     expect(wrapper.find('[data-testid="asset-test-status-chart"]').exists()).toBe(false);

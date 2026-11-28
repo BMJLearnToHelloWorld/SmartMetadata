@@ -6,7 +6,7 @@
   Official popover is controlled (mouseenter open, 120ms mouseleave close).
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Popover } from 'ant-design-vue';
 import { getLearningResourcesByContext } from '@/api/learningResources';
@@ -24,6 +24,8 @@ const resourceCount = ref(0);
 const isLoading = ref(true);
 const hasError = ref(false);
 const drawerOpen = ref(false);
+const popoverOpen = ref(false);
+let closeTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const hidden = computed(
   () => hasError.value || (resourceCount.value === 0 && !isLoading.value),
@@ -33,7 +35,37 @@ const resourceLabel = computed(
   () => `${resourceCount.value} ${t('label.resource-plural').toLowerCase()}`,
 );
 
+function clearCloseTimeout(): void {
+  if (closeTimeout) {
+    clearTimeout(closeTimeout);
+    closeTimeout = null;
+  }
+}
+
+function openPopover(): void {
+  clearCloseTimeout();
+  popoverOpen.value = true;
+}
+
+function scheduleClosePopover(): void {
+  clearCloseTimeout();
+  closeTimeout = setTimeout(() => {
+    popoverOpen.value = false;
+    closeTimeout = null;
+  }, 120);
+}
+
+function onPopoverOpenChange(open: boolean): void {
+  if (!open) {
+    clearCloseTimeout();
+    popoverOpen.value = false;
+  }
+}
+
 async function fetchResourceCount(): Promise<void> {
+  if (resourceCount.value > 0 || hasError.value) {
+    return;
+  }
   isLoading.value = true;
   try {
     const response = await getLearningResourcesByContext(props.pageId, { limit: 1 });
@@ -47,6 +79,8 @@ async function fetchResourceCount(): Promise<void> {
 }
 
 function openDrawer(): void {
+  clearCloseTimeout();
+  popoverOpen.value = false;
   drawerOpen.value = true;
 }
 
@@ -58,13 +92,25 @@ onMounted(() => {
   void fetchResourceCount();
 });
 
+onBeforeUnmount(() => {
+  clearCloseTimeout();
+});
 </script>
 
 <template>
   <template v-if="!hidden">
-    <Popover trigger="hover" :mouse-enter-delay="0" :mouse-leave-delay="0.12" placement="bottomLeft">
+    <Popover
+      :open="popoverOpen"
+      placement="bottomLeft"
+      :destroy-tooltip-on-hide="false"
+      @openChange="onPopoverOpenChange"
+    >
       <template #content>
-        <div class="learning-icon__popover">
+        <div
+          class="learning-icon__popover"
+          @mouseenter="openPopover"
+          @mouseleave="scheduleClosePopover"
+        >
           <span>{{ t('label.learn-how-this-feature-works') }}</span>
           <Button
             type="text"
@@ -81,6 +127,8 @@ onMounted(() => {
         size="small"
         :aria-label="t('label.learn-how-this-feature-works')"
         data-testid="learning-icon"
+        @mouseenter="openPopover"
+        @mouseleave="scheduleClosePopover"
         @click="openDrawer"
       >
         <SmIcon icon-key="learning" />
