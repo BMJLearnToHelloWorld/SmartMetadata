@@ -181,7 +181,7 @@ describe('TestDefinitionsListView', () => {
   });
 
   it('applies entity-type filter immediately and clears all filters (pin TestDefinitionFilterBar)', async () => {
-    const { wrapper } = await mountView();
+    const { wrapper, router } = await mountView();
     vi.mocked(fetch).mockClear();
     const bar = wrapper.findComponent({ name: 'TestDefinitionFilterBar' });
     await bar.vm.$emit('update:entityType', 'TABLE');
@@ -189,10 +189,40 @@ describe('TestDefinitionsListView', () => {
     await flushPromises();
     const withEntity = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('testDefinitions'));
     expect(decodeURIComponent(String(withEntity?.[0] ?? ''))).toContain('entityType=TABLE');
+    expect(router.currentRoute.value.query.entityType).toBe('TABLE');
     await wrapper.get('[data-testid="clear-all-filter-btn"]').trigger('click');
     await flushPromises();
     const afterClear = vi.mocked(fetch).mock.calls.findLast((call) => String(call[0]).includes('testDefinitions'));
     expect(decodeURIComponent(String(afterClear?.[0] ?? ''))).not.toMatch(/entityType=/);
+    expect(router.currentRoute.value.query.entityType).toBeUndefined();
+  });
+
+  it('hydrates filters from the URL like official useTableFilters', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/quality/test-definitions', name: 'quality-test-definitions', component: TestDefinitionsListView },
+      ],
+    });
+    await router.push({
+      path: '/quality/test-definitions',
+      query: { entityType: 'COLUMN', testPlatforms: 'dbt', q: 'custom' },
+    });
+    await router.isReady();
+    vi.mocked(fetch).mockClear();
+    const wrapper = mount(TestDefinitionsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    });
+    await flushPromises();
+    await flushPromises();
+    const url = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('testDefinitions'));
+    const decoded = decodeURIComponent(String(url?.[0] ?? ''));
+    expect(decoded).toContain('entityType=COLUMN');
+    expect(decoded).toContain('testPlatform=dbt');
+    expect(decoded).toContain('q=custom');
+    wrapper.unmount();
   });
 
   it('hides create CTA when Create is denied', async () => {

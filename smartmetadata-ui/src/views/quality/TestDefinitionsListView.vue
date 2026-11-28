@@ -5,8 +5,9 @@
   测试库), filters, columns, enabled toggle, edit/delete, page size 15.
 -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 import { getDerivedPermissionFlags } from '@/api/permissions';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { Button, Input, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
@@ -39,6 +40,10 @@ import {
   pageCount,
 } from '@/quality/testLibrary';
 import {
+  mergeTestDefinitionListQuery,
+  parseTestDefinitionListQuery,
+} from '@/quality/testDefinitionListUrl';
+import {
   createEmptyTestDefinitionForm,
   toCreateTestDefinitionRequest,
   type TestDefinitionFormValues,
@@ -46,6 +51,8 @@ import {
 import type { TestDefinition } from '@/types/quality';
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const permissionStore = usePermissionStore();
 type PermState = 'loading' | 'denied' | 'error' | 'ready';
 const permState = ref<PermState>('loading');
@@ -60,10 +67,13 @@ const cursorAfter = ref<string | undefined>();
 const cursorBefore = ref<string | undefined>();
 const currentPage = ref(1);
 const pageSize = ref(TEST_LIBRARY_PAGE_SIZE);
-const entityType = ref<string | undefined>();
-const testPlatform = ref<string | undefined>();
 const searchInput = ref('');
-const searchQuery = ref('');
+
+const listQuery = computed(() =>
+  parseTestDefinitionListQuery(route.query as Record<string, unknown>),
+);
+const entityType = computed(() => listQuery.value.entityType);
+const testPlatform = computed(() => listQuery.value.testPlatform);
 /** Official useListSearchInput SEARCH_DEBOUNCE_MS. */
 const SEARCH_DEBOUNCE_MS = 300;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -95,19 +105,45 @@ const totalPages = computed(() => pageCount(total.value, pageSize.value));
 const hasPrev = computed(() => currentPage.value > 1);
 const hasNext = computed(() => currentPage.value < totalPages.value || Boolean(pageAfter.value));
 
+function resetPagingState(): void {
+  currentPage.value = 1;
+  cursorAfter.value = undefined;
+  cursorBefore.value = undefined;
+}
+
+function applyListUrlPatch(
+  patch: Record<string, string | number | boolean | string[] | null | undefined>,
+): void {
+  resetPagingState();
+  void router.replace({
+    query: mergeTestDefinitionListQuery(route.query as Record<string, unknown>, patch),
+  });
+}
+
+watch(
+  () => listQuery.value.q,
+  (q) => {
+    if (q !== searchInput.value) {
+      searchInput.value = q;
+    }
+  },
+  { immediate: true },
+);
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
+    const query = listQuery.value;
     const page = await listTestDefinitions({
       limit: pageSize.value,
       after: cursorBefore.value ? undefined : cursorAfter.value,
       before: cursorBefore.value,
-      entityType: entityType.value,
-      testPlatform: testPlatform.value,
-      q: searchQuery.value.trim() || undefined,
-      sortField: 'displayName',
-      sortOrder: 'asc',
+      entityType: query.entityType,
+      testPlatform: query.testPlatform,
+      q: query.q.trim() || undefined,
+      sortField: query.sortField,
+      sortOrder: query.sortOrder,
     });
     definitions.value = page.data;
     total.value = page.total ?? page.data.length;
@@ -122,18 +158,13 @@ async function load(): Promise<void> {
 }
 
 function resetAndLoad(): void {
-  currentPage.value = 1;
-  cursorAfter.value = undefined;
-  cursorBefore.value = undefined;
+  resetPagingState();
   void load();
 }
 
 function applySearch(value: string, immediate = false): void {
   searchInput.value = value;
-  const run = () => {
-    searchQuery.value = value;
-    resetAndLoad();
-  };
+  const run = () => applyListUrlPatch({ q: value || null });
   if (searchTimer) {
     clearTimeout(searchTimer);
     searchTimer = undefined;
@@ -312,21 +343,29 @@ async function checkViewPermission(): Promise<boolean> {
 
 function clearAllFilters(): void {
   searchInput.value = '';
-  searchQuery.value = '';
-  entityType.value = undefined;
-  testPlatform.value = undefined;
-  resetAndLoad();
+  applyListUrlPatch({
+    q: null,
+    entityType: null,
+    testPlatforms: null,
+  });
 }
 
 function onEntityTypeChange(value: string | undefined): void {
-  entityType.value = value;
-  resetAndLoad();
+  applyListUrlPatch({ entityType: value ?? null });
 }
 
 function onTestPlatformChange(value: string | undefined): void {
-  testPlatform.value = value;
-  resetAndLoad();
+  applyListUrlPatch({ testPlatforms: value ?? null });
 }
+
+watch(
+  () => route.query,
+  () => {
+    if (permState.value === 'ready') {
+      void load();
+    }
+  },
+);
 
 onMounted(async () => {
   if (await checkViewPermission()) {
