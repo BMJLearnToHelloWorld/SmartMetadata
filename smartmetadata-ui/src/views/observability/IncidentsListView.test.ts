@@ -336,6 +336,11 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="incident-status-inc2"]').trigger('click');
     await flushPromises();
+    expect(document.querySelector('[data-testid="assignee-search-input"]')).not.toBeNull();
+    const back = document.querySelector('.anticon-arrow-left')?.closest('button') as HTMLElement | undefined;
+    expect(back).toBeDefined();
+    back?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
     expect(document.querySelector('[data-testid="incident-status-option-Assigned"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="incident-status-option-Resolved"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="incident-status-option-New"]')).toBeNull();
@@ -361,18 +366,19 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await flushPromises();
     await clickInBody('incident-status-option-Resolved');
     await flushPromises();
-    expect(document.querySelector('[data-testid="incident-status-modal-reason"]')).not.toBeNull();
-    const ok = modalOkButton();
-    expect(ok?.classList.contains('ant-btn-disabled') || ok?.hasAttribute('disabled')).toBe(true);
-    await openSelectInBody('incident-status-modal-reason');
-    await clickOptionByText('FalsePositive');
+    expect(document.querySelector('[data-testid="reason-chip-FalsePositive"]')).not.toBeNull();
+    const submit = document.body.querySelector(
+      '[data-testid="submit-resolved-popover-button"]',
+    ) as HTMLButtonElement | null;
+    expect(submit?.disabled).toBe(true);
+    await clickInBody('reason-chip-FalsePositive');
     const comment = document.body.querySelector(
-      '[data-testid="incident-status-modal-comment"]',
+      '[data-testid="resolved-comment-textarea"]',
     ) as HTMLTextAreaElement | null;
     expect(comment).not.toBeNull();
     await new DOMWrapper(comment as HTMLTextAreaElement).setValue('Expected empty overnight');
     await flushPromises();
-    modalOkButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await clickInBody('submit-resolved-popover-button');
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith('task-1', {
       transitionId: 'resolve',
@@ -384,17 +390,20 @@ describe('IncidentsListView (W2-2 classic list)', () => {
   });
 
   it('opens the assignee picker for the Assigned target and assigns on confirm', async () => {
+    searchUsersMock.mockResolvedValue({
+      data: [{ id: 'alice', name: 'alice', displayName: 'Alice', fullyQualifiedName: 'alice' }],
+      total: 1,
+    });
     getByStateId.mockResolvedValueOnce({ ...inc1, testCaseResolutionStatusType: 'Assigned' });
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="incident-status-inc1"]').trigger('click');
     await flushPromises();
     await clickInBody('incident-status-option-Assigned');
-    await flushPromises();
-    expect(document.querySelector('[data-testid="incident-status-modal-assignee"]')).not.toBeNull();
-    await openSelectInBody('incident-status-modal-assignee');
-    await clickOptionByText('Alice');
-    await flushPromises();
-    modalOkButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await drain();
+    expect(document.querySelector('[data-testid="assignee-search-input"]')).not.toBeNull();
+    expect(searchUsersMock).toHaveBeenCalled();
+    await clickInBody('alice');
+    await clickInBody('submit-assignee-popover-button');
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith('task-1', {
       transitionId: 'assign',
@@ -489,6 +498,9 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/test-case/svc.db.schema.orders.row_count');
     expect(router.currentRoute.value.name).toBe('quality-test-case');
+    const historyState = (router.options.history.state as { breadcrumbData?: { name: string; url: string }[] })
+      .breadcrumbData;
+    expect(historyState).toEqual([{ name: 'Incident Manager', url: '/incident-manager' }]);
   });
 
   it('opens the table asset route with the official profiler Data Quality sub-tab from the table link', async () => {

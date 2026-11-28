@@ -27,9 +27,7 @@ import IncidentAssigneePicker from '@/components/observability/IncidentAssigneeP
 import IncidentAssigneeFilterPicker from '@/components/observability/IncidentAssigneeFilterPicker.vue';
 import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
 import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
-import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
 import CompactDateTimeDisplay from '@/components/shared/CompactDateTimeDisplay.vue';
-import FormModal from '@/components/shared/FormModal.vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import { incidentStatusLabel } from '@/features/crud/incidentStatus';
@@ -66,7 +64,6 @@ const domainStore = useDomainStore();
  */
 const PAGE_SIZE = 10;
 
-const RESOLVE_REASONS = ['FalsePositive', 'MissingData', 'Duplicates', 'OutOfBounds', 'Other'] as const;
 const STATUS_OPTIONS: IncidentStatus[] = ['New', 'Ack', 'Assigned', 'Resolved'];
 const DATE_FIELD_OPTIONS = ['timestamp', 'updatedAt'] as const;
 
@@ -125,16 +122,6 @@ const selectedAssignee = ref<EntityRef[]>([]);
 const rowPermissions = ref<Map<string, boolean>>(new Map());
 const rowPermsLoading = ref(false);
 const writingById = ref<Record<string, 'status' | 'severity' | 'assignee'>>({});
-
-const statusModal = ref<{ record: TestIncident; mode: 'assignee' | 'resolved' } | null>(null);
-const statusModalAssignee = ref<EntityRef[]>([]);
-const statusModalReason = ref('');
-const statusModalComment = ref('');
-const statusModalSaving = ref(false);
-
-const assigneeModal = ref<TestIncident | null>(null);
-const assigneeModalSelection = ref<EntityRef[]>([]);
-const assigneeModalSaving = ref(false);
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -385,15 +372,36 @@ async function loadAll(): Promise<void> {
   await load();
 }
 
+function testCaseLinkBreadcrumb(): { name: string; url: string }[] {
+  if (props.embedded && props.originEntityFqn) {
+    return [
+      {
+        name: entityNameFromFqn(props.originEntityFqn),
+        url: getEntityDetailsPath(
+          'table',
+          props.originEntityFqn,
+          ENTITY_TAB_PROFILER,
+          'data-quality',
+        ),
+      },
+    ];
+  }
+  return [{ name: t('nav.incidentManager'), url: '/incident-manager' }];
+}
+
 function openTestCase(record: TestIncident): void {
+  const breadcrumbData = testCaseLinkBreadcrumb();
   const fqn = testCaseFqnOf(record);
   if (fqn !== undefined) {
-    void router.push(`/test-case/${encodeURIComponent(fqn)}`);
+    void router.push({
+      path: `/test-case/${encodeURIComponent(fqn)}`,
+      state: { breadcrumbData },
+    });
     return;
   }
   const id = record.testCaseReference?.id;
   if (id !== undefined) {
-    void router.push({ name: 'quality-test-case', params: { id } });
+    void router.push({ name: 'quality-test-case', params: { id }, state: { breadcrumbData } });
   }
 }
 
@@ -459,50 +467,12 @@ async function submitStatus(
   }
 }
 
-function onStatusMenuSelect(record: TestIncident, target: IncidentStatus): void {
-  if (target === 'Assigned') {
-    statusModalAssignee.value = [];
-    statusModal.value = { record, mode: 'assignee' };
-    return;
-  }
-  if (target === 'Resolved') {
-    statusModalReason.value = '';
-    statusModalComment.value = '';
-    statusModal.value = { record, mode: 'resolved' };
-    return;
-  }
-  void submitStatus(record, target);
-}
-
-const statusModalOkDisabled = computed(() => {
-  if (statusModal.value === null) return true;
-  if (statusModal.value.mode === 'assignee') return statusModalAssignee.value.length === 0;
-  return statusModalReason.value === '' || statusModalComment.value.trim() === '';
-});
-
-async function onStatusModalOk(): Promise<void> {
-  const modal = statusModal.value;
-  if (modal === null) return;
-  statusModalSaving.value = true;
-  try {
-    if (modal.mode === 'assignee') {
-      const assignee = statusModalAssignee.value[0];
-      if (assignee === undefined) return;
-      await submitStatus(modal.record, 'Assigned', { assignee });
-    } else {
-      await submitStatus(modal.record, 'Resolved', {
-        reason: statusModalReason.value,
-        comment: statusModalComment.value,
-      });
-    }
-    statusModal.value = null;
-  } finally {
-    statusModalSaving.value = false;
-  }
-}
-
-function closeStatusModal(): void {
-  statusModal.value = null;
+function onStatusTransition(
+  record: TestIncident,
+  target: IncidentStatus,
+  additional?: StatusChangeAdditionalData,
+): void {
+  void submitStatus(record, target, additional);
 }
 
 async function onSeveritySelect(record: TestIncident, severity: string | undefined): Promise<void> {
@@ -551,34 +521,6 @@ async function onInlineAssigneeChange(record: TestIncident, assignee: EntityRef 
   }
 }
 
-function openAssigneeModal(record: TestIncident): void {
-  const assignee = record.testCaseResolutionStatusDetails?.assignee;
-  assigneeModalSelection.value = assignee !== undefined ? [assignee] : [];
-  assigneeModal.value = record;
-}
-
-function closeAssigneeModal(): void {
-  assigneeModal.value = null;
-}
-
-async function onAssigneeModalOk(): Promise<void> {
-  const record = assigneeModal.value;
-  const assignee = assigneeModalSelection.value[0];
-  if (record === null || assignee === undefined) return;
-  if (writingById.value[record.id] !== undefined) return;
-  assigneeModalSaving.value = true;
-  writingById.value[record.id] = 'assignee';
-  try {
-    const latest = await submitIncidentStatusChange(record, 'Assigned', { assignee });
-    if (latest !== undefined) replaceRow(record, latest);
-    assigneeModal.value = null;
-  } catch {
-    toastUpdateFailed();
-  } finally {
-    assigneeModalSaving.value = false;
-    delete writingById.value[record.id];
-  }
-}
 
 watch(
   () => route.query,
@@ -809,8 +751,9 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
             :editable="canEditRow(record as TestIncident)"
             :loading="writingById[record.id] === 'status'"
             :menu-options="statusMenuOptions(record as TestIncident)"
+            :assignee-candidates="assigneeCandidates"
             :test-id="`incident-status-${record.id}`"
-            @select="(status) => onStatusMenuSelect(record as TestIncident, status)"
+            @transition="(status, additional) => onStatusTransition(record as TestIncident, status, additional)"
           />
         </template>
         <template v-else-if="column.key === 'severity'">
@@ -854,69 +797,6 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
         </template>
       </template>
     </EntityListShell>
-
-    <FormModal
-      :open="statusModal !== null"
-      :title="
-        statusModal?.mode === 'assignee'
-          ? t('observability.incidents.assignTo')
-          : t('observability.incidents.resolveTitle')
-      "
-      :ok-disabled="statusModalOkDisabled"
-      :confirm-loading="statusModalSaving"
-      test-id="incident-status-modal"
-      @ok="onStatusModalOk"
-      @cancel="closeStatusModal"
-    >
-      <div v-if="statusModal?.mode === 'assignee'">
-        <UserTeamPicker
-          :model-value="statusModalAssignee"
-          single
-          :candidates="assigneeCandidates"
-          data-testid="incident-status-modal-assignee"
-          @update:model-value="(refs) => { statusModalAssignee = refs; }"
-        />
-      </div>
-      <Space
-        v-else-if="statusModal?.mode === 'resolved'"
-        direction="vertical"
-        style="width: 100%"
-      >
-        <Select
-          :value="statusModalReason || undefined"
-          :options="RESOLVE_REASONS.map((reason) => ({ value: reason, label: reason }))"
-          :placeholder="t('observability.incidents.resolveReasonPlaceholder')"
-          data-testid="incident-status-modal-reason"
-          style="width: 100%"
-          @change="(value) => { statusModalReason = value === undefined ? '' : String(value); }"
-        />
-        <Input.TextArea
-          :value="statusModalComment"
-          :placeholder="t('observability.incidents.resolveCommentPlaceholder')"
-          data-testid="incident-status-modal-comment"
-          :rows="3"
-          @update:value="(value) => { statusModalComment = value; }"
-        />
-      </Space>
-    </FormModal>
-
-    <FormModal
-      :open="assigneeModal !== null"
-      :title="t('observability.incidents.assignTo')"
-      :ok-disabled="assigneeModalSelection.length === 0"
-      :confirm-loading="assigneeModalSaving"
-      test-id="incident-assignee-modal"
-      @ok="onAssigneeModalOk"
-      @cancel="closeAssigneeModal"
-    >
-      <UserTeamPicker
-        :model-value="assigneeModalSelection"
-        single
-        :candidates="assigneeCandidates"
-        data-testid="incident-assignee-modal-picker"
-        @update:model-value="(refs) => { assigneeModalSelection = refs; }"
-      />
-    </FormModal>
   </div>
 </template>
 
