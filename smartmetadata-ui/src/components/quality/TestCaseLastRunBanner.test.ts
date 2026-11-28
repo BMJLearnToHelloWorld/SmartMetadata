@@ -35,12 +35,44 @@ describe('TestCaseLastRunBanner (official test ids)', () => {
       props: {
         testCase: baseCase({
           testCaseStatus: 'Success',
-          testCaseResult: { testCaseStatus: 'Success', result: 'Found 10 rows', timestamp: Date.UTC(2026, 0, 1) },
+          testCaseResult: {
+            testCaseStatus: 'Success',
+            result: 'Found 10 rows',
+            timestamp: Date.UTC(2026, 0, 1),
+            testResultValue: [{ name: 'value', value: '10' }],
+          },
+          parameterValues: [{ name: 'value', value: '10' }],
+          testDefinition: { name: 'tableRowCountToEqual' },
         }),
+        nextRunTimestamp: Date.now() + 3600_000,
       },
       global: { plugins: [Antd, createTestI18n()] },
     });
     expect(wrapper.find('[data-testid="test-case-last-run-banner-success"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-case-last-run-summary"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-last-run-right-section"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-result-expected"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-last-run-time"]').exists()).toBe(true);
+  });
+
+  it('renders incident footer for failed runs with a task link', () => {
+    const wrapper = mount(TestCaseLastRunBanner, {
+      props: {
+        testCase: baseCase({
+          entityLink: '<#E::table::svc.db.schema.orders>',
+          testCaseStatus: 'Failed',
+          testCaseResult: { testCaseStatus: 'Failed', result: 'Failed check', timestamp: Date.UTC(2026, 0, 2) },
+          testDefinition: { name: 'tableRowCountToEqual', displayName: 'Row count' },
+        }),
+        taskLinkInfo: { path: '/test-case/svc.db.schema.orders.row_count/issues', label: '#12' },
+        testCaseStatusData: { id: 'inc-1', testCaseResolutionStatusType: 'New' },
+        incidentTaskLoaded: true,
+        hasEditStatusPermission: true,
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="test-case-last-run-incident"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="acknowledge-incident-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="view-incident-button"]').exists()).toBe(true);
   });
 });

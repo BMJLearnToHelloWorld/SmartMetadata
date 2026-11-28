@@ -68,6 +68,7 @@ export interface TestParameterValue {
 export interface TestResultValue {
   name: string;
   value: string;
+  predictedValue?: string;
 }
 
 export interface TestCaseResult {
@@ -82,6 +83,8 @@ export interface TestCaseResult {
    * ADR:2026-11-08-data-diff-p2-5-p2-6-bindings-and-form
    */
   testResultValue?: TestResultValue[];
+  minBound?: number;
+  maxBound?: number;
 }
 
 export interface TestSummary {

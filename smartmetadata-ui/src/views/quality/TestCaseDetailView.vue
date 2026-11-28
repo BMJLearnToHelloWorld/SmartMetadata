@@ -35,6 +35,19 @@ import { getTestCaseVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestCaseResults } from '@/api/testCaseResults';
 import { listTestIncidents } from '@/api/testIncidents';
+import { getTask } from '@/api/tasks';
+import { submitIncidentStatusChange } from '@/features/quality/incidentManager';
+import {
+  fetchNextTestCaseRunTimestamp,
+  getTestSuiteFqns,
+  shouldFetchNextRun,
+} from '@/quality/testCaseNextRun';
+import {
+  getIncidentTaskPath,
+  getTaskDisplayId,
+  type TaskLinkInfo,
+} from '@/quality/testCaseLastRunBanner.utils';
+import type { CollaborationTask } from '@/types/collaboration';
 import SmChart from '@/features/charts/SmChart.vue';
 import { testResultsToTimeline } from '@/features/charts/series';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -109,6 +122,76 @@ function toggleTabExpanded(): void {
 }
 
 const latestIncident = computed(() => issues.value[0]);
+const nextRunTimestamp = ref<number | null | undefined>(undefined);
+const incidentTask = ref<CollaborationTask | null>(null);
+const incidentTaskLoaded = ref(false);
+
+const testSuiteFqns = computed(() => getTestSuiteFqns(testCase.value ?? undefined));
+
+const hasEditStatusPermission = computed(
+  () => !testCaseDeleted.value && testCasePerms.canEditStatus.value,
+);
+
+const taskLinkInfo = computed((): TaskLinkInfo | null => {
+  if (!incidentTask.value || !testCase.value?.fullyQualifiedName) {
+    return null;
+  }
+  const display = getTaskDisplayId(incidentTask.value.name ?? incidentTask.value.id);
+  return {
+    path: getIncidentTaskPath(testCase.value.fullyQualifiedName),
+    label: display ? `#${display}` : `#${incidentTask.value.id.slice(0, 8)}`,
+  };
+});
+
+async function loadNextRunTimestamp(): Promise<void> {
+  if (
+    !shouldFetchNextRun({ activeTab: activeTab.value, testSuiteFqns: testSuiteFqns.value })
+  ) {
+    return;
+  }
+  try {
+    nextRunTimestamp.value = await fetchNextTestCaseRunTimestamp(testSuiteFqns.value);
+  } catch {
+    nextRunTimestamp.value = undefined;
+  }
+}
+
+async function loadIncidentTask(): Promise<void> {
+  incidentTaskLoaded.value = false;
+  incidentTask.value = null;
+  const stateId = latestIncident.value?.stateId;
+  if (!stateId) {
+    incidentTaskLoaded.value = true;
+    return;
+  }
+  try {
+    incidentTask.value = await getTask(stateId);
+  } catch {
+    incidentTask.value = null;
+  } finally {
+    incidentTaskLoaded.value = true;
+  }
+}
+
+async function acknowledgeIncident(): Promise<void> {
+  const incident = latestIncident.value;
+  if (!incident) {
+    return;
+  }
+  try {
+    const updated = await submitIncidentStatusChange(incident, 'Ack');
+    if (updated) {
+      issues.value = [
+        updated,
+        ...issues.value.filter((row) => row.id !== updated.id),
+      ];
+    }
+    await loadIncidentTask();
+    message.success(t('label.acknowledged'));
+  } catch (error) {
+    message.error(getErrorText(error, t('server.unexpected-error')));
+  }
+}
 const assetEntity = computed(() =>
   testCase.value?.entityLink ? parseEntityLink(testCase.value.entityLink) : null,
 );
@@ -288,6 +371,7 @@ async function load(): Promise<void> {
         issuesError.value = t('server.entity-fetch-error', { entity: t('label.incident') });
       }
       await loadSuitePipelines(loaded.testSuite?.fullyQualifiedName);
+      await Promise.all([loadNextRunTimestamp(), loadIncidentTask()]);
     } else {
       results.value = [];
       issues.value = [];
@@ -392,6 +476,14 @@ watch(
     activeTab.value = tab !== undefined && tabKeys.has(tab) ? tab : DEFAULT_TEST_CASE_TAB;
   },
 );
+
+watch([activeTab, testSuiteFqns], () => {
+  void loadNextRunTimestamp();
+});
+
+watch(latestIncident, () => {
+  void loadIncidentTask();
+});
 
 onMounted(() => {
   void loadResourceTriggerPermissions();
@@ -525,6 +617,12 @@ onMounted(() => {
           :test-case="testCase"
           :test-case-result="testCase.testCaseResult"
           :test-case-status="testCase.testCaseStatus"
+          :next-run-timestamp="nextRunTimestamp"
+          :has-edit-status-permission="hasEditStatusPermission"
+          :test-case-status-data="latestIncident"
+          :task-link-info="taskLinkInfo"
+          :incident-task-loaded="incidentTaskLoaded"
+          :on-acknowledge="acknowledgeIncident"
         />
       </div>
       <div

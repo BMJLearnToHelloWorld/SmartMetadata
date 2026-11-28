@@ -11,3 +11,14 @@ export const LAST_RUN_BANNER_TEST_IDS: Record<string, string> = {
   Queued: 'test-case-last-run-banner-queued',
   Success: 'test-case-last-run-banner-success',
 };
+
+export const INCIDENT_STATUS_CONFIG = {
+  Ack: { color: 'blue', label: 'label.acknowledged' },
+  Assigned: { color: 'orange', label: 'label.assigned' },
+  New: { color: 'red', label: 'label.new' },
+  Resolved: { color: 'green', label: 'label.resolved' },
+} as const;
+
+export const INCIDENT_RUN_STATUSES = new Set(['Aborted', 'Failed']);
+
+export const METRIC_RUN_STATUSES = new Set(['Failed', 'Success']);

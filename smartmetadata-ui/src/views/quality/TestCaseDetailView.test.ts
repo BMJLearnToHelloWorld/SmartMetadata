@@ -23,6 +23,7 @@ vi.mock('@/composables/useEntityPermissions', () => ({
     canDelete: computed(() => true),
     canEditDisplayName: computed(() => true),
     canEditAll: computed(() => true),
+    canEditStatus: computed(() => true),
   }),
 }));
 
@@ -55,6 +56,16 @@ vi.mock('@/api/testCaseResults', () => ({
 }));
 vi.mock('@/api/testIncidents', () => ({
   listTestIncidents: (...args: unknown[]) => listTestIncidents(...args),
+}));
+
+vi.mock('@/api/tasks', () => ({
+  getTask: vi.fn(async () => ({ id: 'task-1', name: 'TASK-00009', assignees: [], comments: [] })),
+}));
+
+vi.mock('@/quality/testCaseNextRun', () => ({
+  fetchNextTestCaseRunTimestamp: vi.fn(async () => null),
+  getTestSuiteFqns: vi.fn(() => ['suite.one']),
+  shouldFetchNextRun: vi.fn(() => true),
 }));
 
 async function mountView(props: { id: string; tab?: string } = { id: 'tc1' }) {
