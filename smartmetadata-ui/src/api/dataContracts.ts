@@ -47,6 +47,7 @@ export interface ContractColumn {
   displayName?: string;
   dataType?: string;
   description?: string;
+  constraint?: string;
   children?: ContractColumn[];
 }
 
@@ -110,6 +111,12 @@ export interface DataContract {
   qualityExpectations?: EntityRefLike[];
   sla?: ContractSLA;
   termsOfUse?: TermsOfUse | string;
+  createdBy?: string;
+  createdAt?: number;
+  updatedBy?: string;
+  updatedAt?: number;
+  version?: number;
+  testSuite?: EntityRefLike;
 }
 
 const CONTRACT_EXECUTION_STATUSES: ReadonlySet<string> = new Set([
@@ -186,6 +193,7 @@ function mapColumns(value: unknown): ContractColumn[] | undefined {
       displayName: asString(rec.displayName) || undefined,
       dataType: asString(rec.dataType) || undefined,
       description: asString(rec.description) || undefined,
+      constraint: asString(rec.constraint) || undefined,
       children: mapColumns(rec.children),
     }];
   });
@@ -331,6 +339,12 @@ export function mapDataContract(raw: unknown): DataContract | null {
     qualityExpectations: mapRefList(rec.qualityExpectations),
     sla: mapSla(rec.sla),
     termsOfUse: mapTerms(rec.termsOfUse),
+    createdBy: asString(rec.createdBy) || undefined,
+    createdAt: asNumber(rec.createdAt),
+    updatedBy: asString(rec.updatedBy) || undefined,
+    updatedAt: asNumber(rec.updatedAt),
+    version: asNumber(rec.version),
+    testSuite: mapRef(rec.testSuite),
   };
 }
 
@@ -409,4 +423,400 @@ export function deleteContractById(id: string): Promise<void> {
   return apiRequest<void>(`/v1/dataContracts/${encodeURIComponent(id)}?hardDelete=true&recursive=true`, {
     method: 'DELETE',
   });
+}
+
+
+/** Official SchemaValidation / SemanticsValidation / QualityValidation / SlaValidation. */
+export interface SchemaValidation {
+  duplicateFields?: string[];
+  failed?: number;
+  failedFields?: string[];
+  passed?: number;
+  total?: number;
+  typeMismatchFields?: string[];
+}
+
+export interface FailedRule {
+  reason?: string;
+  ruleName?: string;
+}
+
+export interface SemanticsValidation {
+  failed?: number;
+  failedRules?: FailedRule[];
+  passed?: number;
+  skipped?: number;
+  total?: number;
+}
+
+export interface QualityValidation {
+  failed?: number;
+  passed?: number;
+  qualityScore?: number;
+  total?: number;
+}
+
+export type RefreshedAtSource = 'lifeCycle' | 'slaColumnProfile' | 'systemProfile';
+
+export interface SlaValidation {
+  actualLatency?: number;
+  availabilityMet?: boolean;
+  lastRefreshedAt?: number;
+  latencyMet?: boolean;
+  message?: string;
+  refreshedAtSource?: RefreshedAtSource;
+  refreshFrequencyMet?: boolean;
+}
+
+/** Official DataContractResult (generated/entity/datacontract/dataContractResult.ts). */
+export interface DataContractResult {
+  contractExecutionStatus: ContractExecutionStatus;
+  dataContractFQN?: string;
+  executionTime?: number;
+  id?: string;
+  incidentId?: string;
+  qualityValidation?: QualityValidation;
+  result?: string;
+  schemaValidation?: SchemaValidation;
+  semanticsValidation?: SemanticsValidation;
+  slaValidation?: SlaValidation;
+  timestamp: number;
+}
+
+export interface ContractResultList {
+  data: DataContractResult[];
+  paging?: { total?: number; after?: string; before?: string };
+}
+
+export interface OdcsImportIssue {
+  category?: string;
+  field?: string;
+  message: string;
+  occurrences?: number;
+  path?: string;
+  severity?: 'blocking' | 'info' | 'warning';
+}
+
+export interface OdcsQualityRuleOutcome {
+  column?: string;
+  name?: string;
+  outcome: 'notExecuted' | 'sla' | 'testCase';
+  reason?: string;
+  testCaseName?: string;
+  testDefinition?: string;
+}
+
+export interface ODCSImportReport {
+  canCreateTestCases?: boolean;
+  canImport?: boolean;
+  issues?: OdcsImportIssue[];
+  odcsVersion?: string;
+  qualityRules?: OdcsQualityRuleOutcome[];
+}
+
+/** Official ContractValidation. */
+export interface ContractValidation {
+  constraintErrors?: string[];
+  entityErrors?: string[];
+  odcsImportReport?: ODCSImportReport;
+  schemaValidation?: SchemaValidation;
+  valid?: boolean;
+}
+
+export interface ODCSParseResult {
+  name?: string;
+  version?: string;
+  status?: string;
+  schemaObjects?: string[];
+  hasMultipleObjects?: boolean;
+}
+
+function mapFailedRules(value: unknown): FailedRule[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    return [{ reason: asString(rec.reason) || undefined, ruleName: asString(rec.ruleName) || undefined }];
+  });
+  return items;
+}
+
+function mapSchemaValidation(value: unknown): SchemaValidation | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  return {
+    duplicateFields: Array.isArray(rec.duplicateFields) ? rec.duplicateFields.map((entry) => String(entry)) : undefined,
+    failed: asNumber(rec.failed),
+    failedFields: Array.isArray(rec.failedFields) ? rec.failedFields.map((entry) => String(entry)) : undefined,
+    passed: asNumber(rec.passed),
+    total: asNumber(rec.total),
+    typeMismatchFields: Array.isArray(rec.typeMismatchFields) ? rec.typeMismatchFields.map((entry) => String(entry)) : undefined,
+  };
+}
+
+function mapSemanticsValidation(value: unknown): SemanticsValidation | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  return {
+    failed: asNumber(rec.failed),
+    failedRules: mapFailedRules(rec.failedRules),
+    passed: asNumber(rec.passed),
+    skipped: asNumber(rec.skipped),
+    total: asNumber(rec.total),
+  };
+}
+
+function mapQualityValidation(value: unknown): QualityValidation | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  return {
+    failed: asNumber(rec.failed),
+    passed: asNumber(rec.passed),
+    qualityScore: asNumber(rec.qualityScore),
+    total: asNumber(rec.total),
+  };
+}
+
+const REFRESHED_AT_SOURCES: ReadonlySet<string> = new Set(['lifeCycle', 'slaColumnProfile', 'systemProfile']);
+
+function mapSlaValidation(value: unknown): SlaValidation | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const source = asString(rec.refreshedAtSource);
+  return {
+    actualLatency: asNumber(rec.actualLatency),
+    availabilityMet: rec.availabilityMet === undefined ? undefined : rec.availabilityMet === true,
+    lastRefreshedAt: asNumber(rec.lastRefreshedAt),
+    latencyMet: rec.latencyMet === undefined ? undefined : rec.latencyMet === true,
+    message: asString(rec.message) || undefined,
+    refreshedAtSource: source && REFRESHED_AT_SOURCES.has(source) ? (source as RefreshedAtSource) : undefined,
+    refreshFrequencyMet: rec.refreshFrequencyMet === undefined ? undefined : rec.refreshFrequencyMet === true,
+  };
+}
+
+export function mapDataContractResult(raw: unknown): DataContractResult | null {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return null;
+  }
+  const status = asString(rec.contractExecutionStatus);
+  const timestamp = asNumber(rec.timestamp);
+  if (!status || !CONTRACT_EXECUTION_STATUSES.has(status) || timestamp === undefined) {
+    return null;
+  }
+  return {
+    contractExecutionStatus: status as ContractExecutionStatus,
+    dataContractFQN: asString(rec.dataContractFQN) || undefined,
+    executionTime: asNumber(rec.executionTime),
+    id: asString(rec.id) || undefined,
+    incidentId: asString(rec.incidentId) || undefined,
+    qualityValidation: mapQualityValidation(rec.qualityValidation),
+    result: asString(rec.result) || undefined,
+    schemaValidation: mapSchemaValidation(rec.schemaValidation),
+    semanticsValidation: mapSemanticsValidation(rec.semanticsValidation),
+    slaValidation: mapSlaValidation(rec.slaValidation),
+    timestamp,
+  };
+}
+
+function mapContractValidation(raw: unknown): ContractValidation {
+  const rec = asRecord(raw) ?? {};
+  const report = asRecord(rec.odcsImportReport);
+  return {
+    constraintErrors: Array.isArray(rec.constraintErrors) ? rec.constraintErrors.map((entry) => String(entry)) : undefined,
+    entityErrors: Array.isArray(rec.entityErrors) ? rec.entityErrors.map((entry) => String(entry)) : undefined,
+    schemaValidation: mapSchemaValidation(rec.schemaValidation),
+    valid: rec.valid === undefined ? undefined : rec.valid === true,
+    odcsImportReport: report
+      ? {
+          canCreateTestCases: report.canCreateTestCases === undefined ? undefined : report.canCreateTestCases === true,
+          canImport: report.canImport === undefined ? undefined : report.canImport === true,
+          odcsVersion: asString(report.odcsVersion) || undefined,
+          issues: Array.isArray(report.issues)
+            ? report.issues.flatMap((item) => {
+                const issue = asRecord(item);
+                const message = issue ? asString(issue.message) : '';
+                if (!issue || !message) {
+                  return [];
+                }
+                return [{
+                  category: asString(issue.category) || undefined,
+                  field: asString(issue.field) || undefined,
+                  message,
+                  occurrences: asNumber(issue.occurrences),
+                  path: asString(issue.path) || undefined,
+                  severity: asString(issue.severity) as OdcsImportIssue['severity'],
+                }];
+              })
+            : undefined,
+          qualityRules: Array.isArray(report.qualityRules)
+            ? report.qualityRules.flatMap((item) => {
+                const rule = asRecord(item);
+                if (!rule) {
+                  return [];
+                }
+                const outcome = asString(rule.outcome);
+                if (outcome !== 'notExecuted' && outcome !== 'sla' && outcome !== 'testCase') {
+                  return [];
+                }
+                return [{
+                  column: asString(rule.column) || undefined,
+                  name: asString(rule.name) || undefined,
+                  outcome: outcome as OdcsQualityRuleOutcome['outcome'],
+                  reason: asString(rule.reason) || undefined,
+                  testCaseName: asString(rule.testCaseName) || undefined,
+                  testDefinition: asString(rule.testDefinition) || undefined,
+                }];
+              })
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
+/** Official validateContractById: POST /v1/dataContracts/{id}/validate. */
+export function validateContractById(contractId: string): Promise<void> {
+  return apiRequest<void>(`/v1/dataContracts/${encodeURIComponent(contractId)}/validate`, { method: 'POST' });
+}
+
+/** Official validateContractByEntityId — inherited contracts materialize results on the asset. */
+export function validateContractByEntityId(entityId: string, entityType: string): Promise<void> {
+  return apiRequest<void>('/v1/dataContracts/entity/validate', {
+    method: 'POST',
+    query: { entityId, entityType },
+  });
+}
+
+/** Official getContractResultByResultId: GET /v1/dataContracts/{id}/results/{resultId}. */
+export async function getContractResultByResultId(contractId: string, resultId: string): Promise<DataContractResult> {
+  const raw = await apiRequest<unknown>(
+    `/v1/dataContracts/${encodeURIComponent(contractId)}/results/${encodeURIComponent(resultId)}`,
+  );
+  const mapped = mapDataContractResult(raw);
+  if (!mapped) {
+    throw new Error('Contract result was missing or invalid');
+  }
+  return mapped;
+}
+
+/** Official getAllContractResults: GET /v1/dataContracts/{id}/results. */
+export async function getAllContractResults(
+  contractId: string,
+  params: { startTs?: number; endTs?: number; limit?: number },
+): Promise<ContractResultList> {
+  const raw = await apiRequest<unknown>(`/v1/dataContracts/${encodeURIComponent(contractId)}/results`, {
+    query: params,
+  });
+  const rec = asRecord(raw);
+  const list = Array.isArray(raw) ? raw : rec && Array.isArray(rec.data) ? rec.data : [];
+  const data = list.map(mapDataContractResult).filter((item): item is DataContractResult => Boolean(item));
+  return { data, paging: rec && asRecord(rec.paging) ? { total: asNumber(asRecord(rec.paging)?.total) } : undefined };
+}
+
+/** Official exportContractToODCSYaml: GET /v1/dataContracts/{id}/odcs/yaml. */
+export function exportContractToODCSYaml(contractId: string, fields?: string): Promise<string> {
+  return apiRequest<string>(`/v1/dataContracts/${encodeURIComponent(contractId)}/odcs/yaml`, {
+    query: { fields },
+    headers: { Accept: 'application/yaml' },
+    response: 'text',
+  });
+}
+
+/** Official parseODCSYaml: POST /v1/dataContracts/odcs/parse/yaml. */
+export async function parseODCSYaml(yamlContent: string): Promise<ODCSParseResult> {
+  const raw = await apiRequest<unknown>('/v1/dataContracts/odcs/parse/yaml', {
+    method: 'POST',
+    text: yamlContent,
+    contentType: 'application/yaml',
+  });
+  const rec = asRecord(raw) ?? {};
+  return {
+    name: asString(rec.name) || undefined,
+    version: asString(rec.version) || undefined,
+    status: asString(rec.status) || undefined,
+    schemaObjects: Array.isArray(rec.schemaObjects) ? rec.schemaObjects.map((entry) => String(entry)) : undefined,
+    hasMultipleObjects: rec.hasMultipleObjects === undefined ? undefined : rec.hasMultipleObjects === true,
+  };
+}
+
+/** Official importContractFromODCSYaml: POST /v1/dataContracts/odcs/yaml. */
+export async function importContractFromODCSYaml(
+  yamlContent: string,
+  entityId: string,
+  entityType: string,
+  objectName?: string,
+  createTestCases = true,
+): Promise<DataContract> {
+  const raw = await apiRequest<unknown>('/v1/dataContracts/odcs/yaml', {
+    method: 'POST',
+    text: yamlContent,
+    contentType: 'application/yaml',
+    query: { entityId, entityType, objectName, createTestCases },
+  });
+  const mapped = mapDataContract(raw);
+  if (!mapped) {
+    throw new Error('Import ODCS contract succeeded but the response had no contract');
+  }
+  return mapped;
+}
+
+/** Official createOrUpdateContractFromODCSYaml: PUT /v1/dataContracts/odcs/yaml. */
+export async function createOrUpdateContractFromODCSYaml(
+  yamlContent: string,
+  entityId: string,
+  entityType: string,
+  mode: 'merge' | 'replace' = 'merge',
+  objectName?: string,
+  createTestCases = true,
+): Promise<DataContract> {
+  const raw = await apiRequest<unknown>('/v1/dataContracts/odcs/yaml', {
+    method: 'PUT',
+    text: yamlContent,
+    contentType: 'application/yaml',
+    query: { entityId, entityType, mode, objectName, createTestCases },
+  });
+  const mapped = mapDataContract(raw);
+  if (!mapped) {
+    throw new Error('Update ODCS contract succeeded but the response had no contract');
+  }
+  return mapped;
+}
+
+/** Official validateODCSYaml: POST /v1/dataContracts/odcs/validate/yaml. */
+export async function validateODCSYaml(
+  yamlContent: string,
+  entityId: string,
+  entityType: string,
+  objectName?: string,
+  createTestCases = true,
+): Promise<ContractValidation> {
+  const raw = await apiRequest<unknown>('/v1/dataContracts/odcs/validate/yaml', {
+    method: 'POST',
+    text: yamlContent,
+    contentType: 'application/yaml',
+    query: { entityId, entityType, objectName, createTestCases },
+  });
+  return mapContractValidation(raw);
+}
+
+/** Official validateContractYaml: POST /v1/dataContracts/validate/yaml. */
+export async function validateContractYaml(yamlContent: string): Promise<ContractValidation> {
+  const raw = await apiRequest<unknown>('/v1/dataContracts/validate/yaml', {
+    method: 'POST',
+    text: yamlContent,
+    contentType: 'application/yaml',
+  });
+  return mapContractValidation(raw);
 }
