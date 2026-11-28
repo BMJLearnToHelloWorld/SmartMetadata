@@ -39,7 +39,11 @@ import {
   getAddIngestionPath,
   getEditIngestionPath,
   getServiceVersionPath,
+  getTestSuiteFQN,
   getTestSuiteIngestionPath,
+  getSettingsPathFromPipelineType,
+  DATA_INSIGHTS_APP_NAME,
+  SEARCH_INDEXING_APPLICATION,
   SERVICE_CATEGORY_DATABASE_SERVICES,
   SERVICE_TAB_AGENTS,
   SERVICE_AGENT_SUB_TAB_METADATA,
@@ -227,6 +231,17 @@ describe('official service path builders', () => {
     );
     expect(getServiceVersionPath('databaseServices', 'svc/prod', '0.2')).toBe(
       '/service/databaseServices/svc%2Fprod/versions/0.2',
+    );
+  });
+
+  it('matches official getTestSuiteFQN and settings-pipeline app paths', () => {
+    expect(getTestSuiteFQN('suite.fqn.pipeline')).toBe('suite.fqn');
+    expect(getTestSuiteFQN('suite')).toBe('suite');
+    expect(getSettingsPathFromPipelineType('dataInsight')).toBe(
+      '/settings/apps/' + DATA_INSIGHTS_APP_NAME,
+    );
+    expect(getSettingsPathFromPipelineType('elasticSearchReindex')).toBe(
+      '/settings/apps/' + SEARCH_INDEXING_APPLICATION,
     );
   });
 });

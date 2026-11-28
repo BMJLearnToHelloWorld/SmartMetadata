@@ -275,6 +275,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/service/databaseServices/pg.warehouse').name).toBe('service-detail');
     expect(router.resolve('/service/databaseServices/pg.warehouse/connection/edit-connection').name).toBe('ingestion-service-connection');
     expect(router.resolve('/service/databaseServices/pg.warehouse/add-ingestion/metadata').name).toBe('ingestion-service-add-ingestion');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/edit-ingestion/pg.warehouse.meta/metadata').name).toBe('ingestion-service-edit-ingestion');
     expect(router.resolve('/service/databaseServices/pg.warehouse/versions/0.1').name).toBe('ingestion-service-version');
     // D-17: the official `/:serviceCategory/add-service` form; the
     // retained `/ingestion/services/add` path is deleted with it.
@@ -289,7 +290,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/governance/domains/Finance').name).toBe('governance-domain');
     expect(router.resolve('/governance/domains/Finance').params).toMatchObject({ fqn: 'Finance' });
     expect(router.resolve('/ingestion/pipelines/p1').name).toBe('ingestion-pipeline');
-    expect(router.resolve('/ingestion/pipelines/p1/edit').name).toBe('ingestion-pipeline-edit');
+    expect(router.resolve('/ingestion/pipelines/p1/edit').name).toBe('not-found');
     expect(router.resolve('/inbox').name).toBe('inbox');
     expect(router.resolve('/customize-page/fqn/LandingPage').name).toBe('customize-page');
     expect(router.resolve('/settings/services/database').name).toBe('settings-services');
@@ -462,7 +463,6 @@ describe('guard declaration table (§10.2)', () => {
       'admin-settings-governance-glossary-term-relations',
       'customize-page',
       'ingestion-pipeline',
-      'ingestion-pipeline-edit',
       'admin-bot',
     ]) {
       expect(declarationOf(name)).toBe('admin-only');
@@ -532,6 +532,7 @@ describe('guard declaration table (§10.2)', () => {
       'ingestion-service-add',
       'ingestion-service-connection',
       'ingestion-service-add-ingestion',
+      'ingestion-service-edit-ingestion',
       'ingestion-service-version',
       'inbox',
       'column-bulk-ops',

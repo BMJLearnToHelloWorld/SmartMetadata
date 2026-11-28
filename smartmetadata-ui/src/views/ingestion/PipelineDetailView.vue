@@ -33,6 +33,7 @@ import {
   canTogglePipelineStatus,
   canTriggerPipeline,
 } from '@/ingestion/pipelineActions';
+import { getPipelineEditPath } from '@/ingestion/pipelineEditPath';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -567,7 +568,7 @@ function onEdit(): void {
     message.error(t('errors.forbidden'));
     return;
   }
-  void router.push({ name: 'ingestion-pipeline-edit', params: { id: props.id } });
+  void router.push(getPipelineEditPath(pipeline.value));
 }
 
 async function onDelete(): Promise<void> {

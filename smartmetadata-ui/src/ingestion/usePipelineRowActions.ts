@@ -28,6 +28,7 @@ import {
   canTogglePipelineStatus,
   canTriggerPipeline,
 } from '@/ingestion/pipelineActions';
+import { getPipelineEditPath } from '@/ingestion/pipelineEditPath';
 import type { IngestionPipeline } from '@/types/ingestion';
 
 /**
@@ -43,6 +44,9 @@ export function usePipelineRowActions(options: {
   getOps: (pipeline: IngestionPipeline) => OperationPermissions | undefined;
   /** Re-fetch after the 500ms delay (list: full load; service detail: pipelines reload). */
   refresh: () => void | Promise<void>;
+  /** Official PipelineActionsDropdown serviceCategory / serviceName (FQN). */
+  serviceCategory?: string | (() => string | undefined);
+  serviceFqn?: string | (() => string | undefined);
 }) {
   const { t } = useI18n();
   const router = useRouter();
@@ -144,7 +148,11 @@ export function usePipelineRowActions(options: {
       message.error(t('errors.forbidden'));
       return;
     }
-    void router.push({ name: 'ingestion-pipeline-edit', params: { id: pipeline.id } });
+    const category =
+      typeof options.serviceCategory === 'function' ? options.serviceCategory() : options.serviceCategory;
+    const serviceFqn =
+      typeof options.serviceFqn === 'function' ? options.serviceFqn() : options.serviceFqn;
+    void router.push(getPipelineEditPath(pipeline, category, serviceFqn));
   }
 
   async function onDelete(pipeline: IngestionPipeline): Promise<void> {

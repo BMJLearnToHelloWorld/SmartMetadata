@@ -384,6 +384,8 @@ const serviceRowActions = usePipelineRowActions({
   isAdminUser: () => permissionStore.isAdminUser,
   getOps: (pipeline) => servicePipelinePermissions.value.get(pipeline.id),
   refresh: () => reloadPipelines(),
+  serviceCategory: () => props.serviceCategory,
+  serviceFqn: () => service.value?.fullyQualifiedName ?? props.fqn,
 });
 
 /**

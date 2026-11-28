@@ -27,6 +27,8 @@
  * routes and reads only.
  */
 
+import { splitFqn } from '@/catalog/fqn';
+
 export function getEncodedFqn(fqn: string, spaceAsPlus = false): string {
   let uri = encodeURIComponent(fqn);
   if (spaceAsPlus) {
@@ -375,6 +377,37 @@ export function getTestSuiteIngestionPath(testSuiteFqn: string, ingestionFqn?: s
   }
   return `/test-suites/${getEncodedFqn(testSuiteFqn)}/add-ingestion`;
 }
+
+/**
+ * Official `getTestSuiteFQN` (TestSuiteUtils.ts): drop the last FQN
+ * segment (the ingestion/test-suite name) so edit-ingestion can target
+ * the suite itself.
+ */
+export function getTestSuiteFQN(fqn: string): string {
+  const parts = splitFqn(fqn);
+  if (parts.length > 1) {
+    parts.pop();
+  }
+  return parts.join('.');
+}
+
+/** Official `DATA_INSIGHTS_APP_NAME` (Applications.constant.ts). */
+export const DATA_INSIGHTS_APP_NAME = 'DataInsightsApplication';
+/** Official `SEARCH_INDEXING_APPLICATION` (explore.constants.ts). */
+export const SEARCH_INDEXING_APPLICATION = 'SearchIndexingApplication';
+
+/**
+ * Official `getSettingsPathFromPipelineType` (IngestionConfigUtils.ts):
+ * Data Insights and search reindexing now live as applications, so a
+ * settings pipeline leads to its app details page. The official AI-mode
+ * `getSettingsLink` wrapper is not invented here.
+ */
+export function getSettingsPathFromPipelineType(pipelineType: string): string {
+  return getApplicationDetailsPath(
+    pipelineType === 'dataInsight' ? DATA_INSIGHTS_APP_NAME : SEARCH_INDEXING_APPLICATION,
+  );
+}
+
 /**
  * Entity → constructor table (FQN-2). Views, list cells, breadcrumbs and
  * post-create navigation call this table; no path strings are handwritten

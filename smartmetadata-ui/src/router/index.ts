@@ -1140,6 +1140,13 @@ export const router = createRouter({
           props: true,
         },
         {
+          // Official EDIT_INGESTION (constants ROUTES / AuthenticatedAppRouter).
+          path: 'service/:serviceCategory/:fqn/edit-ingestion/:ingestionFQN/:ingestionType',
+          name: 'ingestion-service-edit-ingestion',
+          component: EditPipelineView,
+          props: true,
+        },
+        {
           path: 'service/:serviceCategory/:fqn/versions/:version',
           name: 'ingestion-service-version',
           component: ServiceVersionView,
@@ -1151,13 +1158,6 @@ export const router = createRouter({
           name: 'service-detail',
           component: ServiceDetailView,
           props: true,
-        },
-        {
-          path: 'ingestion/pipelines/:id/edit',
-          name: 'ingestion-pipeline-edit',
-          component: EditPipelineView,
-          props: true,
-          meta: { guard: 'admin-only' },
         },
         {
           path: 'ingestion/pipelines/:id',
