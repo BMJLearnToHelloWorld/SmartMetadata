@@ -944,6 +944,7 @@ onMounted(() => {
       <div
         class="test-case-results-layout"
         :class="{ 'test-case-results-layout--expanded': isTabExpanded && isExpandViewSupported }"
+        data-testid="test-case-result-tab-container"
       >
         <div class="test-case-results-layout__main">
           <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>

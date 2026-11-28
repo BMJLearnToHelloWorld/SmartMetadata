@@ -83,6 +83,7 @@ function mapTestDefinition(raw: Record<string, unknown>): TestDefinition | null 
       : undefined,
     enabled: raw.enabled === undefined ? undefined : Boolean(raw.enabled),
     sqlExpression: asString(raw.sqlExpression) || undefined,
+    supportsRowLevelPassedFailed: raw.supportsRowLevelPassedFailed === true ? true : undefined,
   };
 }
 

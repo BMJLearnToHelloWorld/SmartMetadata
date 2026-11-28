@@ -7,9 +7,14 @@ import type { TestCase, TestDefinition } from '@/types/quality';
 import {
   buildConfigurationParameterRows,
   formatParameterValue,
+  shouldShowComputeRowCount,
   shouldShowEditParameterButton,
   splitParameterValues,
+  withComputeRowCountRow,
 } from './testCaseResultTab.utils';
+import { createTestI18n } from '@/test/i18n';
+
+const { t } = createTestI18n().global;
 
 describe('testCaseResultTab.utils (official TestCaseResultTab)', () => {
   it('formatParameterValue groups thousands for numeric parameter types', () => {
@@ -49,6 +54,30 @@ describe('testCaseResultTab.utils (official TestCaseResultTab)', () => {
     const rows = buildConfigurationParameterRows(testCase, definition);
     expect(rows.map((row) => row.label)).toEqual(['Minimum', 'Maximum']);
     expect(rows[0].value).toBe('1');
+  });
+
+  it('withComputeRowCountRow appends the official configuration row when supported', () => {
+    const rows = withComputeRowCountRow(
+      [],
+      { id: 'x', name: 'x', testSuites: [], parameterValues: [], computePassedFailedRowCount: true },
+      {
+        id: 'def',
+        name: 'tableRowCountToBeBetween',
+        testPlatforms: ['OpenMetadata'],
+        parameterDefinition: [],
+        supportsRowLevelPassedFailed: true,
+      },
+      t,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe(t('label.compute-row-count'));
+    expect(rows[0].value).toBe('true');
+    expect(
+      shouldShowComputeRowCount(
+        { id: 'x', name: 'x', testSuites: [], parameterValues: [], computePassedFailedRowCount: true },
+        { id: 'd', name: 'd', testPlatforms: [], parameterDefinition: [], supportsRowLevelPassedFailed: false },
+      ),
+    ).toBe(false);
   });
 
   it('shouldShowEditParameterButton matches official editable content gates', () => {

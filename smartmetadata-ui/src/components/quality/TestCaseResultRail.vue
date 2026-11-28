@@ -5,6 +5,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import WidgetDataProductsCell from '@/components/shared/widgets/WidgetDataProductsCell.vue';
 import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
@@ -15,8 +16,10 @@ import type { TestCase, TestDefinition } from '@/types/quality';
 import type { TagLabelInput } from '@/governance/assetPatch';
 import {
   buildConfigurationParameterRows,
+  shouldShowComputeRowCount,
   shouldShowEditParameterButton,
   splitParameterValues,
+  withComputeRowCountRow,
 } from '@/quality/testCaseResultTab.utils';
 
 const props = defineProps<{
@@ -36,7 +39,16 @@ const emit = defineEmits<{
   editParameter: [];
 }>();
 
-const parameterRows = computed(() => buildConfigurationParameterRows(props.testCase, props.testDefinition));
+const { t } = useI18n();
+
+const parameterRows = computed(() =>
+  withComputeRowCountRow(
+    buildConfigurationParameterRows(props.testCase, props.testDefinition),
+    props.testCase,
+    props.testDefinition,
+    t,
+  ),
+);
 
 const sqlSplit = computed(() => splitParameterValues(props.testCase.parameterValues ?? []));
 
@@ -45,7 +57,7 @@ const showEditParameter = computed(() =>
     props.hasEditPermission,
     props.testCase,
     Boolean(props.testCase.dataQualityDimension),
-    Boolean(props.testCase.computePassedFailedRowCount),
+    shouldShowComputeRowCount(props.testCase, props.testDefinition),
   ),
 );
 

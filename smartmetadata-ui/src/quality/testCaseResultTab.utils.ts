@@ -38,6 +38,34 @@ export function splitParameterValues(parameterValues: TestParameterValue[]): {
   return { withSqlParams, withoutSqlParams };
 }
 
+export function shouldShowComputeRowCount(
+  testCase: TestCase | undefined,
+  testDefinition: TestDefinition | undefined,
+): boolean {
+  return (
+    testCase?.computePassedFailedRowCount !== undefined &&
+    (testDefinition?.supportsRowLevelPassedFailed ?? false)
+  );
+}
+
+export function withComputeRowCountRow(
+  rows: ConfigurationParameterRow[],
+  testCase: TestCase | undefined,
+  testDefinition: TestDefinition | undefined,
+  t: (key: string) => string,
+): ConfigurationParameterRow[] {
+  if (!shouldShowComputeRowCount(testCase, testDefinition)) {
+    return rows;
+  }
+  return [
+    ...rows,
+    {
+      label: t('label.compute-row-count'),
+      value: String(testCase?.computePassedFailedRowCount),
+    },
+  ];
+}
+
 export function buildConfigurationParameterRows(
   testCase: TestCase | undefined,
   testDefinition: TestDefinition | undefined,

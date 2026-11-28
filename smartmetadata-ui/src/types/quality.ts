@@ -111,6 +111,7 @@ export interface TestDefinition {
   enabled?: boolean;
   /** Official testDefinition.sqlExpression / custom SQL body. */
   sqlExpression?: string;
+  supportsRowLevelPassedFailed?: boolean;
 }
 
 export interface CreateTestDefinitionRequest {
