@@ -7,12 +7,14 @@ import type { TestCase, TestDefinition } from '@/types/quality';
 import {
   buildConfigurationParameterRows,
   formatParameterValue,
+  getConfiguredThresholdSentence,
   shouldShowComputeRowCount,
   shouldShowEditParameterButton,
   splitParameterValues,
   withComputeRowCountRow,
 } from './testCaseResultTab.utils';
 import { createTestI18n } from '@/test/i18n';
+import { toEntityLink } from '@/quality/entityLink';
 
 const { t } = createTestI18n().global;
 
@@ -106,5 +108,37 @@ describe('testCaseResultTab.utils (official TestCaseResultTab)', () => {
     expect(
       shouldShowEditParameterButton(true, { id: 'x', name: 'x', testSuites: [], parameterValues: [] }, false, true),
     ).toBe(true);
+  });
+});
+
+describe('getConfiguredThresholdSentence', () => {
+  const definition: TestDefinition = {
+    name: 'columnValuesToBeNotNull',
+    parameterDefinition: [
+      { name: 'threshold' },
+      { name: 'thresholdUnit', optionValues: ['ABSOLUTE', 'PERCENTAGE'] },
+    ],
+  };
+  const testCase: TestCase = {
+    id: 'tc1',
+    name: 'not_null',
+    entityLink: toEntityLink('table', 'svc.db.schema.tbl', 'status'),
+    parameterValues: [
+      { name: 'threshold', value: '1' },
+      { name: 'thresholdUnit', value: 'PERCENTAGE' },
+    ],
+    testDefinition: definition,
+  };
+
+  it('renders configuration threshold copy for row-countable tests', () => {
+    const sentence = getConfiguredThresholdSentence(testCase, definition, t);
+    expect(sentence).toBeTruthy();
+    expect(sentence).toContain('status');
+  });
+
+  it('returns undefined for dynamic assertion tests', () => {
+    expect(
+      getConfiguredThresholdSentence({ ...testCase, useDynamicAssertion: true }, definition, t),
+    ).toBeUndefined();
   });
 });

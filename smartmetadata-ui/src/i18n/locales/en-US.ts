@@ -862,6 +862,14 @@ const enUS = {
     'threshold-count-noun-table-rows': 'table row(s)',
     'threshold-count-noun-units': 'unit(s)',
     'threshold-count-noun-the-bound': 'the bound',
+    'custom-sql-strategy-count': 'use the single number the query returns',
+    'custom-sql-strategy-rows': 'count the rows the query returns',
+    'threshold-operator-anything-other-than': 'anything other than',
+    'threshold-operator-at-least': 'at least',
+    'threshold-operator-at-most': 'at most',
+    'threshold-operator-exactly': 'exactly',
+    'threshold-operator-fewer-than': 'fewer than',
+    'threshold-operator-more-than': 'more than',
     'test-definition': 'Test Definition',
     'test-definition-plural': 'Test Definitions',
     'test-entity': 'Test {entity}',
@@ -1029,6 +1037,26 @@ const enUS = {
       "Measured on a sample of the table. The verdict is the sample's and is not extrapolated to the full table.",
     'threshold-amount-absolute': '{value} {noun}',
     'threshold-amount-percentage': '{value}% of {noun}',
+    'dq-threshold-preview-custom-sql-count':
+      'Pass when the number the query returns is {operator} {value}.',
+    'dq-threshold-preview-custom-sql-rows': 'Pass when the query returns {operator} {amount}.',
+    'dq-threshold-preview-match-enum-required':
+      'This test only applies the threshold when Match enum is on. With it off it passes as soon as one allowed value occurs.',
+    'dq-threshold-preview-not-enforced':
+      'This test does not apply a failure threshold yet, so it is still evaluated with no tolerance.',
+    'dq-threshold-preview-row-countable': 'Fail when more than {amount} in {target} fail this test.',
+    'dq-threshold-preview-sampling': 'Measured on the {sample} sample this table is profiled with.',
+    'dq-threshold-preview-sampling-dynamic':
+      'Measured on the dynamically sized sample this table is profiled with.',
+    'dq-threshold-preview-statistical': 'Fail when the measured value falls outside {bound}.',
+    'dq-threshold-preview-statistical-deviation':
+      'Fail when the measured value falls outside {bound}, allowing a deviation of {amount} (effective range {range}).',
+    'dq-threshold-preview-statistical-learned':
+      'Fail when the measured value falls outside the learned bounds.',
+    'dq-threshold-preview-statistical-learned-deviation':
+      'Fail when the measured value falls outside the learned bounds, allowing a deviation of {amount}.',
+    'dq-threshold-preview-zero-bound':
+      'A percentage deviation around a bound of 0 leaves that bound at 0 — use an absolute deviation instead.',
     'delete-entity-message': 'Are you sure you want to delete {entity}? This action cannot be undone.',
     'empty-means-all-data-types': "Leave empty to support all data types",
     'empty-means-all-services': "Leave empty to support all services",

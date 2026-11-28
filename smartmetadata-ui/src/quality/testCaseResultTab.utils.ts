@@ -3,8 +3,12 @@
  * Licensed under the Apache License, Version 2.0.
  * Official TestCaseResultTab.utils.ts / TestCaseConfigurationCard helpers (subset).
  */
+import type { ComposerTranslation } from 'vue-i18n';
 import type { TestCase, TestDefinition, TestParameterValue } from '@/types/quality';
 import { parseEntityLink } from '@/quality/entityLink';
+import { getColumnNameFromEntityLink } from '@/quality/testSummary.utils';
+import { getTestCaseParams, getThresholdPreviewData } from '@/quality/testCaseThreshold.utils';
+import { formatThresholdSentence } from '@/quality/testCaseThresholdSentence.utils';
 import { formatNumber } from '@/quality/runDetailsCard.utils';
 import { toFiniteNumber } from '@/quality/testSummaryGraphUtils';
 
@@ -112,6 +116,25 @@ export function getCategoryLine(testCase: TestCase | undefined, t: (key: string,
 
 export function getDefinitionDisplayName(testDefinition?: TestDefinition | EntityRefLike): string {
   return testDefinition?.displayName ?? testDefinition?.name ?? '';
+}
+
+/** Official getConfiguredThresholdSentence (TestCaseConfigurationCard.utils.ts). */
+export function getConfiguredThresholdSentence(
+  testCase: TestCase | undefined,
+  testDefinition: TestDefinition | undefined,
+  t: ComposerTranslation,
+): string | undefined {
+  if (!testCase || !testDefinition || testCase.useDynamicAssertion) {
+    return undefined;
+  }
+  const parsed = testCase.entityLink ? parseEntityLink(testCase.entityLink) : null;
+  const tableShortName = parsed?.tableFqn?.split('.').pop();
+  const data = getThresholdPreviewData({
+    definition: testDefinition,
+    params: getTestCaseParams(testCase),
+    target: getColumnNameFromEntityLink(testCase.entityLink) ?? tableShortName,
+  });
+  return data ? formatThresholdSentence(data, t) : undefined;
 }
 
 interface EntityRefLike {

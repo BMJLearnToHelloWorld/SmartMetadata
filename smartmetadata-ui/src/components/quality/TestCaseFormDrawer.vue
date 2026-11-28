@@ -33,6 +33,8 @@ import {
   toCreateRequest,
   toParameterList,
 } from '@/quality/testCaseForm';
+import ThresholdPreview from '@/components/quality/ThresholdPreview.vue';
+import { getThresholdPreviewTarget } from '@/quality/testCaseThreshold.utils';
 
 const props = defineProps<{
   open: boolean;
@@ -103,6 +105,15 @@ const isTableDiff = computed(() => {
   const id = (definition?.fullyQualifiedName || definition?.name || '').split('.').pop();
   return id === 'tableDiff';
 });
+const thresholdPreviewTarget = computed(() =>
+  getThresholdPreviewTarget({
+    isColumnLevel: form.testLevel === TEST_LEVEL.COLUMN || form.testLevel === TEST_LEVEL.COLUMN_DIMENSION,
+    columnName: form.selectedColumn,
+    tableName: tableDetail.value?.name,
+    tableFqn: form.selectedTable,
+  }),
+);
+const thresholdPreviewParams = computed(() => ({ ...form.parameterValues }));
 const help = computed(() => helpForField(activeField.value));
 const selectedTagFqns = computed({
   get: () => form.tags.map((tag) => tag.tagFQN),
@@ -428,6 +439,12 @@ watch(
                   :data-testid="`test-case-param-${param.name}`"
                 />
               </Form.Item>
+              <ThresholdPreview
+                v-if="selectedDefinition"
+                :definition="selectedDefinition"
+                :params="thresholdPreviewParams"
+                :target="thresholdPreviewTarget"
+              />
             </template>
             <Form.Item v-if="!showOnlyParameter" :label="t('label.name')">
               <Input

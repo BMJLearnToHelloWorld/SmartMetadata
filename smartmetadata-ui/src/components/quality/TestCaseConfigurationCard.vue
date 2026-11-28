@@ -10,7 +10,11 @@ import { Button, Card, Typography } from 'ant-design-vue';
 import { EditOutlined } from '@ant-design/icons-vue';
 import type { TestCase, TestDefinition, TestParameterValue } from '@/types/quality';
 import type { ConfigurationParameterRow } from '@/quality/testCaseResultTab.utils';
-import { getCategoryLine, getDefinitionDisplayName } from '@/quality/testCaseResultTab.utils';
+import {
+  getCategoryLine,
+  getConfiguredThresholdSentence,
+  getDefinitionDisplayName,
+} from '@/quality/testCaseResultTab.utils';
 
 const props = defineProps<{
   testCase: TestCase;
@@ -30,6 +34,10 @@ const definitionName = computed(() => getDefinitionDisplayName(props.testDefinit
 const categoryLine = computed(() => getCategoryLine(props.testCase, t));
 
 const isDynamicAssertion = computed(() => Boolean(props.testCase.useDynamicAssertion));
+
+const thresholdSentence = computed(() =>
+  getConfiguredThresholdSentence(props.testCase, props.testDefinition ?? props.testCase.testDefinition, t),
+);
 
 const isEmpty = computed(
   () =>
@@ -75,6 +83,13 @@ function sqlLines(value: string): string[] {
           data-testid="configuration-category"
         >
           {{ categoryLine }}
+        </Typography.Paragraph>
+        <Typography.Paragraph
+          v-if="thresholdSentence"
+          class="tc-config-card__threshold-sentence"
+          data-testid="configuration-threshold-sentence"
+        >
+          {{ thresholdSentence }}
         </Typography.Paragraph>
       </div>
       <div v-if="isDynamicAssertion" class="tc-config-card__dynamic" data-testid="dynamic-assertion">
@@ -157,6 +172,12 @@ function sqlLines(value: string): string[] {
   margin: 0 !important;
   font-size: 12px;
   color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+}
+
+.tc-config-card__threshold-sentence {
+  margin: 4px 0 0 !important;
+  font-size: 12px;
+  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.65));
 }
 
 .tc-config-card__dynamic {
