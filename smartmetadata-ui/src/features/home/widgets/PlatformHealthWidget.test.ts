@@ -58,8 +58,8 @@ async function mountWidget({ flush = true }: { flush?: boolean } = {}) {
       { path: '/connections', name: 'connections', component: { template: '<div>connections</div>' } },
       { path: '/settings/:category', name: 'settings-category', component: { template: '<div>category</div>' } },
       {
-        path: '/ingestion/services/:kind/:id',
-        name: 'ingestion-service',
+        path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+        name: 'service-detail',
         component: { template: '<div>service</div>' },
       },
     ],
@@ -242,14 +242,11 @@ describe('PlatformHealthWidget', () => {
     const { wrapper, router } = await mountWidget();
     await wrapper.get('[data-testid="failing-service-a"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    // D-L7: the detail route is UUID-addressed — the row's UUID, not its
-    // FQN, goes into `id`. (The fixture's id 'a' differs from its FQN
-    // 'svc-a' precisely so this assertion distinguishes the two.)
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'a' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toEqual({ serviceCategory: 'databaseServices', fqn: 'svc-a' });
   });
 
-  it('opens the service detail page from a healthy-bucket row with the UUID (D-L7)', async () => {
+  it('opens the service detail page from a healthy-bucket row with the official FQN path', async () => {
     getServicesOverview.mockResolvedValueOnce(
       overviewResponse(
         [serviceSummary('a', 'failed')],
@@ -270,8 +267,8 @@ describe('PlatformHealthWidget', () => {
     await flushPromises();
     await wrapper.get('[data-testid="bucket-service-h1"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'h1' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toEqual({ serviceCategory: 'databaseServices', fqn: 'svc-h1' });
   });
 
   it('opens the Services overview from the header link (DESIGN §6.7 row 4)', async () => {

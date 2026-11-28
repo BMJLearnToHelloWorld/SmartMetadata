@@ -214,6 +214,7 @@ describe('sections route contract (retained table + segment guard)', () => {
     expect(isAdminPath('/ingestion')).toBe(false);
     expect(isAdminPath('/ingestion/services')).toBe(false);
     expect(isAdminPath('/ingestion/services/database/s1')).toBe(false);
+    expect(isAdminPath('/service/databaseServices/pg.warehouse')).toBe(false);
     expect(isAdminPath('/ingestionx')).toBe(false);
   });
 

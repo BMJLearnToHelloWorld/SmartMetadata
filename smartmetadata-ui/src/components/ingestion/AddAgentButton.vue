@@ -6,6 +6,9 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
+import { getAddIngestionPath } from '@/utils/fqnPaths';
+import type { ServiceKind } from '@/types/ingestion';
 import { Button, Dropdown, Menu } from 'ant-design-vue';
 import { DownOutlined, PlusOutlined } from '@ant-design/icons-vue';
 import { getAgentMenuItems } from '@/ingestion/supportedPipelines';
@@ -21,6 +24,7 @@ const props = defineProps<{
   /** Route params of the owning service, for the add-ingestion navigation. */
   serviceKind: string;
   serviceId: string;
+  serviceFqn: string;
 }>();
 
 const { t } = useI18n();
@@ -37,10 +41,10 @@ const router = useRouter();
 const menuItems = computed(() => getAgentMenuItems(props.types, props.isDataInsightExists));
 
 function onSelect(type: PipelineType): void {
-  void router.push({
-    name: 'ingestion-service-add-ingestion',
-    params: { kind: props.serviceKind, id: props.serviceId, ingestionType: type },
-  });
+  const category = SERVICE_COLLECTION_BY_KIND[props.serviceKind as ServiceKind];
+  if (category && props.serviceFqn) {
+    void router.push(getAddIngestionPath(category, props.serviceFqn, type));
+  }
 }
 </script>
 

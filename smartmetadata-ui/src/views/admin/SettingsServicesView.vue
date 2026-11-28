@@ -34,6 +34,7 @@ import {
 import { startCase } from '@/utils/text';
 import { resolveServiceTab, type ListableServiceKind } from '@/router/serviceTabSegments';
 import { serviceCategoryByKind } from '@/ingestion/serviceCategories';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 
 /**
@@ -289,7 +290,11 @@ watch(
 );
 
 function openService(record: CatalogService): void {
-  void router.push({ name: 'ingestion-service', params: { kind: record.kind, id: record.id } });
+  const category = serviceCategoryByKind(record.kind)?.enumValue;
+    const fqn = record.fullyQualifiedName;
+    if (category && fqn) {
+      void router.push(getServiceDetailsPath(fqn, category));
+    }
 }
 
 function serviceRow(record: CatalogService) {

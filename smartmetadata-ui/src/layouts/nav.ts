@@ -164,7 +164,7 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'observability-incident': 'quality-test-cases',
   // Retained detail chains resolve straight to the Hub, never via a
   // deleted parent name (DESIGN §6.7 rows 1-2).
-  'ingestion-service': 'admin-settings',
+  'service-detail': 'admin-settings',
   'ingestion-service-connection': 'admin-settings',
   'ingestion-service-add-ingestion': 'admin-settings',
   'ingestion-service-version': 'admin-settings',

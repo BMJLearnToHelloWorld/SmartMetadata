@@ -137,8 +137,8 @@ function testRouter(): Router {
         component: SettingsServicesView,
       },
       {
-        path: '/ingestion/services/:kind/:id',
-        name: 'ingestion-service',
+        path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+        name: 'service-detail',
         component: stub('detail'),
       },
       {
@@ -332,8 +332,8 @@ describe('SettingsServicesView (DESIGN §6.4)', () => {
     const rows = wrapper.findAll('.ant-table-tbody tr');
     await rows[0].trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'database-mysql-prod' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toEqual({ serviceCategory: 'databaseServices', fqn: 'mysql-prod' });
   });
 
   it("shows the Add Service button when the tab grants Create, and navigates to that category's add-service page (D-17)", async () => {

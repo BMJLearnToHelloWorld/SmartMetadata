@@ -105,8 +105,8 @@ async function mountView(initialPath = '/connections', setup?: () => void) {
     routes: [
       { path: '/connections', name: 'connections', component: ConnectionsView },
       {
-        path: '/ingestion/services/:kind/:id',
-        name: 'ingestion-service',
+        path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+        name: 'service-detail',
         component: { template: '<div>service</div>' },
       },
       {
@@ -362,8 +362,8 @@ describe('ConnectionsView', () => {
     const { wrapper, router } = await mountView();
     await wrapper.get('[data-testid="connections-grid-card-warehouse"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'db-1' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toEqual({ serviceCategory: 'databaseServices', fqn: 'warehouse' });
   });
 
   it('opens the scoped add-service wizard from the header button', async () => {

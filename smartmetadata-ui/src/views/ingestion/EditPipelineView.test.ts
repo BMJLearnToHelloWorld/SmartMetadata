@@ -44,7 +44,7 @@ describe('EditPipelineView', () => {
       displayName: 'Warehouse Metadata',
       description: 'keep me',
       pipelineType: 'metadata',
-      service: { id: 's1', type: 'databaseService', name: 'warehouse' },
+      service: { id: 's1', type: 'databaseService', name: 'warehouse', fullyQualifiedName: 'warehouse' },
       owners: [{ id: 'o1', type: 'user', name: 'owner1' }],
       loggerLevel: 'INFO',
       raiseOnError: true,
@@ -161,8 +161,8 @@ describe('EditPipelineView', () => {
           component: { template: '<div>connections</div>' },
         },
         {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
+          path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
           component: { template: '<div>service</div>' },
           props: true,
         },
@@ -267,8 +267,8 @@ describe('EditPipelineView', () => {
     );
     await wrapper.find('[data-testid="view-service-button"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 's1' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toEqual({ serviceCategory: 'databaseServices', fqn: 'warehouse' });
   });
 
   it('keeps saved excludes and includeTables: false on a displayName-only edit', async () => {
@@ -322,7 +322,7 @@ describe('EditPipelineView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
     await wrapper.find('[data-testid="view-service-button"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
   });
 
   it('removes the schedule interval when switched to on-demand', async () => {
@@ -349,7 +349,7 @@ describe('EditPipelineView', () => {
     const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="edit-pipeline-back"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
   });
 
   it('renders the per-type heading and the category / service / heading breadcrumb', async () => {
@@ -362,7 +362,7 @@ describe('EditPipelineView', () => {
     const links = breadcrumb.findAll('a');
     expect(links).toHaveLength(2);
     expect(links[0]!.attributes('href')).toBe('/connections');
-    expect(links[1]!.attributes('href')).toBe('/ingestion/services/database/s1');
+    expect(links[1]!.attributes('href')).toBe('/service/databaseServices/warehouse');
   });
 
   it('renders the settings-pipeline breadcrumb without links', async () => {

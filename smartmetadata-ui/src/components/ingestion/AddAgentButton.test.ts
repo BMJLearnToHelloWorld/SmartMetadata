@@ -16,7 +16,7 @@ async function makeRouter(): Promise<Router> {
     history: createMemoryHistory(),
     routes: [
       {
-        path: '/ingestion/services/:kind/:id/add/:ingestionType',
+        path: '/service/:serviceCategory/:fqn/add-ingestion/:ingestionType',
         name: 'ingestion-service-add-ingestion',
         component: { template: '<div>add</div>' },
       },
@@ -42,6 +42,7 @@ function mountButton(
       disabled: props.disabled ?? false,
       serviceKind: 'database',
       serviceId: 's1',
+      serviceFqn: 'pg.warehouse',
     },
     attachTo: document.body,
     global: { plugins: [Antd, createTestI18n(), router] },
@@ -112,8 +113,8 @@ describe('AddAgentButton (official AddIngestionButton)', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service-add-ingestion');
     expect(router.currentRoute.value.params).toEqual({
-      kind: 'database',
-      id: 's1',
+      serviceCategory: 'databaseServices',
+      fqn: 'pg.warehouse',
       ingestionType: 'usage',
     });
     wrapper.unmount();

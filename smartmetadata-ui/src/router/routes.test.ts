@@ -271,7 +271,11 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
     expect(router.resolve('/connections').name).toBe('connections');
     expect(router.resolve('/ingestion/services').name).toBe('not-found');
-    expect(router.resolve('/ingestion/services/database/s1').name).toBe('ingestion-service');
+    expect(router.resolve('/ingestion/services/database/s1').name).toBe('not-found');
+    expect(router.resolve('/service/databaseServices/pg.warehouse').name).toBe('service-detail');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/connection/edit-connection').name).toBe('ingestion-service-connection');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/add-ingestion/metadata').name).toBe('ingestion-service-add-ingestion');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/versions/0.1').name).toBe('ingestion-service-version');
     // D-17: the official `/:serviceCategory/add-service` form; the
     // retained `/ingestion/services/add` path is deleted with it.
     expect(router.resolve('/databaseServices/add-service').name).toBe('ingestion-service-add');
@@ -524,7 +528,7 @@ describe('guard declaration table (§10.2)', () => {
 
   it('leaves the staged unit, the service family, inbox and column-bulk-ops undeclared', () => {
     for (const name of [
-      'ingestion-service',
+      'service-detail',
       'ingestion-service-add',
       'ingestion-service-connection',
       'ingestion-service-add-ingestion',

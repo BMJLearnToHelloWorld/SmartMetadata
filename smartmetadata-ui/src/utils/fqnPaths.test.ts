@@ -32,6 +32,12 @@ import {
   getQueryPath,
   getDataQualityPagePath,
   getServiceDetailsPath,
+  getAddServicePath,
+  getEditConnectionPath,
+  getPathByServiceFQN,
+  getAddIngestionPath,
+  getEditIngestionPath,
+  getServiceVersionPath,
   getTestSuiteIngestionPath,
   SERVICE_CATEGORY_DATABASE_SERVICES,
   SERVICE_TAB_AGENTS,
@@ -202,4 +208,25 @@ describe('getEntityDetailsPath', () => {
       '/test-suites/suite.fqn/edit-ingestion/suite.fqn.pipeline',
     );
   });
+
+describe('official service path builders', () => {
+  it('matches official RouterUtils service paths, including encoded FQNs', () => {
+    expect(getAddServicePath('databaseServices')).toBe('/databaseServices/add-service');
+    expect(getEditConnectionPath('databaseServices', 'svc.prod')).toBe(
+      '/service/databaseServices/svc.prod/connection/edit-connection',
+    );
+    expect(getPathByServiceFQN('databaseServices', 'svc.prod')).toBe(
+      '/service/databaseServices/svc.prod/connection',
+    );
+    expect(getAddIngestionPath('databaseServices', 'svc/prod', 'metadata')).toBe(
+      '/service/databaseServices/svc%2Fprod/add-ingestion/metadata',
+    );
+    expect(getEditIngestionPath('databaseServices', 'svc/prod', 'ing/one', 'profiler')).toBe(
+      '/service/databaseServices/svc%2Fprod/edit-ingestion/ing%2Fone/profiler',
+    );
+    expect(getServiceVersionPath('databaseServices', 'svc/prod', '0.2')).toBe(
+      '/service/databaseServices/svc%2Fprod/versions/0.2',
+    );
+  });
+});
 });

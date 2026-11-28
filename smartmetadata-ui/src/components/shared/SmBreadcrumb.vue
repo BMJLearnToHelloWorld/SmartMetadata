@@ -14,6 +14,7 @@ import { RouterLink } from 'vue-router';
  * (DESIGN §9.4) keeps its last-item link. An empty list renders nothing.
  */
 export interface SmBreadcrumbItem {
+  to?: string;
   label: string;
   routeName?: string;
   routeParams?: Record<string, string>;
@@ -29,8 +30,8 @@ withDefaults(defineProps<{ items?: SmBreadcrumbItem[]; testId?: string }>(), {
   <Breadcrumb v-if="items.length" :data-testid="testId">
     <Breadcrumb.Item v-for="(item, index) in items" :key="`${item.label}-${index}`">
       <RouterLink
-        v-if="item.routeName"
-        :to="{ name: item.routeName, params: item.routeParams }"
+        v-if="item.to || item.routeName"
+        :to="item.to ?? { name: item.routeName, params: item.routeParams }"
       >
         {{ item.label }}
       </RouterLink>

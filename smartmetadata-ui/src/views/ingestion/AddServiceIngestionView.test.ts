@@ -36,10 +36,11 @@ describe('AddServiceIngestionView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.includes('/api/v1/services/databaseServices/s1') && init?.method === 'GET') {
+        if ((url.includes('/api/v1/services/databaseServices/s1') || url.includes('/api/v1/services/databaseServices/name/warehouse') || url.includes('/api/v1/services/databaseServices/name/pg.warehouse')) && init?.method === 'GET') {
           return jsonResponse({
             id: 's1',
             name: 'warehouse',
+            fullyQualifiedName: 'warehouse',
             serviceType: 'Postgres',
             kind: 'database',
             owners: serviceOwners,
@@ -95,23 +96,23 @@ describe('AddServiceIngestionView', () => {
       history: createMemoryHistory(),
       routes: [
         {
-          path: '/ingestion/services/:kind/:id/add-ingestion/:ingestionType',
+          path: '/service/:serviceCategory/:fqn/add-ingestion/:ingestionType',
           name: 'ingestion-service-add-ingestion',
           component: AddServiceIngestionView,
           props: true,
         },
         {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
+          path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
           component: { template: '<div>service</div>' },
           props: true,
         },
       ],
     });
-    await router.push(`/ingestion/services/database/s1/add-ingestion/${ingestionType}`);
+    await router.push(`/service/databaseServices/warehouse/add-ingestion/${ingestionType}`);
     await router.isReady();
     const wrapper = mount(AddServiceIngestionView, {
-      props: { kind: 'database', id: 's1', ingestionType },
+      props: { serviceCategory: 'databaseServices', fqn: 'warehouse', ingestionType },
       global: { plugins: [pinia, router, Antd, createTestI18n(locale)] },
     });
     // The schema import is an extra async hop after the service fetch;

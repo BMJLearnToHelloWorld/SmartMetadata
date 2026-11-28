@@ -36,6 +36,7 @@ const props = defineProps<{
   /** Route params of the owning service, for the add-ingestion navigation. */
   serviceKind: string;
   serviceId: string;
+  serviceFqn: string;
 }>();
 
 const emit = defineEmits<{
@@ -84,6 +85,7 @@ const emit = defineEmits<{
           :disabled="orchestratorUnavailable"
           :service-kind="serviceKind"
           :service-id="serviceId"
+          :service-fqn="serviceFqn"
         />
       </template>
     </AgentGroup>

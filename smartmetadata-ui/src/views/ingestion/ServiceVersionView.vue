@@ -16,7 +16,9 @@ import {
   CHILD_ENTITY_TYPE_BY_KIND,
   fetchServiceChildren,
 } from '@/api/serviceChildren';
-import { getServiceVersion, listServiceVersions } from '@/api/serviceVersions';
+import { getServiceByFqn } from '@/api/serviceLookup';
+import { getServiceVersion, listServiceVersions, serviceKindFromCategory } from '@/api/serviceVersions';
+import { getServiceDetailsPath, getServiceVersionPath } from '@/utils/fqnPaths';
 import { createEmptyPaging } from '@/catalog/servicePaging';
 import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
 import { getCountLabel } from '@/catalog/serviceCountLabel';
@@ -43,8 +45,7 @@ import {
   visibleChildTags,
 } from '@/components/ingestion/serviceChildTable';
 import { usePermissionStore } from '@/stores/permissions';
-import { entityTypeForKind, SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
-import { SERVICE_GET_API } from '@/ingestion/serviceApis';
+import { entityTypeForKind } from '@/ingestion/connections';
 import { getTierTag } from '@/ingestion/tierTags';
 import { useCursorPaging } from '@/ingestion/useCursorPaging';
 import {
@@ -55,7 +56,7 @@ import {
 } from '@/ingestion/versionDiff';
 import type { CatalogService, ServiceKind } from '@/types/ingestion';
 
-const props = defineProps<{ kind: string; id: string; version: string }>();
+const props = defineProps<{ serviceCategory: string; fqn: string; version: string }>();
 
 const router = useRouter();
 const { t } = useI18n();
@@ -63,11 +64,7 @@ const permissionStore = usePermissionStore();
 
 // D-11: no kind fallback. An unknown kind never fetches and lands in the
 // error state.
-const kind: ServiceKind | undefined = (
-  Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]
-).includes(props.kind as ServiceKind)
-  ? (props.kind as ServiceKind)
-  : undefined;
+const kind: ServiceKind | undefined = serviceKindFromCategory(props.serviceCategory);
 
 const childEntityType = computed(() =>
   kind ? CHILD_ENTITY_TYPE_BY_KIND[kind] : undefined,
@@ -108,8 +105,7 @@ const breadcrumbItems = computed(() => {
     },
     {
       label: getEntityName(snapshot.value),
-      routeName: 'ingestion-service',
-      routeParams: { kind: props.kind, id: props.id },
+      to: getServiceDetailsPath(props.fqn, props.serviceCategory),
     },
   ];
 });
@@ -222,10 +218,7 @@ function tagChipClass(tag: { added?: boolean; removed?: boolean }): string {
 }
 
 function detailTarget() {
-  return {
-    name: 'ingestion-service',
-    params: { kind: props.kind, id: props.id },
-  };
+  return getServiceDetailsPath(props.fqn, props.serviceCategory);
 }
 
 function onBack(): void {
@@ -233,10 +226,7 @@ function onBack(): void {
 }
 
 function onSelectVersion(version: string): void {
-  void router.push({
-    name: 'ingestion-service-version',
-    params: { kind: props.kind, id: props.id, version },
-  });
+  void router.push(getServiceVersionPath(props.serviceCategory, props.fqn, version));
 }
 
 async function loadPage(): Promise<void> {
@@ -257,7 +247,7 @@ async function loadPage(): Promise<void> {
     return;
   }
   try {
-    const resolved = await SERVICE_GET_API[kind](props.id);
+    const resolved = await getServiceByFqn(kind, props.fqn);
     if (token !== pageToken) {
       return;
     }
@@ -287,7 +277,7 @@ async function loadPage(): Promise<void> {
       return;
     }
     const [list, limit, childOps] = await Promise.all([
-      listServiceVersions(kind, props.id),
+      listServiceVersions(kind, resolved.id),
       // Fail-open: a limit fetch failure leaves maxVersions at -1 (no
       // truncation), the limits module's documented failure semantics.
       getLimitByResource(entityTypeForKind(kind)).catch(() => null),
@@ -332,7 +322,13 @@ async function loadVersionData(): Promise<void> {
   const token = ++versionToken;
   versionLoading.value = true;
   try {
-    const snap = await getServiceVersion(kind, props.id, props.version);
+    const serviceId = resolvedService.value?.id;
+    if (!serviceId) {
+      snapshot.value = null;
+      versionLoading.value = false;
+      return;
+    }
+    const snap = await getServiceVersion(kind, serviceId, props.version);
     if (token !== versionToken) {
       return;
     }
@@ -430,7 +426,7 @@ watch(
 );
 
 watch(
-  () => [props.kind, props.id],
+  () => [props.serviceCategory, props.fqn],
   async () => {
     await loadPage();
     if (!forbidden.value) {

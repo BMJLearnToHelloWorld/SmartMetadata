@@ -294,6 +294,66 @@ export function getServiceDetailsPath(
 }
 
 /**
+ * Official `getAddServicePath` (RouterUtils.ts): /{serviceCategory}/add-service
+ */
+export function getAddServicePath(serviceCategory: string): string {
+  return `/${serviceCategory}/add-service`;
+}
+
+/**
+ * Official `getEditConnectionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/connection/edit-connection
+ */
+export function getEditConnectionPath(serviceCategory: string, serviceFqn: string): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/connection/edit-connection`;
+}
+
+/**
+ * Official `getPathByServiceFQN` (RouterUtils.ts): service connection tab
+ *   /service/{serviceCat}/{fqn}/connection
+ */
+export function getPathByServiceFQN(serviceCategory: string, serviceFqn: string): string {
+  return getServiceDetailsPath(serviceFqn, serviceCategory, 'connection');
+}
+
+/**
+ * Official `getAddIngestionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/add-ingestion/{ingestionType}
+ */
+export function getAddIngestionPath(
+  serviceCategory: string,
+  serviceFqn: string,
+  ingestionType: string,
+): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/add-ingestion/${ingestionType}`;
+}
+
+/**
+ * Official `getEditIngestionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/edit-ingestion/{ingestionFqn}/{ingestionType}
+ */
+export function getEditIngestionPath(
+  serviceCategory: string,
+  serviceFqn: string,
+  ingestionFqn: string,
+  ingestionType: string,
+): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/edit-ingestion/${getEncodedFqn(ingestionFqn)}/${ingestionType}`;
+}
+
+/**
+ * Official `getServiceVersionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/versions/{version}
+ */
+export function getServiceVersionPath(
+  serviceCategory: string,
+  serviceFqn: string,
+  version: string,
+): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/versions/${version}`;
+}
+
+/**
  * Official `getTestSuiteIngestionPath` (RouterUtils.ts):
  *   /test-suites/{fqn}/add-ingestion
  *   /test-suites/{fqn}/edit-ingestion/{ingestionFqn}

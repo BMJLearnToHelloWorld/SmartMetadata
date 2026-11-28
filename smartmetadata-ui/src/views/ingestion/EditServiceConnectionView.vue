@@ -30,11 +30,12 @@ import {
 import {
   createEmptyServiceForm,
   formValuesFromService,
-  SERVICE_TYPES_BY_KIND,
 } from '@/ingestion/connections';
 import { getDocPanelServiceType, useFieldFocus } from '@/ingestion/fieldFocus';
 import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
-import { SERVICE_GET_API } from '@/ingestion/serviceApis';
+import { getServiceByFqn } from '@/api/serviceLookup';
+import { serviceKindFromCategory } from '@/api/serviceVersions';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import {
   buildEditPatch,
   getEditConfigData,
@@ -48,17 +49,13 @@ import type {
   ServiceKind,
 } from '@/types/ingestion';
 
-const props = defineProps<{ kind: string; id: string }>();
+const props = defineProps<{ serviceCategory: string; fqn: string }>();
 const { t } = useI18n();
 const router = useRouter();
 
 // D-11: no kind fallback. An unknown kind never fetches and lands in the
 // error state, like the pin's fetch-failure error state.
-const kind: ServiceKind | undefined = (
-  Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]
-).includes(props.kind as ServiceKind)
-  ? (props.kind as ServiceKind)
-  : undefined;
+const kind: ServiceKind | undefined = serviceKindFromCategory(props.serviceCategory);
 
 const loading = ref(true);
 const isError = ref(false);
@@ -102,13 +99,12 @@ const breadcrumbItems = computed(() => {
   const category = SERVICE_CATEGORIES.find((row) => row.key === kind);
   return [
     {
-      label: category ? t(category.labelKey) : (kind ?? props.kind),
+      label: category ? t(category.labelKey) : (kind ?? props.serviceCategory),
       routeName: 'connections',
     },
     {
       label: service.value.displayName || service.value.name,
-      routeName: 'ingestion-service',
-      routeParams: { kind: props.kind, id: props.id },
+      to: getServiceDetailsPath(props.fqn, props.serviceCategory),
     },
     { label: t('settings.services.edit.breadcrumb') },
   ];
@@ -130,11 +126,11 @@ const stepperSteps = computed(() => [
 // service-category enum value. The address is the fetched FQN when known
 // (OpenMetadata guard), otherwise the id that was fetched.
 const missingEntityMessage = computed(() => {
-  const enumValue = kind ? SERVICE_COLLECTION_BY_KIND[kind] : props.kind;
+  const enumValue = kind ? SERVICE_COLLECTION_BY_KIND[kind] : props.serviceCategory;
   const entity = enumValue.charAt(0).toUpperCase() + enumValue.slice(1);
   return t('settings.services.edit.entityMissing', {
     entity,
-    fqn: service.value?.fullyQualifiedName ?? props.id,
+    fqn: service.value?.fullyQualifiedName ?? props.fqn,
   });
 });
 
@@ -149,10 +145,7 @@ const connectedHost = computed(() => {
 });
 
 function detailTarget() {
-  return {
-    name: 'ingestion-service',
-    params: { kind: props.kind, id: props.id },
-  };
+  return getServiceDetailsPath(props.fqn, props.serviceCategory);
 }
 
 // Pin isLeaving effect (EditConnectionFormPage.tsx:226-235): the empty-patch
@@ -183,7 +176,7 @@ async function load(): Promise<void> {
     return;
   }
   try {
-    const fetched = await SERVICE_GET_API[kind](props.id);
+    const fetched = await getServiceByFqn(kind, props.fqn);
     service.value = fetched;
     // Post-fetch OpenMetadata guard: the pin guards pre-fetch on the FQN
     // route param (EditConnectionFormPage.tsx:92-107); the product fetches

@@ -1123,16 +1123,26 @@ export const router = createRouter({
         // change, no separate step); the route name is kept so the
         // callers below only change path + params.
         { path: ':serviceCategory/add-service', name: 'ingestion-service-add', component: AddServiceView },
+        // Official service routes (RouterUtils / constants ROUTES). More
+        // specific paths must be registered before SERVICE_WITH_TAB so
+        // versions / add-ingestion / edit-connection are not eaten as tabs.
+        // Official has no /ingestion/services/:kind/:id compatibility path.
         {
-          path: 'ingestion/services/:kind/:id/connection',
+          path: 'service/:serviceCategory/:fqn/connection/edit-connection',
           name: 'ingestion-service-connection',
           component: EditServiceConnectionView,
           props: true,
         },
         {
-          path: 'ingestion/services/:kind/:id/add-ingestion/:ingestionType',
+          path: 'service/:serviceCategory/:fqn/add-ingestion/:ingestionType',
           name: 'ingestion-service-add-ingestion',
           component: AddServiceIngestionView,
+          props: true,
+        },
+        {
+          path: 'service/:serviceCategory/:fqn/versions/:version',
+          name: 'ingestion-service-version',
+          component: ServiceVersionView,
           props: true,
         },
         {
@@ -1140,18 +1150,6 @@ export const router = createRouter({
           path: 'service/:serviceCategory/:fqn/:tab?/:subTab?',
           name: 'service-detail',
           component: ServiceDetailView,
-          props: true,
-        },
-        {
-          path: 'ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: ServiceDetailView,
-          props: true,
-        },
-        {
-          path: 'ingestion/services/:kind/:id/versions/:version',
-          name: 'ingestion-service-version',
-          component: ServiceVersionView,
           props: true,
         },
         {

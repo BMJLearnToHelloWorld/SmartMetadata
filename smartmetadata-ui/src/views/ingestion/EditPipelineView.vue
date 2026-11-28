@@ -6,6 +6,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import {
   Button,
   Card,
@@ -159,10 +161,11 @@ const breadcrumbs = computed(() => {
     { label: categoryLabel.value, routeName: 'connections' },
   ];
   if (service.value) {
+    const category = SERVICE_COLLECTION_BY_KIND[form.serviceKind];
+    const fqn = service.value.fullyQualifiedName;
     items.push({
       label: service.value.name,
-      routeName: 'ingestion-service',
-      routeParams: { kind: form.serviceKind, id: form.serviceId },
+      ...(category && fqn ? { to: getServiceDetailsPath(fqn, category) } : {}),
     });
   }
   items.push({ label: heading.value });
@@ -225,10 +228,11 @@ function goToService(): void {
     backToDetail();
     return;
   }
-  void router.push({
-    name: 'ingestion-service',
-    params: { kind: form.serviceKind, id: form.serviceId },
-  });
+  const category = SERVICE_COLLECTION_BY_KIND[form.serviceKind];
+  const fqn = service.value?.fullyQualifiedName;
+  if (category && fqn) {
+    void router.push(getServiceDetailsPath(fqn, category));
+  }
 }
 
 async function load(): Promise<void> {

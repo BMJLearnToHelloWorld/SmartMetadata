@@ -24,6 +24,8 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { createTestI18n } from '@/test/i18n';
 import ServiceDetailView from './ServiceDetailView.vue';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
+import type { ServiceKind } from '@/types/ingestion';
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -112,7 +114,7 @@ export function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
       calls.push({ method: init?.method ?? 'GET', url, body: String(init?.body ?? '') });
       // The followers URLs also contain the service prefix: answer
       // them before the plain service branch below.
-      if (/\/api\/v1\/services\/[a-zA-Z]+Services\/s1\/followers/.test(url)) {
+      if (/\/api\/v1\/services\/[a-zA-Z]+Services\/(s1|name\/pg\.warehouse)\/followers/.test(url) || /\/api\/v1\/services\/[a-zA-Z]+Services\/name\/pg\.warehouse\/followers/.test(url)) {
         if (options.followFails) {
           return new Response('boom', { status: 500 });
         }
@@ -134,7 +136,7 @@ export function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
           },
         });
       }
-      if (/\/api\/v1\/services\/[a-zA-Z]+Services\/s1/.test(url)) {
+      if (/\/api\/v1\/services\/[a-zA-Z]+Services\/s1(?:\/|$|\?)/.test(url) || /\/api\/v1\/services\/[a-zA-Z]+Services\/name\/pg\.warehouse(?:\/|$|\?)/.test(url)) {
         const body: Record<string, unknown> = {
           id: 's1',
           name: 'warehouse',
@@ -270,7 +272,7 @@ export function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
 export const mounted: Array<{ unmount(): void }> = [];
 
 export async function mountView(
-  options: { tab?: string; kind?: string; id?: string; isAdmin?: boolean } = {},
+  options: { tab?: string; kind?: string; id?: string; fqn?: string; isAdmin?: boolean } = {},
 ) {
   const pinia = createPinia();
   setActivePinia(pinia);
@@ -281,21 +283,27 @@ export async function mountView(
       { path: '/connections', name: 'connections', component: { template: '<div>list</div>' } },
       { path: '/settings/:category', name: 'settings-category', component: { template: '<div>category</div>' } },
       {
-        path: '/ingestion/services/:kind/:id',
-        name: 'ingestion-service',
-        component: ServiceDetailView,
-        props: true,
-      },
-      {
-        path: '/ingestion/services/:kind/:id/connection',
+        path: '/service/:serviceCategory/:fqn/connection/edit-connection',
         name: 'ingestion-service-connection',
         component: { template: '<div>conn</div>' },
         props: true,
       },
       {
-        path: '/ingestion/services/:kind/:id/versions/:version',
+        path: '/service/:serviceCategory/:fqn/add-ingestion/:ingestionType',
+        name: 'ingestion-service-add-ingestion',
+        component: { template: '<div>add</div>' },
+        props: true,
+      },
+      {
+        path: '/service/:serviceCategory/:fqn/versions/:version',
         name: 'ingestion-service-version',
         component: { template: '<div>version</div>' },
+        props: true,
+      },
+      {
+        path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+        name: 'service-detail',
+        component: ServiceDetailView,
         props: true,
       },
       {
@@ -310,23 +318,22 @@ export async function mountView(
         component: { template: '<div>asset</div>' },
         props: true,
       },
-      {
-        path: '/ingestion/services/:kind/:id/add/:ingestionType',
-        name: 'ingestion-service-add-ingestion',
-        component: { template: '<div>add</div>' },
-        props: true,
-      },
+
     ],
   });
   const kind = options.kind ?? 'database';
-  const tabQuery = options.tab ? `?tab=${options.tab}` : '';
-  await router.push(`/ingestion/services/${kind}/${options.id ?? 's1'}${tabQuery}`);
+  const serviceCategory = SERVICE_COLLECTION_BY_KIND[kind as ServiceKind] ?? kind;
+  const fqn = options.fqn ?? (options.id && options.id !== 's1' ? options.id : 'pg.warehouse');
+  const tabSuffix = options.tab ? `/${options.tab}` : '';
+  await router.push(`/service/${serviceCategory}/${encodeURIComponent(fqn)}${tabSuffix}`);
   await router.isReady();
-  const wrapper = mount(ServiceDetailView, {
-    props: { kind, id: options.id ?? 's1' },
-    attachTo: document.body,
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
-  });
+  const wrapper = mount(
+    { template: '<router-view />' },
+    {
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    },
+  );
   mounted.push(wrapper);
   await flushPromises();
   return { wrapper, router };

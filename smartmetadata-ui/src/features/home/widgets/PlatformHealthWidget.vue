@@ -12,6 +12,8 @@ import { Tag } from 'ant-design-vue';
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import HomeWidgetCard from '../HomeWidgetCard.vue';
 import {
   useBucketServices,
@@ -162,22 +164,15 @@ function goToHealth(filter: ServiceHealthFilter): void {
   void router.push({ name: 'connections', query: { health: filter } });
 }
 
-function openService(service: Pick<FailingService, 'id' | 'serviceKind'>): void {
+function openService(service: Pick<FailingService, 'id' | 'serviceKind' | 'fqn'>): void {
   if (!service.serviceKind) {
     openServices();
     return;
   }
-  // The product's service detail has no real AGENTS tab — the slot only
-  // renders an empty residual — so the row opens the detail page itself.
-  // ADR:2026-11-08-my-data-platform-health-service-link
-  // The detail route is UUID-addressed (`:kind/:id`, fetched by id): the
-  // FQN cannot bind the by-id endpoint, so the row's UUID is passed,
-  // matching the services list — never the FQN pin's FQN-addressed
-  // detail page takes.
-  void router.push({
-    name: 'ingestion-service',
-    params: { kind: service.serviceKind, id: service.id },
-  });
+  const category = SERVICE_COLLECTION_BY_KIND[service.serviceKind];
+  if (category && service.fqn) {
+    void router.push(getServiceDetailsPath(service.fqn, category));
+  }
 }
 
 const PIPELINE_TYPE_LABELS: Record<string, string> = {
