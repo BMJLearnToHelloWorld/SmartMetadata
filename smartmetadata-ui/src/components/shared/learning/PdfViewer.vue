@@ -58,7 +58,7 @@ const pdfUrl = computed(() => getSafeHttpUrl(props.resource.source.url));
 .pdf-viewer__frame {
   width: 100%;
   min-height: 60vh;
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border: 1px solid var(--sm-border-color);
   border-radius: var(--sm-radius-sm, 8px);
 }
 </style>

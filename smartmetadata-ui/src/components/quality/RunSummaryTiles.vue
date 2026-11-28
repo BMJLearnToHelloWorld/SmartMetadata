@@ -69,10 +69,10 @@ const tiles = computed(() => {
   gap: 10px;
 }
 .run-summary-tiles__tile {
-  border: 1px solid var(--sm-border-color, #e8e8e8);
+  border: 1px solid var(--sm-border-color);
   border-radius: 12px;
   padding: 10px 12px;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
 }
 .run-summary-tiles__label {
   font-size: 12px;
@@ -84,12 +84,12 @@ const tiles = computed(() => {
   margin-top: 4px;
 }
 .run-summary-tiles__passed .run-summary-tiles__value {
-  color: #067647;
+  color: var(--sm-color-success-text);
 }
 .run-summary-tiles__failed .run-summary-tiles__value {
-  color: #b42318;
+  color: var(--sm-color-error-text);
 }
 .run-summary-tiles__aborted .run-summary-tiles__value {
-  color: #b54708;
+  color: var(--sm-color-warning-text);
 }
 </style>

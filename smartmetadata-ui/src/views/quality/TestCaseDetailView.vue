@@ -1241,13 +1241,13 @@ onMounted(() => {
 .test-case-results-layout__rail {
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--sm-color-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: var(--sm-radius-md, 8px);
-  background: var(--sm-color-fill-quaternary, #fafafa);
+  background: var(--sm-content-bg);
 }
 .test-case-rail__block {
   margin: 0 0 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
   font-size: 13px;
 }
 .test-case-rail__params {

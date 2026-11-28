@@ -403,7 +403,7 @@ watch(
 <style scoped>
 .incident-status-popover__header {
   align-items: center;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sm-border-secondary);
   display: flex;
   gap: 0.25rem;
   padding: 0.5rem 0.75rem;
@@ -452,11 +452,11 @@ watch(
 
 .incident-status-popover__user--selected,
 .incident-status-popover__user:hover {
-  background: #f5f5f5;
+  background: var(--sm-row-hover-bg);
 }
 
 .incident-status-popover__empty {
-  color: #8c8c8c;
+  color: var(--sm-text-quaternary);
   font-size: 12px;
   padding: 0.5rem;
   text-align: center;

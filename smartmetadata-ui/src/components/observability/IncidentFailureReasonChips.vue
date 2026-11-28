@@ -53,9 +53,9 @@ function select(reason: string): void {
 }
 
 .incident-failure-reasons__chip {
-  border: 1px solid var(--color-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--sm-bg-container);
   cursor: pointer;
   font-size: 12px;
   line-height: 1.25;
@@ -63,8 +63,8 @@ function select(reason: string): void {
 }
 
 .incident-failure-reasons__chip--selected {
-  background: #1677ff;
-  border-color: #1677ff;
-  color: #fff;
+  background: var(--sm-color-primary);
+  border-color: var(--sm-color-primary);
+  color: var(--sm-text-on-primary);
 }
 </style>

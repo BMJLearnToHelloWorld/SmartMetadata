@@ -217,7 +217,7 @@ async function handleFullScreenToggle(): Promise<void> {
   min-height: 0;
   max-height: 90vh;
   overflow: auto;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
 }
 
 .resource-player--fullscreen {
@@ -225,12 +225,12 @@ async function handleFullScreenToggle(): Promise<void> {
   width: 100vw;
   max-height: none;
   overflow: hidden;
-  background: var(--sm-color-fill-secondary, #fafafa);
+  background: var(--sm-content-bg);
 }
 
 .resource-player__header {
   padding: var(--sm-spacing-sm, 12px) var(--sm-spacing-md, 24px);
-  border-bottom: 1px solid var(--sm-border-color, #f0f0f0);
+  border-bottom: 1px solid var(--sm-border-color);
 }
 
 .resource-player__title-row {

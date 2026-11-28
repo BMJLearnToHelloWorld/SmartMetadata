@@ -85,10 +85,10 @@ async function onCopy(): Promise<void> {
 
 .sm-sql-query-viewer__lines {
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
   padding: 0 8px;
   border-radius: 12px;
-  background: var(--sm-color-fill-tertiary, #f0f0f0);
+  background: var(--sm-trigger-bg);
 }
 
 :deep(.sm-sql-query-viewer__editor--short .cm-editor) {

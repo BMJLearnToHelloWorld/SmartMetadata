@@ -64,11 +64,11 @@ const ariaLabel = computed(() => props.srLabel ?? props.tooltip);
   gap: var(--sm-spacing-xs, 4px);
   font-size: 12px;
   font-weight: 500;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 
 .stat-item--active .stat-item__label {
-  color: var(--sm-color-brand, var(--sm-color-primary, #1677ff));
+  color: var(--sm-brand);
 }
 
 .stat-item__icon {

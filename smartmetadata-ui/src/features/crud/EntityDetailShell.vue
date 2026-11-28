@@ -258,7 +258,7 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
   align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid var(--sm-color-border-secondary, #f0f0f0);
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 
 .entity-detail__tab-bar--with-extra {

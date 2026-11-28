@@ -35,21 +35,21 @@ const stackTrace = computed(() => props.errorDetails?.stackTrace?.trim() || '');
 
 <style scoped>
 .run-execution-error {
-  border-top: 1px solid var(--sm-border-color, #e8e8e8);
+  border-top: 1px solid var(--sm-border-color);
   padding-top: 12px;
 }
 .run-execution-error__message {
   margin: 0 0 8px;
   white-space: pre-wrap;
-  color: var(--sm-color-error, #b42318);
+  color: var(--sm-color-error);
 }
 .run-execution-error__trace {
   margin: 0;
   max-height: 240px;
   overflow: auto;
-  border: 1px solid var(--sm-border-color, #e8e8e8);
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
-  background: var(--sm-bg-layout, #f5f5f5);
+  background: var(--sm-content-bg);
   padding: 12px;
   font-size: 12px;
 }

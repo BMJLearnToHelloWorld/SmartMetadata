@@ -202,20 +202,20 @@ onMounted(() => {
   cursor: default;
 }
 .dimensionality-heatmap__cell--success {
-  border: 1px solid #12b76a;
-  background: #ecfdf3;
+  border: 1px solid var(--sm-color-success);
+  background: var(--sm-color-success-bg);
 }
 .dimensionality-heatmap__cell--failed {
-  border: 1px solid #f04438;
-  background: #fef3f2;
+  border: 1px solid var(--sm-color-error);
+  background: var(--sm-color-error-bg);
 }
 .dimensionality-heatmap__cell--aborted {
-  border: 1px solid #f79009;
-  background: #fffaeb;
+  border: 1px solid var(--sm-color-warning);
+  background: var(--sm-color-warning-bg);
 }
 .dimensionality-heatmap__cell--no-data {
-  border: 1px solid #d0d5dd;
-  background: #f2f4f7;
+  border: 1px solid var(--sm-border-color);
+  background: var(--sm-row-hover-bg);
 }
 .dimensionality-heatmap__scroll-indicator {
   position: absolute;
@@ -254,20 +254,20 @@ onMounted(() => {
   border-radius: 2px;
 }
 .dimensionality-heatmap__legend-box--success {
-  border: 1px solid #12b76a;
-  background: #ecfdf3;
+  border: 1px solid var(--sm-color-success);
+  background: var(--sm-color-success-bg);
 }
 .dimensionality-heatmap__legend-box--failed {
-  border: 1px solid #f04438;
-  background: #fef3f2;
+  border: 1px solid var(--sm-color-error);
+  background: var(--sm-color-error-bg);
 }
 .dimensionality-heatmap__legend-box--aborted {
-  border: 1px solid #f79009;
-  background: #fffaeb;
+  border: 1px solid var(--sm-color-warning);
+  background: var(--sm-color-warning-bg);
 }
 .dimensionality-heatmap__legend-box--no-data {
-  border: 1px solid #d0d5dd;
-  background: #f2f4f7;
+  border: 1px solid var(--sm-border-color);
+  background: var(--sm-row-hover-bg);
 }
 .dimensionality-heatmap__empty {
   padding: 32px;

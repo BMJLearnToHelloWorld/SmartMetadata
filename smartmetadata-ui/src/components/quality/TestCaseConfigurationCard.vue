@@ -135,9 +135,9 @@ function sqlLines(value: string): string[] {
 
 <style scoped>
 .tc-config-card {
-  border: 1px solid var(--sm-color-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: var(--sm-radius-lg, 12px);
-  background: var(--sm-color-bg-container, #fff);
+  background: var(--sm-bg-container);
   overflow: hidden;
 }
 
@@ -146,13 +146,13 @@ function sqlLines(value: string): string[] {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--sm-color-border, #d9d9d9);
+  border-bottom: 1px solid var(--sm-border-color);
 }
 
 .tc-config-card__title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 
 .tc-config-card__body {
@@ -171,35 +171,35 @@ function sqlLines(value: string): string[] {
 .tc-config-card__category {
   margin: 0 !important;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 
 .tc-config-card__threshold-sentence {
   margin: 4px 0 0 !important;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.65));
+  color: var(--sm-text-secondary);
 }
 
 .tc-config-card__dynamic {
   font-size: 12px;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid var(--sm-color-primary-border, #91caff);
-  background: var(--sm-color-primary-bg, #e6f4ff);
+  border: 1px solid var(--sm-color-primary-50);
+  background: var(--sm-color-primary-bg);
 }
 
 .tc-config-card__dynamic-title {
   font-weight: 600;
-  color: var(--sm-color-primary, #1677ff);
+  color: var(--sm-color-primary);
 }
 
 .tc-config-card__dynamic-sub {
   margin-top: 2px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.65));
+  color: var(--sm-text-secondary);
 }
 
 .tc-config-card__rows {
-  border: 1px solid var(--sm-color-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -210,7 +210,7 @@ function sqlLines(value: string): string[] {
   gap: 12px;
   padding: 10px 12px;
   font-size: 12px;
-  border-bottom: 1px solid var(--sm-color-border, #d9d9d9);
+  border-bottom: 1px solid var(--sm-border-color);
 }
 
 .tc-config-card__row:last-child {
@@ -218,7 +218,7 @@ function sqlLines(value: string): string[] {
 }
 
 .tc-config-card__row-value {
-  font-family: var(--sm-font-mono, ui-monospace, monospace);
+  font-family: ui-monospace, monospace;
   font-weight: 600;
   text-align: right;
   word-break: break-word;
@@ -229,12 +229,12 @@ function sqlLines(value: string): string[] {
   margin: 0;
   font-size: 11px;
   white-space: pre-wrap;
-  font-family: var(--sm-font-mono, ui-monospace, monospace);
+  font-family: ui-monospace, monospace;
 }
 
 .tc-config-card__empty {
   margin: 0 !important;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 </style>

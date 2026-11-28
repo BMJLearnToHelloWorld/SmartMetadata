@@ -304,9 +304,9 @@ function viewIncident(): void {
 <style scoped>
 .tc-last-run-banner {
   border-radius: var(--sm-radius-lg, 12px);
-  border: 1px solid var(--sm-color-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-left-width: 4px;
-  background: var(--sm-color-fill-quaternary, #fafafa);
+  background: var(--sm-content-bg);
   overflow: hidden;
 }
 
@@ -331,7 +331,7 @@ function viewIncident(): void {
 
 .tc-last-run-banner__title {
   font-weight: 500;
-  color: var(--sm-color-text, rgba(0, 0, 0, 0.88));
+  color: var(--sm-text-primary);
 }
 
 .tc-last-run-banner__status {
@@ -342,7 +342,7 @@ function viewIncident(): void {
 .tc-last-run-banner__description {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
   word-break: break-word;
 }
 
@@ -365,18 +365,18 @@ function viewIncident(): void {
 .tc-last-run-banner__metric-label {
   font-size: 11px;
   text-transform: uppercase;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
   font-weight: 600;
 }
 
 .tc-last-run-banner__metric-values {
-  font-family: var(--sm-font-mono, ui-monospace, monospace);
+  font-family: ui-monospace, monospace;
   font-size: 14px;
   margin-top: 2px;
 }
 
 .tc-last-run-banner__metric-expected {
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 
 .tc-last-run-banner__times {
@@ -389,14 +389,14 @@ function viewIncident(): void {
 }
 
 .tc-last-run-banner__next-run {
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
   white-space: nowrap;
 }
 
 .tc-last-run-banner__divider {
   width: 1px;
   align-self: stretch;
-  background: var(--sm-color-border, #d9d9d9);
+  background: var(--sm-border-color);
 }
 
 .tc-last-run-banner__incident {
@@ -405,14 +405,14 @@ function viewIncident(): void {
   align-items: center;
   gap: 12px 16px;
   padding: 12px 20px;
-  border-top: 1px solid var(--sm-color-border, #d9d9d9);
+  border-top: 1px solid var(--sm-border-color);
   background: rgba(255, 255, 255, 0.55);
 }
 
 .tc-last-run-banner__incident-icon {
   font-size: 20px;
   flex-shrink: 0;
-  color: var(--sm-color-error, #ff4d4f);
+  color: var(--sm-color-error);
 }
 
 .tc-last-run-banner__incident-text {
@@ -426,7 +426,7 @@ function viewIncident(): void {
 }
 
 .tc-last-run-banner__incident-id {
-  font-family: var(--sm-font-mono, ui-monospace, monospace);
+  font-family: ui-monospace, monospace;
   font-weight: 600;
   flex-shrink: 0;
 }

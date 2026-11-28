@@ -135,17 +135,17 @@ function tierText(value: TierDisplay | undefined): string {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: var(--sm-color-text, inherit);
+  color: var(--sm-text-primary);
 }
 .data-assets-version-header__name,
 .data-assets-version-header__meta {
-  color: var(--sm-color-text-secondary, var(--sm-color-text, inherit));
+  color: var(--sm-color-text-secondary, var(--sm-text-primary));
 }
 .data-assets-version-header__deleted {
   padding: 0 8px;
   border-radius: 4px;
-  background: var(--sm-color-danger-bg, rgba(255, 77, 79, 0.12));
-  color: var(--sm-color-danger, #cf1322);
+  background: var(--sm-color-error-bg);
+  color: var(--sm-color-error-text);
   font-size: 12px;
 }
 .data-assets-version-header__meta {

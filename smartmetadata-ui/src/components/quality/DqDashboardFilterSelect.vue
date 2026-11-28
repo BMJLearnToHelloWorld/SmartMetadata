@@ -122,7 +122,7 @@ function selectAll(): void {
   max-width: 320px;
   max-height: 320px;
   overflow: auto;
-  background: var(--sm-bg-elevated, #fff);
+  background: var(--sm-bg-elevated);
   border-radius: var(--sm-radius-md, 8px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }

@@ -220,7 +220,7 @@ watch(observerTarget, () => {
 .test-case-incident-tab {
   display: flex;
   min-height: 420px;
-  border-top: 1px solid var(--sm-color-border-secondary, #f0f0f0);
+  border-top: 1px solid var(--sm-border-secondary);
 }
 
 .test-case-incident-tab__left {
@@ -231,7 +231,7 @@ watch(observerTarget, () => {
 
 .test-case-incident-tab__right {
   flex: 0 0 50%;
-  border-left: 1px solid var(--sm-color-border-secondary, #f0f0f0);
+  border-left: 1px solid var(--sm-border-secondary);
   max-height: 560px;
   overflow-y: auto;
   overflow-x: hidden;

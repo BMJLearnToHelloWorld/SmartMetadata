@@ -160,8 +160,8 @@ function handleKeyDown(event: KeyboardEvent): void {
   min-width: 0;
   padding: var(--sm-spacing-md, 20px);
   cursor: pointer;
-  background: var(--sm-bg-container, #fff);
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  background: var(--sm-bg-container);
+  border: 1px solid var(--sm-border-color);
   border-radius: var(--sm-radius-md, 12px);
 }
 

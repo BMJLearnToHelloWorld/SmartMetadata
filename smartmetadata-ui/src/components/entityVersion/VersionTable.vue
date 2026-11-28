@@ -251,25 +251,25 @@ function asColumn(record: unknown): VersionColumn {
 .version-table__constraint {
   margin-right: 6px;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, inherit);
+  color: var(--sm-text-secondary);
 }
 .version-table__muted {
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 .version-table__tag {
   display: inline-block;
   margin: 0 4px 4px 0;
   padding: 0 6px;
   border-radius: 4px;
-  background: var(--sm-color-bg-muted, rgba(0, 0, 0, 0.06));
+  background: var(--sm-row-hover-bg);
 }
 .version-table__tag--added {
   text-decoration: underline;
-  color: var(--sm-color-success, #237804);
+  color: var(--sm-color-success-text);
 }
 .version-table__tag--removed {
   text-decoration: line-through;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 .version-table__joins {
   margin-top: 6px;

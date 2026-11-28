@@ -63,9 +63,9 @@ const incidentLabel = computed(() =>
 .test-summary-tooltip {
   min-width: 200px;
   max-width: 320px;
-  border: 1px solid var(--sm-border-color, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 12px;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
   box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
   padding: 12px;
   font-size: 13px;
@@ -95,6 +95,6 @@ const incidentLabel = computed(() =>
 .test-summary-tooltip__incident {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--sm-border-color, #eee);
+  border-top: 1px solid var(--sm-border-color);
 }
 </style>

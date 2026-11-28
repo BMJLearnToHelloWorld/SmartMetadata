@@ -144,18 +144,18 @@ const entityLabel = computed(() =>
 .custom-property-table__loader,
 .custom-property-table__empty {
   padding: 24px;
-  border: 1px solid var(--sm-color-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 8px;
-  background: var(--sm-color-bg, #fff);
+  background: var(--sm-bg-container);
 }
 .custom-property-table__empty h3 {
   margin: 0 0 8px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--sm-color-text, inherit);
+  color: var(--sm-text-primary);
 }
 .custom-property-table__empty p {
   margin: 0 0 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 </style>

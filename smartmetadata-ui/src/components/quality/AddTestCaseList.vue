@@ -490,7 +490,7 @@ onUnmounted(() => {
 .add-test-case-list__select-total {
   background: none;
   border: none;
-  color: var(--sm-color-primary, #1677ff);
+  color: var(--sm-color-primary);
   cursor: pointer;
   font-size: 13px;
   padding: 0;
@@ -504,7 +504,7 @@ onUnmounted(() => {
 .add-test-case-list__rows {
   max-height: 360px;
   overflow-y: auto;
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border: 1px solid var(--sm-border-color);
   border-radius: 6px;
   padding: 8px;
 }

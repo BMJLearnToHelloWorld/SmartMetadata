@@ -68,9 +68,9 @@ const summary = computed(() =>
   list-style: none;
   min-width: 0;
   padding: 12px 16px;
-  border: 1px solid var(--sm-color-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 12px;
-  background: var(--sm-color-bg, #fff);
+  background: var(--sm-bg-container);
 }
 .custom-property-list-item__body {
   display: flex;
@@ -83,15 +83,15 @@ const summary = computed(() =>
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 .custom-property-list-item__value {
   min-width: 0;
   font-size: 12px;
-  color: var(--sm-color-text, inherit);
+  color: var(--sm-text-primary);
   word-break: break-word;
 }
 .custom-property-list-item__value.is-empty {
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 </style>

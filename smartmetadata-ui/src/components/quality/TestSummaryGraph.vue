@@ -310,7 +310,7 @@ onBeforeUnmount(() => cancelTooltipClose());
   align-items: center;
   justify-content: center;
   text-align: center;
-  border: 1px dashed var(--sm-border-color, #d9d9d9);
+  border: 1px dashed var(--sm-border-color);
   border-radius: 12px;
   padding: 24px;
 }

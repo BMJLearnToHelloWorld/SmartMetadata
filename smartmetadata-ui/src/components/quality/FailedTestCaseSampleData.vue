@@ -287,28 +287,28 @@ watch(
 .failed-sample-data__menu-desc {
   display: block;
   font-size: 12px;
-  color: var(--sm-text-secondary, #6b7280);
+  color: var(--sm-text-secondary);
 }
 .failed-sample-data__table {
-  border: 1px solid var(--sm-border-color, #e5e7eb);
+  border: 1px solid var(--sm-border-color);
   border-radius: 10px;
   overflow: hidden;
 }
 .failed-sample-data :deep(.failed-sample-data-row--add) {
-  background: color-mix(in srgb, var(--ant-color-success) 12%, transparent);
+  background: color-mix(in srgb, var(--sm-color-success) 12%, transparent);
 }
 .failed-sample-data :deep(.failed-sample-data-row--not-equal) {
-  background: var(--ant-color-fill-secondary, #f5f5f5);
+  background: var(--sm-row-hover-bg);
 }
 .failed-sample-data :deep(.failed-sample-data-row--remove) {
-  background: color-mix(in srgb, var(--ant-color-error) 12%, transparent);
+  background: color-mix(in srgb, var(--sm-color-error) 12%, transparent);
 }
 .failed-sample-data-column {
-  background: color-mix(in srgb, var(--ant-color-error) 18%, transparent);
+  background: color-mix(in srgb, var(--sm-color-error) 18%, transparent);
 }
 .failed-sample-data-cell--diff {
   text-align: center;
-  border-right: 1px solid var(--sm-border-color, #e5e7eb);
+  border-right: 1px solid var(--sm-border-color);
   min-width: 2.5rem;
 }
 </style>

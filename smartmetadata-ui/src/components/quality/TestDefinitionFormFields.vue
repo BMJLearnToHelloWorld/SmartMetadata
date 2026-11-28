@@ -326,7 +326,7 @@ function removeParameter(index: number): void {
   font-size: 12px;
   border: 1px solid var(--sm-border-secondary);
   border-radius: 8px;
-  background: var(--sm-bg-secondary, #f5f5f5);
+  background: var(--sm-bg-elevated);
   color: var(--sm-text-secondary);
 }
 </style>

@@ -92,17 +92,17 @@ function onClick(): void {
   display: block;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--sm-color-border-secondary, #e8e8e8);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 8px;
   padding: 12px 14px;
   margin-bottom: 8px;
-  background: var(--sm-color-bg-container, #fff);
+  background: var(--sm-bg-container);
   cursor: pointer;
 }
 
 .entity-task-list-card--active {
-  border-color: var(--sm-color-primary, #1677ff);
-  background: var(--sm-color-primary-bg, #e6f4ff);
+  border-color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
 }
 
 .entity-task-list-card__head {
@@ -133,6 +133,6 @@ function onClick(): void {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  color: var(--sm-text-tertiary);
 }
 </style>

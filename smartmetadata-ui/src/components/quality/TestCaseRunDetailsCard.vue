@@ -186,10 +186,10 @@ function sampleBadgeLabel(): string {
 
 <style scoped>
 .run-details-card {
-  border: 1px solid var(--sm-border-color, #e8e8e8);
+  border: 1px solid var(--sm-border-color);
   border-radius: 12px;
   overflow: hidden;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
 }
 .run-details-card__header {
   display: flex;
@@ -197,7 +197,7 @@ function sampleBadgeLabel(): string {
   align-items: center;
   gap: 8px 12px;
   padding: 16px;
-  border-bottom: 1px solid var(--sm-border-color, #e8e8e8);
+  border-bottom: 1px solid var(--sm-border-color);
 }
 .run-details-card__title {
   margin: 0;
@@ -223,7 +223,7 @@ function sampleBadgeLabel(): string {
   padding: 16px;
 }
 .run-details-card__threshold {
-  border-top: 1px solid var(--sm-border-color, #e8e8e8);
+  border-top: 1px solid var(--sm-border-color);
 }
 @media (min-width: 900px) {
   .run-details-card__grid,
@@ -248,7 +248,7 @@ function sampleBadgeLabel(): string {
   color: var(--sm-text-secondary);
 }
 .run-details-card__comparison {
-  border-top: 1px solid var(--sm-border-color, #e8e8e8);
+  border-top: 1px solid var(--sm-border-color);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -264,14 +264,14 @@ function sampleBadgeLabel(): string {
 .run-details-card__bar-track {
   height: 8px;
   border-radius: 999px;
-  background: var(--sm-bg-layout, #f0f0f0);
+  background: var(--sm-content-bg);
   overflow: hidden;
 }
 .run-details-card__bar-fill {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--sm-color-primary, #1570ef);
+  background: var(--sm-color-primary);
 }
 .run-details-card__note {
   margin: 0;

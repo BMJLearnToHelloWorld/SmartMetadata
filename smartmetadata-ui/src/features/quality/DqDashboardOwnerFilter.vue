@@ -92,7 +92,7 @@ function onOwnersUpdate(refs: EntityRef[]): void {
 .dq-dashboard__owner-picker {
   padding: 12px;
   width: 320px;
-  background: var(--sm-color-bg-container, #fff);
+  background: var(--sm-bg-container);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 </style>

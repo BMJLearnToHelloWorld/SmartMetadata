@@ -23,7 +23,7 @@
 <style scoped>
 .obs-gradient-header {
   padding: 16px 20px;
-  border: 1px solid #eff8ff;
+  border: 1px solid var(--sm-color-primary-bg);
   border-radius: var(--sm-radius-md, 8px);
   background: linear-gradient(
     89deg,

@@ -172,7 +172,7 @@ onMounted(() => {
 .dimensionality-panel__heatmap-card {
   margin-bottom: 24px;
   padding: 16px;
-  border: 1px solid var(--sm-border-color, #e8e8e8);
+  border: 1px solid var(--sm-border-color);
   border-radius: 10px;
 }
 .dimensionality-panel__table-title {

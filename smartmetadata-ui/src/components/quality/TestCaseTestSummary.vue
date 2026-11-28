@@ -182,7 +182,7 @@ function onSelectRun(timestamp: number): void {
 }
 .test-case-test-summary__error,
 .test-case-test-summary__never-run {
-  border: 1px dashed var(--sm-border-color, #d9d9d9);
+  border: 1px dashed var(--sm-border-color);
   border-radius: 12px;
   padding: 32px 16px;
   text-align: center;
