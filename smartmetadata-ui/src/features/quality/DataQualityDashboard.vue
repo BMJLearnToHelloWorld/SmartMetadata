@@ -75,7 +75,7 @@ const props = withDefaults(
   },
 );
 
-const { t, te } = useI18n();
+const { t } = useI18n();
 const router = useRouter();
 
 const loadingAggregations = ref(false);
@@ -172,12 +172,12 @@ function averageValue(points: ChartPoint[]): string {
   return convertMillisecondsToHumanReadableFormat(total / points.length);
 }
 
+/** Official StatusCardWidget: raw dimension title; only NoDimension is translated. */
 function dimensionLabel(id: string): string {
   if (id === 'NoDimension') {
     return t('label.no-dimension');
   }
-  const key = `label.${id.toLowerCase()}`;
-  return te(key) ? t(key) : id;
+  return id;
 }
 
 function setFilter(id: keyof DqDashboardFilterState, value: unknown): void {
@@ -473,13 +473,13 @@ onMounted(async () => {
         </template>
       </Select>
       <span class="dq-dashboard__range-label" data-testid="dq-dashboard-range-label">{{ rangeLabel }}</span>
-      <DatePicker.RangePicker
-        :value="rangePickerValue"
-        data-testid="dq-dashboard-filter-range"
-        class="dq-dashboard__filter dq-dashboard__filter--range"
-        :aria-label="t('label.last-run')"
-        @change="onRangeChange"
-      />
+      <div data-testid="dq-dashboard-filter-range" class="dq-dashboard__filter dq-dashboard__filter--range">
+        <DatePicker.RangePicker
+          :value="rangePickerValue"
+          :aria-label="t('label.last-run')"
+          @change="onRangeChange"
+        />
+      </div>
     </div>
 
     <Spin :spinning="loadingAggregations || loadingTimeSeries">
@@ -490,9 +490,8 @@ onMounted(async () => {
           :title="t('label.data-health')"
         >
           <Typography.Paragraph type="secondary">{{ t('message.data-health-sub-header') }}</Typography.Paragraph>
-          <Alert v-if="aggregationsError" type="error" show-icon :message="aggregationsError" data-testid="dq-dashboard-health-error" />
           <Empty
-            v-else-if="!loadingAggregations && !aggregations?.coverage?.total && !aggregations?.health?.total && !aggregations?.results?.total"
+            v-if="!loadingAggregations && !aggregations?.coverage?.total && !aggregations?.health?.total && !aggregations?.results?.total"
             data-testid="dq-dashboard-health-empty"
             :description="t('label.no-data')"
           />
