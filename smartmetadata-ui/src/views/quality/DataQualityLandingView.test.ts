@@ -408,8 +408,9 @@ describe('DataQualityLandingView', () => {
   it('does not invent a residual banner when a governance filter is applied', async () => {
     const { wrapper } = await mountLanding();
     const initialBatchCount = batchRequests.length;
-    const ownerSelect = wrapper.findAllComponents({ name: 'ASelect' })[0];
-    ownerSelect.vm.$emit('change', ['alice']);
+    const ownerFilter = wrapper.findComponent(DqDashboardOwnerFilter);
+    expect(ownerFilter.exists()).toBe(true);
+    ownerFilter.vm.$emit('update:modelValue', ['alice']);
     await flushPromises();
     await flushPromises();
     expect(wrapper.find('[data-testid="dq-landing-filter-residual"]').exists()).toBe(false);

@@ -9,6 +9,7 @@
  */
 import type { SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
 import type { AlertFace } from '@/types/notifications';
+import { observabilityRootBreadcrumbLabel } from '@/utils/observabilityBreadcrumbs';
 import { getEntityName, type TranslateFn } from './alertUtils';
 
 /**
@@ -45,7 +46,7 @@ export const SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME = 'settings-notification-al
  */
 export function getObservabilityAlertsListBreadcrumbs(t: TranslateFn): SmBreadcrumbItem[] {
   return [
-    { label: t('label.observability') },
+    { label: observabilityRootBreadcrumbLabel(t) },
     { label: t('label.alert-plural') },
   ];
 }
@@ -77,7 +78,7 @@ export function getAlertDetailsBreadcrumbs(
     ];
   }
   return [
-    { label: t('label.observability') },
+    { label: observabilityRootBreadcrumbLabel(t) },
     { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
     { label: name },
   ];
@@ -112,7 +113,7 @@ export function getAlertFormBreadcrumbs(
     ];
   }
   return [
-    { label: t('label.observability') },
+    { label: observabilityRootBreadcrumbLabel(t) },
     { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
     last,
   ];
