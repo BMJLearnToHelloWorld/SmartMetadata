@@ -14,7 +14,7 @@ import type { AssetDetail, TagRef } from '@/types/api';
 import DataAssetsVersionHeader from '@/components/entityVersion/DataAssetsVersionHeader.vue';
 import ServiceVersionTimeline from '@/components/ingestion/ServiceVersionTimeline.vue';
 import VersionDiffText from '@/components/ingestion/VersionDiffText.vue';
-import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import CustomPropertyTable from '@/components/common/CustomPropertyTable/CustomPropertyTable.vue';
 import {
   getCommonDiffsFromVersionData,
   getCommonExtraInfoForVersionDetails,
@@ -165,21 +165,13 @@ const entityTitle = computed(
             </div>
           </Tabs.TabPane>
           <Tabs.TabPane :key="EntityTabs.CUSTOM_PROPERTIES" :tab="t('label.custom-property-plural')">
-            <PermissionPlaceholder
-              v-if="!canViewCustomFields"
-              :permission-value="t('label.custom-property-plural')"
+            <CustomPropertyTable
+              is-version-view
+              :entity-type="entityType"
+              :has-edit-access="false"
+              :has-permission="canViewCustomFields"
+              :entity-details="currentVersionData"
             />
-            <div v-else data-testid="custom-properties-version-view" class="entity-version-page__custom">
-              <div v-if="currentVersionData.extension && Object.keys(currentVersionData.extension).length">
-                <div v-for="(value, key) in currentVersionData.extension" :key="String(key)" class="entity-version-page__custom-row">
-                  <strong>{{ key }}</strong>
-                  <span>{{ typeof value === 'string' ? value : JSON.stringify(value) }}</span>
-                </div>
-              </div>
-              <p v-else class="entity-version-page__muted">
-                {{ t('label.no-entity', { entity: t('label.custom-property-plural') }) }}
-              </p>
-            </div>
           </Tabs.TabPane>
         </Tabs>
       </div>

@@ -42,6 +42,14 @@ export type TextDiffResult =
   | { type: 'plain'; text: string }
   | { type: 'diff'; parts: DiffPart[] };
 
+export function isTextDiffResult(value: unknown): value is TextDiffResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const result = value as { type?: unknown };
+  return result.type === 'plain' || result.type === 'diff';
+}
+
 export interface EntityDiffProps {
   added?: ChangeField;
   deleted?: ChangeField;
@@ -210,6 +218,32 @@ export const getChangedEntityOldValue = (diffObject?: EntityDiffProps): unknown 
 
 export const getChangedEntityNewValue = (diffObject?: EntityDiffProps): unknown =>
   diffObject?.added?.newValue ?? diffObject?.deleted?.newValue ?? diffObject?.updated?.newValue;
+
+/**
+ * Official `getUpdatedExtensionDiffFields` (EntityDiffUtils.tsx):
+ * for an updated extension field `extension.{name}`, replace that
+ * field with the word-level text diff of old vs new values. Product
+ * `ChangeField` stores the official `name` in `field`, and
+ * `getTextDiff` returns segments instead of an HTML string.
+ */
+export function getUpdatedExtensionDiffFields(
+  entityDetails: { extension?: Record<string, unknown> },
+  extensionDiff: EntityDiffProps,
+): { extensionObject?: Record<string, unknown> } {
+  const extensionObj = entityDetails.extension;
+  const newValues = getChangedEntityNewValue(extensionDiff);
+  const oldValues = getChangedEntityOldValue(extensionDiff);
+  const changedFieldName = extensionDiff.updated?.field?.split('.')[1];
+
+  return extensionObj && changedFieldName
+    ? {
+        extensionObject: {
+          ...extensionObj,
+          [changedFieldName]: getTextDiff(toStringValue(oldValues), toStringValue(newValues)),
+        },
+      }
+    : { extensionObject: {} };
+}
 
 export const getChangeColumnNameFromDiffValue = (name?: string): string | undefined => {
   const nameWithoutInternalQuotes = name?.replaceAll(/"/g, '');

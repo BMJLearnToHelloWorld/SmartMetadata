@@ -19,6 +19,8 @@ import {
   getEntityVersionTags,
   getSummary,
   getTextDiff,
+  getUpdatedExtensionDiffFields,
+  isTextDiffResult,
   getTierLabel,
   isMajorVersion,
   isMajorVersionForEntry,
@@ -437,5 +439,32 @@ describe('getConstraintChanges', () => {
     const result = getConstraintChanges(changeDescription, 'constraint');
     expect(result.addedConstraintDiffs).toHaveLength(2);
     expect(result.deletedConstraintDiffs).toHaveLength(2);
+  });
+});
+
+describe('getUpdatedExtensionDiffFields', () => {
+  it('replaces the updated extension field with a word-level text diff', () => {
+    const result = getUpdatedExtensionDiffFields(
+      { extension: { owner: 'Platform', kept: 'yes' } },
+      {
+        updated: { field: 'extension.owner', oldValue: 'Platform', newValue: 'Data Platform' },
+      },
+    );
+    expect(result.extensionObject?.kept).toBe('yes');
+    expect(isTextDiffResult(result.extensionObject?.owner)).toBe(true);
+    const diff = result.extensionObject?.owner;
+    if (!isTextDiffResult(diff) || diff.type !== 'diff') {
+      throw new Error('expected a word diff');
+    }
+    expect(diff.parts.some((part) => part.added && part.value.includes('Data'))).toBe(true);
+  });
+
+  it('returns an empty extension object when the updated name has no property segment', () => {
+    expect(
+      getUpdatedExtensionDiffFields(
+        { extension: { owner: 'Platform' } },
+        { updated: { field: 'extension', oldValue: 'a', newValue: 'b' } },
+      ),
+    ).toEqual({ extensionObject: {} });
   });
 });

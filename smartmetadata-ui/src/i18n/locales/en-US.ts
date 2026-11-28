@@ -570,9 +570,11 @@ const enUS = {
     'no-matching-result-plural': 'No matching results',
     'no-matching-results': 'No matching results',
     'no-result-for-these-filter-plural': 'No results for these filters',
+    'no-custom-properties-defined': 'No custom properties defined',
     'no-value-yet': 'No value yet',
     none: 'None',
     'not-found-lowercase': 'not found',
+    'not-set': 'Not set',
     'not-set-up': 'Not set up',
     notice: 'Notice',
     'notification-alert': 'Notification Alert',
@@ -1068,6 +1070,8 @@ const enUS = {
     'no-bundle-suites-yet-description': 'Group related tests from multiple tables into one suite to monitor them together.',
     'no-configurable-parameters': 'No configurable parameters for this test type.',
     'no-contract-description': "No contract has been defined for this entity.",
+    'custom-property-empty-description':
+      'Admins can create custom properties for {entity} to capture details specific to your organization.',
     'no-custom-properties-defined':
       'No custom properties defined for this entity type yet. Add one in Settings → Custom Properties.',
     'no-admin-available-with-filters': 'No admin users available with the selected filters. Please try changing the filters. or check the <0>Users page</0> for non-admin users.',
