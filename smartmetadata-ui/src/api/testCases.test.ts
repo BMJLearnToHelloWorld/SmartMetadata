@@ -10,7 +10,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { createTestCase, isTestCaseSearchListAvailable, listTestCaseDimensionResults, listTestCases, listTestCasesBySearch, updateTestCase } from './testCases';
+import {
+  createTestCase,
+  deleteTestCaseFailedSampleData,
+  getTestCaseFailedSampleData,
+  isTestCaseSearchListAvailable,
+  listTestCaseDimensionResults,
+  listTestCases,
+  listTestCasesBySearch,
+  updateTestCase,
+} from './testCases';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -200,6 +209,32 @@ describe('testCases API', () => {
     expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/search/list');
     expect(lastFetch().url).toContain('q=orders');
     expect(lastFetch().url).toContain('testCaseStatus=Failed');
+  });
+
+  it('fetches failed rows sample from GET …/failedRowsSample', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ columns: ['col_a'], rows: [['x']] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const data = await getTestCaseFailedSampleData('tc-id-1');
+    expect(data.columns).toEqual(['col_a']);
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc-id-1/failedRowsSample');
+    expect(lastFetch().init?.method ?? 'GET').toBe('GET');
+  });
+
+  it('deletes failed rows sample via DELETE …/failedRowsSample', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await deleteTestCaseFailedSampleData('tc-id-2');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc-id-2/failedRowsSample');
+    expect(lastFetch().init?.method).toBe('DELETE');
   });
 
   it('treats search/list 404 as residual, not as a thrown list failure', async () => {

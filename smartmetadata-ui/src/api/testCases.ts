@@ -19,6 +19,7 @@ import type {
   TestCaseEvaluationScope,
   TestCaseResult,
   TestParameterValue,
+  TableSampleData,
 } from '@/types/quality';
 import { ApiError, apiRequest } from './client';
 
@@ -512,6 +513,20 @@ export function removeTestCaseFromTestSuite(testSuiteId: string, testCaseId: str
     `/v1/dataQuality/testCases/logicalTestCases/${encodeURIComponent(testSuiteId)}/${encodeURIComponent(testCaseId)}`,
     { method: 'DELETE' },
   );
+}
+
+/** Official getTestCaseFailedSampleData (rest/testAPI.ts): GET …/failedRowsSample. */
+export function getTestCaseFailedSampleData(id: string): Promise<TableSampleData> {
+  return apiRequest<TableSampleData>(
+    `/v1/dataQuality/testCases/${encodeURIComponent(id)}/failedRowsSample`,
+  );
+}
+
+/** Official deleteTestCaseFailedSampleData (rest/testAPI.ts): DELETE …/failedRowsSample. */
+export function deleteTestCaseFailedSampleData(id: string): Promise<unknown> {
+  return apiRequest(`/v1/dataQuality/testCases/${encodeURIComponent(id)}/failedRowsSample`, {
+    method: 'DELETE',
+  });
 }
 
 /** Official exportTestCasesInCSV (rest/testAPI.ts): GET /dataQuality/testCases/name/{fqn}/exportAsync. */

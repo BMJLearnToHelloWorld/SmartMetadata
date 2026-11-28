@@ -22,6 +22,7 @@ import type { IncidentDateRange } from '@/quality/incidentDatePresets';
 import TestSummaryGraph from '@/components/quality/TestSummaryGraph.vue';
 import RunSummaryTiles from '@/components/quality/RunSummaryTiles.vue';
 import TestCaseRunDetailsCard from '@/components/quality/TestCaseRunDetailsCard.vue';
+import FailedTestCaseSampleData from '@/components/quality/FailedTestCaseSampleData.vue';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 
 const props = defineProps<{
@@ -154,6 +155,7 @@ function onSelectRun(timestamp: number): void {
         :selected-run="selectedRun"
         :on-back-to-latest="() => setSelectedRunTimestamp(undefined)"
       />
+      <FailedTestCaseSampleData :test-case="testCase" />
     </template>
   </section>
 </template>

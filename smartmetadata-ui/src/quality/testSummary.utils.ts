@@ -31,7 +31,7 @@ export function resolveParameterExpectation(testCase: TestCase): ParameterExpect
   return expectedValue === undefined ? { min, max, threshold } : { expected: expectedValue, threshold };
 }
 
-function getColumnNameFromEntityLink(entityLink?: string): string {
+export function getColumnNameFromEntityLink(entityLink?: string): string {
   const parsed = entityLink ? parseEntityLink(entityLink) : null;
   return parsed?.column ?? '';
 }
