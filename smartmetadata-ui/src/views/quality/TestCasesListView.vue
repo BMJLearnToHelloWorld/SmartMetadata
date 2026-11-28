@@ -789,7 +789,7 @@ defineExpose({ openCreate, total });
     @edit="(record) => openEdit(record as TestCase)"
     @delete="(record) => onRowDelete(record as TestCase)"
   >
-    <template v-if="!suiteDetailList" #actions>
+    <template v-if="!suiteDetailList && !(embedded && entityFqn)" #actions>
       <Dropdown :trigger="['click']">
         <Button data-testid="test-cases-manage">⋯</Button>
         <template #overlay>

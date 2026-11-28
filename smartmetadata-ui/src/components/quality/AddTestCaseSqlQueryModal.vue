@@ -44,7 +44,7 @@ const tableId = ref<string | undefined>();
 const userId = ref<string | undefined>();
 
 const queryRequiredMessage = computed(() =>
-  t('message.field-required', { field: t('label.sql-uppercase-query') }),
+  t('label.field-required', { field: t('label.sql-uppercase-query') }),
 );
 
 async function resolveTable(entityFQN: string): Promise<void> {
@@ -63,7 +63,9 @@ async function resolveTable(entityFQN: string): Promise<void> {
     tableFqn.value = asString(raw.fullyQualifiedName) || tableFQN;
     tableId.value = asString(raw.id) || undefined;
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('common.loadFailed'));
+    message.error(
+      error instanceof Error ? error.message : t('server.entity-fetch-error', { entity: t('label.table') }),
+    );
   } finally {
     loading.value = false;
   }

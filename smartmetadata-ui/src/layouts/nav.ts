@@ -165,6 +165,7 @@ const DETAIL_TO_LIST: Record<string, string> = {
   // Retained detail chains resolve straight to the Hub, never via a
   // deleted parent name (DESIGN §6.7 rows 1-2).
   'service-detail': 'admin-settings',
+  'ingestion-service': 'admin-settings',
   'ingestion-service-connection': 'admin-settings',
   'ingestion-service-add-ingestion': 'admin-settings',
   'ingestion-service-edit-ingestion': 'admin-settings',

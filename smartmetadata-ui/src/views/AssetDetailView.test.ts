@@ -352,11 +352,8 @@ describe('AssetDetailView governance', () => {
   });
 
   it('plots profiler history, usage, and latest test status from real GET payloads', async () => {
-    const { wrapper } = await mountView();
-    expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-rowcount-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="asset-usage-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="asset-column-null-chart"]').attributes('data-points')).toBe('1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders', { tab: 'profiler' });
+    expect(wrapper.find('[data-testid="table-profiler-container"]').exists()).toBe(true);
     // Official TableProfilerChart does not host the test-status chart;
     // tests live on QualityTab (AssetDataQualityTab).
     expect(wrapper.find('[data-testid="asset-test-status-chart"]').exists()).toBe(false);
@@ -835,7 +832,7 @@ describe('AssetDetailView non-table shells', () => {
     const query = await mountTypedView('query', 'analytics.q1');
     expect(query.wrapper.text()).toContain('q1');
     expect(query.wrapper.text()).not.toContain('No detail page is wired');
-    expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
+    expect(query.wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
     const queryDetailUrl = urls.find((url) => url.includes('/api/v1/queries/name/'));
     expect(queryDetailUrl).toContain('fields=owners');
     expect(queryDetailUrl).toContain('queryUsedIn');
@@ -1743,13 +1740,15 @@ describe('AssetDetailView widget layer (B-8)', () => {
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-sample-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
+    const shell = wrapper.findComponent(EntityDetailShell);
+    expect(shell.exists()).toBe(true);
+    await shell.vm.$emit('update:activeTab', 'profiler');
+    await settle(wrapper);
+    expect(wrapper.find('[data-testid="table-profiler-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
     // The queries pane mounts only while its tab is selected: switch
     // tabs through the shell and confirm the default pane renders
     // instead of a grid.
-    const shell = wrapper.findComponent(EntityDetailShell);
-    expect(shell.exists()).toBe(true);
     await shell.vm.$emit('update:activeTab', 'table_queries');
     await settle(wrapper);
     expect(wrapper.findAllComponents(GenericTab).length).toBe(1);

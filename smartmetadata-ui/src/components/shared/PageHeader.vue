@@ -38,12 +38,13 @@ withDefaults(
     <h5 class="sm-page-header__title" :data-testid="`${testId}-heading`">
       {{ header }}
       <Tag v-if="isBeta" class="sm-page-header__beta" :data-testid="`${testId}-beta`" color="blue">{{ t('shared.beta') }}</Tag>
-      <LearningIcon
+      <span
         v-if="learningPageId"
-        :page-id="learningPageId"
-        :title="header"
         class="sm-page-header__learning"
-      />
+        :data-testid="`${testId}-learning`"
+      >
+        <LearningIcon :page-id="learningPageId" :title="header" />
+      </span>
       <slot name="badge" />
     </h5>
     <Typography.Paragraph v-if="subHeader" class="sm-page-header__sub" :data-testid="`${testId}-sub`" type="secondary">

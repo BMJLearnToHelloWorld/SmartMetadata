@@ -79,7 +79,16 @@ const router = useRouter();
 // the D25 openHit fallback applies on navigation, applied here at
 // render time for the title link and the overview row links.
 function resolvableLocation(location: SearchHitLocation | null): location is SearchHitLocation {
-  return Boolean(location && router.hasRoute(location.name));
+  if (!location) {
+    return false;
+  }
+  if ('path' in location && typeof location.path === 'string') {
+    return router.resolve(location.path).matched.length > 0;
+  }
+  if ('name' in location && typeof location.name === 'string') {
+    return router.hasRoute(location.name);
+  }
+  return false;
 }
 
 // E-3a: pin EntitySummaryPanel tab shell (EntityRightPanelVerticalNav).

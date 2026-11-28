@@ -2551,6 +2551,7 @@ onMounted(() => {
               :entity-name="asset.name"
               :entity-fqn="asset.fullyQualifiedName"
               :entity-columns="asset.schemaRows"
+              :tab-active="activeTab === 'contract'"
             />
           </template>
       </template>

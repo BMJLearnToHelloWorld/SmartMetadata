@@ -6,7 +6,7 @@
 export const TEST_LIBRARY_PAGE_SIZE = 15;
 
 /** Official PAGE_SIZE_BASE, PAGE_SIZE_MEDIUM, PAGE_SIZE_LARGE (constants.ts). */
-export const TEST_LIBRARY_PAGE_SIZE_OPTIONS = [15, 25, 50] as const;
+export const TEST_LIBRARY_PAGE_SIZE_OPTIONS = [10, 15, 25, 50] as const;
 
 /**
  * Official TestPlatform enum values, in generated enum order

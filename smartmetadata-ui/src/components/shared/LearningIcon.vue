@@ -6,7 +6,7 @@
   Official popover is controlled (mouseenter open, 120ms mouseleave close).
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Popover } from 'ant-design-vue';
 import { getLearningResourcesByContext } from '@/api/learningResources';
@@ -24,8 +24,6 @@ const resourceCount = ref(0);
 const isLoading = ref(true);
 const hasError = ref(false);
 const drawerOpen = ref(false);
-const popoverOpen = ref(false);
-let closeTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const hidden = computed(
   () => hasError.value || (resourceCount.value === 0 && !isLoading.value),
@@ -48,35 +46,7 @@ async function fetchResourceCount(): Promise<void> {
   }
 }
 
-function clearCloseTimeout(): void {
-  if (closeTimeout) {
-    clearTimeout(closeTimeout);
-    closeTimeout = null;
-  }
-}
-
-function openPopover(): void {
-  clearCloseTimeout();
-  popoverOpen.value = true;
-}
-
-function scheduleClosePopover(): void {
-  closeTimeout = setTimeout(() => {
-    popoverOpen.value = false;
-    closeTimeout = null;
-  }, 120);
-}
-
-function onPopoverOpenChange(open: boolean): void {
-  if (!open) {
-    clearCloseTimeout();
-    popoverOpen.value = false;
-  }
-}
-
 function openDrawer(): void {
-  clearCloseTimeout();
-  popoverOpen.value = false;
   drawerOpen.value = true;
 }
 
@@ -88,24 +58,13 @@ onMounted(() => {
   void fetchResourceCount();
 });
 
-onBeforeUnmount(() => {
-  clearCloseTimeout();
-});
 </script>
 
 <template>
   <template v-if="!hidden">
-    <Popover
-      :open="popoverOpen"
-      placement="bottomLeft"
-      @openChange="onPopoverOpenChange"
-    >
+    <Popover trigger="hover" :mouse-enter-delay="0" :mouse-leave-delay="0.12" placement="bottomLeft">
       <template #content>
-        <div
-          class="learning-icon__popover"
-          @mouseenter="openPopover"
-          @mouseleave="scheduleClosePopover"
-        >
+        <div class="learning-icon__popover">
           <span>{{ t('label.learn-how-this-feature-works') }}</span>
           <Button
             type="text"
@@ -122,8 +81,6 @@ onBeforeUnmount(() => {
         size="small"
         :aria-label="t('label.learn-how-this-feature-works')"
         data-testid="learning-icon"
-        @mouseenter="openPopover"
-        @mouseleave="scheduleClosePopover"
         @click="openDrawer"
       >
         <SmIcon icon-key="learning" />
@@ -142,8 +99,8 @@ onBeforeUnmount(() => {
 .learning-icon__popover {
   display: inline-flex;
   align-items: center;
-  gap: var(--sm-spacing-xs, 8px);
+  gap: var(--sm-spacing-xs);
   font-size: 12px;
-  color: var(--sm-color-text, rgba(0, 0, 0, 0.88));
+  color: var(--sm-text-secondary);
 }
 </style>

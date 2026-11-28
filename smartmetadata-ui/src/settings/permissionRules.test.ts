@@ -47,6 +47,9 @@ describe('resource key map (§11.3)', () => {
       DRIVE_SERVICE: 'driveService',
       LLM_SERVICE: 'llmService',
       MCP_SERVICE: 'mcpService',
+      TEST_SUITE: 'testSuite',
+      TEST_CASE: 'testCase',
+      TEST_DEFINITION: 'testDefinition',
     });
   });
 

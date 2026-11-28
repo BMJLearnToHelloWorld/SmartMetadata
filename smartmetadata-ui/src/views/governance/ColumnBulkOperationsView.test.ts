@@ -71,7 +71,7 @@ function mountPage() {
     history: createMemoryHistory(),
     routes: [
       { path: '/govern/column-bulk-ops', name: 'column-bulk-ops', component: ColumnBulkOperationsView },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div />' } },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div />' } },
     ],
   });
   return { pinia, router };
@@ -135,10 +135,10 @@ describe('ColumnBulkOperationsView', () => {
     await expandEmailGroup(wrapper);
     const links = wrapper.findAll('[data-testid="column-entity-link"]');
     expect(links).toHaveLength(3);
-    expect(links[0].attributes('href')).toBe('/assets/table/svc.db.schema.users');
+    expect(links[0].attributes('href')).toBe('/table/svc.db.schema.users');
     expect(links[0].text()).toBe('users');
     expect(links[1].text()).toBe('customers');
-    expect(links[2].attributes('href')).toBe('/assets/table/svc.db.schema.users');
+    expect(links[2].attributes('href')).toBe('/table/svc.db.schema.users');
     // Pin's asset column shows the entity link, not the
     // `service / database / schema` path string (that string lives on
     // the row model only, as in pin's ColumnGridRowData).
@@ -197,7 +197,7 @@ describe('ColumnBulkOperationsView', () => {
     expect(wrapper.text()).toContain('View selected (1)');
     const assetLink = wrapper.find('[data-testid="column-view-asset-link"]');
     expect(assetLink.exists()).toBe(true);
-    expect(assetLink.attributes('href')).toBe('/assets/table/svc.db.schema.users?tab=schema#email');
+    expect(assetLink.attributes('href')).toBe('/table/svc.db.schema.users/schema#email');
     expect(wrapper.find('[data-testid="column-edit-display-name"]').exists()).toBe(true);
   });
 

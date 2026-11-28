@@ -30,6 +30,8 @@ const props = defineProps<{
   entityName?: string;
   entityFqn?: string;
   entityColumns?: ContractColumn[];
+  /** Pin mounts ContractTab only while the tab is selected; panes force-render in the shell. */
+  tabActive?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -113,8 +115,19 @@ function onWizardSave(): void {
   void load();
 }
 
-watch(() => [props.entityId, props.entityType], () => { void load(); });
-onMounted(() => { void load(); });
+watch(
+  () => [props.entityId, props.entityType, props.tabActive] as const,
+  () => {
+    if (props.tabActive) {
+      void load();
+    }
+  },
+);
+onMounted(() => {
+  if (props.tabActive) {
+    void load();
+  }
+});
 </script>
 
 <template>
