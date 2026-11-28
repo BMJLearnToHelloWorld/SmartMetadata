@@ -30,3 +30,7 @@ export const RESULT_METRIC_BY_DEFINITION: Record<string, ResultMetric> = {
 };
 
 export const NO_VALUE = '—';
+
+export const DEFAULT_RESULT_METRIC: ResultMetric = {
+  labelKey: 'label.result-metric-values',
+};

@@ -12,6 +12,8 @@ import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-
 import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
 import StatItem from '@/components/shared/StatItem.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import TestCaseTestSummary from '@/components/quality/TestCaseTestSummary.vue';
+import { useEntityRules } from '@/composables/useEntityRules';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, getTestCaseByName, patchTestCase } from '@/api/testCases';
 import { getTestDefinition } from '@/api/testDefinitions';
@@ -44,7 +46,6 @@ import { compare } from 'fast-json-patch';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
-import { listTestCaseResults } from '@/api/testCaseResults';
 import { listTestIncidents } from '@/api/testIncidents';
 import { getTask } from '@/api/tasks';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
@@ -71,8 +72,6 @@ import {
   type TaskLinkInfo,
 } from '@/quality/testCaseLastRunBanner.utils';
 import type { CollaborationTask } from '@/types/collaboration';
-import SmChart from '@/features/charts/SmChart.vue';
-import { testResultsToTimeline } from '@/features/charts/series';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import SmState from '@/components/shared/SmState.vue';
 import DimensionalityPanel from '@/features/quality/DimensionalityPanel.vue';
@@ -90,7 +89,10 @@ const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const testCase = ref<TestCase | null>(null);
-const results = ref<TestCaseResult[]>([]);
+const { entityRules, isRulesLoaded } = useEntityRules('testCase');
+const requireDomainForDataProduct = computed(
+  () => !isRulesLoaded.value || entityRules.value.requireDomainForDataProduct,
+);
 const issues = ref<TestIncident[]>([]);
 const issuesError = ref('');
 // Official TestCasePageTabs default is TEST_CASE_RESULTS. Unknown tabs
@@ -117,7 +119,6 @@ const parameterEditOpen = ref(false);
 const testDefinitionDetail = ref<TestDefinition | undefined>();
 const governanceCatalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
 
-const resultSeries = computed(() => testResultsToTimeline(results.value));
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: t('label.data-quality'), to: { name: 'quality-test-cases' } },
@@ -516,15 +517,6 @@ const issueColumns = computed<EntityListColumn[]>(() => [
   { title: t('observability.incidents.updated'), key: 'timestamp', width: 200 },
 ]);
 
-const resultColumns = computed<EntityListColumn[]>(() => [
-  { title: t('label.status'), dataIndex: 'testCaseStatus', key: 'testCaseStatus', width: 120 },
-  { title: t('label.last-run'), key: 'timestamp', width: 200 },
-  { title: t('label.test-case-result'), dataIndex: 'result', key: 'result' },
-  // Official result values have no product "diff values" heading; keep the
-  // measured-value cells the API returned (no invented placeholder values).
-  { title: '', key: 'values', width: 220 },
-]);
-
 function formatTs(value?: number): string {
   if (!value) {
     return '—';
@@ -558,8 +550,6 @@ async function load(): Promise<void> {
     testCase.value = loaded;
     await loadTestDefinition(loaded.testDefinition?.id);
     if (loaded.fullyQualifiedName) {
-      const page = await listTestCaseResults(loaded.fullyQualifiedName);
-      results.value = page.data;
       try {
         const incidentPage = await listTestIncidents({ testCaseFQN: loaded.fullyQualifiedName });
         issues.value = incidentPage.data;
@@ -571,14 +561,12 @@ async function load(): Promise<void> {
       await loadSuitePipelines(loaded.testSuite?.fullyQualifiedName);
       await Promise.all([loadNextRunTimestamp(), loadIncidentTask()]);
     } else {
-      results.value = [];
       issues.value = [];
       await loadSuitePipelines(undefined);
     }
   } catch (error) {
     testCase.value = null;
     testDefinitionDetail.value = undefined;
-    results.value = [];
     issues.value = [];
     errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case') }));
   } finally {
@@ -947,37 +935,9 @@ onMounted(() => {
         data-testid="test-case-result-tab-container"
       >
         <div class="test-case-results-layout__main">
-          <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>
-          <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
-          <SmTable
-            test-id="test-case-results-table"
-            row-key="timestamp"
-            size="small"
-            style="margin-top: 16px"
-            :columns="resultColumns"
-            :data-source="results"
-            :pagination="false"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'timestamp'">
-                {{ formatTs((record as TestCaseResult).timestamp) }}
-              </template>
-              <template v-else-if="column.key === 'values'">
-                <div
-                  v-if="(record as TestCaseResult).testResultValue?.length"
-                  :data-testid="`test-case-result-values-${(record as TestCaseResult).timestamp}`"
-                >
-                  <div
-                    v-for="entry in (record as TestCaseResult).testResultValue"
-                    :key="entry.name"
-                  >
-                    {{ entry.name }}: {{ entry.value }}
-                  </div>
-                </div>
-                <span v-else>—</span>
-              </template>
-            </template>
-          </SmTable>
+          <div class="test-case-result-tab-graph" data-testid="test-case-result-tab-graph">
+            <TestCaseTestSummary v-if="testCase" :test-case="testCase" />
+          </div>
         </div>
         <div
           v-if="isTabExpanded && isExpandViewSupported && testCase"
@@ -994,6 +954,7 @@ onMounted(() => {
             :on-description-update="onRailDescriptionUpdate"
             :on-tags-change="onRailTagsChange"
             :on-data-products-save="onRailDataProductsSave"
+            :require-domain-for-data-product="requireDomainForDataProduct"
             @edit-parameter="parameterEditOpen = true"
           />
         </div>
@@ -1081,6 +1042,7 @@ onMounted(() => {
   <TestCaseFormDrawer
     :open="parameterEditOpen"
     :test-case="testCase ?? undefined"
+    show-only-parameter
     @cancel="parameterEditOpen = false"
     @submitted="onParameterSubmitted"
   />

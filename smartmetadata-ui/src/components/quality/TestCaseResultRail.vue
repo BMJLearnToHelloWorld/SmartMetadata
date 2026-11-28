@@ -33,6 +33,8 @@ const props = defineProps<{
   onDescriptionUpdate?: (description: string) => Promise<void>;
   onTagsChange: (tags: TagLabelInput[]) => Promise<void>;
   onDataProductsSave: (products: import('@/types/api').EntityRef[]) => Promise<void>;
+  /** Official DataProductsContainer requireDomainForDataProduct. */
+  requireDomainForDataProduct?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -112,6 +114,7 @@ const entityName = computed(
         :data-products="testCase.dataProducts ?? []"
         :domains="testCase.domains ?? []"
         :has-edit-access="hasEditPermission"
+        :require-domain="requireDomainForDataProduct ?? true"
         :on-save="onDataProductsSave"
       />
     </div>

@@ -84,6 +84,9 @@ vi.mock('@/api/testCaseResults', () => ({
 vi.mock('@/api/testIncidents', () => ({
   listTestIncidents: (...args: unknown[]) => listTestIncidents(...args),
 }));
+vi.mock('@/api/system', () => ({
+  getEntityRules: vi.fn(async () => []),
+}));
 
 vi.mock('@/api/tasks', () => ({
   getTask: vi.fn(async () => ({ id: 'task-1', name: 'TASK-00009', assignees: [], comments: [] })),
@@ -291,7 +294,7 @@ describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCa
   });
 });
 
-describe('TestCaseDetailView results chart', () => {
+describe('TestCaseDetailView results tab TestSummary', () => {
   beforeEach(() => {
     getTestCase.mockReset();
     getTestCaseByName.mockReset();
@@ -315,21 +318,28 @@ describe('TestCaseDetailView results chart', () => {
     document.body.innerHTML = '';
   });
 
-  it('plots stored results and stays empty when the API has none', async () => {
+  it('renders official TestSummary testids when results exist in range', async () => {
     listTestCaseResults.mockResolvedValue({
       data: [
-        { testCaseStatus: 'Success', timestamp: Date.UTC(2026, 0, 1) },
-        { testCaseStatus: 'Failed', timestamp: Date.UTC(2026, 0, 2) },
+        { testCaseStatus: 'Success', timestamp: Date.UTC(2026, 0, 1), testResultValue: [{ name: 'value', value: '10' }] },
+        { testCaseStatus: 'Failed', timestamp: Date.UTC(2026, 0, 2), testResultValue: [{ name: 'value', value: '20' }] },
       ],
     });
-    const { wrapper: withPoints } = await mountView();
-    expect(withPoints.find('[data-testid="test-case-results-chart"]').attributes('data-points')).toBe('1');
-    withPoints.unmount();
+    const { wrapper } = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-case-result-tab-graph"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-summary-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="graph-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="run-summary-tiles"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
 
+  it('shows never-run placeholder when API returns no results and no latest result', async () => {
     listTestCaseResults.mockResolvedValue({ data: [] });
-    const { wrapper: empty } = await mountView();
-    expect(empty.find('[data-testid="test-case-results-chart"]').attributes('data-points')).toBe('0');
-    expect(empty.text()).toContain('No data');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-summary-never-run"]').exists()).toBe(true);
+    wrapper.unmount();
   });
 
   it('lists incidents for the test case on the issues tab, by FQN not by id', async () => {
@@ -462,17 +472,19 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders only the measured values the API returned, with a dash when a run has none', async () => {
+  it('shows measured values on the selected run details card without inventing fields', async () => {
     const firstTs = Date.UTC(2026, 0, 1);
-    const secondTs = Date.UTC(2026, 0, 2);
     const thirdTs = Date.UTC(2026, 0, 3);
-    getTestCase.mockResolvedValue({
+    const loadedCase = {
       id: 'tc1',
       name: 'orders_diff',
       fullyQualifiedName: 'svc.db.schema.orders.table_diff',
       parameterValues: [],
       testSuites: [],
-    });
+      testCaseResult: { timestamp: firstTs, testCaseStatus: 'Failed' },
+    };
+    getTestCase.mockResolvedValue(loadedCase);
+    getTestCaseByName.mockResolvedValue(loadedCase);
     listTestCaseResults.mockResolvedValue({
       data: [
         {
@@ -484,7 +496,6 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
             { name: 'diffCount', value: '3' },
           ],
         },
-        { testCaseStatus: 'Success', timestamp: secondTs },
         {
           testCaseStatus: 'Failed',
           timestamp: thirdTs,
@@ -494,48 +505,20 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
             { name: 'changedRows', value: '1' },
             { name: 'diffCount', value: '1' },
             { name: 'columnDiffCounts', value: '{"email": 1}' },
-            { name: 'removedColumns', value: '0' },
-            { name: 'addedColumns', value: '1' },
-            { name: 'changedColumns', value: '0' },
-            {
-              name: 'schemaTable1',
-              value:
-                "serviceType='Postgres' fullyQualifiedTableName='warehouse.analytics.public.orders'",
-            },
-            {
-              name: 'schemaTable2',
-              value:
-                "serviceType='Postgres' fullyQualifiedTableName='warehouse.analytics.public.orders_v2'",
-            },
           ],
         },
       ],
     });
     const { wrapper } = await mountView();
-    const valuesCell = wrapper.find(`[data-testid="test-case-result-values-${firstTs}"]`);
-    expect(valuesCell.exists()).toBe(true);
-    expect(valuesCell.text()).toContain('removedRows: 1');
-    expect(valuesCell.text()).toContain('addedRows: 2');
-    expect(valuesCell.text()).toContain('diffCount: 3');
-    // The run without testResultValue shows a dash, and the key-set run does
-    // not invent the fields the engine did not compute (no changedRows /
-    // columnDiffCounts on its own row).
-    expect(wrapper.find(`[data-testid="test-case-result-values-${secondTs}"]`).exists()).toBe(false);
-    expect(valuesCell.text()).not.toContain('changedRows');
-    expect(valuesCell.text()).not.toContain('columnDiffCounts');
-    // The row-mode run computed the P2-1 fields — the generic values column
-    // presents them with no view change.
-    const rowModeCell = wrapper.find(`[data-testid="test-case-result-values-${thirdTs}"]`);
-    expect(rowModeCell.exists()).toBe(true);
-    expect(rowModeCell.text()).toContain('changedRows: 1');
-    expect(rowModeCell.text()).toContain('columnDiffCounts: {"email": 1}');
-    expect(rowModeCell.text()).toContain('removedColumns: 0');
-    expect(rowModeCell.text()).toContain('addedColumns: 1');
-    expect(rowModeCell.text()).toContain('changedColumns: 0');
-    expect(rowModeCell.text()).toContain('schemaTable1:');
-    expect(rowModeCell.text()).toContain('warehouse.analytics.public.orders');
-    expect(rowModeCell.text()).toContain('schemaTable2:');
-    expect(rowModeCell.text()).toContain('warehouse.analytics.public.orders_v2');
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="run-details-card"]').exists()).toBe(true));
+    const found = wrapper.find('[data-testid="run-details-found"]');
+    expect(found.exists()).toBe(true);
+    expect(found.text()).toContain('removedRows 1');
+    expect(found.text()).toContain('addedRows 2');
+    expect(found.text()).toContain('diffCount 3');
+    expect(found.text()).not.toContain('changedRows');
+    expect(found.text()).not.toContain('columnDiffCounts');
     wrapper.unmount();
   });
 

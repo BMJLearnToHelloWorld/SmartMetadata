@@ -62,6 +62,72 @@ export function getFoundValue(result: TestCaseResult): number | undefined {
   return values.length === 1 ? toFiniteNumber(values[0].value) : undefined;
 }
 
+const COMPLETED_STATUSES = new Set(['Failed', 'Success']);
+
+export function getSelectedRun(
+  results: TestCaseResult[],
+  selectedTimestamp?: number,
+): TestCaseResult | undefined {
+  if (selectedTimestamp !== undefined) {
+    const match = results.find(({ timestamp }) => timestamp === selectedTimestamp);
+    if (match) {
+      return match;
+    }
+  }
+  return results.reduce<TestCaseResult | undefined>(
+    (latest, item) =>
+      latest === undefined || (item.timestamp ?? 0) > (latest.timestamp ?? 0) ? item : latest,
+    undefined,
+  );
+}
+
+export function formatFound(result: TestCaseResult): string {
+  const values = (result.testResultValue ?? []).filter(({ value }) => toFiniteNumber(value) !== undefined);
+  if (values.length === 0) {
+    return NO_VALUE;
+  }
+  if (values.length === 1) {
+    return formatNumber(Number(values[0].value));
+  }
+  return values.map(({ name, value }) => `${name} ${formatNumber(Number(value))}`).join(', ');
+}
+
+export function formatRunDuration(milliseconds: number): string {
+  if (milliseconds < 0) {
+    return NO_VALUE;
+  }
+  if (milliseconds < 1) {
+    return '<1ms';
+  }
+  if (Math.round(milliseconds) < 1000) {
+    return `${Math.round(milliseconds)}ms`;
+  }
+  const seconds = Math.round(milliseconds / 100) / 10;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rem = Math.round(seconds % 60);
+  return rem > 0 ? `${minutes}m ${rem}s` : `${minutes}m`;
+}
+
+export function getRunDetails(testCase: TestCase, result: TestCaseResult) {
+  const expectation = getRunExpectation(testCase, result);
+  const details = {
+    expectedText: formatExpectation(expectation),
+    foundText: NO_VALUE,
+    status: result.testCaseStatus,
+    timestamp: result.timestamp,
+  };
+
+  if (!COMPLETED_STATUSES.has(result.testCaseStatus ?? '')) {
+    return details;
+  }
+
+  details.foundText = formatFound(result);
+  return details;
+}
+
 export function getMeasuredResult(
   testCase: Pick<TestCase, 'testDefinition'>,
   result: TestCaseResult,

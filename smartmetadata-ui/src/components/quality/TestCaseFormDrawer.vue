@@ -12,7 +12,7 @@ import { fetchAssetDetail } from '@/api/entities';
 import { listGlossaryTerms } from '@/api/glossaryTerms';
 import { searchAssets } from '@/api/search';
 import { listTags } from '@/api/tags';
-import { createTestCase, updateTestCase } from '@/api/testCases';
+import { createTestCase, patchTestCase, updateTestCase } from '@/api/testCases';
 import { listTestDefinitions } from '@/api/testDefinitions';
 import type { AssetDetail, SearchHit, TagRef } from '@/types/api';
 import TableDiffFields from '@/features/quality/TableDiffFields.vue';
@@ -31,6 +31,7 @@ import {
   formValuesFromTestCase,
   helpForField,
   toCreateRequest,
+  toParameterList,
 } from '@/quality/testCaseForm';
 
 const props = defineProps<{
@@ -39,6 +40,8 @@ const props = defineProps<{
   /** Official TabFilters onTestCaseDrawerOpen(formType) seeds the create form. */
   initialTableFqn?: string;
   initialTestLevel?: TestLevel;
+  /** Official TestCaseFormDrawer showOnlyParameter — parameter card only. */
+  showOnlyParameter?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -59,10 +62,13 @@ const tagOptions = ref<{ value: string; label: string; source: 'Classification' 
 const glossaryOptions = ref<{ value: string; label: string; source: 'Glossary' }[]>([]);
 
 const isEdit = computed(() => Boolean(props.testCase));
+const showOnlyParameter = computed(() => props.showOnlyParameter === true);
 const title = computed(() =>
-  isEdit.value
-    ? t('label.edit-entity', { entity: t('label.test-case') })
-    : t('label.add-entity', { entity: t('label.test-case') }),
+  showOnlyParameter.value
+    ? t('label.edit-entity', { entity: t('label.parameter-plural') })
+    : isEdit.value
+      ? t('label.edit-entity', { entity: t('label.test-case') })
+      : t('label.add-entity', { entity: t('label.test-case') }),
 );
 const okText = computed(() => (isEdit.value ? t('label.update') : t('label.create')));
 
@@ -243,6 +249,13 @@ async function onSubmit(): Promise<void> {
   errorMessage.value = '';
   saving.value = true;
   try {
+    if (showOnlyParameter.value && props.testCase?.id) {
+      const saved = await patchTestCase(props.testCase.id, [
+        { op: 'replace', path: '/parameterValues', value: toParameterList(form.parameterValues) },
+      ]);
+      emit('submitted', saved);
+      return;
+    }
     const body = toCreateRequest(form);
     const saved = isEdit.value ? await updateTestCase(body) : await createTestCase(body);
     emit('submitted', saved);
@@ -295,12 +308,12 @@ watch(
     data-testid="test-case-form-drawer"
     @close="close"
   >
-    <div class="tc-form">
+    <div class="tc-form" :class="{ 'tc-form--params-only': showOnlyParameter }">
       <div class="tc-form__main">
         <Spin :spinning="loadingTable">
           <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 16px" />
-          <Form layout="vertical">
-            <Form.Item v-if="!isEdit" required :label="t('message.select-test-level')">
+          <Form layout="vertical" data-testid="test-case-parameter-form">
+            <Form.Item v-if="!showOnlyParameter && !isEdit" required :label="t('message.select-test-level')">
               <div class="tc-form__levels" data-testid="test-case-levels">
                 <button
                   v-for="level in [TEST_LEVEL.TABLE, TEST_LEVEL.COLUMN, TEST_LEVEL.COLUMN_DIMENSION]"
@@ -320,7 +333,7 @@ watch(
                 </button>
               </div>
             </Form.Item>
-            <Form.Item :label="t('label.table')" required>
+            <Form.Item v-if="!showOnlyParameter" :label="t('label.table')" required>
               <Select
                 v-model:value="form.selectedTable"
                 show-search
@@ -334,7 +347,7 @@ watch(
                 @focus="activeField = 'table'"
               />
             </Form.Item>
-            <Form.Item v-if="form.testLevel !== TEST_LEVEL.TABLE" :label="t('label.column')" required>
+            <Form.Item v-if="!showOnlyParameter && form.testLevel !== TEST_LEVEL.TABLE" :label="t('label.column')" required>
               <Select
                 v-model:value="form.selectedColumn"
                 show-search
@@ -346,7 +359,7 @@ watch(
                 @focus="activeField = 'column'"
               />
             </Form.Item>
-            <template v-if="showDimensionFields">
+            <template v-if="!showOnlyParameter && showDimensionFields">
               <Form.Item :label="t('label.dimension-plural')">
                 <Select
                   v-model:value="form.dimensionColumns"
@@ -368,7 +381,7 @@ watch(
                 />
               </Form.Item>
             </template>
-            <Form.Item :label="t('label.test-type')" required>
+            <Form.Item v-if="!showOnlyParameter" :label="t('label.test-type')" required>
               <div class="tc-form__type-row">
                 <Select
                   v-model:value="form.testTypeId"
@@ -416,7 +429,7 @@ watch(
                 />
               </Form.Item>
             </template>
-            <Form.Item :label="t('label.name')">
+            <Form.Item v-if="!showOnlyParameter" :label="t('label.name')">
               <Input
                 v-model:value="form.testName"
                 :placeholder="t('message.enter-test-case-name')"
@@ -424,10 +437,10 @@ watch(
                 @focus="activeField = 'name'"
               />
             </Form.Item>
-            <Form.Item v-if="isEdit" :label="t('label.display-name')">
+            <Form.Item v-if="!showOnlyParameter && isEdit" :label="t('label.display-name')">
               <Input v-model:value="form.displayName" data-testid="test-case-display-name" />
             </Form.Item>
-            <Form.Item :label="t('label.description')">
+            <Form.Item v-if="!showOnlyParameter" :label="t('label.description')">
               <SmRichTextEditor
                 :key="testCase?.id || 'create'"
                 :initial-value="form.description"
@@ -435,7 +448,7 @@ watch(
                 @text-change="form.description = $event"
               />
             </Form.Item>
-            <Form.Item :label="t('label.tag-plural')">
+            <Form.Item v-if="!showOnlyParameter" :label="t('label.tag-plural')">
               <Select
                 v-model:value="selectedTagFqns"
                 mode="multiple"
@@ -447,7 +460,7 @@ watch(
                 @search="searchTagOptions"
               />
             </Form.Item>
-            <Form.Item :label="t('label.glossary-term-plural')">
+            <Form.Item v-if="!showOnlyParameter" :label="t('label.glossary-term-plural')">
               <Select
                 v-model:value="selectedGlossaryFqns"
                 mode="multiple"
@@ -462,7 +475,7 @@ watch(
           </Form>
         </Spin>
       </div>
-      <aside class="tc-form__side" data-testid="test-case-form-side">
+      <aside v-if="!showOnlyParameter" class="tc-form__side" data-testid="test-case-form-side">
         <template v-if="isEdit && tableDetail">
           <Typography.Title :level="5">{{ tableDetail.displayName || tableDetail.name }}</Typography.Title>
           <Typography.Paragraph type="secondary">{{ tableDetail.description || t('label.no-description') }}</Typography.Paragraph>
@@ -534,6 +547,9 @@ watch(
 .tc-form__side {
   border-left: 1px solid var(--sm-border-color);
   padding-left: 16px;
+}
+.tc-form--params-only {
+  grid-template-columns: 1fr;
 }
 @media (max-width: 900px) {
   .tc-form {
