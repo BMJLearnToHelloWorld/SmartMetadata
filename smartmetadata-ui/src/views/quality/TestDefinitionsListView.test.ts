@@ -25,6 +25,11 @@ vi.mock('@/stores/permissions', () => ({
       }
       return permState.resourceOps;
     }),
+    getEntityPermissionByFqn: vi.fn(async () => ({
+      EditAll: true,
+      Delete: true,
+      ViewAll: true,
+    })),
   }),
 }));
 
@@ -70,6 +75,7 @@ describe('TestDefinitionsListView', () => {
               {
                 id: 'td1',
                 name: 'tableRowCountToBeBetween',
+                fullyQualifiedName: 'tableRowCountToBeBetween',
                 displayName: 'Row count between',
                 description: 'Row count test',
                 entityType: 'TABLE',
@@ -80,6 +86,7 @@ describe('TestDefinitionsListView', () => {
               {
                 id: 'td2',
                 name: 'customRule',
+                fullyQualifiedName: 'customRule',
                 displayName: 'Custom rule',
                 entityType: 'COLUMN',
                 testPlatforms: ['dbt'],

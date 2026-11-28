@@ -8,10 +8,15 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { getDerivedPermissionFlags } from '@/api/permissions';
+import {
+  getDerivedPermissionFlags,
+  permissionFlags,
+  type OperationPermissions,
+} from '@/api/permissions';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import type { TableProps } from 'ant-design-vue';
-import { Button, Input, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
+import { Button, Modal, Skeleton, Switch, Table, Tooltip, Typography, message } from 'ant-design-vue';
+import DescriptionCell from '@/components/shared/DescriptionCell.vue';
 import LearningIcon from '@/components/shared/LearningIcon.vue';
 import { createEmptyPaging } from '@/catalog/servicePaging';
 import { useCursorPaging } from '@/ingestion/useCursorPaging';
@@ -40,7 +45,7 @@ import {
   TEST_LIBRARY_PLATFORMS,
   formatTestPlatforms,
   testLibraryEntityTypeLabel,
-  isEnabledToggleDisabled,
+  isExternalTestDefinition,
   isSystemTestDefinition,
   pageCount,
   TEST_LIBRARY_COLUMN_BY_SORT_FIELD,
@@ -89,6 +94,14 @@ const drawerOpen = ref(false);
 const editing = ref<TestDefinition | undefined>();
 const saving = ref(false);
 const togglingId = ref<string | undefined>();
+/** Per-row ops keyed by definition name (pin useTestDefinitionRowPermissions). */
+const rowPermissions = ref<Record<string, OperationPermissions>>({});
+const permissionLoadingCount = ref(0);
+const hasFetchedRowPermissions = ref(false);
+const permissionLoading = computed(
+  () => !hasFetchedRowPermissions.value || permissionLoadingCount.value > 0,
+);
+const rowControlsDisabled = computed(() => loading.value);
 
 const entityTypeOptions = computed(() =>
   TEST_LIBRARY_ENTITY_TYPES.map((key) => ({
@@ -206,6 +219,7 @@ async function load(): Promise<void> {
       after: page.after ?? '',
       before: page.before ?? '',
     });
+    void fetchRowPermissions(page.data);
   } catch (error) {
     if (token !== loadToken) {
       return;
@@ -272,6 +286,96 @@ function onPageSizeChange(size: number): void {
   listPaging.handlePageSizeChange(size);
 }
 
+async function fetchRowPermissions(rows: TestDefinition[]): Promise<void> {
+  permissionLoadingCount.value += 1;
+  try {
+    const entries = await Promise.all(
+      rows.map(async (definition) => {
+        const fqn = definition.fullyQualifiedName;
+        if (!fqn) {
+          return [definition.name, {} as OperationPermissions] as const;
+        }
+        const ops = await permissionStore.getEntityPermissionByFqn('testDefinition', fqn);
+        return [definition.name, ops] as const;
+      }),
+    );
+    rowPermissions.value = Object.fromEntries(entries);
+    hasFetchedRowPermissions.value = true;
+  } catch {
+    // Keep the previous map on failure; cells show skeleton until settled.
+  } finally {
+    permissionLoadingCount.value -= 1;
+  }
+}
+
+function rowPermission(name: string): OperationPermissions | undefined {
+  return rowPermissions.value[name];
+}
+
+function rowFlags(name: string) {
+  const ops = rowPermission(name);
+  return ops ? permissionFlags(ops) : getDerivedPermissionFlags(ops ?? {});
+}
+
+function enabledSwitchTooltip(definition: TestDefinition): string | undefined {
+  if (isExternalTestDefinition(definition)) {
+    return t('message.external-test-cannot-be-toggled');
+  }
+  if (!rowFlags(definition.name).canEditAll) {
+    return t('message.no-permission-for-action');
+  }
+  return undefined;
+}
+
+function enabledSwitchDisabled(definition: TestDefinition): boolean {
+  if (permissionLoading.value || !rowPermission(definition.name)) {
+    return true;
+  }
+  return (
+    isExternalTestDefinition(definition) ||
+    !rowFlags(definition.name).canEditAll ||
+    rowControlsDisabled.value
+  );
+}
+
+function editActionTooltip(definition: TestDefinition): string {
+  if (!rowFlags(definition.name).canEditAll) {
+    return t('message.no-permission-for-action');
+  }
+  if (isSystemTestDefinition(definition)) {
+    return t('message.system-test-definition-dimension-edit-only');
+  }
+  return t('label.edit');
+}
+
+function deleteActionTooltip(definition: TestDefinition): string {
+  if (isSystemTestDefinition(definition)) {
+    return t('message.system-test-definition-delete-warning');
+  }
+  if (rowFlags(definition.name).canDelete) {
+    return t('label.delete');
+  }
+  return t('message.no-permission-for-action');
+}
+
+function editActionDisabled(definition: TestDefinition): boolean {
+  if (permissionLoading.value || !rowPermission(definition.name)) {
+    return true;
+  }
+  return !rowFlags(definition.name).canEditAll || rowControlsDisabled.value;
+}
+
+function deleteActionDisabled(definition: TestDefinition): boolean {
+  if (permissionLoading.value || !rowPermission(definition.name)) {
+    return true;
+  }
+  return (
+    isSystemTestDefinition(definition) ||
+    !rowFlags(definition.name).canDelete ||
+    rowControlsDisabled.value
+  );
+}
+
 function openCreate(): void {
   editing.value = undefined;
   drawerOpen.value = true;
@@ -327,7 +431,7 @@ async function onSave(values: TestDefinitionFormValues): Promise<void> {
 }
 
 async function onEnableToggle(record: TestDefinition, checked: boolean): Promise<void> {
-  if (isEnabledToggleDisabled(record) || checked === (record.enabled ?? true)) {
+  if (enabledSwitchDisabled(record) || checked === (record.enabled ?? true)) {
     return;
   }
   togglingId.value = record.id;
@@ -488,39 +592,63 @@ onMounted(async () => {
           </span>
         </template>
         <template v-else-if="column.key === 'description'">
-          {{ (record as TestDefinition).description || '' }}
+          <DescriptionCell :markdown="(record as TestDefinition).description ?? ''" />
         </template>
         <template v-else-if="column.key === 'testPlatforms'">
           {{ formatTestPlatforms((record as TestDefinition).testPlatforms) }}
         </template>
         <template v-else-if="column.key === 'enabled'">
-          <Switch
-            :checked="(record as TestDefinition).enabled ?? true"
-            :disabled="isEnabledToggleDisabled(record as TestDefinition)"
-            :loading="togglingId === (record as TestDefinition).id"
-            :data-testid="`enable-switch-${(record as TestDefinition).name}`"
-            @change="(checked) => onEnableToggle(record as TestDefinition, Boolean(checked))"
+          <Skeleton
+            v-if="permissionLoading || !rowPermission((record as TestDefinition).name)"
+            :paragraph="false"
+            active
           />
+          <Tooltip
+            v-else
+            :title="enabledSwitchTooltip(record as TestDefinition)"
+          >
+            <span>
+              <Switch
+                :checked="(record as TestDefinition).enabled ?? true"
+                :disabled="enabledSwitchDisabled(record as TestDefinition)"
+                :loading="togglingId === (record as TestDefinition).id"
+                :data-testid="`enable-switch-${(record as TestDefinition).name}`"
+                @change="(checked) => onEnableToggle(record as TestDefinition, Boolean(checked))"
+              />
+            </span>
+          </Tooltip>
         </template>
         <template v-else-if="column.key === 'actions'">
-          <Button
-            type="text"
-            size="small"
-            :data-testid="`edit-test-definition-${(record as TestDefinition).name}`"
-            @click="openEdit(record as TestDefinition)"
-          >
-            <EditOutlined />
-          </Button>
-          <Button
-            type="text"
-            size="small"
-            danger
-            :disabled="isSystemTestDefinition(record as TestDefinition)"
-            :data-testid="`delete-test-definition-${(record as TestDefinition).name}`"
-            @click="onDelete(record as TestDefinition)"
-          >
-            <DeleteOutlined />
-          </Button>
+          <Skeleton
+            v-if="permissionLoading || !rowPermission((record as TestDefinition).name)"
+            :paragraph="false"
+            active
+          />
+          <div v-else class="test-library-page__actions">
+            <Tooltip :title="editActionTooltip(record as TestDefinition)">
+              <Button
+                type="text"
+                size="small"
+                :disabled="editActionDisabled(record as TestDefinition)"
+                :data-testid="`edit-test-definition-${(record as TestDefinition).name}`"
+                @click="openEdit(record as TestDefinition)"
+              >
+                <EditOutlined />
+              </Button>
+            </Tooltip>
+            <Tooltip :title="deleteActionTooltip(record as TestDefinition)">
+              <Button
+                type="text"
+                size="small"
+                danger
+                :disabled="deleteActionDisabled(record as TestDefinition)"
+                :data-testid="`delete-test-definition-${(record as TestDefinition).name}`"
+                @click="onDelete(record as TestDefinition)"
+              >
+                <DeleteOutlined />
+              </Button>
+            </Tooltip>
+          </div>
         </template>
       </template>
     </Table>
@@ -596,5 +724,9 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+.test-library-page__actions {
+  display: flex;
+  align-items: center;
 }
 </style>

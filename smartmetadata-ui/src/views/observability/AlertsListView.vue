@@ -290,7 +290,6 @@ const breadcrumbs = computed(() =>
       isNotificationFace ? t('label.alert-plural') : t('label.observability-alert')
     "
   >
-  >
     <div v-if="isNotificationFace">
       <SmBreadcrumb :items="breadcrumbs" />
       <div class="alerts-list-view__header">

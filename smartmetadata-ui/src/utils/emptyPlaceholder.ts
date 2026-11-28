@@ -40,6 +40,8 @@ export interface EmptyPlaceholderAction {
   /** 'primary' renders a primary button; anything else renders default. */
   color?: 'primary' | 'default';
   size?: 'small' | 'middle' | 'large';
+  /** Optional leading icon (pin EmptyPlaceholderAction iconLeading). */
+  icon?: Component;
 }
 
 export interface EmptyPlaceholderFeature {

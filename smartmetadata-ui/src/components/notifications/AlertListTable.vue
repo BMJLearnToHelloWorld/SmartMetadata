@@ -10,6 +10,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   EnvironmentOutlined,
+  PlusOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue';
 import { RouterLink } from 'vue-router';
@@ -124,6 +125,7 @@ const emptyActions = computed(() =>
           key: 'new-alert',
           label: t('label.new-entity', { entity: t('label.alert') }),
           color: 'primary' as const,
+          icon: PlusOutlined,
           onPress: () => emit('add-alert'),
         },
       ]
@@ -198,7 +200,7 @@ function isDeleteDisabled(record: EventSubscription): boolean {
       :features="features"
     />
   </div>
-  <div v-else>
+  <div v-else :class="{ 'alert-list-table__card': face === 'Observability' }">
     <Table
       :columns="columns"
       :data-source="dataSource"
@@ -300,7 +302,11 @@ function isDeleteDisabled(record: EventSubscription): boolean {
         </template>
       </template>
     </Table>
-    <div v-if="showPagination" class="alert-list-table__pager">
+    <div
+      v-if="showPagination"
+      class="alert-list-table__pager"
+      :class="{ 'alert-list-table__pager--in-card': face === 'Observability' }"
+    >
       <NextPrevious
         :paging="paging"
         :paging-handler="pagingHandler"
@@ -341,7 +347,22 @@ function isDeleteDisabled(record: EventSubscription): boolean {
   align-items: center;
 }
 
+.alert-list-table__card {
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.alert-list-table__card :deep(.ant-table-wrapper) {
+  border-bottom: 1px solid var(--sm-border-secondary);
+}
+
 .alert-list-table__pager {
   padding: 12px 0;
+}
+
+.alert-list-table__pager--in-card {
+  padding: 12px 16px;
 }
 </style>
