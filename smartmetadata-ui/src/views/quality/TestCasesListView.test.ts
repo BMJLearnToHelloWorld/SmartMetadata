@@ -7,6 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { computed } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd, { message } from 'ant-design-vue';
 import { isCsvJobOwned } from '@/api/csvJobs';
@@ -15,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
+import { dataQualityContextKey, type DataQualityCreateActions } from '@/quality/dataQualityContext';
 import TestCasesListView from './TestCasesListView.vue';
 
 
@@ -450,6 +452,117 @@ describe('TestCasesListView official insight donuts and advanced filters', () =>
     platformItem?.click();
     await flushPromises();
     expect(wrapper.find('[data-testid="test-cases-platform-filter"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    getResourcePermission: vi.fn(async () => ({ Create: true })),
+  }),
+}));
+
+vi.mock('@/components/quality/AddToBundleSuiteModal.vue', () => ({
+  default: {
+    name: 'AddToBundleSuiteModal',
+    props: ['open', 'selectedTestCases'],
+    template: '<div v-if="open" data-testid="add-to-bundle-suite-modal" />',
+  },
+}));
+
+vi.mock('@/components/quality/LogicalTestSuiteDrawer.vue', () => ({
+  default: {
+    name: 'LogicalTestSuiteDrawer',
+    props: ['open', 'presetTestCaseIds'],
+    template: '<div v-if="open" data-testid="logical-test-suite-drawer" />',
+  },
+}));
+
+async function mountEmbeddedBulkList() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/data-quality', name: 'quality-data-quality-tab', component: TestCasesListView },
+      { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
+    ],
+  });
+  await router.push('/data-quality');
+  await router.isReady();
+  const createActions = computed<DataQualityCreateActions>(() => ({
+    canCreateTestCase: true,
+    canCreateBundleSuite: true,
+    onAddTestCase: () => {},
+    onAddBundleSuite: () => {},
+  }));
+  const dataQualityContext = computed(() => ({
+    isActive: true,
+    createActions: createActions.value,
+  }));
+  const wrapper = mount(TestCasesListView, {
+    props: { embedded: true, preferSearch: true },
+    global: {
+      plugins: [pinia, router, Antd, createTestI18n()],
+      provide: { [dataQualityContextKey as symbol]: dataQualityContext },
+    },
+  });
+  await flushPromises();
+  return wrapper;
+}
+
+describe('TestCasesListView embedded bundle-suite bulk selection', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'tc1',
+                name: 'row_count',
+                entityFQN: 'svc.db.schema.orders',
+                testCaseResult: { testCaseStatus: 'Success' },
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows Test Case Insights header on the embedded landing tab', async () => {
+    const wrapper = await mountEmbeddedBulkList();
+    expect(wrapper.text()).toContain('Test Case Insights');
+    expect(wrapper.text()).toContain("dataset's health");
+    wrapper.unmount();
+  });
+
+  it('shows bulk toolbar and opens add-to-existing modal (pin DataQualityTab)', async () => {
+    const wrapper = await mountEmbeddedBulkList();
+    const rowCheckbox = wrapper.find('.ant-table-selection-column input[type="checkbox"]');
+    expect(rowCheckbox.exists()).toBe(true);
+    await rowCheckbox.setValue(true);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-selection-toolbar"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-selected-to-bundle-suite"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="add-selected-to-bundle-suite"]').trigger('click');
+    await flushPromises();
+    const existingItem = document.body.querySelector(
+      '[data-testid="add-to-existing-bundle-suite"]',
+    ) as HTMLElement | null;
+    expect(existingItem).not.toBeNull();
+    existingItem?.click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="add-to-bundle-suite-modal"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

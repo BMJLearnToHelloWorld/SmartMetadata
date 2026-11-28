@@ -16,7 +16,11 @@ import { entityLabel } from '@/features/crud/paging';
 import { TEST_CASE_TYPES } from '@/quality/testCaseForm';
 import { TEST_CASE_STATUSES, type TestCase, type TestSuite } from '@/types/quality';
 
-const props = defineProps<{ open: boolean }>();
+const props = defineProps<{
+  open: boolean;
+  /** Pre-select test cases when opened from bulk “create new bundle suite” (official BundleSuiteFormDrawer). */
+  presetTestCaseIds?: string[];
+}>();
 const emit = defineEmits<{ cancel: []; submitted: [suite: TestSuite] }>();
 const { t } = useI18n();
 
@@ -120,7 +124,7 @@ watch(
     if (open) {
       errorMessage.value = '';
       name.value = '';
-      selectedIds.value = [];
+      selectedIds.value = props.presetTestCaseIds ? [...props.presetTestCaseIds] : [];
       createWorkflow.value = false;
       pipelineName.value = '';
       cron.value = DEFAULT_SCHEDULE_CRON_DAILY;

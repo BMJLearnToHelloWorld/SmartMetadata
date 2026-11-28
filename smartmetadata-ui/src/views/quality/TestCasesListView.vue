@@ -14,6 +14,8 @@ import { getErrorText } from '@/views/admin/accessApiErrors';
 import { ApiError } from '@/api/client';
 import { formatChartTs } from '@/features/charts/series';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import AddToBundleSuiteModal from '@/components/quality/AddToBundleSuiteModal.vue';
+import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
 import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
 import TestCaseDeleteModal from '@/components/quality/TestCaseDeleteModal.vue';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
@@ -67,7 +69,8 @@ import {
   inlineIncidentFromTestCase,
 } from '@/quality/testCaseListIncident.utils';
 import type { ResourcePermission } from '@/api/permissions';
-import { TEST_CASE_STATUSES, type TestCase, type TestIncident } from '@/types/quality';
+import { usePermissionStore } from '@/stores/permissions';
+import { TEST_CASE_STATUSES, type TestCase, type TestIncident, type TestSuite } from '@/types/quality';
 
 const props = withDefaults(
   defineProps<{
@@ -200,6 +203,39 @@ const showEmptyCreateCta = computed(
   () =>
   !showDeleted.value && Boolean(embeddedCreateActions.value?.canCreateTestCase),
 );
+const permissionStore = usePermissionStore();
+const standaloneCanCreateTestCase = ref(false);
+const enableBulkActions = computed(
+  () =>
+    !showDeleted.value &&
+    (props.embedded
+      ? Boolean(embeddedCreateActions.value?.canCreateTestCase)
+      : standaloneCanCreateTestCase.value),
+);
+const selectedRowKeys = ref<string[]>([]);
+const addToBundleModalOpen = ref(false);
+const bundleSuiteDrawerOpen = ref(false);
+const bundlePresetCaseIds = ref<string[]>([]);
+const selectedTestCases = computed(() =>
+  cases.value.filter((item) => item.id && selectedRowKeys.value.includes(item.id)),
+);
+const listTitle = computed(() =>
+  props.embedded ? t('label.test-case-insight-plural') : t('label.data-quality'),
+);
+const listLead = computed(() =>
+  props.embedded ? t('message.test-case-insight-description') : t('message.page-sub-header-for-data-quality'),
+);
+const rowSelection = computed(() => {
+  if (!enableBulkActions.value) {
+    return undefined;
+  }
+  return {
+    selectedRowKeys: selectedRowKeys.value,
+    onChange: (keys: (string | number)[]) => {
+      selectedRowKeys.value = keys.map(String);
+    },
+  };
+});
 const formOpen = ref(false);
 const editing = ref<TestCase | undefined>();
 const deleting = ref<TestCase | undefined>();
@@ -611,10 +647,55 @@ watch(total, (value) => {
   emit('update:total', value ?? 0);
 }, { immediate: true });
 
+async function loadCreatePermission(): Promise<void> {
+  if (props.embedded) {
+    return;
+  }
+  try {
+    const ops = await permissionStore.getResourcePermission('testCase');
+    standaloneCanCreateTestCase.value = Boolean(ops.Create);
+  } catch {
+    standaloneCanCreateTestCase.value = false;
+  }
+}
+
+function clearBulkSelection(): void {
+  selectedRowKeys.value = [];
+}
+
+function onBundleSuiteMenu({ key }: { key: string | number }): void {
+  if (key === 'existing') {
+    addToBundleModalOpen.value = true;
+    return;
+  }
+  if (key === 'new') {
+    bundlePresetCaseIds.value = selectedTestCases.value
+      .map((item) => item.id)
+      .filter((id): id is string => Boolean(id));
+    bundleSuiteDrawerOpen.value = true;
+  }
+}
+
+function onBundleSuiteDrawerSubmitted(suite: TestSuite): void {
+  bundleSuiteDrawerOpen.value = false;
+  bundlePresetCaseIds.value = [];
+  clearBulkSelection();
+  void router.push({ name: 'quality-test-suite', params: { id: suite.id ?? '' } });
+}
+
+function onAddedToExistingBundle(): void {
+  clearBulkSelection();
+}
+
+watch(showDeleted, () => {
+  clearBulkSelection();
+});
+
 onMounted(() => {
   if (props.embedded) {
     hydrateFromRoute(true);
   }
+  void loadCreatePermission();
   void load();
 });
 
@@ -629,10 +710,36 @@ defineExpose({ openCreate, total });
       :health="health"
       :coverage="coverage"
     />
+    <div
+      v-if="enableBulkActions && selectedRowKeys.length"
+      class="tc-bulk-toolbar"
+      data-testid="bulk-selection-toolbar"
+    >
+      <span>{{ t('label.bundle-test-case-selected-count', { count: selectedRowKeys.length }) }}</span>
+      <Button data-testid="bulk-clear-test-case-selection" @click="clearBulkSelection">
+        {{ t('label.clear-selection') }}
+      </Button>
+      <Dropdown :trigger="['click']">
+        <Button type="primary" data-testid="add-selected-to-bundle-suite">
+          {{ t('label.add-to-bundle-suite') }}
+        </Button>
+        <template #overlay>
+          <Menu @click="onBundleSuiteMenu">
+            <Menu.Item key="existing" data-testid="add-to-existing-bundle-suite">
+              {{ t('label.add-to-existing-bundle-suite') }}
+            </Menu.Item>
+            <Menu.Item key="new" data-testid="create-new-bundle-suite">
+              {{ t('label.create-new-bundle-suite') }}
+            </Menu.Item>
+          </Menu>
+        </template>
+      </Dropdown>
+    </div>
   <EntityListShell
-    :title="t('label.data-quality')"
-    :lead="t('message.page-sub-header-for-data-quality')"
-    :hide-heading="embedded"
+    :title="listTitle"
+    :lead="listLead"
+    :hide-heading="false"
+    :row-selection="rowSelection"
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
@@ -854,10 +961,32 @@ defineExpose({ openCreate, total });
     @cancel="deleting = undefined"
     @confirm="onDeleteConfirm"
   />
+  <AddToBundleSuiteModal
+    :open="addToBundleModalOpen"
+    :selected-test-cases="selectedTestCases"
+    @cancel="addToBundleModalOpen = false"
+    @added="onAddedToExistingBundle"
+  />
+  <LogicalTestSuiteDrawer
+    :open="bundleSuiteDrawerOpen"
+    :preset-test-case-ids="bundlePresetCaseIds"
+    @cancel="bundleSuiteDrawerOpen = false"
+    @submitted="onBundleSuiteDrawerSubmitted"
+  />
   </div>
 </template>
 
 <style scoped>
+.tc-bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--sm-fill-secondary, rgba(0, 0, 0, 0.02));
+  border-radius: 8px;
+}
 .tc-deleted-toggle {
   display: inline-flex;
   align-items: center;
