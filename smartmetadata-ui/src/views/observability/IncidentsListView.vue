@@ -19,7 +19,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { getDerivedPermissionFlags } from '@/api/permissions';
-import { listTestCasesBySearch } from '@/api/testCases';
+import { searchIncidentTestCaseFilterOptions } from '@/features/quality/incidentFilterOptions';
 import { listTestCaseIncidentsFromSearch } from '@/api/testIncidents';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
@@ -110,6 +110,7 @@ const loadSeq = ref(0);
 
 const testCaseOptions = ref<Array<{ value: string; label: string }>>([]);
 const testCaseOptionsLoading = ref(false);
+const testCasePickerOpen = ref(false);
 let testCaseSearchTimer: ReturnType<typeof setTimeout> | undefined;
 
 const aggregateAssignees = ref<EntityRef[]>([]);
@@ -251,19 +252,26 @@ function withSelectedTestCase(
 }
 
 async function searchTestCaseOptions(text: string): Promise<void> {
+  if (!testCasePickerOpen.value) {
+    return;
+  }
   testCaseOptionsLoading.value = true;
   try {
-    const page = await listTestCasesBySearch({ q: text.trim() || '*', limit: 25 });
-    testCaseOptions.value = withSelectedTestCase(
-      page.data.map((testCase) => ({
-        value: testCase.fullyQualifiedName ?? testCase.name,
-        label: testCase.displayName ?? testCase.name,
-      })),
-    );
+    const options = await searchIncidentTestCaseFilterOptions(text.trim() || '*');
+    testCaseOptions.value = withSelectedTestCase(options);
   } catch {
     testCaseOptions.value = withSelectedTestCase([]);
   } finally {
     testCaseOptionsLoading.value = false;
+  }
+}
+
+function onTestCaseDropdownOpen(open: boolean): void {
+  testCasePickerOpen.value = open;
+  if (open) {
+    void searchTestCaseOptions('');
+  } else if (testCaseSearchTimer !== undefined) {
+    clearTimeout(testCaseSearchTimer);
   }
 }
 
@@ -373,7 +381,6 @@ async function checkPermission(): Promise<boolean> {
 
 async function loadAll(): Promise<void> {
   if (!(await checkPermission())) return;
-  void searchTestCaseOptions('');
   void loadAssigneeCandidates();
   await load();
 }
@@ -678,6 +685,7 @@ function severityLabel(severity: string | undefined): string {
               :placeholder="t('observability.incidents.testCaseSearchPlaceholder')"
               data-testid="incident-filter-test-case"
               style="width: 240px"
+              @dropdown-visible-change="onTestCaseDropdownOpen"
               @search="onTestCaseSearch"
               @change="(value) => updateFilters({ testCaseFQN: value === undefined ? undefined : String(value) })"
             />

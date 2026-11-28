@@ -19,7 +19,7 @@ const listFromSearch = vi.fn();
 const getByStateId = vi.fn();
 const patchIncident = vi.fn();
 const createIncident = vi.fn();
-const listTestCases = vi.fn();
+const searchAssetsMock = vi.fn();
 const postAggregate = vi.fn();
 const getUserByNameMock = vi.fn();
 const getTeamByNameMock = vi.fn();
@@ -48,13 +48,13 @@ vi.mock('@/api/testIncidents', async (importOriginal) => {
     createTestIncident: (...args: unknown[]) => createIncident(...args),
   };
 });
-vi.mock('@/api/testCases', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api/testCases')>();
-  return { ...actual, listTestCasesBySearch: (...args: unknown[]) => listTestCases(...args) };
-});
 vi.mock('@/api/search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/search')>();
-  return { ...actual, postAggregateFieldOptions: (...args: unknown[]) => postAggregate(...args) };
+  return {
+    ...actual,
+    postAggregateFieldOptions: (...args: unknown[]) => postAggregate(...args),
+    searchAssets: (...args: unknown[]) => searchAssetsMock(...args),
+  };
 });
 vi.mock('@/api/users', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/users')>();
@@ -198,7 +198,16 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     getByStateId.mockImplementation(async (stateId: string) => rows.find((row) => row.stateId === stateId));
     patchIncident.mockResolvedValue(inc1);
     createIncident.mockResolvedValue(inc1);
-    listTestCases.mockResolvedValue({ data: [inc1.testCaseReference], total: 1 });
+    searchAssetsMock.mockResolvedValue({
+      hits: [
+        {
+          name: inc1.testCaseReference.name,
+          displayName: inc1.testCaseReference.displayName,
+          fullyQualifiedName: inc1.testCaseReference.fullyQualifiedName,
+        },
+      ],
+      total: 1,
+    });
     postAggregate.mockResolvedValue({
       aggregations: {
         'testCaseResolutionStatusDetails.assignee.id': {
@@ -232,7 +241,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(listFromSearch).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 10, offset: 0, latest: true, include: 'non-deleted', dateField: 'timestamp' }),
     );
-    expect(listTestCases).toHaveBeenCalledWith({ q: '*', limit: 25 });
+    expect(searchAssetsMock).not.toHaveBeenCalled();
     for (const header of ['Test Case Name', 'Table', 'Last Updated', 'Status', 'Severity', 'Assignee']) {
       expect(wrapper.text()).toContain(header);
     }
@@ -245,6 +254,18 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(wrapper.find('[data-testid="incident-row-inc1"]').exists()).toBe(true);
     // The classic list has no severity filter control.
     expect(wrapper.find('[data-testid="incident-filter-severity"]').exists()).toBe(false);
+  });
+
+  it('loads test-case filter options only when the picker opens (pin enabled: isTestCasePickerOpen)', async () => {
+    const { wrapper } = await mountView();
+    expect(searchAssetsMock).not.toHaveBeenCalled();
+    const select = wrapper.get('[data-testid="incident-filter-test-case"] .ant-select-selector');
+    await select.trigger('mousedown');
+    await drain();
+    expect(searchAssetsMock).toHaveBeenCalledWith('*', 0, 15, {
+      index: 'testCase',
+      includeAggregations: false,
+    });
   });
 
   it('shows the permission placeholder and fetches nothing without read access', async () => {
