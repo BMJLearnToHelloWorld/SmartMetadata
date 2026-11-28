@@ -294,61 +294,72 @@ async function submit(): Promise<void> {
             />
           </div>
 
-          <AlertFormSourceItem
-            :value="form.resources ?? []"
-            :error="shownErrors.resources"
-            :selection="selection"
-            @update:value="onSourceChange"
-          />
-          <Alert
-            v-if="
-              formData.areRulesReadOnly.value &&
-              (shouldShowFiltersSection || shouldShowActionsSection)
-            "
-            data-testid="alert-rules-read-only"
-            type="info"
-            :message="t('message.alert-rules-read-only')"
-          />
-          <template v-if="shouldShowFiltersSection">
-            <Divider dashed />
-            <AlertRuleSection
-              field="filters"
-              :title="t('label.filter-plural')"
-              :is-view-only="formData.areRulesReadOnly.value"
-              :rules="form.input?.filters ?? []"
-              :selection="selection"
-              :validation-errors="shownErrors"
-              :hooks="hooks"
-              @update:rules="onFiltersChange"
-            />
-          </template>
-          <template v-if="shouldShowActionsSection">
-            <Divider dashed />
-            <AlertRuleSection
-              field="actions"
-              :title="t('label.trigger')"
-              :is-view-only="formData.areRulesReadOnly.value"
-              :rules="form.input?.actions ?? []"
-              :selection="selection"
-              :validation-errors="shownErrors"
-              :hooks="hooks"
-              @update:rules="onActionsChange"
-            />
-          </template>
-          <Divider dashed />
-          <DestinationFormItem
-            :destinations="form.destinations ?? []"
-            :timeout="form.timeout"
-            :read-timeout="form.readTimeout"
-            :sources="form.resources ?? []"
-            :selection="selection"
-            :validation-errors="shownErrors"
-            :hooks="hooks"
-            @update:destinations="onDestinationsChange"
-            @update:timeout="form = { ...form, timeout: $event }"
-            @update:read-timeout="form = { ...form, readTimeout: $event }"
-            @request-validation="hasSubmitted = true"
-          />
+          <div class="alert-form__rule-row" data-testid="alert-form-rule-row">
+            <div class="alert-form__rule-col">
+              <AlertFormSourceItem
+                :value="form.resources ?? []"
+                :error="shownErrors.resources"
+                :selection="selection"
+                @update:value="onSourceChange"
+              />
+              <Alert
+                v-if="
+                  formData.areRulesReadOnly.value &&
+                  (shouldShowFiltersSection || shouldShowActionsSection)
+                "
+                class="alert-form__rules-read-only"
+                data-testid="alert-rules-read-only"
+                type="info"
+                :message="t('message.alert-rules-read-only')"
+              />
+            </div>
+            <template v-if="shouldShowFiltersSection">
+              <Divider type="vertical" dashed class="alert-form__rule-divider" data-testid="alert-form-rule-divider" />
+              <div class="alert-form__rule-col">
+                <AlertRuleSection
+                  field="filters"
+                  :title="t('label.filter-plural')"
+                  :is-view-only="formData.areRulesReadOnly.value"
+                  :rules="form.input?.filters ?? []"
+                  :selection="selection"
+                  :validation-errors="shownErrors"
+                  :hooks="hooks"
+                  @update:rules="onFiltersChange"
+                />
+              </div>
+            </template>
+            <template v-if="shouldShowActionsSection">
+              <Divider type="vertical" dashed class="alert-form__rule-divider" data-testid="alert-form-rule-divider" />
+              <div class="alert-form__rule-col">
+                <AlertRuleSection
+                  field="actions"
+                  :title="t('label.trigger')"
+                  :is-view-only="formData.areRulesReadOnly.value"
+                  :rules="form.input?.actions ?? []"
+                  :selection="selection"
+                  :validation-errors="shownErrors"
+                  :hooks="hooks"
+                  @update:rules="onActionsChange"
+                />
+              </div>
+            </template>
+            <Divider type="vertical" dashed class="alert-form__rule-divider" data-testid="alert-form-rule-divider" />
+            <div class="alert-form__rule-col">
+              <DestinationFormItem
+                :destinations="form.destinations ?? []"
+                :timeout="form.timeout"
+                :read-timeout="form.readTimeout"
+                :sources="form.resources ?? []"
+                :selection="selection"
+                :validation-errors="shownErrors"
+                :hooks="hooks"
+                @update:destinations="onDestinationsChange"
+                @update:timeout="form = { ...form, timeout: $event }"
+                @update:read-timeout="form = { ...form, readTimeout: $event }"
+                @request-validation="hasSubmitted = true"
+              />
+            </div>
+          </div>
 
           <Alert
             v-if="formData.inlineAlertDetails.value"
@@ -438,5 +449,32 @@ async function submit(): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/** Pin ObservabilityAlertFormFields layout-row + vertical Dividers between rule columns. */
+.alert-form__rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px 0;
+  width: 100%;
+}
+
+.alert-form__rule-col {
+  flex: 1 1 17rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.alert-form__rule-divider {
+  height: 1.5rem;
+  margin: 8px 8px 0;
+  align-self: flex-start;
+  border-color: var(--sm-border-secondary, rgba(0, 0, 0, 0.12));
+}
+
+.alert-form__rules-read-only {
+  margin-top: 1rem;
 }
 </style>

@@ -190,6 +190,17 @@ describe('AlertFormView', () => {
     expect(wrapper.find('[data-testid="cancel-button"]').exists()).toBe(true);
   });
 
+  it('lays out rule sections in a horizontal row with vertical dividers (ObservabilityAlertFormFields)', async () => {
+    const { wrapper } = await mountView('/observability/alerts/add');
+    const row = wrapper.get('[data-testid="alert-form-rule-row"]');
+    expect(row.classes()).toContain('alert-form__rule-row');
+    expect(row.findComponent(AlertFormSourceItem).exists()).toBe(true);
+    expect(row.findComponent(DestinationFormItem).exists()).toBe(true);
+    expect(row.findAll('[data-testid="alert-form-rule-divider"]')).toHaveLength(3);
+    const sections = row.findAllComponents(AlertRuleSection);
+    expect(sections.map((section) => section.props('field'))).toEqual(['filters', 'actions']);
+  });
+
   it('never shows the Actions section on the notification face', async () => {
     const { wrapper } = await mountView('/settings/notifications/add-notification');
     const sections = wrapper.findAllComponents(AlertRuleSection);
