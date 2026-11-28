@@ -115,6 +115,19 @@ export function listLearningResources(
   );
 }
 
+
+/** Official getLearningResourcesByContext: list by pageId, Active only. */
+export function getLearningResourcesByContext(
+  pageId: string,
+  params?: Omit<ListLearningResourcesParams, 'pageId' | 'status'>,
+): Promise<Paged<LearningResourceDetail>> {
+  return listLearningResources({
+    ...params,
+    pageId: [pageId],
+    status: ['Active'],
+  });
+}
+
 export function getLearningResourceById(id: string): Promise<LearningResourceDetail> {
   return apiRequest<Record<string, unknown>>(
     `/v1/learning/resources/${encodeURIComponent(id)}`,

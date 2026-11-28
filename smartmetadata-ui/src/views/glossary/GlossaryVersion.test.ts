@@ -14,9 +14,11 @@ import GlossaryVersion from './GlossaryVersion.vue';
 const listGovernanceVersions = vi.fn();
 const getGovernanceVersion = vi.fn();
 const listLearningResources = vi.fn();
+const getLearningResourcesByContext = vi.fn();
 
 vi.mock('@/api/learningResources', () => ({
   listLearningResources: (...args: unknown[]) => listLearningResources(...args),
+  getLearningResourcesByContext: (...args: unknown[]) => getLearningResourcesByContext(...args),
 }));
 
 vi.mock('@/api/limits', () => ({
@@ -108,6 +110,10 @@ describe('official GlossaryVersion', () => {
   beforeEach(() => {
     listGovernanceVersions.mockReset().mockResolvedValue(versionsList);
     listLearningResources.mockReset().mockResolvedValue({ data: [{}], total: 2 });
+    getLearningResourcesByContext.mockReset().mockResolvedValue({
+      data: [{ id: 'r1', name: 'Term Tutorial', resourceType: 'Video', source: { url: 'https://example.test/video' } }],
+      total: 2,
+    });
     getGovernanceVersion.mockReset().mockResolvedValue({
       id: 'g1',
       name: 'Business_Glossary',
@@ -228,6 +234,20 @@ describe('official GlossaryVersion', () => {
     await wrapper.get('[data-testid="version-button"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/governance/terms/t1');
+    wrapper.unmount();
+  });
+
+  it('opens the official LearningDrawer from the term-only suffix', async () => {
+    getGovernanceVersion.mockResolvedValue({ id: 't1', name: 'Customer', version: 0.3 });
+    const { wrapper } = await mountPage('/glossary-term/t1/versions/0.3', {
+      isGlossary: false,
+      id: 't1',
+      version: '0.3',
+    });
+    expect(wrapper.find('[data-testid="learning-icon"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="learning-icon"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="learning-drawer"]')).not.toBeNull();
     wrapper.unmount();
   });
 });
