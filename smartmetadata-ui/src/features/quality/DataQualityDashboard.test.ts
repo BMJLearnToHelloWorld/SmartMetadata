@@ -390,8 +390,8 @@ describe('DataQualityDashboard', () => {
 
   it('applies two tier picks to the queries (multi-select)', async () => {
     const { wrapper } = await mountDashboard();
-    const tierSelect = wrapper.get('[data-testid="dq-dashboard-filter-tier"]');
-    expect(tierSelect.element.tagName).toBe('BUTTON');
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-tier"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="search-dropdown-tier"]').exists()).toBe(true);
     const tierFilter = wrapper
       .findAllComponents(DqDashboardFilterSelect)
       .find((component) => component.props('testId') === 'dq-dashboard-filter-tier');
@@ -406,7 +406,7 @@ describe('DataQualityDashboard', () => {
 
   it('selects every loaded option from the tier dropdown (select all)', async () => {
     const { wrapper } = await mountDashboard();
-    await wrapper.get('[data-testid="dq-dashboard-filter-tier"]').trigger('click');
+    await wrapper.get('[data-testid="search-dropdown-tier"]').trigger('click');
     await flushPromises();
     const selectAllButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Select All'),

@@ -21,10 +21,15 @@ const props = withDefaults(
     label: string;
     options: DqDashboardFilterOption[];
     loading?: boolean;
+    /** Official FilterSelectDropdown `searchKey` → `search-dropdown-${searchKey}`. */
+    searchKey: string;
+    /** Product dashboard filter bar anchors (e.g. dq-dashboard-filter-tier). */
     testId: string;
   }>(),
   { loading: false },
 );
+
+const officialTriggerTestId = computed(() => `search-dropdown-${props.searchKey}`);
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]];
@@ -56,45 +61,48 @@ function selectAll(): void {
 </script>
 
 <template>
-  <Dropdown trigger="click" @open-change="onOpenChange">
-    <Button
-      :type="hasSelection ? 'primary' : 'default'"
-      :data-testid="testId"
-      class="dq-dashboard-filter-select__trigger"
-    >
-      {{ label }}
-      <Badge
-        v-if="hasSelection"
-        :count="modelValue.length"
-        class="dq-dashboard-filter-select__badge"
-      />
-    </Button>
-    <template #overlay>
-      <div class="dq-dashboard-filter-select__panel" @mousedown.prevent>
-        <Input
-          allow-clear
-          size="small"
-          :placeholder="label"
-          class="dq-dashboard-filter-select__search"
-          @update:value="(q) => emit('search', q)"
+  <div class="dq-dashboard-filter-select" :data-testid="testId">
+    <Dropdown trigger="click" @open-change="onOpenChange">
+      <Button
+        :type="hasSelection ? 'primary' : 'default'"
+        :data-testid="officialTriggerTestId"
+        class="dq-dashboard-filter-select__trigger"
+      >
+        {{ label }}
+        <Badge
+          v-if="hasSelection"
+          :count="modelValue.length"
+          class="dq-dashboard-filter-select__badge"
         />
-        <Button type="link" size="small" class="dq-dashboard-filter-select__select-all" @click="selectAll">
-          {{ t('label.select-all') }}
-        </Button>
-        <Spin :spinning="loading">
-          <Checkbox.Group
-            :value="modelValue"
-            class="dq-dashboard-filter-select__options"
-            @change="onCheckboxChange"
-          >
-            <div v-for="option in options" :key="option.value" class="dq-dashboard-filter-select__option">
-              <Checkbox :value="option.value">{{ option.label }}</Checkbox>
-            </div>
-          </Checkbox.Group>
-        </Spin>
-      </div>
-    </template>
-  </Dropdown>
+      </Button>
+      <template #overlay>
+        <div class="dq-dashboard-filter-select__panel" @mousedown.prevent>
+          <Input
+            allow-clear
+            size="small"
+            :placeholder="label"
+            :data-testid="`search-dropdown-search-${searchKey}`"
+            class="dq-dashboard-filter-select__search"
+            @update:value="(q) => emit('search', q)"
+          />
+          <Button type="link" size="small" class="dq-dashboard-filter-select__select-all" @click="selectAll">
+            {{ t('label.select-all') }}
+          </Button>
+          <Spin :spinning="loading">
+            <Checkbox.Group
+              :value="modelValue"
+              class="dq-dashboard-filter-select__options"
+              @change="onCheckboxChange"
+            >
+              <div v-for="option in options" :key="option.value" class="dq-dashboard-filter-select__option">
+                <Checkbox :value="option.value">{{ option.label }}</Checkbox>
+              </div>
+            </Checkbox.Group>
+          </Spin>
+        </div>
+      </template>
+    </Dropdown>
+  </div>
 </template>
 
 <style scoped>

@@ -21,10 +21,12 @@ describe('DqDashboardFilterSelect', () => {
         modelValue: [],
         label: 'Tier',
         options: OPTIONS,
-        testId: 'search-dropdown-tier',
+        searchKey: 'tier',
+        testId: 'dq-dashboard-filter-tier',
       },
       global: { plugins: [Antd, createTestI18n()] },
     });
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-tier"]').exists()).toBe(true);
     const trigger = wrapper.get('[data-testid="search-dropdown-tier"]');
     expect(trigger.element.tagName).toBe('BUTTON');
     await trigger.trigger('click');
@@ -45,12 +47,14 @@ describe('DqDashboardFilterSelect', () => {
         modelValue: [],
         label: 'Tier',
         options: OPTIONS,
-        testId: 'search-dropdown-tier',
+        searchKey: 'tier',
+        testId: 'dq-dashboard-filter-tier',
       },
       global: { plugins: [Antd, createTestI18n()] },
     });
     await wrapper.get('[data-testid="search-dropdown-tier"]').trigger('click');
     await flushPromises();
+    expect(document.body.querySelector('[data-testid="search-dropdown-search-tier"]')).toBeTruthy();
     const selectAll = document.body.querySelector(
       '.dq-dashboard-filter-select__select-all',
     ) as HTMLElement | null;
