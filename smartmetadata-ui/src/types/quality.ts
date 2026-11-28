@@ -26,6 +26,14 @@ export type TestPlatform = (typeof TEST_PLATFORMS)[number];
 export const TEST_CASE_STATUSES = ['Success', 'Failed', 'Aborted', 'Queued'] as const;
 export type TestCaseStatus = (typeof TEST_CASE_STATUSES)[number];
 
+/** Official TEST_CASE_STATUS_LABELS (profiler.constant.ts). */
+export const TEST_CASE_STATUS_LABELS: Record<TestCaseStatus, string> = {
+  Aborted: 'label.aborted',
+  Failed: 'label.failed',
+  Queued: 'label.queued',
+  Success: 'label.success',
+};
+
 export const INCIDENT_STATUSES = ['New', 'Ack', 'Assigned', 'Resolved'] as const;
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
 
