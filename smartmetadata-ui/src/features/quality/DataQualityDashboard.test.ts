@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import SmChart from '@/features/charts/SmChart.vue';
+import DqDashboardFilterSelect from '@/components/quality/DqDashboardFilterSelect.vue';
 import DataQualityDashboard from './DataQualityDashboard.vue';
 import type { DqDashboardChartFilters, DqHiddenFilter } from '@/quality/dashboard';
 
@@ -389,11 +390,13 @@ describe('DataQualityDashboard', () => {
 
   it('applies two tier picks to the queries (multi-select)', async () => {
     const { wrapper } = await mountDashboard();
-    const selects = wrapper.findAllComponents({ name: 'ASelect' });
-  // Filter-bar order: owner (UserTeam), tier, certification, tag, glossary (tree), data product.
-    const tierSelect = selects[0];
-    expect(tierSelect.exists()).toBe(true);
-    await tierSelect.vm.$emit('change', ['Tier.Gold', 'Tier.Silver']);
+    const tierSelect = wrapper.get('[data-testid="dq-dashboard-filter-tier"]');
+    expect(tierSelect.element.tagName).toBe('BUTTON');
+    const tierFilter = wrapper
+      .findAllComponents(DqDashboardFilterSelect)
+      .find((component) => component.props('testId') === 'dq-dashboard-filter-tier');
+    expect(tierFilter).toBeDefined();
+    await tierFilter!.vm.$emit('update:modelValue', ['Tier.Gold', 'Tier.Silver']);
     await flushPromises();
     await flushPromises();
     const q = lastBatchItem('status')?.q ?? '';
@@ -403,11 +406,7 @@ describe('DataQualityDashboard', () => {
 
   it('selects every loaded option from the tier dropdown (select all)', async () => {
     const { wrapper } = await mountDashboard();
-    const selector = wrapper
-      .find('[data-testid="dq-dashboard-filter-tier"] .ant-select-selector')
-      .element as HTMLElement;
-    selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selector.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wrapper.get('[data-testid="dq-dashboard-filter-tier"]').trigger('click');
     await flushPromises();
     const selectAllButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Select All'),
@@ -416,8 +415,10 @@ describe('DataQualityDashboard', () => {
     selectAllButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     await flushPromises();
-    const selects = wrapper.findAllComponents({ name: 'ASelect' });
-    expect(selects[0].props('value')).toEqual(['Tier.Gold']);
+    const tierFilter = wrapper
+      .findAllComponents(DqDashboardFilterSelect)
+      .find((component) => component.props('testId') === 'dq-dashboard-filter-tier');
+    expect(tierFilter?.props('modelValue')).toEqual(['Tier.Gold']);
     expect(lastBatchItem('status')?.q ?? '').toContain('Tier.Gold');
   });
 
@@ -440,8 +441,9 @@ describe('DataQualityDashboard', () => {
     const q = batchItem('status')?.q ?? '';
     expect(q).toContain('PII.A');
     expect(q).toContain('PII.B');
-    // Filter-bar order: owner (UserTeam), tier, certification, tag, glossary (tree), data product.
-    const tagSelect = wrapper.findAllComponents({ name: 'ASelect' })[2];
-    expect(tagSelect.props('value')).toEqual(['PII.A', 'PII.B']);
+    const tagFilter = wrapper
+      .findAllComponents(DqDashboardFilterSelect)
+      .find((component) => component.props('testId') === 'dq-dashboard-filter-tag');
+    expect(tagFilter?.props('modelValue')).toEqual(['PII.A', 'PII.B']);
   });
 });

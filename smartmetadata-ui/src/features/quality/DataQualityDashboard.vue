@@ -7,7 +7,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getDataQualityPagePath } from '@/utils/fqnPaths';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Space, Spin, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Col, DatePicker, Empty, Row, Space, Spin, Typography } from 'ant-design-vue';
+import DqDashboardFilterSelect from '@/components/quality/DqDashboardFilterSelect.vue';
 import dayjs, { type Dayjs } from 'dayjs';
 import SmChart from '@/features/charts/SmChart.vue';
 import { formatChartTs, namedSeries } from '@/features/charts/series';
@@ -32,10 +33,7 @@ import {
 } from '@/quality/dashboard';
 import type { ChartPoint } from '@/features/charts/types';
 import { convertMillisecondsToHumanReadableFormat } from '@/utils/workflowDateTime';
-import {
-  useDqDashboardFilterSelects,
-  type DqDashboardSearchFilterId,
-} from '@/quality/useDqDashboardFilterSelects';
+import { useDqDashboardFilterSelects } from '@/quality/useDqDashboardFilterSelects';
 import DqDashboardOwnerFilter from '@/features/quality/DqDashboardOwnerFilter.vue';
 import GlossaryTermFilterPicker from '@/components/governance/GlossaryTermFilterPicker.vue';
 
@@ -193,11 +191,6 @@ function setFilter(id: keyof DqDashboardFilterState, value: unknown): void {
   filters[id] = Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
     : [];
-}
-
-/** Pin FilterSelectDropdown showSelectAll parity: pick every loaded option. */
-function selectAll(id: DqDashboardSearchFilterId): void {
-  filters[id] = dqFilterOptionsFor(id).map((option) => option.value);
 }
 
 /**
@@ -365,103 +358,59 @@ onMounted(() => {
         :model-value="filters.owner"
         @update:model-value="(value) => setFilter('owner', value)"
       />
-      <Select
+      <DqDashboardFilterSelect
         v-if="visibleFilters.includes('tier')"
-        :value="filters.tier"
-        mode="multiple"
-        allow-clear
-        show-search
-        :filter-option="false"
-        :loading="dqFilterLoadingFor('tier')"
-        :placeholder="t('label.tier')"
+        class="dq-dashboard__filter"
+        :model-value="filters.tier"
+        :label="t('label.tier')"
         :options="dqFilterOptionsFor('tier')"
-        data-testid="dq-dashboard-filter-tier"
-        class="dq-dashboard__filter"
-        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('tier', open)"
+        :loading="dqFilterLoadingFor('tier')"
+        test-id="dq-dashboard-filter-tier"
+        @update:model-value="(value) => setFilter('tier', value)"
         @search="(q) => dqFilterOnSearch('tier', q)"
-        @change="(value) => setFilter('tier', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('tier')">{{ t('label.select-all') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
+        @open-change="(open) => dqFilterOnDropdownOpen('tier', open)"
+      />
+      <DqDashboardFilterSelect
         v-if="visibleFilters.includes('certification')"
-        :value="filters.certification"
-        mode="multiple"
-        allow-clear
-        show-search
-        :filter-option="false"
-        :loading="dqFilterLoadingFor('certification')"
-        :placeholder="t('label.certification')"
+        class="dq-dashboard__filter"
+        :model-value="filters.certification"
+        :label="t('label.certification')"
         :options="dqFilterOptionsFor('certification')"
-        data-testid="dq-dashboard-filter-certification"
-        class="dq-dashboard__filter"
-        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('certification', open)"
+        :loading="dqFilterLoadingFor('certification')"
+        test-id="dq-dashboard-filter-certification"
+        @update:model-value="(value) => setFilter('certification', value)"
         @search="(q) => dqFilterOnSearch('certification', q)"
-        @change="(value) => setFilter('certification', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('certification')">{{ t('label.select-all') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
+        @open-change="(open) => dqFilterOnDropdownOpen('certification', open)"
+      />
+      <DqDashboardFilterSelect
         v-if="visibleFilters.includes('tags')"
-        :value="filters.tag"
-        mode="multiple"
-        allow-clear
-        show-search
-        :filter-option="false"
-        :loading="dqFilterLoadingFor('tag')"
-        :placeholder="t('label.tag')"
-        :options="dqFilterOptionsFor('tag')"
-        data-testid="dq-dashboard-filter-tag"
         class="dq-dashboard__filter"
-        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('tag', open)"
+        :model-value="filters.tag"
+        :label="t('label.tag')"
+        :options="dqFilterOptionsFor('tag')"
+        :loading="dqFilterLoadingFor('tag')"
+        test-id="dq-dashboard-filter-tag"
+        @update:model-value="(value) => setFilter('tag', value)"
         @search="(q) => dqFilterOnSearch('tag', q)"
-        @change="(value) => setFilter('tag', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('tag')">{{ t('label.select-all') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
+        @open-change="(open) => dqFilterOnDropdownOpen('tag', open)"
+      />
       <GlossaryTermFilterPicker
         v-if="visibleFilters.includes('glossaryTerms')"
         :model-value="filters.glossaryTerm"
         @update:model-value="(value) => setFilter('glossaryTerm', value)"
       />
-      <Select
+      <DqDashboardFilterSelect
         v-if="visibleFilters.includes('dataProducts')"
-        :value="filters.dataProduct"
-        mode="multiple"
-        allow-clear
-        show-search
-        :filter-option="false"
-        :loading="dqFilterLoadingFor('dataProduct')"
-        :placeholder="t('label.data-product')"
-        :options="dqFilterOptionsFor('dataProduct')"
-        data-testid="dq-dashboard-filter-data-product"
         class="dq-dashboard__filter"
-        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('dataProduct', open)"
+        :model-value="filters.dataProduct"
+        :label="t('label.data-product')"
+        :options="dqFilterOptionsFor('dataProduct')"
+        :loading="dqFilterLoadingFor('dataProduct')"
+        test-id="dq-dashboard-filter-data-product"
+        @update:model-value="(value) => setFilter('dataProduct', value)"
         @search="(q) => dqFilterOnSearch('dataProduct', q)"
-        @change="(value) => setFilter('dataProduct', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('dataProduct')">{{ t('label.select-all') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
+        @open-change="(open) => dqFilterOnDropdownOpen('dataProduct', open)"
+      />
       <span class="dq-dashboard__range-label" data-testid="dq-dashboard-range-label">{{ rangeLabel }}</span>
       <div data-testid="dq-dashboard-filter-range" class="dq-dashboard__filter dq-dashboard__filter--range">
         <DatePicker.RangePicker
@@ -704,9 +653,6 @@ onMounted(() => {
 }
 .dq-dashboard__filter--range {
   margin-left: auto;
-}
-.dq-dashboard__select-all {
-  padding: 4px 8px 0;
 }
 .dq-dashboard__range-label {
   color: var(--sm-text-secondary);
