@@ -39,7 +39,7 @@ export const DQ_DIMENSIONS = [
   'Validity',
 ] as const;
 
-export const NO_DIMENSION = 'No Dimension';
+export const NO_DIMENSION = 'NoDimension';
 
 export const DQ_GOVERNANCE_FILTERS = [
   'owner',
@@ -364,11 +364,8 @@ export function governanceFiltersActive(filters: DqGovernanceFilters): boolean {
  * nested testCase forms must not leak into it). Both builders append
  * `{ term: { deleted: false } }`.
  *
- * glossaryTerm has NO official dashboard-filter counterpart (neither
- * builder mentions glossary terms), so it is deliberately left out of the
- * aggregation query rather than invented as a field: it keeps affecting
- * only the search-list path, and the dashboard cards say so via the
- * existing filter residual when the search list is unavailable.
+ * Glossary terms are merged into the tag clauses like official
+ * DataQualityDashboard (glossaryTerms spread into tags for ES queries).
  */
 export type DqEsClause = Record<string, unknown>;
 
@@ -455,6 +452,53 @@ function nonEmpty(values?: string[]): string[] | undefined {
  * official casing (pin EntityHealthStatusPieChartWidget via
  * fetchEntityCoveredWithDQ(unhealthy=true)).
  */
+/** Pin buildDataQualityDimensionFilter (DataQualityPureUtils.ts). */
+export function dqMustForDataQualityDimension(dimension: string): DqEsClause {
+  if (dimension === NO_DIMENSION) {
+    return { bool: { must_not: [{ exists: { field: DQ_DIMENSION_FIELD } }] } };
+  }
+  return { term: { [DQ_DIMENSION_FIELD]: dimension } };
+}
+
+/**
+ * Pin buildEntityAndServiceFilters + buildStatusTypeAndTimeFilters for the
+ * testCase index (dashboard + provider summary batch).
+ */
+export function dqTestCaseListFilterClauses(filters: {
+  serviceName?: string;
+  testPlatforms?: string[];
+  dataQualityDimension?: string;
+  testCaseStatus?: string | string[];
+  testCaseType?: string;
+}): DqEsClause[] {
+  const clauses: DqEsClause[] = [];
+  if (filters.serviceName?.trim()) {
+    clauses.push({ term: { 'service.name.keyword': filters.serviceName.trim() } });
+  }
+  if (filters.testPlatforms?.length) {
+    clauses.push({ terms: { testPlatforms: filters.testPlatforms } });
+  }
+  if (filters.dataQualityDimension?.trim()) {
+    clauses.push(dqMustForDataQualityDimension(filters.dataQualityDimension.trim()));
+  }
+  if (filters.testCaseStatus) {
+    const status = filters.testCaseStatus;
+    if (Array.isArray(status)) {
+      if (status.length) {
+        clauses.push({ terms: { 'testCaseResult.testCaseStatus': status } });
+      }
+    } else {
+      clauses.push({ term: { 'testCaseResult.testCaseStatus': status } });
+    }
+  }
+  if (filters.testCaseType === 'table') {
+    clauses.push({ bool: { must_not: [{ regexp: { entityLink: '.*::columns::.*' } }] } });
+  } else if (filters.testCaseType === 'column') {
+    clauses.push({ regexp: { entityLink: '.*::columns::.*' } });
+  }
+  return clauses;
+}
+
 export function dqChartMustForValues(
   values: DqMultiFilters,
   range?: DqTimeRange,
@@ -539,6 +583,11 @@ export function dqTableMustForValues(
   return must;
 }
 
+function governanceTags(filters: DqGovernanceFilters): string[] | undefined {
+  const merged = [...(filters.tag ? [filters.tag] : []), ...(filters.glossaryTerm ? [filters.glossaryTerm] : [])];
+  return merged.length ? merged : undefined;
+}
+
 export function dqDashboardMustFilters(
   filters: DqGovernanceFilters,
   range?: DqTimeRange,
@@ -547,7 +596,7 @@ export function dqDashboardMustFilters(
     {
       owner: filters.owner,
       certification: filters.certification ? [filters.certification] : undefined,
-      tags: filters.tag ? [filters.tag] : undefined,
+      tags: governanceTags(filters),
       tier: filters.tier ? [filters.tier] : undefined,
       dataProducts: filters.dataProduct ? [filters.dataProduct] : undefined,
     },
@@ -558,7 +607,7 @@ export function dqDashboardMustFilters(
 export function dqTableMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
   return dqTableMustForValues({
     owner: filters.owner,
-    tags: filters.tag ? [filters.tag] : undefined,
+    tags: governanceTags(filters),
     tier: filters.tier ? [filters.tier] : undefined,
     certification: filters.certification ? [filters.certification] : undefined,
     dataProducts: filters.dataProduct ? [filters.dataProduct] : undefined,

@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTestDefinition, listTestDefinitions, updateTestDefinition } from './testDefinitions';
+import { createTestDefinition, deleteTestDefinition, listTestDefinitions, patchTestDefinition, updateTestDefinition } from './testDefinitions';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -93,5 +93,79 @@ describe('testDefinitions API', () => {
     });
     expect(lastFetch().init?.method).toBe('PUT');
     expect(lastFetch().url).toContain('/api/v1/dataQuality/testDefinitions');
+  });
+  it('maps official supported services, SQL, and enabled from the list payload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'td1',
+                name: 'customSql',
+                entityType: 'TABLE',
+                testPlatforms: ['OpenMetadata'],
+                supportedServices: ['Mysql'],
+                supportedDataTypes: ['INT'],
+                sqlExpression: 'SELECT 1 FROM {{ table_name }}',
+                enabled: false,
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTestDefinitions({ limit: 50 });
+    expect(page.data[0]).toMatchObject({
+      supportedServices: ['Mysql'],
+      supportedDataTypes: ['INT'],
+      sqlExpression: 'SELECT 1 FROM {{ table_name }}',
+      enabled: false,
+    });
+  });
+
+  it('patches a system definition with application/json-patch+json', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ id: 'td1', name: 'tableRowCountToBeBetween', entityType: 'TABLE', testPlatforms: ['OpenMetadata'], dataQualityDimension: 'Accuracy' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    await patchTestDefinition('td1', [{ op: 'replace', path: '/dataQualityDimension', value: 'Accuracy' }]);
+    expect(lastFetch().init?.method).toBe('PATCH');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testDefinitions/td1');
+    expect(lastFetch().init?.headers).toMatchObject({ 'Content-Type': 'application/json-patch+json' });
+  });
+
+  it('lists with official search/sort/before params and defaults the page size to 15', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ data: [], paging: { total: 0 } }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await listTestDefinitions({ q: 'row', sortField: 'displayName', sortOrder: 'asc', before: 'b1' });
+    const url = String(vi.mocked(fetch).mock.calls[0][0]);
+    expect(url).toContain('limit=15');
+    expect(url).toContain('q=row');
+    expect(url).toContain('sortField=displayName');
+    expect(url).toContain('sortOrder=asc');
+    expect(url).toContain('before=b1');
+  });
+
+  it('deletes a test definition by FQN with hardDelete and recursive', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 200 })),
+    );
+    await deleteTestDefinition('MyRule');
+    const url = String(vi.mocked(fetch).mock.calls[0][0]);
+    expect(url).toContain('/api/v1/dataQuality/testDefinitions/name/MyRule');
+    expect(url).toContain('hardDelete=true');
+    expect(url).toContain('recursive=true');
   });
 });

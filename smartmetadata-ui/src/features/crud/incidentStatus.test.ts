@@ -21,6 +21,6 @@ describe('incidentStatusLabel', () => {
     const zh = createTestI18n('zh-CN');
     expect(incidentStatusLabel(zh.global.t, 'Ack')).toBe('已确认');
     expect(incidentStatusLabel(zh.global.t, 'Resolved')).toBe('已解决');
-    expect(incidentStatusLabel(zh.global.t, 'Assigned')).toBe('已指派');
+    expect(incidentStatusLabel(zh.global.t, 'Assigned')).toBe('已分配');
   });
 });

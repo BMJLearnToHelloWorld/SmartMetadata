@@ -179,7 +179,7 @@ describe('EditServiceConnectionView', () => {
             },
           });
         }
-        if (url.includes('/api/v1/services/databaseServices/s1')) {
+        if (url.includes('/api/v1/services/databaseServices/s1') || url.includes('/api/v1/services/databaseServices/name/warehouse')) {
           if (getGate) {
             return getGate;
           }
@@ -188,13 +188,13 @@ describe('EditServiceConnectionView', () => {
           }
           return jsonResponse(getBody ?? POSTGRES_SERVICE);
         }
-        if (url.includes('/api/v1/services/databaseServices/s9')) {
+        if (url.includes('/api/v1/services/databaseServices/s9') || url.includes('/api/v1/services/databaseServices/name/OpenMetadata')) {
           return jsonResponse(OPEN_METADATA_SERVICE);
         }
-        if (url.includes('/api/v1/services/mlmodelServices/c1')) {
+        if (url.includes('/api/v1/services/mlmodelServices/c1') || url.includes('/api/v1/services/mlmodelServices/name/custom-ml')) {
           return jsonResponse(CUSTOM_MLMODEL_SERVICE);
         }
-        if (url.includes('/api/v1/services/metadataServices/cb1')) {
+        if (url.includes('/api/v1/services/metadataServices/cb1') || url.includes('/api/v1/services/metadataServices/name/collibra')) {
           return jsonResponse(COLLIBRA_SERVICE);
         }
         if (url.includes('ingestionPipelines/status')) {
@@ -224,14 +224,14 @@ describe('EditServiceConnectionView', () => {
           component: { template: '<div>list</div>' },
         },
         {
-          path: '/ingestion/services/:kind/:id/connection',
+          path: '/service/:serviceCategory/:fqn/connection/edit-connection',
           name: 'ingestion-service-connection',
           component: EditServiceConnectionView,
           props: true,
         },
         {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
+          path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
           component: { template: '<div>svc</div>' },
           props: true,
         },
@@ -298,7 +298,7 @@ describe('EditServiceConnectionView', () => {
   }
 
   it('renders the header with FQN, both step names, breadcrumb, and no identity fields', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    const { wrapper } = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     await waitForForm(wrapper);
     expect(wrapper.find('[data-testid="header-heading"]').text()).toBe(
       'Edit warehouse Service Connection',
@@ -318,7 +318,7 @@ describe('EditServiceConnectionView', () => {
     getGate = new Promise<Response>((resolve) => {
       releaseGet = resolve;
     });
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    const { wrapper } = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     expect(wrapper.find('.ant-spin-spinning').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(false);
     releaseGet!(jsonResponse(POSTGRES_SERVICE));
@@ -328,7 +328,7 @@ describe('EditServiceConnectionView', () => {
   });
 
   it('enters the error state for the OpenMetadata service without rendering forms', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s9/connection');
+    const { wrapper } = await mountAt('/service/databaseServices/OpenMetadata/connection/edit-connection');
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(true);
@@ -342,18 +342,18 @@ describe('EditServiceConnectionView', () => {
 
   it('enters the error state on 404 and toasts with an empty shell on other errors', async () => {
     getStatus = 404;
-    const notFound = await mountAt('/ingestion/services/database/s1/connection');
+    const notFound = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     await flushPromises();
     await notFound.wrapper.vm.$nextTick();
     expect(notFound.wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(true);
     expect(notFound.wrapper.find('[data-testid="edit-connection-error"]').text()).toContain(
-      'DatabaseServices instance for s1 not found',
+      'DatabaseServices instance for warehouse not found',
     );
     notFound.wrapper.unmount();
     document.body.innerHTML = '';
 
     getStatus = 500;
-    const failed = await mountAt('/ingestion/services/database/s1/connection');
+    const failed = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     await flushPromises();
     await failed.wrapper.vm.$nextTick();
     expect(failed.wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(false);
@@ -365,7 +365,7 @@ describe('EditServiceConnectionView', () => {
   });
 
   it('never fetches and enters the error state for an unknown kind', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/banana/s1/connection');
+    const { wrapper } = await mountAt('/service/banana/s1/connection/edit-connection');
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(serviceGetCalls()).toHaveLength(0);
@@ -377,7 +377,7 @@ describe('EditServiceConnectionView', () => {
   });
 
   it('seeds step 2 from the step-1 merged config, not the stored details (stale-seed fix)', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    const { wrapper } = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     await waitForForm(wrapper);
     await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
     await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
@@ -401,7 +401,7 @@ describe('EditServiceConnectionView', () => {
   it('seeds step 2 with a step-1 filter-pattern edit, not the stored pattern (stale-seed fix)', async () => {
     // Only Collibra has filterPattern controls in the step-1 connection
     // form (connectionFields.ts); Postgres renders no filter card there.
-    const { wrapper } = await mountAt('/ingestion/services/metadata/cb1/connection');
+    const { wrapper } = await mountAt('/service/metadataServices/collibra/connection/edit-connection');
     await waitForForm(wrapper);
     await wrapper.find('[data-testid="connection-section-scope-toggle"]').trigger('click');
     const card = wrapper.find('[data-testid="filter-section-glossaryFilterPattern"]');
@@ -430,7 +430,7 @@ describe('EditServiceConnectionView', () => {
 
   it('saves a key-level JSON Patch preserving unemitted keys, with no success toast', async () => {
     const { wrapper, router } = await mountAt(
-      '/ingestion/services/database/s1/connection',
+      '/service/databaseServices/warehouse/connection/edit-connection',
     );
     await waitForForm(wrapper);
     await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
@@ -464,20 +464,20 @@ describe('EditServiceConnectionView', () => {
     }
     expect(ops.map((op) => op.path)).not.toContain('/connection');
     expect(document.querySelector('.ant-message-success')).toBeNull();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
     wrapper.unmount();
   });
 
   it('leaves with zero requests when the patch is empty', async () => {
     const { wrapper, router } = await mountAt(
-      '/ingestion/services/database/s1/connection',
+      '/service/databaseServices/warehouse/connection/edit-connection',
     );
     await goToStep2(wrapper);
     await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(patchCalls()).toHaveLength(0);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
     wrapper.unmount();
   });
 
@@ -487,7 +487,7 @@ describe('EditServiceConnectionView', () => {
     // (sourcePythonClass + connectionOptions) instead of the no-config
     // prompt. The stored type-only config is exactly what the builder
     // emits for an untouched form, so an unchanged save is an empty patch.
-    const { wrapper, router } = await mountAt('/ingestion/services/mlmodel/c1/connection');
+    const { wrapper, router } = await mountAt('/service/mlmodelServices/custom-ml/connection/edit-connection');
     await waitFor(
       () => wrapper.find('[data-testid="service-source-python-class"]').exists(),
       'CustomMlModel form',
@@ -501,13 +501,13 @@ describe('EditServiceConnectionView', () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(patchCalls()).toHaveLength(0);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
     wrapper.unmount();
   });
 
   it('advances on schema load failure with the stored connection kept', async () => {
     schemaStatus = 500;
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    const { wrapper } = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     await waitFor(
       () => wrapper.find('[data-testid="no-config-available"]').exists(),
       'load-failed prompt',
@@ -522,7 +522,7 @@ describe('EditServiceConnectionView', () => {
   it('toasts on patch failure and stays on the page', async () => {
     patchStatus = 500;
     const { wrapper, router } = await mountAt(
-      '/ingestion/services/database/s1/connection',
+      '/service/databaseServices/warehouse/connection/edit-connection',
     );
     await waitForForm(wrapper);
     await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
@@ -538,7 +538,7 @@ describe('EditServiceConnectionView', () => {
   });
 
   it('goes back in history from step 1, to the list or the detail page', async () => {
-    const fromList = await mountAt('/ingestion/services/database/s1/connection', [
+    const fromList = await mountAt('/service/databaseServices/warehouse/connection/edit-connection', [
       '/connections',
     ]);
     await waitForForm(fromList.wrapper);
@@ -555,8 +555,8 @@ describe('EditServiceConnectionView', () => {
     fromList.wrapper.unmount();
     document.body.innerHTML = '';
 
-    const fromDetail = await mountAt('/ingestion/services/database/s1/connection', [
-      '/ingestion/services/database/s1',
+    const fromDetail = await mountAt('/service/databaseServices/warehouse/connection/edit-connection', [
+      '/service/databaseServices/warehouse',
     ]);
     await waitForForm(fromDetail.wrapper);
     await fromDetail.wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
@@ -568,12 +568,12 @@ describe('EditServiceConnectionView', () => {
     discardDetail!.click();
     await flushPromises();
     await fromDetail.wrapper.vm.$nextTick();
-    expect(fromDetail.router.currentRoute.value.name).toBe('ingestion-service');
+    expect(fromDetail.router.currentRoute.value.name).toBe('service-detail');
     fromDetail.wrapper.unmount();
   });
 
   it('asks before stepping back from step 2 and returns to step 1 on confirm', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    const { wrapper } = await mountAt('/service/databaseServices/warehouse/connection/edit-connection');
     await goToStep2(wrapper);
     await wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
     await flushPromises();
@@ -588,7 +588,7 @@ describe('EditServiceConnectionView', () => {
 
   it('guards navigation away even without edits, and lets the user stay', async () => {
     const { wrapper, router } = await mountAt(
-      '/ingestion/services/database/s1/connection',
+      '/service/databaseServices/warehouse/connection/edit-connection',
     );
     await waitForForm(wrapper);
     // Do not await the push: the leave guard holds the navigation open

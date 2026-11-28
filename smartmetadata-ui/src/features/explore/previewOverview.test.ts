@@ -99,9 +99,7 @@ describe('buildPreviewOverviewRows (pin explore-visible builders)', () => {
     const result = rows({ hit: hit(), detail: detail(), queryCount: 0, incidentCount: 2 });
     const incidents = result.find((row) => row.key === 'incidents');
     expect(incidents?.to).toEqual({
-      name: 'asset',
-      params: { entityType: 'table', fqn: 'svc.db.schema.orders' },
-      query: { tab: 'profiler' },
+      path: '/table/svc.db.schema.orders/profiler',
     });
   });
 

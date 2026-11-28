@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { Tag, Typography } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
-import SmIcon from './SmIcon.vue';
+import LearningIcon from './LearningIcon.vue';
 
 /**
  * Official PageHeader bridge (PageHeader.component.tsx): an h5 heading at
@@ -38,7 +38,13 @@ withDefaults(
     <h5 class="sm-page-header__title" :data-testid="`${testId}-heading`">
       {{ header }}
       <Tag v-if="isBeta" class="sm-page-header__beta" :data-testid="`${testId}-beta`" color="blue">{{ t('shared.beta') }}</Tag>
-      <SmIcon v-if="learningPageId" icon-key="learning" class="sm-page-header__learning" :test-id="`${testId}-learning`" :aria-label="learningPageId" />
+      <span
+        v-if="learningPageId"
+        class="sm-page-header__learning"
+        :data-testid="`${testId}-learning`"
+      >
+        <LearningIcon :page-id="learningPageId" :title="header" />
+      </span>
       <slot name="badge" />
     </h5>
     <Typography.Paragraph v-if="subHeader" class="sm-page-header__sub" :data-testid="`${testId}-sub`" type="secondary">

@@ -73,6 +73,24 @@ describe('shared DataQualityDashboard queries', () => {
     expect(JSON.stringify(tier)).not.toContain('tags.tagFQN');
   });
 
+  it('includes list-tab filter fields in the dashboard chart query', () => {
+    const query = JSON.parse(
+      buildDqDashboardChartQuery({
+        serviceName: 'mysql',
+        testPlatforms: ['dbt'],
+        testCaseStatus: 'Failed',
+        testCaseType: 'column',
+        dataQualityDimension: 'Completeness',
+      }),
+    );
+    const must = query.query.bool.must as Array<Record<string, unknown>>;
+    expect(must).toContainEqual({ term: { 'service.name.keyword': 'mysql' } });
+    expect(must).toContainEqual({ terms: { testPlatforms: ['dbt'] } });
+    expect(must).toContainEqual({ term: { 'testCaseResult.testCaseStatus': 'Failed' } });
+    expect(must).toContainEqual({ term: { dataQualityDimensionName: 'Completeness' } });
+    expect(must).toContainEqual({ regexp: { entityLink: '.*::columns::.*' } });
+  });
+
   it('adds the capitalized unhealthy split for the health pie', () => {
     const must = mustOf(
       buildDqDashboardChartQuery({}, undefined, { unhealthy: true }),

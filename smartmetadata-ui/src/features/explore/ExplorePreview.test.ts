@@ -184,7 +184,12 @@ async function mountPreview(
       ...(withAssetRoute
         ? [
             {
-              path: '/assets/:entityType/:fqn',
+              path: '/:entityType/:fqn/:tab',
+              name: 'asset-tab',
+              component: { template: '<div>asset</div>' },
+            },
+            {
+              path: '/:entityType/:fqn',
               name: 'asset',
               component: { template: '<div>asset</div>' },
             },
@@ -495,7 +500,7 @@ describe('ExplorePreview E-3a shell', () => {
     const link = wrapper.find('[data-testid="explore-preview-title-link"]');
     expect(link.exists()).toBe(true);
     expect(link.text()).toContain('Orders');
-    expect(link.attributes('href')).toContain('/assets/table/svc.db.schema.orders');
+    expect(link.attributes('href')).toContain('/table/svc.db.schema.orders');
     expect(wrapper.text()).not.toContain('svc.db.schema.orders');
     wrapper.unmount();
   });
@@ -1702,7 +1707,7 @@ describe('ExplorePreview E-3d remaining tabs', () => {
     await flushPromises();
     const overview = wrapper.find('[data-testid="explore-preview-overview"]');
     expect(overview.text()).toContain('Incidents');
-    const link = overview.find('a[href*="tab=profiler"]');
+    const link = overview.find('a[href*="/profiler"]');
     expect(link.exists()).toBe(true);
     expect(link.text()).toContain('5');
     wrapper.unmount();

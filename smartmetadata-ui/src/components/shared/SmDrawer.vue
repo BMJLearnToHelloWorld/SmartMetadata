@@ -33,6 +33,10 @@ const props = withDefaults(
     showOk?: boolean;
     widthKey?: DrawerWidthKey;
     testId?: string;
+    okTestId?: string;
+    /** Secondary data-testid on a display:contents wrapper (legacy product ids). */
+    okTestIdLegacy?: string;
+    cancelTestId?: string;
     maskClosable?: boolean;
     keyboard?: boolean;
   }>(),
@@ -44,6 +48,9 @@ const props = withDefaults(
     showOk: true,
     widthKey: 'form',
     testId: 'sm-drawer',
+    okTestId: undefined,
+    okTestIdLegacy: undefined,
+    cancelTestId: undefined,
     maskClosable: true,
     keyboard: true,
   },
@@ -73,7 +80,6 @@ watch(
   <Drawer
     :data-testid="testId"
     :open="open"
-    :title="title"
     placement="right"
     :width="DRAWER_WIDTHS[widthKey]"
     :mask-closable="maskClosable"
@@ -81,14 +87,35 @@ watch(
     :destroy-on-close="true"
     @close="close"
   >
+    <template #title>
+      <div class="sm-drawer__title">
+        <span class="sm-drawer__title-text">{{ title }}</span>
+        <slot name="headerActions" />
+      </div>
+    </template>
     <slot />
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
-        <Button :data-testid="`${testId}-cancel`" @click="close">{{ cancelText ?? t('crud.cancel') }}</Button>
+        <Button :data-testid="cancelTestId ?? `${testId}-cancel`" @click="close">{{ cancelText ?? t('crud.cancel') }}</Button>
+        <span
+          v-if="showOk && okTestIdLegacy"
+          :data-testid="okTestIdLegacy"
+          class="sm-drawer__ok-legacy"
+        >
+          <Button
+            type="primary"
+            :data-testid="okTestId ?? `${testId}-save`"
+            :loading="confirmLoading"
+            :disabled="okDisabled"
+            @click="emit('ok')"
+          >
+            {{ okText ?? t('crud.save') }}
+          </Button>
+        </span>
         <Button
-          v-if="showOk"
+          v-else-if="showOk"
           type="primary"
-          :data-testid="`${testId}-save`"
+          :data-testid="okTestId ?? `${testId}-save`"
           :loading="confirmLoading"
           :disabled="okDisabled"
           @click="emit('ok')"
@@ -99,3 +126,23 @@ watch(
     </template>
   </Drawer>
 </template>
+
+<style scoped>
+.sm-drawer__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding-right: 40px;
+}
+.sm-drawer__title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sm-drawer__ok-legacy {
+  display: contents;
+}
+</style>

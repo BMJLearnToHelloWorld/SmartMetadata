@@ -151,6 +151,7 @@ async function mountView(path: string): Promise<{
         component: stub,
       },
       { path: '/observability/alerts', name: 'observability-alerts', component: stub },
+        { path: '/settings/notifications/alerts', name: 'settings-notification-alerts', component: stub },
       {
         path: '/observability/alert/:fqn/:tab',
         name: 'observability-alert',
@@ -213,9 +214,11 @@ describe('AlertDetailView content', () => {
   it('renders the shell with title, breadcrumbs, counts, and three tabs', async () => {
     const { wrapper } = await mountView('/observability/alert/dq-alert/configuration');
     expect(getObservabilityAlertByFQN).toHaveBeenCalledWith('dq-alert', { fields: 'owners' });
-    expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-page-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-gradient-page-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="alert-details-ai-page"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('DQ Alert');
-    const breadcrumb = wrapper.get('[data-testid="entity-detail-breadcrumb"]');
+    const breadcrumb = wrapper.get('[data-testid="sm-breadcrumb"]');
     expect(breadcrumb.findAll('li')).toHaveLength(3);
     expect(breadcrumb.findAll('a')).toHaveLength(1);
     expect(wrapper.get('[data-testid="total-events-count"]').text()).toContain('120+');
@@ -273,7 +276,7 @@ describe('AlertDetailView content', () => {
     await wrapper.find('.empty-placeholder__actions button').trigger('click');
     await settle(wrapper);
     expect(getObservabilityAlertByFQN).toHaveBeenCalledTimes(2);
-    expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-page-shell"]').exists()).toBe(true);
   });
 
   it('keeps counts silent on failure and renders zeros', async () => {
@@ -485,6 +488,6 @@ describe('AlertDetailView tabs', () => {
     getDiagnosticInfo.mockRejectedValueOnce(new ApiError(500, 'boom'));
     const { wrapper } = await mountView('/observability/alert/dq-alert/diagnostic-info');
     expect(errorSpy).toHaveBeenCalled();
-    expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-page-shell"]').exists()).toBe(true);
   });
 });

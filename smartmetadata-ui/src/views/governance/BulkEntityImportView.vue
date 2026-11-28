@@ -11,11 +11,15 @@ import {
   Card,
   Empty,
   Input,
+  Modal,
   Space,
   Steps,
   Table,
   Typography,
+  Upload,
 } from 'ant-design-vue';
+import type { UploadProps } from 'ant-design-vue';
+import { useRouter } from 'vue-router';
 import { ApiError } from '@/api/client';
 import {
   cancelCsvAsyncJob,
@@ -46,6 +50,7 @@ import { usePermissionStore } from '@/stores/permissions';
 
 const props = defineProps<{ entityType: string; fqn: string }>();
 const { t } = useI18n();
+const router = useRouter();
 const permissionStore = usePermissionStore();
 
 /**
@@ -71,6 +76,43 @@ const documentation = ref<CsvDocumentation | null>(null);
 const docFailed = ref(false);
 
 const selectedFile = ref<{ name: string; content: string; rowCount: number; sizeLabel: string } | null>(null);
+
+const referenceOpen = ref(false);
+const requiredHeaders = computed(() => documentation.value?.headers.filter((header) => header.required) ?? []);
+const entityDisplayName = computed(() =>
+  props.entityType === 'testCase' ? 'Test Case' : props.entityType,
+);
+
+function onCancelWizard(): void {
+  void router.back();
+}
+
+async function ingestFile(file: File): Promise<void> {
+  const content = normalizeCsvLineBreaks(await file.text());
+  const parsed = parseCsv(content);
+  if (parsed.length === 0) {
+    errorMessage.value = t('bulkImport.emptyFile');
+    return;
+  }
+  errorMessage.value = '';
+  selectedFile.value = {
+    name: file.name,
+    content,
+    rowCount: parsed.length - 1,
+    sizeLabel: fileSizeLabel(file.size),
+  };
+  headers.value = parsed[0];
+  gridRows.value = parsed.slice(1);
+  initialCsv.value = content;
+  validationResult.value = null;
+  importResult.value = null;
+  failedOnly.value = false;
+}
+
+const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+  void ingestFile(file as File);
+  return false;
+};
 const headers = ref<string[]>([]);
 const gridRows = ref<string[][]>([]);
 const initialCsv = ref('');
@@ -191,28 +233,9 @@ function resetFlow(): void {
 async function onFileSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
-  if (!file) {
-    return;
+  if (file) {
+    await ingestFile(file);
   }
-  const content = normalizeCsvLineBreaks(await file.text());
-  const parsed = parseCsv(content);
-  if (parsed.length === 0) {
-    errorMessage.value = t('bulkImport.emptyFile');
-    return;
-  }
-  errorMessage.value = '';
-  selectedFile.value = {
-    name: file.name,
-    content,
-    rowCount: parsed.length - 1,
-    sizeLabel: fileSizeLabel(file.size),
-  };
-  headers.value = parsed[0];
-  gridRows.value = parsed.slice(1);
-  initialCsv.value = content;
-  validationResult.value = null;
-  importResult.value = null;
-  failedOnly.value = false;
 }
 
 function onDownloadTemplate(): void {
@@ -365,15 +388,46 @@ onMounted(() => {
       <Alert v-if="errorMessage" type="error" :message="errorMessage" style="margin-bottom: 16px" show-icon />
 
       <!-- Step 0: upload -->
-      <Card v-if="step === 0" :title="t('bulkImport.stepUpload')">
-        <Space direction="vertical" style="width: 100%">
-          <Typography.Text type="secondary">{{ t('bulkImport.uploadHint') }}</Typography.Text>
-          <input
-            type="file"
+      <Card v-if="step === 0" :title="t('bulkImport.importEntityTitle', { entity: entityDisplayName })">
+        <Space direction="vertical" style="width: 100%" size="middle">
+          <Typography.Text type="secondary">{{ t('bulkImport.uploadLead') }}</Typography.Text>
+          <div v-if="requiredHeaders.length" class="bulk-import__required" data-testid="bulk-import-required">
+            <span>{{ t('bulkImport.required') }}:</span>
+            <span v-for="header in requiredHeaders" :key="header.name" class="bulk-import__chip">{{ header.name }}</span>
+          </div>
+          <Space>
+            <Button
+              :disabled="!documentation"
+              :loading="loadingDoc"
+              data-testid="bulk-import-template-button"
+              @click="onDownloadTemplate"
+            >
+              {{ t('bulkImport.downloadCsvTemplate') }}
+            </Button>
+            <Button
+              :disabled="!documentation"
+              data-testid="bulk-import-column-reference"
+              @click="referenceOpen = true"
+            >
+              {{ t('bulkImport.viewColumnReference') }}
+            </Button>
+          </Space>
+          <Upload.Dragger
             accept=".csv,text/csv"
-            data-testid="bulk-import-file-input"
-            @change="onFileSelected"
-          />
+            :before-upload="beforeUpload"
+            :max-count="1"
+            :show-upload-list="false"
+            data-testid="bulk-import-dropzone"
+          >
+            <p data-testid="bulk-import-drop-label">{{ t('bulkImport.dropCsv') }}</p>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              data-testid="bulk-import-file-input"
+              class="bulk-import__file-input"
+              @change="onFileSelected"
+            />
+          </Upload.Dragger>
           <Typography.Text v-if="selectedFile" data-testid="bulk-import-file-info">
             {{
               t('bulkImport.fileInfo', {
@@ -383,47 +437,55 @@ onMounted(() => {
               })
             }}
           </Typography.Text>
-          <Space>
+          <Alert
+            type="info"
+            show-icon
+            data-testid="bulk-import-csv-tip"
+            :message="t('bulkImport.tip')"
+            :description="t('bulkImport.csvTip', { entity: entityDisplayName })"
+          />
+          <Typography.Text v-if="docFailed" type="secondary">
+            {{ t('bulkImport.docUnavailable') }}
+          </Typography.Text>
+          <div class="bulk-import__footer">
+            <Button data-testid="bulk-import-cancel" @click="onCancelWizard">{{ t('crud.cancel') }}</Button>
             <Button
               type="primary"
               :disabled="!selectedFile"
               data-testid="bulk-import-preview-button"
               @click="onPreview"
             >
-              {{ t('bulkImport.startPreview') }}
+              {{ t('bulkImport.next') }}
             </Button>
-            <Button
-              :disabled="!documentation"
-              :loading="loadingDoc"
-              data-testid="bulk-import-template-button"
-              @click="onDownloadTemplate"
-            >
-              {{ t('bulkImport.downloadTemplate') }}
-            </Button>
-          </Space>
-          <Typography.Text v-if="docFailed" type="secondary">
-            {{ t('bulkImport.docUnavailable') }}
-          </Typography.Text>
-          <Table
-            v-if="documentation"
-            :columns="[
-              { title: t('bulkImport.headerName'), dataIndex: 'name', key: 'name' },
-              { title: t('bulkImport.headerRequired'), dataIndex: 'required', key: 'required' },
-              { title: t('bulkImport.headerDescription'), dataIndex: 'description', key: 'description' },
-            ]"
-            :data-source="documentation.headers.map((h) => ({ ...h, key: h.name }))"
-            :pagination="false"
-            row-key="key"
-            size="small"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'required'">
-                {{ record.required ? t('bulkImport.yes') : t('bulkImport.no') }}
-              </template>
-            </template>
-          </Table>
+          </div>
         </Space>
       </Card>
+      <Modal
+        v-model:open="referenceOpen"
+        :title="t('bulkImport.viewColumnReference')"
+        :footer="null"
+        width="720px"
+        data-testid="bulk-import-column-reference-modal"
+      >
+        <Table
+          v-if="documentation"
+          :columns="[
+            { title: t('bulkImport.headerName'), dataIndex: 'name', key: 'name' },
+            { title: t('bulkImport.headerRequired'), dataIndex: 'required', key: 'required' },
+            { title: t('bulkImport.headerDescription'), dataIndex: 'description', key: 'description' },
+          ]"
+          :data-source="documentation.headers.map((h) => ({ ...h, key: h.name }))"
+          :pagination="false"
+          row-key="key"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'required'">
+              {{ record.required ? t('bulkImport.yes') : t('bulkImport.no') }}
+            </template>
+          </template>
+        </Table>
+      </Modal>
 
       <!-- Step 1: preview + validate -->
       <Card v-if="step === 1" :title="t('bulkImport.stepPreview')">
@@ -534,3 +596,30 @@ onMounted(() => {
     </template>
   </div>
 </template>
+
+<style scoped>
+.bulk-import__required {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.bulk-import__chip {
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--sm-bg-elevated);
+  border: 1px solid var(--sm-border-color);
+}
+.bulk-import__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.bulk-import__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+</style>

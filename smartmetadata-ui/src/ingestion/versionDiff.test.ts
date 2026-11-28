@@ -19,9 +19,14 @@ import {
   getEntityVersionTags,
   getSummary,
   getTextDiff,
+  getUpdatedExtensionDiffFields,
+  isTextDiffResult,
   getTierLabel,
   isMajorVersion,
   isMajorVersionForEntry,
+  getColumnsDataWithVersionChanges,
+  getConstraintChanges,
+  type VersionColumn,
   partitionVersionTimeline,
   toDiffableText,
   type TranslateFn,
@@ -397,5 +402,69 @@ describe('partitionVersionTimeline', () => {
   it('truncates only past the limit for positive maxVersions', () => {
     expect(partitionVersionTimeline(versions, 3)).toEqual({ visible: [1, 2, 3], hidden: [4, 5] });
     expect(partitionVersionTimeline(versions, 9)).toEqual({ visible: versions, hidden: [] });
+  });
+});
+
+describe('getColumnsDataWithVersionChanges', () => {
+  it('marks added, deleted, and updated column fields from official changeDescription', () => {
+    const columns: VersionColumn[] = [
+      { name: 'id', description: 'identifier', dataTypeDisplay: 'int', tags: [] },
+      { name: 'email', description: 'mail', dataTypeDisplay: 'string', tags: [] },
+    ];
+    const changeDescription = {
+      fieldsAdded: [
+        { field: 'columns', newValue: JSON.stringify([{ name: 'email', description: 'mail', dataTypeDisplay: 'string' }]) },
+      ],
+      fieldsDeleted: [
+        { field: 'columns', oldValue: JSON.stringify([{ name: 'legacy', description: 'old', dataTypeDisplay: 'string' }]) },
+      ],
+      fieldsUpdated: [
+        { field: 'columns.id.description', oldValue: 'id', newValue: 'identifier' },
+      ],
+    };
+    const result = getColumnsDataWithVersionChanges(changeDescription, columns);
+    expect(result.some((column) => column.name === 'legacy')).toBe(true);
+    const id = result.find((column) => column.name === 'id');
+    expect(id?.descriptionDiff).toBeTruthy();
+  });
+});
+
+describe('getConstraintChanges', () => {
+  it('includes added and updated diffs in addedConstraintDiffs', () => {
+    const changeDescription = {
+      fieldsAdded: [{ field: 'constraint', newValue: 'PRIMARY_KEY' }],
+      fieldsUpdated: [{ field: 'constraint.id', oldValue: 'NULL', newValue: 'UNIQUE' }],
+      fieldsDeleted: [{ field: 'constraint', oldValue: 'FOREIGN_KEY' }],
+    };
+    const result = getConstraintChanges(changeDescription, 'constraint');
+    expect(result.addedConstraintDiffs).toHaveLength(2);
+    expect(result.deletedConstraintDiffs).toHaveLength(2);
+  });
+});
+
+describe('getUpdatedExtensionDiffFields', () => {
+  it('replaces the updated extension field with a word-level text diff', () => {
+    const result = getUpdatedExtensionDiffFields(
+      { extension: { owner: 'Platform', kept: 'yes' } },
+      {
+        updated: { field: 'extension.owner', oldValue: 'Platform', newValue: 'Data Platform' },
+      },
+    );
+    expect(result.extensionObject?.kept).toBe('yes');
+    expect(isTextDiffResult(result.extensionObject?.owner)).toBe(true);
+    const diff = result.extensionObject?.owner;
+    if (!isTextDiffResult(diff) || diff.type !== 'diff') {
+      throw new Error('expected a word diff');
+    }
+    expect(diff.parts.some((part) => part.added && part.value.includes('Data'))).toBe(true);
+  });
+
+  it('returns an empty extension object when the updated name has no property segment', () => {
+    expect(
+      getUpdatedExtensionDiffFields(
+        { extension: { owner: 'Platform' } },
+        { updated: { field: 'extension', oldValue: 'a', newValue: 'b' } },
+      ),
+    ).toEqual({ extensionObject: {} });
   });
 });

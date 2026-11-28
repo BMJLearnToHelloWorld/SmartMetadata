@@ -99,11 +99,11 @@ interface PipelinePresentation {
 }
 
 const PIPELINE_STATE_PRESENTATION: Record<string, PipelinePresentation> = {
-  Success: { tone: 'success', badgeKey: 'label.healthy' },
-  Running: { tone: 'info', badgeKey: 'label.running', subtitleKey: 'message.started-time' },
-  Queued: { tone: 'info', badgeKey: 'label.queued' },
-  PartialSuccess: { tone: 'warning', badgeKey: 'label.partial-success' },
-  Stopped: { tone: 'warning', badgeKey: 'label.paused' },
+  success: { tone: 'success', badgeKey: 'label.healthy' },
+  running: { tone: 'info', badgeKey: 'label.running', subtitleKey: 'message.started-time' },
+  queued: { tone: 'info', badgeKey: 'label.queued' },
+  partialSuccess: { tone: 'warning', badgeKey: 'label.partial-success' },
+  stopped: { tone: 'warning', badgeKey: 'label.paused' },
 };
 const DEFAULT_PIPELINE_PRESENTATION: PipelinePresentation = {
   tone: 'error',

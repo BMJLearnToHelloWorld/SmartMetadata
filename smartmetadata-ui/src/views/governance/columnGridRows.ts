@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { assetLocation } from '@/catalog/entityRoutes';
+import { getEntityDetailsPath } from '@/utils/fqnPaths';
 import type {
   ColumnGridGroup,
   ColumnGridItem,
@@ -300,19 +301,19 @@ export function columnLinkTabForEntityType(entityType: string): string {
 }
 
 /**
- * Pin `getColumnLink` (ColumnGrid.component.tsx:1157): entity detail
- * path for the occurrence's entity, on the column's tab, with the
- * column name as the hash fragment. Product form: the `asset` route
- * (`catalog/entityRoutes.ts`) with `query.tab`, read by
- * `AssetDetailView.vue:1003`.
+ * Official getColumnLink (ColumnGrid.component.tsx): getEntityDetailsPath
+ * for the occurrence's entity and tab, plus the column name as the hash.
  */
 export function columnEntityLocation(
   occurrence: ColumnGridOccurrence,
-): { name: string; params: { entityType: string; fqn: string }; query: { tab: string }; hash: string } {
+): { path: string; hash: string } {
   const columnName = occurrence.columnFQN.split('.').pop() || '';
   return {
-    ...assetLocation(occurrence.entityType, occurrence.entityFQN),
-    query: { tab: columnLinkTabForEntityType(occurrence.entityType) },
+    path: getEntityDetailsPath(
+      occurrence.entityType,
+      occurrence.entityFQN,
+      columnLinkTabForEntityType(occurrence.entityType),
+    ),
     hash: columnName ? `#${encodeURIComponent(columnName)}` : '',
   };
 }

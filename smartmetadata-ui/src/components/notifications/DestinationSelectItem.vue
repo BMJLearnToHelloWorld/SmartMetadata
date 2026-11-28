@@ -4,7 +4,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Alert, Button, Input, Select, Switch } from 'ant-design-vue';
+import { Alert, Button, Input, Select, Switch, Tabs } from 'ant-design-vue';
 import {
   ApiOutlined,
   CloseOutlined,
@@ -24,8 +24,8 @@ import type { EventSubscriptionDestination } from '@/types/quality';
 import type { AlertFormDestination, ModifiedWebhookConfig } from '@/types/notifications';
 import type { AlertFormValidationErrors } from '@/utils/notifications/alertValidation';
 import {
-  buildGroupedOptions,
   checkIfDestinationIsInternal,
+  destinationOptionsForTab,
   getDestinationStatusDetails,
   getDestinationStatusLabel,
 } from '@/utils/notifications/alertDestinations';
@@ -97,14 +97,22 @@ const isInternalDestinationSelected = computed(() =>
   checkIfDestinationIsInternal(destinationType.value ?? ''),
 );
 
-const groupedOptions = computed(() =>
-  buildGroupedOptions(
-    t('label.internal'),
-    t('label.external'),
+const destinationTab = ref<'internal' | 'external'>('internal');
+const tabOptions = computed(() =>
+  destinationOptionsForTab(
+    destinationTab.value,
     props.selection.support.recipientCategories,
     isInternalDestinationSelected.value ? destinationType.value : undefined,
   ),
 );
+
+watch(destinationType, (value) => {
+  if (value && checkIfDestinationIsInternal(value)) {
+    destinationTab.value = 'internal';
+  } else if (value) {
+    destinationTab.value = 'external';
+  }
+});
 
 const isSelectionWarningDismissed = ref(false);
 
@@ -192,11 +200,6 @@ const downstreamDepthError = computed(
   () => props.validationErrors[`destinations.${props.id}.downstreamDepth`],
 );
 
-function filterCategoryOption(input: string, option?: { label?: unknown }): boolean {
-  return String(option?.label ?? '')
-    .toLocaleLowerCase()
-    .includes(input.toLocaleLowerCase());
-}
 </script>
 
 <template>
@@ -205,17 +208,28 @@ function filterCategoryOption(input: string, option?: { label?: unknown }): bool
       <div>
         <Select
           :value="destinationType ?? undefined"
-          show-search
-          :filter-option="filterCategoryOption"
           :disabled="isViewMode"
           :data-testid="`destination-category-select-${id}`"
           :placeholder="t('label.select-field', { field: t('label.destination') })"
           style="width: 100%"
-          :options="groupedOptions.map((option) => ({ value: option.id, label: option.label, disabled: option.isDisabled }))"
+          :options="tabOptions.map((option) => ({ value: option.id, label: option.label }))"
           @change="(value) => handleDestinationTypeSelect(value as string | undefined)"
         >
+          <template #dropdownRender="{ menuNode }">
+            <div class="destination-select-item__dropdown" :data-testid="`destination-tabs-${id}`">
+              <Tabs
+                v-model:activeKey="destinationTab"
+                size="small"
+                :tab-bar-style="{ margin: '0 8px' }"
+              >
+                <Tabs.TabPane key="internal" :tab="t('label.internal')" />
+                <Tabs.TabPane key="external" :tab="t('label.external')" />
+              </Tabs>
+              <component :is="menuNode" />
+            </div>
+          </template>
           <template #option="{ value: optionValue, label }">
-            <span :class="{ 'destination-select-item__header': String(optionValue).startsWith('header-') }">
+            <span>
               <component
                 :is="CATEGORY_ICONS[String(optionValue)]"
                 v-if="CATEGORY_ICONS[String(optionValue)]"

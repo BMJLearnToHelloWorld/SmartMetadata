@@ -5,8 +5,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getDataQualityPagePath } from '@/utils/fqnPaths';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Space, Spin, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Col, DatePicker, Empty, Row, Space, Spin, Typography } from 'ant-design-vue';
+import DqDashboardFilterSelect from '@/components/quality/DqDashboardFilterSelect.vue';
 import dayjs, { type Dayjs } from 'dayjs';
 import SmChart from '@/features/charts/SmChart.vue';
 import { formatChartTs, namedSeries } from '@/features/charts/series';
@@ -16,14 +18,12 @@ import {
   DQ_HEALTH_PIE_SEGMENT_ORDER,
   DQ_TEST_CASE_PIE_SEGMENT_ORDER,
   fetchDqDashboardAggregations,
-  fetchDqDashboardFilterOptions,
   fetchDqDashboardTimeSeries,
   filterStateToChartFilters,
   initialDqFilterState,
   visibleDqFilters,
   type DqDashboardAggregations,
   type DqDashboardChartFilters,
-  type DqDashboardFilterOptions,
   type DqDashboardFilterState,
   type DqDashboardTimeSeries,
   type DqHiddenFilter,
@@ -33,6 +33,9 @@ import {
 } from '@/quality/dashboard';
 import type { ChartPoint } from '@/features/charts/types';
 import { convertMillisecondsToHumanReadableFormat } from '@/utils/workflowDateTime';
+import { useDqDashboardFilterSelects } from '@/quality/useDqDashboardFilterSelects';
+import DqDashboardOwnerFilter from '@/features/quality/DqDashboardOwnerFilter.vue';
+import GlossaryTermFilterPicker from '@/components/governance/GlossaryTermFilterPicker.vue';
 
 /**
  * Shared DataQualityDashboard (pin
@@ -74,7 +77,7 @@ const props = withDefaults(
   },
 );
 
-const { t, te } = useI18n();
+const { t } = useI18n();
 const router = useRouter();
 
 const loadingAggregations = ref(false);
@@ -83,11 +86,16 @@ const aggregationsError = ref('');
 const timeSeriesError = ref('');
 const range = ref(seriesWindow(30));
 const filters = reactive<DqDashboardFilterState>(initialDqFilterState(props.initialFilters));
-const options = ref<DqDashboardFilterOptions | null>(null);
 const aggregations = ref<DqDashboardAggregations | null>(null);
 const timeSeries = ref<DqDashboardTimeSeries | null>(null);
 
 const visibleFilters = computed(() => visibleDqFilters(props.hiddenFilters));
+const {
+  optionsFor: dqFilterOptionsFor,
+  loadingFor: dqFilterLoadingFor,
+  onSearch: dqFilterOnSearch,
+  onDropdownOpen: dqFilterOnDropdownOpen,
+} = useDqDashboardFilterSelects(visibleFilters, filters);
 const showFilterBar = computed(() => !props.hideFilterBar);
 
 const chartFilters = computed<DqDashboardChartFilters>(() =>
@@ -109,26 +117,26 @@ const rangePickerValue = computed<[Dayjs, Dayjs]>(() => [
 
 const coverageSeries = computed(() =>
   aggregations.value?.coverage?.total
-    ? namedSeries(t('quality.landing.coverage'), [
-        { label: t('quality.landing.covered'), value: aggregations.value.coverage.covered },
-        { label: t('quality.landing.notCovered'), value: aggregations.value.coverage.notCovered },
+    ? namedSeries(t('label.data-asset-plural-coverage'), [
+        { label: t('label.covered'), value: aggregations.value.coverage.covered },
+        { label: t('label.uncovered'), value: aggregations.value.coverage.notCovered },
       ])
     : [],
 );
 const healthSeries = computed(() =>
   aggregations.value?.health?.total
-    ? namedSeries(t('quality.landing.healthyAssets'), [
-        { label: t('quality.landing.healthy'), value: aggregations.value.health.healthy },
-        { label: t('quality.landing.unhealthy'), value: aggregations.value.health.unhealthy },
+    ? namedSeries(t('label.healthy-data-asset-plural'), [
+        { label: t('label.healthy'), value: aggregations.value.health.healthy },
+        { label: t('label.unhealthy'), value: aggregations.value.health.unhealthy },
       ])
     : [],
 );
 const resultsSeries = computed(() =>
   aggregations.value?.results?.total
-    ? namedSeries(t('quality.landing.testResults'), [
-        { label: t('quality.landing.success'), value: aggregations.value.results.success },
-        { label: t('quality.landing.failed'), value: aggregations.value.results.failed },
-        { label: t('quality.landing.aborted'), value: aggregations.value.results.aborted },
+    ? namedSeries(t('label.total-entity', { entity: t('label.test-plural') }), [
+        { label: t('label.success'), value: aggregations.value.results.success },
+        { label: t('label.failed'), value: aggregations.value.results.failed },
+        { label: t('label.aborted'), value: aggregations.value.results.aborted },
       ])
     : [],
 );
@@ -138,25 +146,25 @@ function areaSeries(name: string, points: ChartPoint[]) {
 }
 
 const successSeries = computed(() =>
-  areaSeries(t('quality.landing.success'), timeSeries.value?.statusByDay.Success ?? []),
+  areaSeries(t('label.success'), timeSeries.value?.statusByDay.Success ?? []),
 );
 const abortedSeries = computed(() =>
-  areaSeries(t('quality.landing.aborted'), timeSeries.value?.statusByDay.Aborted ?? []),
+  areaSeries(t('label.aborted'), timeSeries.value?.statusByDay.Aborted ?? []),
 );
 const failedSeries = computed(() =>
-  areaSeries(t('quality.landing.failed'), timeSeries.value?.statusByDay.Failed ?? []),
+  areaSeries(t('label.failed'), timeSeries.value?.statusByDay.Failed ?? []),
 );
 const openIncidentSeries = computed(() =>
-  areaSeries(t('quality.dashboard.openIncidents'), timeSeries.value?.incidentsByDay.open ?? []),
+  areaSeries(t('label.open-incident-plural'), timeSeries.value?.incidentsByDay.open ?? []),
 );
 const resolvedIncidentSeries = computed(() =>
-  areaSeries(t('quality.dashboard.resolvedIncidents'), timeSeries.value?.incidentsByDay.resolved ?? []),
+  areaSeries(t('label.resolved-incident-plural'), timeSeries.value?.incidentsByDay.resolved ?? []),
 );
 const responseTimeSeries = computed(() =>
-  areaSeries(t('quality.dashboard.responseTime'), timeSeries.value?.incidentTime.response ?? []),
+  areaSeries(t('label.response-time'), timeSeries.value?.incidentTime.response ?? []),
 );
 const resolutionTimeSeries = computed(() =>
-  areaSeries(t('quality.dashboard.resolutionTime'), timeSeries.value?.incidentTime.resolution ?? []),
+  areaSeries(t('label.resolution-time'), timeSeries.value?.incidentTime.resolution ?? []),
 );
 
 function latestValue(points: ChartPoint[]): number {
@@ -171,23 +179,18 @@ function averageValue(points: ChartPoint[]): string {
   return convertMillisecondsToHumanReadableFormat(total / points.length);
 }
 
+/** Official StatusCardWidget: raw dimension title; only NoDimension is translated. */
 function dimensionLabel(id: string): string {
-  const key =
-    id === 'No Dimension'
-      ? 'quality.landing.dimensions.none'
-      : `quality.landing.dimensions.${id.toLowerCase()}`;
-  return te(key) ? t(key) : id;
+  if (id === 'NoDimension') {
+    return t('label.no-dimension');
+  }
+  return id;
 }
 
 function setFilter(id: keyof DqDashboardFilterState, value: unknown): void {
   filters[id] = Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
     : [];
-}
-
-/** Pin FilterSelectDropdown showSelectAll parity: pick every loaded option. */
-function selectAll(id: keyof DqDashboardFilterState): void {
-  filters[id] = (options.value?.[id] ?? []).map((option) => option.value);
 }
 
 /**
@@ -220,13 +223,13 @@ function onRangeChange(dates: unknown): void {
  */
 function openTestCases(drill?: DqTestCaseListDrill): void {
   void router.push({
-    name: 'quality-test-cases',
-    query: { tab: 'test-cases', ...buildDqTestCaseListQuery(chartFilters.value, drill) },
+    path: getDataQualityPagePath('test-cases'),
+    query: { ...buildDqTestCaseListQuery(chartFilters.value, drill) },
   });
 }
 
 function openTestSuites(): void {
-  void router.push({ name: 'quality-test-suites' });
+  void router.push({ path: getDataQualityPagePath('test-suites') });
 }
 
 /** Pin DataAssetsCoveragePieChartWidget: not-covered → explore. */
@@ -283,7 +286,7 @@ async function loadAggregations(): Promise<void> {
     aggregations.value = await fetchDqDashboardAggregations(chartFilters.value, range.value);
   } catch (error) {
     aggregations.value = null;
-    aggregationsError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    aggregationsError.value = error instanceof Error ? error.message : t('server.unexpected-error');
   } finally {
     loadingAggregations.value = false;
   }
@@ -296,7 +299,7 @@ async function loadTimeSeries(): Promise<void> {
     timeSeries.value = await fetchDqDashboardTimeSeries(chartFilters.value, range.value);
   } catch (error) {
     timeSeries.value = null;
-    timeSeriesError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    timeSeriesError.value = error instanceof Error ? error.message : t('server.unexpected-error');
   } finally {
     loadingTimeSeries.value = false;
   }
@@ -339,14 +342,7 @@ watch(
   { deep: true },
 );
 
-onMounted(async () => {
-  try {
-    options.value = await fetchDqDashboardFilterOptions(
-      visibleFilters.value.includes('glossaryTerms'),
-    );
-  } catch {
-    options.value = null;
-  }
+onMounted(() => {
   reload();
 });
 </script>
@@ -357,200 +353,147 @@ onMounted(async () => {
     :class="['dq-dashboard', props.className, { 'dq-dashboard--governance': props.isGovernanceView }]"
   >
     <div v-if="showFilterBar" class="dq-dashboard__filters" data-testid="dq-dashboard-filters">
-      <Select
+      <DqDashboardOwnerFilter
         v-if="visibleFilters.includes('owner')"
-        :value="filters.owner"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.owner')"
-        :options="options?.owner ?? []"
-        data-testid="dq-dashboard-filter-owner"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('owner', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('owner')">{{ t('quality.dashboard.selectAll') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
-        v-if="visibleFilters.includes('tier')"
-        :value="filters.tier"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.tier')"
-        :options="options?.tier ?? []"
-        data-testid="dq-dashboard-filter-tier"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('tier', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('tier')">{{ t('quality.dashboard.selectAll') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
-        v-if="visibleFilters.includes('certification')"
-        :value="filters.certification"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.certification')"
-        :options="options?.certification ?? []"
-        data-testid="dq-dashboard-filter-certification"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('certification', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('certification')">{{ t('quality.dashboard.selectAll') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
-        v-if="visibleFilters.includes('tags')"
-        :value="filters.tag"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.tag')"
-        :options="options?.tag ?? []"
-        data-testid="dq-dashboard-filter-tag"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('tag', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('tag')">{{ t('quality.dashboard.selectAll') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
-        v-if="visibleFilters.includes('glossaryTerms')"
-        :value="filters.glossaryTerm"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.glossaryTerm')"
-        :options="options?.glossaryTerm ?? []"
-        data-testid="dq-dashboard-filter-glossary"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('glossaryTerm', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('glossaryTerm')">{{ t('quality.dashboard.selectAll') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <Select
-        v-if="visibleFilters.includes('dataProducts')"
-        :value="filters.dataProduct"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.dataProduct')"
-        :options="options?.dataProduct ?? []"
-        data-testid="dq-dashboard-filter-data-product"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('dataProduct', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('dataProduct')">{{ t('quality.dashboard.selectAll') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
-      <span class="dq-dashboard__range-label" data-testid="dq-dashboard-range-label">{{ rangeLabel }}</span>
-      <DatePicker.RangePicker
-        :value="rangePickerValue"
-        data-testid="dq-dashboard-filter-range"
-        class="dq-dashboard__filter dq-dashboard__filter--range"
-        :aria-label="t('quality.landing.filters.range')"
-        @change="onRangeChange"
+        :model-value="filters.owner"
+        @update:model-value="(value) => setFilter('owner', value)"
       />
+      <DqDashboardFilterSelect
+        v-if="visibleFilters.includes('tier')"
+        class="dq-dashboard__filter"
+        :model-value="filters.tier"
+        :label="t('label.tier')"
+        :options="dqFilterOptionsFor('tier')"
+        :loading="dqFilterLoadingFor('tier')"
+        search-key="tier"
+        test-id="dq-dashboard-filter-tier"
+        @update:model-value="(value) => setFilter('tier', value)"
+        @search="(q) => dqFilterOnSearch('tier', q)"
+        @open-change="(open) => dqFilterOnDropdownOpen('tier', open)"
+      />
+      <DqDashboardFilterSelect
+        v-if="visibleFilters.includes('certification')"
+        class="dq-dashboard__filter"
+        :model-value="filters.certification"
+        :label="t('label.certification')"
+        :options="dqFilterOptionsFor('certification')"
+        :loading="dqFilterLoadingFor('certification')"
+        search-key="certification"
+        test-id="dq-dashboard-filter-certification"
+        @update:model-value="(value) => setFilter('certification', value)"
+        @search="(q) => dqFilterOnSearch('certification', q)"
+        @open-change="(open) => dqFilterOnDropdownOpen('certification', open)"
+      />
+      <DqDashboardFilterSelect
+        v-if="visibleFilters.includes('tags')"
+        class="dq-dashboard__filter"
+        :model-value="filters.tag"
+        :label="t('label.tag')"
+        :options="dqFilterOptionsFor('tag')"
+        :loading="dqFilterLoadingFor('tag')"
+        search-key="tag"
+        test-id="dq-dashboard-filter-tag"
+        @update:model-value="(value) => setFilter('tag', value)"
+        @search="(q) => dqFilterOnSearch('tag', q)"
+        @open-change="(open) => dqFilterOnDropdownOpen('tag', open)"
+      />
+      <GlossaryTermFilterPicker
+        v-if="visibleFilters.includes('glossaryTerms')"
+        :model-value="filters.glossaryTerm"
+        @update:model-value="(value) => setFilter('glossaryTerm', value)"
+      />
+      <DqDashboardFilterSelect
+        v-if="visibleFilters.includes('dataProducts')"
+        class="dq-dashboard__filter"
+        :model-value="filters.dataProduct"
+        :label="t('label.data-product')"
+        :options="dqFilterOptionsFor('dataProduct')"
+        :loading="dqFilterLoadingFor('dataProduct')"
+        search-key="dataProduct"
+        test-id="dq-dashboard-filter-data-product"
+        @update:model-value="(value) => setFilter('dataProduct', value)"
+        @search="(q) => dqFilterOnSearch('dataProduct', q)"
+        @open-change="(open) => dqFilterOnDropdownOpen('dataProduct', open)"
+      />
+      <span class="dq-dashboard__range-label" data-testid="dq-dashboard-range-label">{{ rangeLabel }}</span>
+      <div data-testid="dq-dashboard-filter-range" class="dq-dashboard__filter dq-dashboard__filter--range">
+        <DatePicker.RangePicker
+          :value="rangePickerValue"
+          :aria-label="t('label.last-run')"
+          @change="onRangeChange"
+        />
+      </div>
     </div>
 
     <Spin :spinning="loadingAggregations || loadingTimeSeries">
       <Space direction="vertical" size="middle" style="width: 100%">
         <Card
           data-testid="dq-dashboard-health"
-          class="dq-dashboard__card"
-          :title="t('quality.landing.healthTitle')"
+          class="dq-dashboard__card export-pdf-container"
+          :title="t('label.data-health')"
         >
-          <Typography.Paragraph type="secondary">{{ t('quality.landing.healthLead') }}</Typography.Paragraph>
-          <Alert v-if="aggregationsError" type="error" show-icon :message="aggregationsError" data-testid="dq-dashboard-health-error" />
+          <Typography.Paragraph type="secondary">{{ t('message.data-health-sub-header') }}</Typography.Paragraph>
           <Empty
-            v-else-if="!loadingAggregations && !aggregations?.coverage?.total && !aggregations?.health?.total && !aggregations?.results?.total"
+            v-if="!loadingAggregations && !aggregations?.coverage?.total && !aggregations?.health?.total && !aggregations?.results?.total"
             data-testid="dq-dashboard-health-empty"
-            :description="t('quality.landing.healthEmpty')"
+            :description="t('label.no-data')"
           />
           <Row v-else :gutter="[16, 16]">
             <Col :xs="24" :lg="8">
               <div class="dq-donut" data-testid="dq-dashboard-coverage-card">
-                <div class="dq-donut__title">{{ t('quality.landing.coverage') }}</div>
-                <div class="dq-donut__center">{{ t('quality.landing.tables', { count: aggregations?.coverage?.total ?? 0 }) }}</div>
+                <div class="dq-donut__title">{{ t('label.data-asset-plural-coverage') }}</div>
+                <div class="dq-donut__center">{{ aggregations?.coverage?.total ?? 0 }}</div>
                 <SmChart
                   kind="donut"
                   test-id="dq-dashboard-coverage-chart"
                   :series="coverageSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="200"
                   segment-clickable
                   @segment-click="openCoverageSegment"
                 />
                 <div class="dq-donut__legend">
-                  {{ t('quality.landing.covered') }} {{ aggregations?.coverage?.covered ?? 0 }} ·
-                  {{ t('quality.landing.notCovered') }} {{ aggregations?.coverage?.notCovered ?? 0 }}
+                  {{ t('label.covered') }} {{ aggregations?.coverage?.covered ?? 0 }} ·
+                  {{ t('label.uncovered') }} {{ aggregations?.coverage?.notCovered ?? 0 }}
                 </div>
               </div>
             </Col>
             <Col :xs="24" :lg="8">
               <div class="dq-donut" data-testid="dq-dashboard-healthy-card">
-                <div class="dq-donut__title">{{ t('quality.landing.healthyAssets') }}</div>
-                <div class="dq-donut__center">{{ t('quality.landing.entities', { count: aggregations?.health?.total ?? 0 }) }}</div>
+                <div class="dq-donut__title">{{ t('label.healthy-data-asset-plural') }}</div>
+                <div class="dq-donut__center">{{ aggregations?.health?.total ?? 0 }}</div>
                 <SmChart
                   kind="donut"
                   test-id="dq-dashboard-healthy-chart"
                   :series="healthSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="200"
                   segment-clickable
                   @segment-click="openHealthSegment"
                 />
                 <div class="dq-donut__legend">
-                  {{ t('quality.landing.healthy') }} {{ aggregations?.health?.healthy ?? 0 }} ·
-                  {{ t('quality.landing.unhealthy') }} {{ aggregations?.health?.unhealthy ?? 0 }}
+                  {{ t('label.healthy') }} {{ aggregations?.health?.healthy ?? 0 }} ·
+                  {{ t('label.unhealthy') }} {{ aggregations?.health?.unhealthy ?? 0 }}
                 </div>
               </div>
             </Col>
             <Col :xs="24" :lg="8">
               <div class="dq-donut" data-testid="dq-dashboard-results-card">
-                <div class="dq-donut__title">{{ t('quality.landing.testResults') }}</div>
-                <div class="dq-donut__center">{{ t('quality.landing.tests', { count: aggregations?.results?.total ?? 0 }) }}</div>
+                <div class="dq-donut__title">{{ t('label.total-entity', { entity: t('label.test-plural') }) }}</div>
+                <div class="dq-donut__center">{{ aggregations?.results?.total ?? 0 }}</div>
                 <SmChart
                   kind="donut"
                   test-id="dq-dashboard-results-chart"
                   :series="resultsSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="200"
                   segment-clickable
                   @segment-click="openResultsSegment"
                 />
                 <div class="dq-donut__legend">
-                  {{ t('quality.landing.success') }} {{ aggregations?.results?.success ?? 0 }} ·
-                  {{ t('quality.landing.failed') }} {{ aggregations?.results?.failed ?? 0 }} ·
-                  {{ t('quality.landing.aborted') }} {{ aggregations?.results?.aborted ?? 0 }}
+                  {{ t('label.success') }} {{ aggregations?.results?.success ?? 0 }} ·
+                  {{ t('label.failed') }} {{ aggregations?.results?.failed ?? 0 }} ·
+                  {{ t('label.aborted') }} {{ aggregations?.results?.aborted ?? 0 }}
                 </div>
               </div>
             </Col>
@@ -559,10 +502,10 @@ onMounted(async () => {
 
         <Card
           data-testid="dq-dashboard-dimensions"
-          class="dq-dashboard__card"
-          :title="t('quality.landing.dimensionsTitle')"
+          class="dq-dashboard__card export-pdf-container"
+          :title="t('label.data-dimensions')"
         >
-          <Typography.Paragraph type="secondary">{{ t('quality.landing.dimensionsLead') }}</Typography.Paragraph>
+          <Typography.Paragraph type="secondary">{{ t('message.data-dimensions-sub-header') }}</Typography.Paragraph>
           <Alert v-if="aggregationsError" type="error" show-icon :message="aggregationsError" data-testid="dq-dashboard-dimensions-error" />
           <div v-else class="dq-dims">
             <button
@@ -586,47 +529,47 @@ onMounted(async () => {
 
         <Card
           data-testid="dq-dashboard-status"
-          class="dq-dashboard__card"
-          :title="t('quality.landing.statusTitle')"
+          class="dq-dashboard__card export-pdf-container"
+          :title="t('label.test-case-status')"
         >
-          <Typography.Paragraph type="secondary">{{ t('quality.dashboard.statusLead') }}</Typography.Paragraph>
+          <Typography.Paragraph type="secondary">{{ t('message.test-case-status-sub-header') }}</Typography.Paragraph>
           <Alert v-if="timeSeriesError" type="error" show-icon :message="timeSeriesError" data-testid="dq-dashboard-status-error" />
           <Row v-else :gutter="[16, 16]">
             <Col :xs="24" :md="8">
               <button type="button" class="dq-status-chart dq-status-chart--link" data-testid="dq-dashboard-status-success" @click="openStatusCases('Success')">
-                <div class="dq-status-chart__label">{{ t('quality.landing.success') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.success') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-status-success-value">{{ latestValue(timeSeries?.statusByDay.Success ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-status-success-chart"
                   :series="successSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </button>
             </Col>
             <Col :xs="24" :md="8">
               <button type="button" class="dq-status-chart dq-status-chart--link" data-testid="dq-dashboard-status-aborted" @click="openStatusCases('Aborted')">
-                <div class="dq-status-chart__label">{{ t('quality.landing.aborted') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.aborted') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-status-aborted-value">{{ latestValue(timeSeries?.statusByDay.Aborted ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-status-aborted-chart"
                   :series="abortedSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </button>
             </Col>
             <Col :xs="24" :md="8">
               <button type="button" class="dq-status-chart dq-status-chart--link" data-testid="dq-dashboard-status-failed" @click="openStatusCases('Failed')">
-                <div class="dq-status-chart__label">{{ t('quality.landing.failed') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.failed') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-status-failed-value">{{ latestValue(timeSeries?.statusByDay.Failed ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-status-failed-chart"
                   :series="failedSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </button>
@@ -636,60 +579,60 @@ onMounted(async () => {
 
         <Card
           data-testid="dq-dashboard-incidents"
-          class="dq-dashboard__card"
-          :title="t('quality.dashboard.incidentsTitle')"
+          class="dq-dashboard__card export-pdf-container"
+          :title="t('label.incident-metrics')"
         >
-          <Typography.Paragraph type="secondary">{{ t('quality.dashboard.incidentsLead') }}</Typography.Paragraph>
+          <Typography.Paragraph type="secondary">{{ t('message.incident-metrics-sub-header') }}</Typography.Paragraph>
           <Alert v-if="timeSeriesError" type="error" show-icon :message="timeSeriesError" data-testid="dq-dashboard-incidents-error" />
           <Row v-else :gutter="[16, 16]">
             <Col :xs="24" :md="6">
               <button type="button" class="dq-status-chart dq-status-chart--link" data-testid="dq-dashboard-incidents-open" @click="openIncidents('New')">
-                <div class="dq-status-chart__label">{{ t('quality.dashboard.openIncidents') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.open-incident-plural') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-incidents-open-value">{{ latestValue(timeSeries?.incidentsByDay.open ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-incidents-open-chart"
                   :series="openIncidentSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </button>
             </Col>
             <Col :xs="24" :md="6">
               <button type="button" class="dq-status-chart dq-status-chart--link" data-testid="dq-dashboard-incidents-resolved" @click="openIncidents('Resolved')">
-                <div class="dq-status-chart__label">{{ t('quality.dashboard.resolvedIncidents') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.resolved-incident-plural') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-incidents-resolved-value">{{ latestValue(timeSeries?.incidentsByDay.resolved ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-incidents-resolved-chart"
                   :series="resolvedIncidentSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </button>
             </Col>
             <Col :xs="24" :md="6">
               <div class="dq-status-chart" data-testid="dq-dashboard-incidents-response">
-                <div class="dq-status-chart__label">{{ t('quality.dashboard.responseTime') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.response-time') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-incidents-response-value">{{ averageValue(timeSeries?.incidentTime.response ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-incidents-response-chart"
                   :series="responseTimeSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </div>
             </Col>
             <Col :xs="24" :md="6">
               <div class="dq-status-chart" data-testid="dq-dashboard-incidents-resolution">
-                <div class="dq-status-chart__label">{{ t('quality.dashboard.resolutionTime') }}</div>
+                <div class="dq-status-chart__label">{{ t('label.resolution-time') }}</div>
                 <div class="dq-status-chart__value" data-testid="dq-dashboard-incidents-resolution-value">{{ averageValue(timeSeries?.incidentTime.resolution ?? []) }}</div>
                 <SmChart
                   kind="area"
                   test-id="dq-dashboard-incidents-resolution-chart"
                   :series="resolutionTimeSeries"
-                  :empty="t('quality.dashboard.chartEmpty')"
+                  :empty="t('label.no-data')"
                   :height="120"
                 />
               </div>
@@ -714,9 +657,6 @@ onMounted(async () => {
 }
 .dq-dashboard__filter--range {
   margin-left: auto;
-}
-.dq-dashboard__select-all {
-  padding: 4px 8px 0;
 }
 .dq-dashboard__range-label {
   color: var(--sm-text-secondary);

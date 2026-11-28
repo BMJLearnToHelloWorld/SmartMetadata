@@ -14,18 +14,25 @@ describe('qualityTabs', () => {
     ]);
   });
 
-  it('marks test-case sql-query as residual, dimensionality and issues as wired (A15)', () => {
+  it('aligns official test-case tabs and has no overview fallback (A15, t418u)', () => {
     expect(supportedQualityTabs('testCase').map((tab) => tab.key)).toContain('issues');
-    expect(supportedQualityTabs('testCase').map((tab) => tab.key)).toContain('dimensionality');
-    expect(residualQualityTabs('testCase').map((tab) => tab.key)).toEqual(['sql-query']);
+    expect(supportedQualityTabs('testCase').map((tab) => tab.key)).toEqual([
+      'test-case-results',
+      'dimensionality',
+      'issues',
+      'sql-query',
+    ]);
+    expect(supportedQualityTabs('testCase').map((tab) => tab.key)).not.toContain('overview');
+    expect(residualQualityTabs('testCase')).toEqual([]);
     for (const tab of residualQualityTabs('testCase')) {
       expect(tab.residualReason).toBeTruthy();
     }
   });
 
   it('marks the test-suite pipeline tab as wired (A15: add/edit ingestion page)', () => {
-    expect(supportedQualityTabs('testSuite').map((tab) => tab.key)).toContain('pipeline');
-    expect(residualQualityTabs('testSuite').map((tab) => tab.key)).toEqual([]);
+    expect(supportedQualityTabs('testSuite').map((tab) => tab.key)).toEqual(['test-cases', 'pipeline']);
+    expect(supportedQualityTabs('testSuite').map((tab) => tab.key)).not.toContain('overview');
+    expect(residualQualityTabs('testSuite')).toEqual([]);
   });
 
   it('gives every tab a label key and every residual a reason', () => {

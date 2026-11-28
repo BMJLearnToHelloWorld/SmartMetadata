@@ -29,12 +29,17 @@
  * because the domain detail route is :fqn-addressed; the other kinds
  * still take the detail :id.
  *
- * Route names are listed for the parent merge (router/index.ts is
- * merged by hand, not edited by this group):
- *  governance-domain-version, governance-glossary-version,
- *  governance-term-version, governance-term-version-tab,
- *  governance-classification-version, governance-tag-version,
- *  quality-test-case-version, quality-test-case-version-tab.
+ * Route names:
+ *  glossary-version, glossary-term-version, glossary-term-version-tab
+ *  (official /glossary/:id/versions/:version and
+ *  /glossary-term/:id/versions/:version[/:tab]); invented
+ *  /governance/glossaries|terms/.../versions/... paths redirect to
+ *  those official names (legacy names governance-glossary-version,
+ *  governance-term-version, governance-term-version-tab). Other kinds
+ *  stay on GovernanceVersionView:
+ *  governance-domain-version, governance-classification-version,
+ *  governance-tag-version, quality-test-case-version,
+ *  quality-test-case-version-tab.
  */
 export type GovernanceVersionKind = 'domain' | 'glossary' | 'term' | 'classification' | 'tag' | 'testCase';
 
@@ -43,11 +48,13 @@ export function getDomainVersionPath(id: string, version: string): string {
 }
 
 export function getGlossaryVersionPath(id: string, version: string): string {
-  return `/governance/glossaries/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
+  // Official GLOSSARY_VERSION: /glossary/:id/versions/:version
+  return `/glossary/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
 }
 
 export function getGlossaryTermVersionPath(id: string, version: string, tab?: string): string {
-  const base = `/governance/terms/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
+  // Official GLOSSARY_TERMS_VERSION / GLOSSARY_TERMS_VERSION_TAB
+  const base = `/glossary-term/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
   return tab ? `${base}/${encodeURIComponent(tab)}` : base;
 }
 

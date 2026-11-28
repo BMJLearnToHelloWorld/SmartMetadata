@@ -52,7 +52,7 @@ async function mountView(options: { showAddAgent?: boolean; orchestratorUnavaila
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
       {
-        path: '/ingestion/services/:kind/:id/add/:ingestionType',
+        path: '/service/:serviceCategory/:fqn/add-ingestion/:ingestionType',
         name: 'ingestion-service-add-ingestion',
         component: { template: '<div>add</div>' },
       },
@@ -77,6 +77,7 @@ async function mountView(options: { showAddAgent?: boolean; orchestratorUnavaila
       isDataInsightExists: false,
       serviceKind: 'database',
       serviceId: 's1',
+        serviceFqn: 'pg.warehouse',
     },
     attachTo: document.body,
     global: { plugins: [Antd, createTestI18n(), router] },
@@ -101,6 +102,7 @@ describe('MetadataAgentsView (official MetadataAgentsView)', () => {
       disabled: false,
       serviceKind: 'database',
       serviceId: 's1',
+        serviceFqn: 'pg.warehouse',
     });
     wrapper.unmount();
   });

@@ -499,6 +499,9 @@ export function getCustomPropertyRouteSegment(entityType: string): string {
 export const ADD_CUSTOM_PROPERTIES_DOCS =
   'https://docs.open-metadata.org/latest/how-to-guides/guide-for-data-users/custom';
 
+/** Official CUSTOM_PROPERTIES_DOCS: same URL as ADD_CUSTOM_PROPERTIES_DOCS. */
+export const CUSTOM_PROPERTIES_DOCS = ADD_CUSTOM_PROPERTIES_DOCS;
+
 export interface CustomPropertyTypeFlags {
   hasEnumConfig: boolean;
   hasFormatConfig: boolean;

@@ -19,7 +19,7 @@ const listFromSearch = vi.fn();
 const getByStateId = vi.fn();
 const patchIncident = vi.fn();
 const createIncident = vi.fn();
-const listTestCases = vi.fn();
+const searchAssetsMock = vi.fn();
 const postAggregate = vi.fn();
 const getUserByNameMock = vi.fn();
 const getTeamByNameMock = vi.fn();
@@ -48,13 +48,13 @@ vi.mock('@/api/testIncidents', async (importOriginal) => {
     createTestIncident: (...args: unknown[]) => createIncident(...args),
   };
 });
-vi.mock('@/api/testCases', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api/testCases')>();
-  return { ...actual, listTestCasesBySearch: (...args: unknown[]) => listTestCases(...args) };
-});
 vi.mock('@/api/search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/search')>();
-  return { ...actual, postAggregateFieldOptions: (...args: unknown[]) => postAggregate(...args) };
+  return {
+    ...actual,
+    postAggregateFieldOptions: (...args: unknown[]) => postAggregate(...args),
+    searchAssets: (...args: unknown[]) => searchAssetsMock(...args),
+  };
 });
 vi.mock('@/api/users', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/users')>();
@@ -129,7 +129,9 @@ async function mountView(query: Record<string, string> = {}) {
     routes: [
       { path: '/observability/incidents', name: 'observability-incidents', component: IncidentsListView },
       { path: '/test-case/:fqn/:tab?', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
     ],
   });
   await router.push({ path: '/observability/incidents', query });
@@ -196,7 +198,16 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     getByStateId.mockImplementation(async (stateId: string) => rows.find((row) => row.stateId === stateId));
     patchIncident.mockResolvedValue(inc1);
     createIncident.mockResolvedValue(inc1);
-    listTestCases.mockResolvedValue({ data: [inc1.testCaseReference], total: 1 });
+    searchAssetsMock.mockResolvedValue({
+      hits: [
+        {
+          name: inc1.testCaseReference.name,
+          displayName: inc1.testCaseReference.displayName,
+          fullyQualifiedName: inc1.testCaseReference.fullyQualifiedName,
+        },
+      ],
+      total: 1,
+    });
     postAggregate.mockResolvedValue({
       aggregations: {
         'testCaseResolutionStatusDetails.assignee.id': {
@@ -230,8 +241,8 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(listFromSearch).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 10, offset: 0, latest: true, include: 'non-deleted', dateField: 'timestamp' }),
     );
-    expect(listTestCases).toHaveBeenCalledWith({ q: '*', limit: 25 });
-    for (const header of ['Test case name', 'Table', 'Last updated', 'Status', 'Severity', 'Assignee']) {
+    expect(searchAssetsMock).not.toHaveBeenCalled();
+    for (const header of ['Test Case Name', 'Table', 'Last Updated', 'Status', 'Severity', 'Assignee']) {
       expect(wrapper.text()).toContain(header);
     }
     expect(wrapper.text()).toContain('Row count');
@@ -243,6 +254,18 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(wrapper.find('[data-testid="incident-row-inc1"]').exists()).toBe(true);
     // The classic list has no severity filter control.
     expect(wrapper.find('[data-testid="incident-filter-severity"]').exists()).toBe(false);
+  });
+
+  it('loads test-case filter options only when the picker opens (pin enabled: isTestCasePickerOpen)', async () => {
+    const { wrapper } = await mountView();
+    expect(searchAssetsMock).not.toHaveBeenCalled();
+    const select = wrapper.get('[data-testid="incident-filter-test-case"] .ant-select-selector');
+    await select.trigger('mousedown');
+    await drain();
+    expect(searchAssetsMock).toHaveBeenCalledWith('*', 0, 15, {
+      index: 'testCase',
+      includeAggregations: false,
+    });
   });
 
   it('shows the permission placeholder and fetches nothing without read access', async () => {
@@ -268,7 +291,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     const { wrapper, router } = await mountView({ currentPage: '2' });
     expect(listFromSearch).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 10 }));
     await openSelectIn(wrapper as never, 'incident-filter-status');
-    await clickOptionByText('Acknowledged');
+    await clickOptionByText('Ack');
     await drain();
     expect(router.currentRoute.value.query.testCaseResolutionStatusType).toBe('Ack');
     expect(router.currentRoute.value.query.currentPage).toBeUndefined();
@@ -313,6 +336,11 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="incident-status-inc2"]').trigger('click');
     await flushPromises();
+    expect(document.querySelector('[data-testid="assignee-search-input"]')).not.toBeNull();
+    const back = document.querySelector('.anticon-arrow-left')?.closest('button') as HTMLElement | undefined;
+    expect(back).toBeDefined();
+    back?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
     expect(document.querySelector('[data-testid="incident-status-option-Assigned"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="incident-status-option-Resolved"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="incident-status-option-New"]')).toBeNull();
@@ -328,7 +356,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith('task-1', { transitionId: 'ack' });
     expect(getByStateId).toHaveBeenCalledWith('task-1', 1);
-    expect(wrapper.text()).toContain('Acknowledged');
+    expect(wrapper.text()).toContain('Ack');
   });
 
   it('requires reason and comment before resolving, then sends the resolve body', async () => {
@@ -338,18 +366,19 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await flushPromises();
     await clickInBody('incident-status-option-Resolved');
     await flushPromises();
-    expect(document.querySelector('[data-testid="incident-status-modal-reason"]')).not.toBeNull();
-    const ok = modalOkButton();
-    expect(ok?.classList.contains('ant-btn-disabled') || ok?.hasAttribute('disabled')).toBe(true);
-    await openSelectInBody('incident-status-modal-reason');
-    await clickOptionByText('FalsePositive');
+    expect(document.querySelector('[data-testid="reason-chip-FalsePositive"]')).not.toBeNull();
+    const submit = document.body.querySelector(
+      '[data-testid="submit-resolved-popover-button"]',
+    ) as HTMLButtonElement | null;
+    expect(submit?.disabled).toBe(true);
+    await clickInBody('reason-chip-FalsePositive');
     const comment = document.body.querySelector(
-      '[data-testid="incident-status-modal-comment"]',
+      '[data-testid="resolved-comment-textarea"]',
     ) as HTMLTextAreaElement | null;
     expect(comment).not.toBeNull();
     await new DOMWrapper(comment as HTMLTextAreaElement).setValue('Expected empty overnight');
     await flushPromises();
-    modalOkButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await clickInBody('submit-resolved-popover-button');
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith('task-1', {
       transitionId: 'resolve',
@@ -361,17 +390,20 @@ describe('IncidentsListView (W2-2 classic list)', () => {
   });
 
   it('opens the assignee picker for the Assigned target and assigns on confirm', async () => {
+    searchUsersMock.mockResolvedValue({
+      data: [{ id: 'alice', name: 'alice', displayName: 'Alice', fullyQualifiedName: 'alice' }],
+      total: 1,
+    });
     getByStateId.mockResolvedValueOnce({ ...inc1, testCaseResolutionStatusType: 'Assigned' });
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="incident-status-inc1"]').trigger('click');
     await flushPromises();
     await clickInBody('incident-status-option-Assigned');
-    await flushPromises();
-    expect(document.querySelector('[data-testid="incident-status-modal-assignee"]')).not.toBeNull();
-    await openSelectInBody('incident-status-modal-assignee');
-    await clickOptionByText('Alice');
-    await flushPromises();
-    modalOkButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await drain();
+    expect(document.querySelector('[data-testid="assignee-search-input"]')).not.toBeNull();
+    expect(searchUsersMock).toHaveBeenCalled();
+    await clickInBody('alice');
+    await clickInBody('submit-assignee-popover-button');
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith('task-1', {
       transitionId: 'assign',
@@ -405,13 +437,9 @@ describe('IncidentsListView (W2-2 classic list)', () => {
   it('edits the assignee inline through resolveTask and the read-back', async () => {
     getByStateId.mockResolvedValueOnce({ ...inc1, testCaseResolutionStatusDetails: { assignee: bob } });
     const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="incident-assignee-edit-inc1"]').trigger('click');
-    await flushPromises();
-    expect(document.querySelector('[data-testid="incident-assignee-modal-picker"]')).not.toBeNull();
-    await openSelectInBody('incident-assignee-modal-picker');
-    await clickOptionByText('Bob');
-    await flushPromises();
-    modalOkButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const picker = wrapper.findComponent({ name: 'IncidentAssigneePicker' });
+    expect(picker.exists()).toBe(true);
+    await picker.vm.$emit('change', bob);
     await drain();
     expect(resolveTaskMock).toHaveBeenCalledWith(
       'task-1',
@@ -421,16 +449,20 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(wrapper.text()).toContain('Bob');
   });
 
-  it('hides the inline editors when the row has no EditStatus', async () => {
+  it('renders read-only status/severity chips when the row has no EditStatus (pin inline chips)', async () => {
     permState.rowOps = {};
     const { wrapper } = await mountView();
-    expect(wrapper.find('[data-testid="incident-status-inc1"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="incident-severity-inc1"]').exists()).toBe(false);
+    const statusChip = wrapper.find('[data-testid="incident-status-inc1"]');
+    expect(statusChip.exists()).toBe(true);
+    expect(statusChip.classes()).not.toContain('incident-chip--editable');
+    const severityChip = wrapper.find('[data-testid="incident-severity-inc1"]');
+    expect(severityChip.exists()).toBe(true);
+    expect(severityChip.classes()).not.toContain('incident-chip--editable');
     expect(wrapper.find('[data-testid="incident-assignee-edit-inc1"]').exists()).toBe(false);
     expect(wrapper.text()).toContain('New');
   });
 
-  it('degrades the assignee candidates to page rows when the aggregate fails', async () => {
+  it('offers no assignee filter options when the aggregate fails (pin NO_ASSIGNEES)', async () => {
     postAggregate.mockRejectedValueOnce(new Error('es down'));
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="incidents-table"]').exists()).toBe(true);
@@ -438,8 +470,18 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     const options = Array.from(document.body.querySelectorAll('.ant-select-item-option')).map((el) =>
       el.textContent?.trim(),
     );
+    expect(options).toEqual([]);
+    expect(searchUsersMock).not.toHaveBeenCalled();
+  });
+
+  it('limits the assignee filter to aggregate names only', async () => {
+    const { wrapper } = await mountView();
+    await openSelectIn(wrapper as never, 'incident-filter-assignee');
+    const options = Array.from(document.body.querySelectorAll('.ant-select-item-option')).map((el) =>
+      el.textContent?.trim(),
+    );
     expect(options).toContain('Alice');
-    expect(options).toContain('Bob');
+    expect(searchUsersMock).not.toHaveBeenCalled();
   });
 
   it('sends the active domain to the list and the aggregate', async () => {
@@ -456,9 +498,12 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/test-case/svc.db.schema.orders.row_count');
     expect(router.currentRoute.value.name).toBe('quality-test-case');
+    const historyState = (router.options.history.state as { breadcrumbData?: { name: string; url: string }[] })
+      .breadcrumbData;
+    expect(historyState).toEqual([{ name: 'Incident Manager', url: '/incident-manager' }]);
   });
 
-  it('opens the table asset route with the quality tab from the table link', async () => {
+  it('opens the table asset route with the official profiler Data Quality sub-tab from the table link', async () => {
     const { wrapper, router } = await mountView();
     const tableLink = wrapper
       .findAll('a')
@@ -466,8 +511,15 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(tableLink).toBeDefined();
     await tableLink?.trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('asset');
-    expect(router.currentRoute.value.params).toMatchObject({ entityType: 'table', fqn: 'svc.db.schema.orders' });
-    expect(router.currentRoute.value.query.tab).toBe('quality');
+    expect(router.currentRoute.value.name).toBe('asset-subtab');
+    expect(router.currentRoute.value.path).toBe('/table/svc.db.schema.orders/profiler/data-quality');
+    expect(router.currentRoute.value.params).toMatchObject({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+      tab: 'profiler',
+      subTab: 'data-quality',
+    });
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
+    expect(router.currentRoute.value.query.subTab).toBeUndefined();
   });
 });

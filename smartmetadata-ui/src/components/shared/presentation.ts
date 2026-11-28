@@ -62,6 +62,16 @@ export const DRAWER_WIDTHS = {
    * (SlideoutMenu width "75%").
    */
   intakeDesigner: '75%',
+  /**
+   * Official formHint.constants.ts FORM_DRAWER_WIDTH_WITH_HINT, used by
+   * CustomMetricFormDrawer when the profiler preview pane is shown.
+   */
+  formWithHint: '80vw',
+  /**
+   * Official formHint.constants.ts FORM_DRAWER_WIDTH_WITHOUT_HINT, used
+   * by CustomMetricFormDrawer when Show Hint is off.
+   */
+  formWithoutHint: '60vw',
 } as const;
 
 export type DrawerWidthKey = keyof typeof DRAWER_WIDTHS;

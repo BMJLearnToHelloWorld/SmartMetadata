@@ -9,6 +9,7 @@
  */
 import type { SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
 import type { AlertFace } from '@/types/notifications';
+import { observabilityRootBreadcrumbLabel } from '@/utils/observabilityBreadcrumbs';
 import { getEntityName, type TranslateFn } from './alertUtils';
 
 /**
@@ -37,6 +38,18 @@ export const SETTINGS_CATEGORY_ROUTE_NAME = 'settings-category';
 export const NOTIFICATIONS_CATEGORY_PARAMS = { category: 'notifications' };
 export const ANNOUNCEMENTS_ROUTE_NAME = 'announcements';
 export const OBSERVABILITY_ALERTS_ROUTE_NAME = 'observability-alerts';
+export const SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME = 'settings-notification-alerts';
+
+/**
+ * Observability alerts list (AlertsPage.tsx breadcrumb: observability root +
+ * alert-plural, no entity name).
+ */
+export function getObservabilityAlertsListBreadcrumbs(t: TranslateFn): SmBreadcrumbItem[] {
+  return [
+    { label: observabilityRootBreadcrumbLabel(t) },
+    { label: t('label.alert-plural') },
+  ];
+}
 
 /**
  * Alert detail breadcrumbs (useAlertDetailsData.ts:152-191). Notification:
@@ -60,12 +73,12 @@ export function getAlertDetailsBreadcrumbs(
         routeName: SETTINGS_CATEGORY_ROUTE_NAME,
         routeParams: NOTIFICATIONS_CATEGORY_PARAMS,
       },
-      { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
+      { label: t('label.alert-plural'), routeName: SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME },
       { label: name },
     ];
   }
   return [
-    { label: t('label.observability') },
+    { label: observabilityRootBreadcrumbLabel(t) },
     { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
     { label: name },
   ];
@@ -95,12 +108,12 @@ export function getAlertFormBreadcrumbs(
         routeName: SETTINGS_CATEGORY_ROUTE_NAME,
         routeParams: NOTIFICATIONS_CATEGORY_PARAMS,
       },
-      { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
+      { label: t('label.alert-plural'), routeName: SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME },
       last,
     ];
   }
   return [
-    { label: t('label.observability') },
+    { label: observabilityRootBreadcrumbLabel(t) },
     { label: t('label.alert-plural'), routeName: OBSERVABILITY_ALERTS_ROUTE_NAME },
     last,
   ];

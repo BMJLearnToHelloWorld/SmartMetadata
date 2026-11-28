@@ -220,9 +220,8 @@ describe('DQ landing helpers', () => {
     expect(JSON.parse(buildDqNoDimensionQuery({})).query.bool.must_not).toEqual([
       { exists: { field: 'dataQualityDimensionName' } },
     ]);
-    // Glossary terms have no official dashboard-filter counterpart and
-    // must not leak into the aggregation query as an invented field.
-    expect(buildDqDashboardQuery({ glossaryTerm: 'Glossary.Term' })).not.toContain('lossary');
+    // Official dashboard merges glossary terms into the tags clause.
+    expect(buildDqDashboardQuery({ glossaryTerm: 'Glossary.Term' })).toContain('Glossary.Term');
   });
 
   it('adds the official time-range clause to testCase-index queries only', () => {

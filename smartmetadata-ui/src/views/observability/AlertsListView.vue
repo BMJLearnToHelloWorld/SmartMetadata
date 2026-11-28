@@ -4,7 +4,9 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { Button, Card, message } from 'ant-design-vue';
+import { Button, message, Spin } from 'ant-design-vue';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '@/api/client';
@@ -33,6 +35,7 @@ import AlertListTable, { type AlertRowPermission } from '@/components/notificati
 import { ACTIVITY_FEED_ALERT_NAME } from '@/utils/notifications/alertConstants';
 import { hardDeleteAlert } from '@/utils/notifications/alertDelete';
 import { getAlertAddPath, resolveAlertFace } from '@/utils/notifications/alertPaths';
+import { getObservabilityAlertsListBreadcrumbs } from '@/utils/notifications/notificationBreadcrumbs';
 import { reportErrorToast, type AlertSearchHooks } from '@/utils/notifications/alertSourceSearch';
 import { getEntityName, type TranslateFn } from '@/utils/notifications/alertUtils';
 
@@ -40,8 +43,8 @@ import { getEntityName, type TranslateFn } from '@/utils/notifications/alertUtil
 /**
  * Alert lists, both faces (D-N1): the settings face
  * (/settings/notifications/alerts, NotificationListPage) and the
- * observability face (/observability/alerts,
- * ObservabilityAlertsPage) share the table and differ in the fetch
+ * observability face (/observability/alerts, AlertsPage.tsx) share the
+ * table and differ in the fetch
  * chain, the permission sets, the empty-state mode, and the CTA
  * gates. The face comes from the route path; the router maps both
  * paths to this view.
@@ -139,6 +142,8 @@ async function fetchAllAlertsPermission(alerts: EventSubscription[]): Promise<vo
   }
 }
 
+const isObservabilityFace = resolveAlertFace(route.path) === 'Observability';
+
 const { items, paging, isLoading, page, pageSize, onPageChange, onPageSizeChange } =
   useCursorPagedList<EventSubscription>(
     async ({ after, before, limit }) => {
@@ -175,7 +180,11 @@ const { items, paging, isLoading, page, pageSize, onPageChange, onPageSizeChange
           );
         }
       },
-      persistence: { storage: localStorage, userName: () => authStore.user?.name },
+      // Official useObservabilityAlerts + usePaging: no localStorage persistence.
+      persistence:
+        isObservabilityFace
+          ? undefined
+          : { storage: localStorage, userName: () => authStore.user?.name },
       resetKey: () => resetKey.value,
     },
   );
@@ -276,6 +285,17 @@ const breadcrumbs = computed(() =>
     ),
   ),
 );
+const observabilityBreadcrumbs = computed(() =>
+  getObservabilityAlertsListBreadcrumbs(translate),
+);
+/** AlertsPage.tsx: full-page loader while resource permission is unresolved. */
+const observabilityInitialLoading = computed(
+  () =>
+    !isNotificationFace.value &&
+    permissionLoadingCount.value > 0 &&
+    alertResourcePermission.value === undefined &&
+    !hasResourcePermissionError.value,
+);
 </script>
 
 <template>
@@ -284,73 +304,110 @@ const breadcrumbs = computed(() =>
       isNotificationFace ? t('label.alert-plural') : t('label.observability-alert')
     "
   >
-  >
-    <div v-if="isNotificationFace">
-      <SmBreadcrumb :items="breadcrumbs" />
-      <div class="alerts-list-view__header">
-        <PageHeader
-          :header="t('label.notification-plural')"
-          :sub-header="t('message.alerts-description')"
-          learning-page-id="alerts"
-        />
-        <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
-          <Button type="primary" data-testid="create-notification" @click="handleAddAlert">
-            {{ t('label.add-entity', { entity: t('label.alert') }) }}
-          </Button>
-        </LimitWrapper>
+    <Spin v-if="observabilityInitialLoading" class="alerts-list-view__initial-loader" size="large" />
+    <template v-else>
+      <div v-if="isNotificationFace">
+        <SmBreadcrumb :items="breadcrumbs" />
+        <div class="alerts-list-view__header">
+          <PageHeader
+            :header="t('label.notification-plural')"
+            :sub-header="t('message.alerts-description')"
+            learning-page-id="alerts"
+          />
+          <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
+            <Button type="primary" data-testid="create-notification" @click="handleAddAlert">
+              {{ t('label.add-entity', { entity: t('label.alert') }) }}
+            </Button>
+          </LimitWrapper>
+        </div>
       </div>
-    </div>
-    <Card v-else>
-      <div class="alerts-list-view__header">
-        <PageHeader
-          :header="t('label.observability-alert')"
-          :sub-header="t('message.alerts-description')"
-          learning-page-id="dataObservability"
+      <template v-if="isNotificationFace">
+        <AlertListTable
+          :face="face"
+          :alerts="items"
+          :alerts-error="alertsError"
+          :has-resource-permission-error="hasResourcePermissionError"
+          :alert-permissions="alertPermissions"
+          :actions-loading="combinedLoading"
+          :table-loading="combinedLoading"
+          :blank-while-loading="false"
+          :replace-with-placeholder="replaceWithPlaceholder"
+          :can-create-empty-cta="canCreateEmptyCta"
+          :show-pagination="showPagination"
+          :paging="paging"
+          :page-size="pageSize"
+          :current-page="page"
+          :pager-loading="combinedLoading"
+          :paging-handler="pagingHandler"
+          :on-show-size-change="onPageSizeChange"
+          @select-alert="(alert) => (selectedAlert = alert)"
+          @add-alert="handleAddAlert"
+          @retry="fetchCurrentPage"
+          @retry-permission="fetchAlertResourcePermission"
         />
-        <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
-          <Button type="primary" data-testid="create-observability" @click="handleAddAlert">
-            {{ t('label.add-entity', { entity: t('label.alert') }) }}
-          </Button>
-        </LimitWrapper>
-      </div>
-    </Card>
+      </template>
 
-    <AlertListTable
-      :face="face"
-      :alerts="items"
-      :alerts-error="alertsError"
-      :has-resource-permission-error="hasResourcePermissionError"
-      :alert-permissions="alertPermissions"
-      :actions-loading="isNotificationFace ? combinedLoading : permissionLoadingCount > 0"
-      :table-loading="isNotificationFace ? combinedLoading : false"
-      :blank-while-loading="!isNotificationFace"
-      :replace-with-placeholder="replaceWithPlaceholder"
-      :can-create-empty-cta="canCreateEmptyCta"
-      :show-pagination="showPagination"
-      :paging="paging"
-      :page-size="pageSize"
-      :current-page="page"
-      :pager-loading="isNotificationFace ? combinedLoading : isLoading"
-      :paging-handler="pagingHandler"
-      :on-show-size-change="onPageSizeChange"
-      @select-alert="(alert) => (selectedAlert = alert)"
-      @add-alert="handleAddAlert"
-      @retry="fetchCurrentPage"
-      @retry-permission="fetchAlertResourcePermission"
-    />
+      <ObservabilityPageShell
+        v-else
+        :page-title="t('label.observability-alert')"
+      >
+        <template #header>
+          <ObservabilityGradientPageHeader>
+            <template #breadcrumb>
+              <SmBreadcrumb :items="observabilityBreadcrumbs" />
+            </template>
+            <PageHeader
+              :header="t('label.observability-alert')"
+              :sub-header="t('message.alerts-description')"
+              learning-page-id="dataObservability"
+            />
+            <template #actions>
+              <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
+                <Button type="primary" data-testid="add-alert-button" @click="handleAddAlert">
+                  {{ t('label.add-entity', { entity: t('label.alert') }) }}
+                </Button>
+              </LimitWrapper>
+            </template>
+          </ObservabilityGradientPageHeader>
+        </template>
+        <AlertListTable
+          :face="face"
+          :alerts="items"
+          :alerts-error="alertsError"
+          :has-resource-permission-error="hasResourcePermissionError"
+          :alert-permissions="alertPermissions"
+          :actions-loading="permissionLoadingCount > 0"
+          :table-loading="false"
+          :blank-while-loading="true"
+          :replace-with-placeholder="replaceWithPlaceholder"
+          :can-create-empty-cta="canCreateEmptyCta"
+          :show-pagination="showPagination"
+          :paging="paging"
+          :page-size="pageSize"
+          :current-page="page"
+          :pager-loading="isLoading"
+          :paging-handler="pagingHandler"
+          :on-show-size-change="onPageSizeChange"
+          @select-alert="(alert) => (selectedAlert = alert)"
+          @add-alert="handleAddAlert"
+          @retry="fetchCurrentPage"
+          @retry-permission="fetchAlertResourcePermission"
+        />
+      </ObservabilityPageShell>
 
-    <AlertDeleteModal
-      :open="Boolean(selectedAlert)"
-      :entity-title="getEntityName(selectedAlert)"
-      :message="
-        t('message.permanently-delete-common-message', {
-          entity: getEntityName(selectedAlert)?.toLowerCase?.() ?? '',
-        })
-      "
-      :deleting="isDeleting"
-      @cancel="selectedAlert = undefined"
-      @confirm="handleAlertHardDelete"
-    />
+      <AlertDeleteModal
+        :open="Boolean(selectedAlert)"
+        :entity-title="getEntityName(selectedAlert)"
+        :message="
+          t('message.delete-entity-message', {
+            entity: getEntityName(selectedAlert) ?? '',
+          })
+        "
+        :deleting="isDeleting"
+        @cancel="selectedAlert = undefined"
+        @confirm="handleAlertHardDelete"
+      />
+    </template>
   </PageLayout>
 </template>
 
@@ -359,5 +416,12 @@ const breadcrumbs = computed(() =>
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+}
+
+.alerts-list-view__initial-loader {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+  width: 100%;
 }
 </style>

@@ -39,6 +39,10 @@ vi.mock('@/stores/permissions', () => ({
   }),
 }));
 
+vi.mock('@/api/learningResources', () => ({
+  getLearningResourcesByContext: vi.fn(async () => ({ data: [{}], total: 1 })),
+}));
+
 vi.mock('@/settings/permissionRules', async (importOriginal) => {
   const original = (await importOriginal()) as typeof import('@/settings/permissionRules');
   return {

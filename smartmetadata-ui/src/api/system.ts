@@ -1119,26 +1119,28 @@ export function settingAsGlossary(value: unknown): GlossarySettings {
 }
 
 // ADR:2026-11-18-entity-rules-round-trip-unedited-fields
+export function mapSemanticsRule(value: unknown): SemanticsRule {
+  const r = asRecord(value) ?? {};
+  return {
+    name: asString(r.name) || '',
+    description: asString(r.description) || undefined,
+    rule: asString(r.rule) || undefined,
+    enabled: asBoolean(r.enabled),
+    entityType: asString(r.entityType) || undefined,
+    ignoredEntities: Array.isArray(r.ignoredEntities)
+      ? r.ignoredEntities.map((e) => String(e))
+      : undefined,
+    inherited: asBoolean(r.inherited),
+    jsonTree: asString(r.jsonTree) || undefined,
+    provider: asString(r.provider) || undefined,
+  };
+}
+
 export function settingAsEntityRules(value: unknown): EntityRulesSettings {
   const rec = asRecord(value) ?? {};
   const rules = Array.isArray(rec.entitySemantics) ? rec.entitySemantics : [];
   return {
-    entitySemantics: rules.map((rule) => {
-      const r = asRecord(rule) ?? {};
-      return {
-        name: asString(r.name) || '',
-        description: asString(r.description) || undefined,
-        rule: asString(r.rule) || undefined,
-        enabled: asBoolean(r.enabled),
-        entityType: asString(r.entityType) || undefined,
-        ignoredEntities: Array.isArray(r.ignoredEntities)
-          ? r.ignoredEntities.map((e) => String(e))
-          : undefined,
-        inherited: asBoolean(r.inherited),
-        jsonTree: asString(r.jsonTree) || undefined,
-        provider: asString(r.provider) || undefined,
-      } satisfies SemanticsRule;
-    }),
+    entitySemantics: rules.map(mapSemanticsRule),
   };
 }
 
@@ -1163,4 +1165,16 @@ export async function getTypedSetting<T>(
 ): Promise<T> {
   const setting = await getSetting(name);
   return mapper(setting.configValue);
+}
+
+/**
+ * Official getEntityRules: GET /v1/system/settings/entityRulesSettings/{entityType}.
+ * Distinct from getTypedSetting("entityRulesSettings"), which loads the admin
+ * all-settings blob (entitySemantics).
+ */
+export async function getEntityRules(entityType: string): Promise<SemanticsRule[]> {
+  const payload = await apiRequest<unknown>(
+    `/v1/system/settings/entityRulesSettings/${encodeURIComponent(entityType.toLowerCase())}`,
+  );
+  return Array.isArray(payload) ? payload.map(mapSemanticsRule) : [];
 }

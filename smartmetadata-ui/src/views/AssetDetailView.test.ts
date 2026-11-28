@@ -59,7 +59,9 @@ async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders', que
     history: createMemoryHistory(),
     routes: [
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
       {
@@ -69,7 +71,17 @@ async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders', que
       },
     ],
   });
-  await router.push({ path: `/assets/${entityType}/${fqn}`, query });
+  const tab = query.tab;
+  const subTab = query.subTab;
+  const restQuery = { ...query };
+  delete restQuery.tab;
+  delete restQuery.subTab;
+  const detailPath = subTab && tab
+    ? `/${entityType}/${fqn}/${tab}/${subTab}`
+    : tab
+      ? `/${entityType}/${fqn}/${tab}`
+      : `/${entityType}/${fqn}`;
+  await router.push({ path: detailPath, query: restQuery });
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
     props: { entityType, fqn },
@@ -327,7 +339,7 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Activity feed');
     expect(wrapper.text()).toContain('Schema');
     expect(wrapper.text()).toContain('Lineage');
-    expect(wrapper.text()).toContain('Profiler');
+    expect(wrapper.text()).toContain('Data Observability');
   });
 
   it('passes the fetched EditLineage flag into the lineage tab canvas (L6)', async () => {
@@ -340,12 +352,16 @@ describe('AssetDetailView governance', () => {
   });
 
   it('plots profiler history, usage, and latest test status from real GET payloads', async () => {
-    const { wrapper } = await mountView();
-    expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-rowcount-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="asset-usage-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="asset-column-null-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="asset-test-status-chart"]').attributes('data-points')).toBe('1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders', { tab: 'profiler' });
+    expect(wrapper.find('[data-testid="table-profiler-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-profiler-chart-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-profiler-chart-metrics"]').exists()).toBe(true);
+    const rowChart = wrapper.find('[data-testid="table-profiler-row-count-chart"]');
+    expect(rowChart.exists()).toBe(true);
+    expect(rowChart.attributes('data-points')).not.toBe('0');
+    // Official TableProfilerChart does not host the test-status chart;
+    // tests live on QualityTab (AssetDataQualityTab).
+    expect(wrapper.find('[data-testid="asset-test-status-chart"]').exists()).toBe(false);
     expect(lastMatchingFetch((url) => url.includes('/tableProfile') && !url.includes('/latest')).url).toContain(
       'startTs=',
     );
@@ -355,8 +371,8 @@ describe('AssetDetailView governance', () => {
     const { wrapper, router } = await mountView();
     expect(wrapper.text()).toContain('row_count');
     expect(wrapper.text()).toContain('Failed');
-    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="asset-test-tc1"]').trigger('click');
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="test-case-row-tc1"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('quality-test-case');
   });
@@ -470,11 +486,13 @@ async function mountTypedView(entityType: string, fqn: string) {
     history: createMemoryHistory(),
     routes: [
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
     ],
   });
-  await router.push(`/assets/${entityType}/${fqn}`);
+  await router.push(`/${entityType}/${fqn}`);
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
     props: { entityType, fqn },
@@ -819,7 +837,7 @@ describe('AssetDetailView non-table shells', () => {
     const query = await mountTypedView('query', 'analytics.q1');
     expect(query.wrapper.text()).toContain('q1');
     expect(query.wrapper.text()).not.toContain('No detail page is wired');
-    expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
+    expect(query.wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
     const queryDetailUrl = urls.find((url) => url.includes('/api/v1/queries/name/'));
     expect(queryDetailUrl).toContain('fields=owners');
     expect(queryDetailUrl).toContain('queryUsedIn');
@@ -1246,7 +1264,7 @@ describe('AssetDetailView persona tab customization (C-4)', () => {
       'Activity feed',
       'Sample data',
       'Queries',
-      'Profiler',
+      'Data Observability',
       'Lineage',
       'dbt',
       'View definition',
@@ -1726,14 +1744,16 @@ describe('AssetDetailView widget layer (B-8)', () => {
     // Non-mount tabs keep their existing panes.
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-sample-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(true);
+    const shell = wrapper.findComponent(EntityDetailShell);
+    expect(shell.exists()).toBe(true);
+    await shell.vm.$emit('update:activeTab', 'profiler');
+    await settle(wrapper);
+    expect(wrapper.find('[data-testid="table-profiler-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
     // The queries pane mounts only while its tab is selected: switch
     // tabs through the shell and confirm the default pane renders
     // instead of a grid.
-    const shell = wrapper.findComponent(EntityDetailShell);
-    expect(shell.exists()).toBe(true);
     await shell.vm.$emit('update:activeTab', 'table_queries');
     await settle(wrapper);
     expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
@@ -2344,9 +2364,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('keeps only the preserved quality tab on a Chart page listing lineage alone (F-2)', async () => {
-    // Chart is a fallback view: `quality` has no Chart TabsId, so it
-    // is preserved; `overview` resolves through the `details` alias,
+  it('keeps only the listed lineage tab on a Chart page listing lineage alone (F-2)', async () => {
+    // Official Chart TabsIds have no Quality tab, so it is not
+    // preserved. `overview` resolves through the `details` alias,
     // so it is removed when `details` is unlisted.
     stubWithDoc(
       docWithPage('Chart', [{ id: 'lineage', name: 'lineage' }]),
@@ -2366,7 +2386,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('chart', 'bi.sales.revenue');
     await settle(wrapper);
-    expect(tabLabels(wrapper)).toEqual(['Lineage', 'Quality']);
+    expect(tabLabels(wrapper)).toEqual(['Lineage']);
+    expect(wrapper.find('[data-testid="asset-tab-quality"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(false);
     wrapper.unmount();
   }, 20000);
 
@@ -2402,11 +2424,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
-  it('keeps the preserved overview and quality tabs on a catalog Pipeline page listing tasks alone (F-2)', async () => {
-    // The catalog Pipeline fallback set preserves both `overview`
-    // (no Pipeline TabsId resolves to it) and `quality`; executions,
-    // lineage, activity, and custom properties are removed when
-    // unlisted.
+  it('does not keep a product-invented overview tab on a catalog Pipeline page listing tasks alone (F-2)', async () => {
+    // Official Pipeline TabsIds have no Quality tab and no OVERVIEW.
+    // A tasks-only customization therefore renders Tasks alone; the
+    // product must not preserve a fallback overview official does not have.
     stubWithDoc(
       docWithPage('Pipeline', [{ id: 'tasks', name: 'tasks' }]),
       (url) => {
@@ -2431,7 +2452,9 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
     await settle(wrapper);
-    expect(tabLabels(wrapper)).toEqual(['Tasks', 'Overview', 'Quality']);
+    expect(tabLabels(wrapper)).toEqual(['Tasks']);
+    expect(wrapper.find('[data-testid="asset-tab-quality"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="asset-data-quality-tab"]').exists()).toBe(false);
     wrapper.unmount();
   }, 20000);
 

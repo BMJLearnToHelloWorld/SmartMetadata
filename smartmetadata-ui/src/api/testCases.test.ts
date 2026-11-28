@@ -10,7 +10,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { createTestCase, isTestCaseSearchListAvailable, listTestCaseDimensionResults, listTestCases, listTestCasesBySearch, updateTestCase } from './testCases';
+import {
+  createTestCase,
+  addTestCasesToLogicalTestSuiteBulk,
+  deleteTestCaseFailedSampleData,
+  getTestCaseFailedSampleData,
+  getTestCaseVersion,
+  isTestCaseSearchListAvailable,
+  listTestCaseDimensionResults,
+  listTestCases,
+  listTestCasesBySearch,
+  restoreTestCase,
+  updateTestCase,
+} from './testCases';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -72,6 +84,40 @@ describe('testCases API', () => {
       '/api/v1/dataQuality/testCases/dimensionResults/svc.db.schema.orders.row_count',
     );
     expect(lastFetch().url).toContain('dimensionName=country');
+  });
+
+  it('maps inlined incidentStatus objects and parses entityPermissions from list responses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'tc1',
+                name: 'row_count',
+                incidentStatus: {
+                  id: 'inc1',
+                  testCaseResolutionStatusType: 'Ack',
+                },
+              },
+            ],
+            paging: { total: 1 },
+            entityPermissions: {
+              tc1: {
+                resource: 'testCase',
+                permissions: [{ operation: 'EditStatus', access: 'allow' }],
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTestCases({ includePermissions: true });
+    expect(page.data[0]?.incidentStatus?.testCaseResolutionStatusType).toBe('Ack');
+    expect(page.entityPermissions?.tc1?.permissions[0]?.operation).toBe('EditStatus');
+    expect(lastFetch().url).toContain('includePermissions=true');
   });
 
   it('lists cases from GET /v1/dataQuality/testCases and can filter by entityFQN', async () => {
@@ -166,6 +212,85 @@ describe('testCases API', () => {
     expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/search/list');
     expect(lastFetch().url).toContain('q=orders');
     expect(lastFetch().url).toContain('testCaseStatus=Failed');
+  });
+
+  it('fetches failed rows sample from GET …/failedRowsSample', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ columns: ['col_a'], rows: [['x']] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const data = await getTestCaseFailedSampleData('tc-id-1');
+    expect(data.columns).toEqual(['col_a']);
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc-id-1/failedRowsSample');
+    expect(lastFetch().init?.method ?? 'GET').toBe('GET');
+  });
+
+  it('deletes failed rows sample via DELETE …/failedRowsSample', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await deleteTestCaseFailedSampleData('tc-id-2');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc-id-2/failedRowsSample');
+    expect(lastFetch().init?.method).toBe('DELETE');
+  });
+
+  it('loads a version snapshot via GET …/versions/{version}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'tc1', name: 'n', version: 0.2 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const tc = await getTestCaseVersion('tc1', '0.2');
+    expect(tc.id).toBe('tc1');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc1/versions/0.2');
+  });
+
+  it('restores via PUT /v1/dataQuality/testCases/restore', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'tc1', name: 'n' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const tc = await restoreTestCase('tc1');
+    expect(tc.id).toBe('tc1');
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/dataQuality/testCases/restore');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({ id: 'tc1' });
+  });
+
+  it('bulk-adds test cases via PUT logicalTestCases/bulk (ids mode)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await addTestCasesToLogicalTestSuiteBulk('suite1', {
+      selectAll: false,
+      includeIds: ['a', 'b'],
+      excludeIds: [],
+    });
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/dataQuality/testCases/logicalTestCases/bulk');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      testSuiteId: 'suite1',
+      mode: 'ids',
+      selection: { ids: ['a', 'b'] },
+    });
   });
 
   it('treats search/list 404 as residual, not as a thrown list failure', async () => {

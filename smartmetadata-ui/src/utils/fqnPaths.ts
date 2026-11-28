@@ -27,6 +27,8 @@
  * routes and reads only.
  */
 
+import { splitFqn } from '@/catalog/fqn';
+
 export function getEncodedFqn(fqn: string, spaceAsPlus = false): string {
   let uri = encodeURIComponent(fqn);
   if (spaceAsPlus) {
@@ -206,6 +208,209 @@ export function getNotificationAlertDetailsPath(fqn: string, tab?: string): stri
 /** Official `getObservabilityAlertDetailsPath` (`RouterUtils.ts:628`): `/observability/alert/:fqn/:tab`. */
 export function getObservabilityAlertDetailsPath(fqn: string, tab?: string): string {
   return `/observability/alert/${getEncodedFqn(fqn)}/${tab ?? 'configuration'}`;
+}
+
+/** Official EntityTabs values that carry a sub-tab path segment. */
+export const ENTITY_TAB_ACTIVITY_FEED = 'activity_feed';
+export const ENTITY_TAB_PROFILER = 'profiler';
+
+/** Official TestCasePageTabs default on the test-case detail path. */
+export const TEST_CASE_TAB_RESULTS = 'test-case-results';
+
+/**
+ * Official `getEntityDetailsPath` (`RouterUtils.ts`):
+ *   /{entityType}/{fqn}
+ *   /{entityType}/{fqn}/{tab}
+ *   /{entityType}/{fqn}/{tab}/{subTab} for ACTIVITY_FEED and PROFILER.
+ * ACTIVITY_FEED without a subTab defaults to `all`. PROFILER only
+ * adds a sub-tab segment when one is provided.
+ */
+
+/**
+ * Official `getVersionPath` (RouterUtils.ts):
+ *   /{entityType}/{fqn}/versions/{version}
+ *   /{entityType}/{fqn}/versions/{version}/{tab}
+ */
+export function getVersionPath(entityType: string, fqn: string, version: string, tab?: string): string {
+  const base = `/${entityType}/${getEncodedFqn(fqn)}/versions/${version}`;
+  return tab ? `${base}/${tab}` : base;
+}
+
+export function getEntityDetailsPath(
+  entityType: string,
+  fqn: string,
+  tab?: string,
+  subTab?: string,
+): string {
+  let path = tab ? `/${entityType}/${getEncodedFqn(fqn)}/${tab}` : `/${entityType}/${getEncodedFqn(fqn)}`;
+  if (tab === ENTITY_TAB_ACTIVITY_FEED || tab === ENTITY_TAB_PROFILER) {
+    const resolvedSubTab =
+      subTab || (tab === ENTITY_TAB_ACTIVITY_FEED ? 'all' : undefined);
+    if (resolvedSubTab) {
+      path = `/${entityType}/${getEncodedFqn(fqn)}/${tab}/${resolvedSubTab}`;
+    }
+  }
+  return path;
+}
+
+/** Official `getTestCaseDetailPagePath`: /test-case/{fqn}/{tab}, default test-case-results. */
+export function getTestCaseDetailPagePath(fqn: string, tab = TEST_CASE_TAB_RESULTS): string {
+  return `/test-case/${getEncodedFqn(fqn)}/${tab}`;
+}
+
+/** Official `getQueryPath` (RouterUtils.ts): /query-view/{tableFqn}/{queryId}. queryId is not FQN-encoded. */
+export function getQueryPath(tableFqn: string, queryId: string): string {
+  return `/query-view/${getEncodedFqn(tableFqn)}/${queryId}`;
+}
+
+/**
+ * Official `getDataQualityPagePath` (RouterUtils.ts):
+ *   /data-quality
+ *   /data-quality/{tab}
+ *   /data-quality/{tab}/{subTab}
+ */
+export function getDataQualityPagePath(tab?: string, subTab?: string): string {
+  if (tab && subTab) {
+    return `/data-quality/${tab}/${subTab}`;
+  }
+  if (tab) {
+    return `/data-quality/${tab}`;
+  }
+  return '/data-quality';
+}
+
+/** Official EntityTabs.AGENTS / ServiceAgentSubTabs.METADATA. */
+export const SERVICE_TAB_AGENTS = 'agents';
+export const SERVICE_AGENT_SUB_TAB_METADATA = 'metadata';
+export const SERVICE_CATEGORY_DATABASE_SERVICES = 'databaseServices';
+
+/**
+ * Official `getServiceDetailsPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}
+ *   /service/{serviceCat}/{fqn}/{tab}
+ *   /service/{serviceCat}/{fqn}/{tab}/{subTab}
+ */
+export function getServiceDetailsPath(
+  serviceFqn: string,
+  serviceCat: string,
+  tab?: string,
+  subTab?: string,
+): string {
+  let path = `/service/${serviceCat}/${getEncodedFqn(serviceFqn)}`;
+  if (tab) {
+    path = `/service/${serviceCat}/${getEncodedFqn(serviceFqn)}/${tab}`;
+  }
+  if (tab && subTab) {
+    path = `/service/${serviceCat}/${getEncodedFqn(serviceFqn)}/${tab}/${subTab}`;
+  }
+  return path;
+}
+
+/**
+ * Official `getAddServicePath` (RouterUtils.ts): /{serviceCategory}/add-service
+ */
+export function getAddServicePath(serviceCategory: string): string {
+  return `/${serviceCategory}/add-service`;
+}
+
+/**
+ * Official `getEditConnectionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/connection/edit-connection
+ */
+export function getEditConnectionPath(serviceCategory: string, serviceFqn: string): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/connection/edit-connection`;
+}
+
+/**
+ * Official `getPathByServiceFQN` (RouterUtils.ts): service connection tab
+ *   /service/{serviceCat}/{fqn}/connection
+ */
+export function getPathByServiceFQN(serviceCategory: string, serviceFqn: string): string {
+  return getServiceDetailsPath(serviceFqn, serviceCategory, 'connection');
+}
+
+/**
+ * Official `getAddIngestionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/add-ingestion/{ingestionType}
+ */
+export function getAddIngestionPath(
+  serviceCategory: string,
+  serviceFqn: string,
+  ingestionType: string,
+): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/add-ingestion/${ingestionType}`;
+}
+
+/**
+ * Official `getEditIngestionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/edit-ingestion/{ingestionFqn}/{ingestionType}
+ */
+export function getEditIngestionPath(
+  serviceCategory: string,
+  serviceFqn: string,
+  ingestionFqn: string,
+  ingestionType: string,
+): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/edit-ingestion/${getEncodedFqn(ingestionFqn)}/${ingestionType}`;
+}
+
+/**
+ * Official `getServiceVersionPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}/versions/{version}
+ */
+export function getServiceVersionPath(
+  serviceCategory: string,
+  serviceFqn: string,
+  version: string,
+): string {
+  return `/service/${serviceCategory}/${getEncodedFqn(serviceFqn)}/versions/${version}`;
+}
+
+/**
+ * Official `getTestSuiteIngestionPath` (RouterUtils.ts):
+ *   /test-suites/{fqn}/add-ingestion
+ *   /test-suites/{fqn}/edit-ingestion/{ingestionFqn}
+ */
+/** Official `getTestSuitePath` (RouterUtils.ts): `/test-suites/{fqn}`. */
+export function getTestSuitePath(testSuiteFqn: string): string {
+  return `/test-suites/${getEncodedFqn(testSuiteFqn)}`;
+}
+
+export function getTestSuiteIngestionPath(testSuiteFqn: string, ingestionFqn?: string): string {
+  if (ingestionFqn) {
+    return `/test-suites/${getEncodedFqn(testSuiteFqn)}/edit-ingestion/${getEncodedFqn(ingestionFqn)}`;
+  }
+  return `/test-suites/${getEncodedFqn(testSuiteFqn)}/add-ingestion`;
+}
+
+/**
+ * Official `getTestSuiteFQN` (TestSuiteUtils.ts): drop the last FQN
+ * segment (the ingestion/test-suite name) so edit-ingestion can target
+ * the suite itself.
+ */
+export function getTestSuiteFQN(fqn: string): string {
+  const parts = splitFqn(fqn);
+  if (parts.length > 1) {
+    parts.pop();
+  }
+  return parts.join('.');
+}
+
+/** Official `DATA_INSIGHTS_APP_NAME` (Applications.constant.ts). */
+export const DATA_INSIGHTS_APP_NAME = 'DataInsightsApplication';
+/** Official `SEARCH_INDEXING_APPLICATION` (explore.constants.ts). */
+export const SEARCH_INDEXING_APPLICATION = 'SearchIndexingApplication';
+
+/**
+ * Official `getSettingsPathFromPipelineType` (IngestionConfigUtils.ts):
+ * Data Insights and search reindexing now live as applications, so a
+ * settings pipeline leads to its app details page. The official AI-mode
+ * `getSettingsLink` wrapper is not invented here.
+ */
+export function getSettingsPathFromPipelineType(pipelineType: string): string {
+  return getApplicationDetailsPath(
+    pipelineType === 'dataInsight' ? DATA_INSIGHTS_APP_NAME : SEARCH_INDEXING_APPLICATION,
+  );
 }
 
 /**

@@ -13,17 +13,27 @@ import {
   Select,
   Skeleton,
   Space,
+  Tooltip,
   Typography,
 } from 'ant-design-vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { getDerivedPermissionFlags } from '@/api/permissions';
-import { listTestCasesBySearch } from '@/api/testCases';
+import { searchIncidentTestCaseFilterOptions } from '@/features/quality/incidentFilterOptions';
 import { listTestCaseIncidentsFromSearch } from '@/api/testIncidents';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
-import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
-import FormModal from '@/components/shared/FormModal.vue';
+import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
+import IncidentAssigneeFilterPicker from '@/components/observability/IncidentAssigneeFilterPicker.vue';
+import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
+import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
+import CompactDateTimeDisplay from '@/components/shared/CompactDateTimeDisplay.vue';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { observabilityChildBreadcrumb } from '@/utils/observabilityBreadcrumbs';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import { incidentStatusLabel } from '@/features/crud/incidentStatus';
@@ -35,7 +45,6 @@ import {
   mergeAssigneeCandidates,
   reopenResolvedIncident,
   resolveAssigneeRef,
-  severityLevel,
   submitIncidentSeverity,
   submitIncidentStatusChange,
   tableFqnFromTestCaseFqn,
@@ -45,6 +54,7 @@ import { useDomainStore } from '@/stores/domain';
 import { usePermissionStore } from '@/stores/permissions';
 import type { EntityRef } from '@/types/api';
 import type { IncidentStatus, TestIncident } from '@/types/quality';
+import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -52,14 +62,18 @@ const router = useRouter();
 const permissionStore = usePermissionStore();
 const domainStore = useDomainStore();
 
+const incidentBreadcrumbs = computed(() =>
+  observabilityChildBreadcrumb(t, 'label.incident-manager'),
+);
+
+
+
 /**
  * Official default page size for the incident list
  * (getListTestCaseIncidentStatusFromSearch defaults limit to 10).
  */
 const PAGE_SIZE = 10;
 
-const RESOLVE_REASONS = ['FalsePositive', 'MissingData', 'Duplicates', 'OutOfBounds', 'Other'] as const;
-const SEVERITY_OPTIONS = ['Severity1', 'Severity2', 'Severity3', 'Severity4', 'Severity5'] as const;
 const STATUS_OPTIONS: IncidentStatus[] = ['New', 'Ack', 'Assigned', 'Resolved'];
 const DATE_FIELD_OPTIONS = ['timestamp', 'updatedAt'] as const;
 
@@ -76,7 +90,15 @@ interface IncidentFilters {
 
 type PermState = 'loading' | 'denied' | 'error' | 'ready';
 
-const columns = computed(() => [
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean;
+    originEntityFqn?: string;
+  }>(),
+  { embedded: false },
+);
+
+const allColumns = computed(() => [
   { key: 'testCase', title: t('observability.incidents.testCaseName') },
   { key: 'table', title: t('observability.incidents.table') },
   { key: 'timestamp', title: t('observability.incidents.lastUpdated') },
@@ -84,6 +106,10 @@ const columns = computed(() => [
   { key: 'severity', title: t('observability.incidents.severity') },
   { key: 'assignee', title: t('observability.incidents.assignee') },
 ]);
+const columns = computed(() =>
+  props.originEntityFqn ? allColumns.value.filter((column) => column.key !== 'table') : allColumns.value,
+);
+
 
 const permState = ref<PermState>('loading');
 const permError = ref('');
@@ -95,6 +121,7 @@ const loadSeq = ref(0);
 
 const testCaseOptions = ref<Array<{ value: string; label: string }>>([]);
 const testCaseOptionsLoading = ref(false);
+const testCasePickerOpen = ref(false);
 let testCaseSearchTimer: ReturnType<typeof setTimeout> | undefined;
 
 const aggregateAssignees = ref<EntityRef[]>([]);
@@ -105,16 +132,6 @@ const selectedAssignee = ref<EntityRef[]>([]);
 const rowPermissions = ref<Map<string, boolean>>(new Map());
 const rowPermsLoading = ref(false);
 const writingById = ref<Record<string, 'status' | 'severity' | 'assignee'>>({});
-
-const statusModal = ref<{ record: TestIncident; mode: 'assignee' | 'resolved' } | null>(null);
-const statusModalAssignee = ref<EntityRef[]>([]);
-const statusModalReason = ref('');
-const statusModalComment = ref('');
-const statusModalSaving = ref(false);
-
-const assigneeModal = ref<TestIncident | null>(null);
-const assigneeModalSelection = ref<EntityRef[]>([]);
-const assigneeModalSaving = ref(false);
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -198,10 +215,6 @@ function onPageChange(page: number): void {
   void router.replace({ query: filtersToQuery(filters.value, page) });
 }
 
-function formatTs(value?: number): string {
-  return value ? new Date(value).toISOString() : '—';
-}
-
 function testCaseFqnOf(record: TestIncident): string | undefined {
   return record.testCaseReference?.fullyQualifiedName;
 }
@@ -236,19 +249,26 @@ function withSelectedTestCase(
 }
 
 async function searchTestCaseOptions(text: string): Promise<void> {
+  if (!testCasePickerOpen.value) {
+    return;
+  }
   testCaseOptionsLoading.value = true;
   try {
-    const page = await listTestCasesBySearch({ q: text.trim() || '*', limit: 25 });
-    testCaseOptions.value = withSelectedTestCase(
-      page.data.map((testCase) => ({
-        value: testCase.fullyQualifiedName ?? testCase.name,
-        label: testCase.displayName ?? testCase.name,
-      })),
-    );
+    const options = await searchIncidentTestCaseFilterOptions(text.trim() || '*');
+    testCaseOptions.value = withSelectedTestCase(options);
   } catch {
     testCaseOptions.value = withSelectedTestCase([]);
   } finally {
     testCaseOptionsLoading.value = false;
+  }
+}
+
+function onTestCaseDropdownOpen(open: boolean): void {
+  testCasePickerOpen.value = open;
+  if (open) {
+    void searchTestCaseOptions('');
+  } else if (testCaseSearchTimer !== undefined) {
+    clearTimeout(testCaseSearchTimer);
   }
 }
 
@@ -323,6 +343,7 @@ async function load(): Promise<void> {
       endTs: value.endTs,
       dateField: value.dateField,
       domain: domainStore.activeDomain?.fullyQualifiedName ?? undefined,
+      originEntityFQN: props.originEntityFqn,
     });
     if (seq !== loadSeq.value) return;
     incidents.value = page.data;
@@ -357,29 +378,49 @@ async function checkPermission(): Promise<boolean> {
 
 async function loadAll(): Promise<void> {
   if (!(await checkPermission())) return;
-  void searchTestCaseOptions('');
   void loadAssigneeCandidates();
   await load();
 }
 
+function testCaseLinkBreadcrumb(): { name: string; url: string }[] {
+  if (props.embedded && props.originEntityFqn) {
+    return [
+      {
+        name: entityNameFromFqn(props.originEntityFqn),
+        url: getEntityDetailsPath(
+          'table',
+          props.originEntityFqn,
+          ENTITY_TAB_PROFILER,
+          'data-quality',
+        ),
+      },
+    ];
+  }
+  return [{ name: t('nav.incidentManager'), url: '/incident-manager' }];
+}
+
 function openTestCase(record: TestIncident): void {
+  const breadcrumbData = testCaseLinkBreadcrumb();
   const fqn = testCaseFqnOf(record);
   if (fqn !== undefined) {
-    void router.push(`/test-case/${encodeURIComponent(fqn)}`);
+    void router.push({
+      path: `/test-case/${encodeURIComponent(fqn)}`,
+      state: { breadcrumbData },
+    });
     return;
   }
   const id = record.testCaseReference?.id;
   if (id !== undefined) {
-    void router.push({ name: 'quality-test-case', params: { id } });
+    void router.push({ name: 'quality-test-case', params: { id }, state: { breadcrumbData } });
   }
 }
 
 function openTable(tableFqn: string): void {
-  void router.push({
-    name: 'asset',
-    params: { entityType: 'table', fqn: tableFqn },
-    query: { tab: 'quality' },
-  });
+  // Official IncidentManagerTable table-link:
+  // getEntityDetailsPath(TABLE, fqn, EntityTabs.PROFILER, ProfilerTabPath.DATA_QUALITY)
+  void router.push(
+    getEntityDetailsPath('table', tableFqn, ENTITY_TAB_PROFILER, 'data-quality'),
+  );
 }
 
 /**
@@ -436,50 +477,12 @@ async function submitStatus(
   }
 }
 
-function onStatusMenuSelect(record: TestIncident, target: IncidentStatus): void {
-  if (target === 'Assigned') {
-    statusModalAssignee.value = [];
-    statusModal.value = { record, mode: 'assignee' };
-    return;
-  }
-  if (target === 'Resolved') {
-    statusModalReason.value = '';
-    statusModalComment.value = '';
-    statusModal.value = { record, mode: 'resolved' };
-    return;
-  }
-  void submitStatus(record, target);
-}
-
-const statusModalOkDisabled = computed(() => {
-  if (statusModal.value === null) return true;
-  if (statusModal.value.mode === 'assignee') return statusModalAssignee.value.length === 0;
-  return statusModalReason.value === '' || statusModalComment.value.trim() === '';
-});
-
-async function onStatusModalOk(): Promise<void> {
-  const modal = statusModal.value;
-  if (modal === null) return;
-  statusModalSaving.value = true;
-  try {
-    if (modal.mode === 'assignee') {
-      const assignee = statusModalAssignee.value[0];
-      if (assignee === undefined) return;
-      await submitStatus(modal.record, 'Assigned', { assignee });
-    } else {
-      await submitStatus(modal.record, 'Resolved', {
-        reason: statusModalReason.value,
-        comment: statusModalComment.value,
-      });
-    }
-    statusModal.value = null;
-  } finally {
-    statusModalSaving.value = false;
-  }
-}
-
-function closeStatusModal(): void {
-  statusModal.value = null;
+function onStatusTransition(
+  record: TestIncident,
+  target: IncidentStatus,
+  additional?: StatusChangeAdditionalData,
+): void {
+  void submitStatus(record, target, additional);
 }
 
 async function onSeveritySelect(record: TestIncident, severity: string | undefined): Promise<void> {
@@ -500,34 +503,34 @@ async function onSeveritySelect(record: TestIncident, severity: string | undefin
   }
 }
 
-function openAssigneeModal(record: TestIncident): void {
-  const assignee = record.testCaseResolutionStatusDetails?.assignee;
-  assigneeModalSelection.value = assignee !== undefined ? [assignee] : [];
-  assigneeModal.value = record;
-}
-
-function closeAssigneeModal(): void {
-  assigneeModal.value = null;
-}
-
-async function onAssigneeModalOk(): Promise<void> {
-  const record = assigneeModal.value;
-  const assignee = assigneeModalSelection.value[0];
-  if (record === null || assignee === undefined) return;
-  if (writingById.value[record.id] !== undefined) return;
-  assigneeModalSaving.value = true;
+async function onInlineAssigneeChange(record: TestIncident, assignee: EntityRef | undefined): Promise<void> {
+  const current = record.testCaseResolutionStatusDetails?.assignee;
+  if ((current?.name ?? undefined) === (assignee?.name ?? undefined) && (current?.type ?? undefined) === (assignee?.type ?? undefined)) {
+    return;
+  }
   writingById.value[record.id] = 'assignee';
   try {
-    const latest = await submitIncidentStatusChange(record, 'Assigned', { assignee });
-    if (latest !== undefined) replaceRow(record, latest);
-    assigneeModal.value = null;
-  } catch {
-    toastUpdateFailed();
+    if (assignee === undefined) {
+      const latest = await submitIncidentStatusChange(record, record.testCaseResolutionStatusType, { assignee: undefined });
+      incidents.value = incidents.value.map((item) =>
+        item.id === record.id
+          ? latest ?? {
+              ...item,
+              testCaseResolutionStatusDetails: { ...item.testCaseResolutionStatusDetails, assignee: undefined },
+            }
+          : item,
+      );
+    } else {
+      const latest = await submitIncidentStatusChange(record, 'Assigned', { assignee });
+      incidents.value = incidents.value.map((item) => (item.id === record.id ? latest ?? item : item));
+    }
   } finally {
-    assigneeModalSaving.value = false;
-    delete writingById.value[record.id];
+    const next = { ...writingById.value };
+    delete next[record.id];
+    writingById.value = next;
   }
 }
+
 
 watch(
   () => route.query,
@@ -565,14 +568,37 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
   return incidentStatusMenuOptions(record.testCaseResolutionStatusType);
 }
 
-function severityLabel(severity: string | undefined): string {
-  if (severity === undefined) return t('observability.incidents.noSeverity');
-  const level = severityLevel(severity);
-  return level === undefined ? severity : `${t('observability.incidents.severity')} ${level}`;
-}
 </script>
 
 <template>
+  <component
+    :is="embedded ? 'div' : PageLayout"
+    v-bind="embedded ? {} : { documentTitle: t('label.incident-manager') }"
+  >
+    <component
+      :is="embedded ? 'div' : ObservabilityPageShell"
+      v-bind="
+        embedded
+          ? {}
+          : {
+              pageTitle: t('label.incident-manager'),
+              shellTestId: 'incident-manager-page',
+            }
+      "
+    >
+      <template v-if="!embedded" #header>
+        <ObservabilityGradientPageHeader>
+          <template #breadcrumb>
+            <SmBreadcrumb :items="incidentBreadcrumbs" />
+          </template>
+          <PageHeader
+            :header="t('label.incident-manager')"
+            :sub-header="t('message.incident-metrics-sub-header')"
+            learning-page-id="incidentManager"
+            test-id="incidents-list-title"
+          />
+        </ObservabilityGradientPageHeader>
+      </template>
   <div data-testid="incidents-list-view">
     <div
       v-if="permState === 'loading'"
@@ -603,6 +629,7 @@ function severityLabel(severity: string | undefined): string {
       v-else
       :title="t('observability.incidents.title')"
       :lead="t('observability.incidents.lead')"
+      :hide-heading="true"
       :loading="loading"
       :error="errorMessage"
       :columns="columns"
@@ -635,6 +662,7 @@ function severityLabel(severity: string | undefined): string {
               :placeholder="t('observability.incidents.testCaseSearchPlaceholder')"
               data-testid="incident-filter-test-case"
               style="width: 240px"
+              @dropdown-visible-change="onTestCaseDropdownOpen"
               @search="onTestCaseSearch"
               @change="(value) => updateFilters({ testCaseFQN: value === undefined ? undefined : String(value) })"
             />
@@ -644,10 +672,9 @@ function severityLabel(severity: string | undefined): string {
             size="small"
           >
             <span>{{ t('observability.incidents.assignee') }}</span>
-            <UserTeamPicker
+            <IncidentAssigneeFilterPicker
               :model-value="selectedAssignee"
-              single
-              :candidates="assigneeCandidates"
+              :options="aggregateAssignees"
               data-testid="incident-filter-assignee"
               style="width: 240px"
               @update:model-value="(refs) => updateFilters({ assignee: refs[0]?.name })"
@@ -698,8 +725,10 @@ function severityLabel(severity: string | undefined): string {
             <IncidentDateRangeFilter
               :start-ts="filters.startTs"
               :end-ts="filters.endTs"
+              :range-key="filters.key"
+              :range-title="filters.title"
               test-id="incident-filter-date-range"
-              @apply="(range) => updateFilters({ startTs: range.startTs, endTs: range.endTs })"
+              @apply="(range) => updateFilters({ startTs: range.startTs, endTs: range.endTs, key: range.key, title: range.title })"
               @clear="() => updateFilters({ startTs: undefined, endTs: undefined, key: undefined, title: undefined })"
             />
           </Space>
@@ -715,24 +744,37 @@ function severityLabel(severity: string | undefined): string {
 
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'testCase'">
-          <a
-            :data-testid="`incident-row-${record.id}`"
-            @click.prevent="openTestCase(record as TestIncident)"
+          <Tooltip
+            :title="testCaseFqnOf(record as TestIncident)"
+            placement="top"
           >
-            {{ entityLabel(record.testCaseReference) || testCaseNameOf(record as TestIncident) }}
-          </a>
+            <a
+              class="incidents-test-case-link"
+              :data-testid="`incident-row-${record.id}`"
+              @click.prevent="openTestCase(record as TestIncident)"
+            >
+              {{ entityLabel(record.testCaseReference) || testCaseNameOf(record as TestIncident) }}
+            </a>
+          </Tooltip>
         </template>
         <template v-else-if="column.key === 'table'">
-          <a
+          <Tooltip
             v-if="tableFqnOf(record as TestIncident) !== undefined"
-            @click.prevent="openTable(tableFqnOf(record as TestIncident) as string)"
+            :title="tableFqnOf(record as TestIncident)"
+            placement="top"
           >
-            {{ entityNameFromFqn(tableFqnOf(record as TestIncident)) }}
-          </a>
+            <a
+              class="incidents-table-link"
+              data-testid="incident-row-table-link"
+              @click.prevent="openTable(tableFqnOf(record as TestIncident) as string)"
+            >
+              {{ entityNameFromFqn(tableFqnOf(record as TestIncident)) }}
+            </a>
+          </Tooltip>
           <span v-else>—</span>
         </template>
         <template v-else-if="column.key === 'timestamp'">
-          {{ formatTs(record.timestamp) }}
+          <CompactDateTimeDisplay :timestamp="record.timestamp" />
         </template>
         <template v-else-if="column.key === 'status'">
           <Skeleton
@@ -741,35 +783,16 @@ function severityLabel(severity: string | undefined): string {
             :paragraph="false"
             :title="{ width: 72 }"
           />
-          <Dropdown
-            v-else-if="canEditRow(record as TestIncident)"
-            :trigger="['click']"
-            :disabled="writingById[record.id] !== undefined"
-          >
-            <Button
-              size="small"
-              :loading="writingById[record.id] === 'status'"
-              :data-testid="`incident-status-${record.id}`"
-            >
-              {{ incidentStatusLabel(t, record.testCaseResolutionStatusType) }}
-            </Button>
-            <template #overlay>
-              <Menu
-                @click="({ key }) => onStatusMenuSelect(record as TestIncident, key as IncidentStatus)"
-              >
-                <Menu.Item
-                  v-for="status in statusMenuOptions(record as TestIncident)"
-                  :key="status"
-                  :data-testid="`incident-status-option-${status}`"
-                >
-                  {{ incidentStatusLabel(t, status) }}
-                </Menu.Item>
-              </Menu>
-            </template>
-          </Dropdown>
-          <span v-else>
-            {{ incidentStatusLabel(t, record.testCaseResolutionStatusType) }}
-          </span>
+          <IncidentInlineStatus
+            v-else
+            :record="record as TestIncident"
+            :editable="canEditRow(record as TestIncident)"
+            :loading="writingById[record.id] === 'status'"
+            :menu-options="statusMenuOptions(record as TestIncident)"
+            :assignee-candidates="assigneeCandidates"
+            :test-id="`incident-status-${record.id}`"
+            @transition="(status, additional) => onStatusTransition(record as TestIncident, status, additional)"
+          />
         </template>
         <template v-else-if="column.key === 'severity'">
           <Skeleton
@@ -778,41 +801,14 @@ function severityLabel(severity: string | undefined): string {
             :paragraph="false"
             :title="{ width: 72 }"
           />
-          <Dropdown
-            v-else-if="canEditRow(record as TestIncident)"
-            :trigger="['click']"
-            :disabled="writingById[record.id] !== undefined"
-          >
-            <Button
-              size="small"
-              :loading="writingById[record.id] === 'severity'"
-              :data-testid="`incident-severity-${record.id}`"
-            >
-              {{ severityLabel(record.severity) }}
-            </Button>
-            <template #overlay>
-              <Menu
-                @click="({ key }) => onSeveritySelect(record as TestIncident, key === 'none' ? undefined : String(key))"
-              >
-                <Menu.Item
-                  v-for="option in SEVERITY_OPTIONS"
-                  :key="option"
-                  :data-testid="`incident-severity-option-${option}`"
-                >
-                  {{ severityLabel(option) }}
-                </Menu.Item>
-                <Menu.Item
-                  key="none"
-                  data-testid="incident-severity-option-none"
-                >
-                  {{ t('observability.incidents.noSeverity') }}
-                </Menu.Item>
-              </Menu>
-            </template>
-          </Dropdown>
-          <span v-else>
-            {{ severityLabel(record.severity) }}
-          </span>
+          <IncidentInlineSeverity
+            v-else
+            :severity="(record as TestIncident).severity"
+            :editable="canEditRow(record as TestIncident)"
+            :loading="writingById[record.id] === 'severity'"
+            :test-id="`incident-severity-${record.id}`"
+            @change="(value) => onSeveritySelect(record as TestIncident, value)"
+          />
         </template>
         <template v-else-if="column.key === 'assignee'">
           <Skeleton
@@ -821,90 +817,44 @@ function severityLabel(severity: string | undefined): string {
             :paragraph="false"
             :title="{ width: 72 }"
           />
-          <Space v-else>
-            <span>
-              {{
-                assigneeDisplayName(record.testCaseResolutionStatusDetails?.assignee) ||
-                t('observability.incidents.noAssignee')
-              }}
-            </span>
-            <Button
-              v-if="canEditRow(record as TestIncident)"
-              size="small"
-              type="text"
-              :loading="writingById[record.id] === 'assignee'"
-              :disabled="writingById[record.id] !== undefined"
-              :data-testid="`incident-assignee-edit-${record.id}`"
-              @click="openAssigneeModal(record as TestIncident)"
-            >
-              {{ t('crud.edit') }}
-            </Button>
-          </Space>
+          <span v-else-if="!canEditRow(record as TestIncident)">
+            {{
+              assigneeDisplayName((record as TestIncident).testCaseResolutionStatusDetails?.assignee) ||
+              t('observability.incidents.noAssignee')
+            }}
+          </span>
+          <IncidentAssigneePicker
+            v-else
+            :model-value="(record as TestIncident).testCaseResolutionStatusDetails?.assignee"
+            :candidates="assigneeCandidates"
+            :disabled="writingById[(record as TestIncident).id] !== undefined"
+            :loading="writingById[(record as TestIncident).id] === 'assignee'"
+            :test-id="`incident-assignee-edit-${(record as TestIncident).id}`"
+            @change="(value) => onInlineAssigneeChange(record as TestIncident, value)"
+          />
         </template>
       </template>
     </EntityListShell>
-
-    <FormModal
-      :open="statusModal !== null"
-      :title="
-        statusModal?.mode === 'assignee'
-          ? t('observability.incidents.assignTo')
-          : t('observability.incidents.resolveTitle')
-      "
-      :ok-disabled="statusModalOkDisabled"
-      :confirm-loading="statusModalSaving"
-      test-id="incident-status-modal"
-      @ok="onStatusModalOk"
-      @cancel="closeStatusModal"
-    >
-      <div v-if="statusModal?.mode === 'assignee'">
-        <UserTeamPicker
-          :model-value="statusModalAssignee"
-          single
-          :candidates="assigneeCandidates"
-          data-testid="incident-status-modal-assignee"
-          @update:model-value="(refs) => { statusModalAssignee = refs; }"
-        />
-      </div>
-      <Space
-        v-else-if="statusModal?.mode === 'resolved'"
-        direction="vertical"
-        style="width: 100%"
-      >
-        <Select
-          :value="statusModalReason || undefined"
-          :options="RESOLVE_REASONS.map((reason) => ({ value: reason, label: reason }))"
-          :placeholder="t('observability.incidents.resolveReasonPlaceholder')"
-          data-testid="incident-status-modal-reason"
-          style="width: 100%"
-          @change="(value) => { statusModalReason = value === undefined ? '' : String(value); }"
-        />
-        <Input.TextArea
-          :value="statusModalComment"
-          :placeholder="t('observability.incidents.resolveCommentPlaceholder')"
-          data-testid="incident-status-modal-comment"
-          :rows="3"
-          @update:value="(value) => { statusModalComment = value; }"
-        />
-      </Space>
-    </FormModal>
-
-    <FormModal
-      :open="assigneeModal !== null"
-      :title="t('observability.incidents.assignTo')"
-      :ok-disabled="assigneeModalSelection.length === 0"
-      :confirm-loading="assigneeModalSaving"
-      test-id="incident-assignee-modal"
-      @ok="onAssigneeModalOk"
-      @cancel="closeAssigneeModal"
-    >
-      <UserTeamPicker
-        :model-value="assigneeModalSelection"
-        single
-        :candidates="assigneeCandidates"
-        data-testid="incident-assignee-modal-picker"
-        @update:model-value="(refs) => { assigneeModalSelection = refs; }"
-      />
-    </FormModal>
   </div>
+    </component>
+  </component>
 </template>
+
+<style scoped>
+.incidents-test-case-link {
+  display: inline-block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.incidents-table-link {
+  display: inline-block;
+  max-width: 13rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+</style>

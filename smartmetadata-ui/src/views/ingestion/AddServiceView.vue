@@ -6,6 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import { Button, message } from 'ant-design-vue';
 import { getOrchestratorStatus } from '@/api/ingestionPipelines';
 import { triggerOnDemandApp } from '@/api/apps';
@@ -322,7 +324,7 @@ async function triggerAutoPilotApplication(entityType: string, fqn?: string): Pr
 
 async function handleFiltersSave(filterValues: Record<string, FilterPatternConfig>): Promise<void> {
   saving.value = true;
-  let createdId: string | undefined;
+  let createdFqn: string | undefined;
   try {
     const userId = auth.user?.id;
     const created = await SERVICE_CREATE_API[form.kind]({
@@ -334,7 +336,7 @@ async function handleFiltersSave(filterValues: Record<string, FilterPatternConfi
         config: { ...(step2Config.value ?? {}), ...filterValues },
       },
     });
-    createdId = created.id;
+    createdFqn = created.fullyQualifiedName;
     const entityType = entityTypeForKind(form.kind);
     if (!isExcludedAutoPilotServiceType(entityType)) {
       await triggerAutoPilotApplication(entityType, created.fullyQualifiedName);
@@ -344,16 +346,16 @@ async function handleFiltersSave(filterValues: Record<string, FilterPatternConfi
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     saving.value = false;
-    // The pin always navigates to the service detail, even on
-    // failure (the detail may not exist). The id-based interim
-    // route takes the created id on success and the service name
-    // on failure, landing on the detail's missing state; the FQN
-    // migration (§8.2) replaces this with the FQN path.
+    // Official AddService pin: always navigate to the service detail,
+    // even on create failure (the detail may not exist). Official
+    // getServiceDetailsPath is FQN-addressed, so success uses the
+    // created FQN and failure falls back to the typed service name.
     leaving.value = true;
-    await router.push({
-      name: 'ingestion-service',
-      params: { kind: form.kind, id: createdId ?? form.name.trim() },
-    });
+    const category = SERVICE_COLLECTION_BY_KIND[form.kind];
+    const fqn = createdFqn ?? form.name.trim();
+    if (category && fqn) {
+      await router.push(getServiceDetailsPath(fqn, category));
+    }
   }
 }
 

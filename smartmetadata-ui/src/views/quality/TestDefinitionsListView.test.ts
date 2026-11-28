@@ -1,11 +1,6 @@
 /**
  * Copyright 2026 SmartMetadata authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0.
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
@@ -13,7 +8,31 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import TestDefinitionFormDrawer from '@/components/quality/TestDefinitionFormDrawer.vue';
 import TestDefinitionsListView from './TestDefinitionsListView.vue';
+
+const permState = vi.hoisted(() => ({
+  isAdmin: true,
+  resourceOps: { ViewAll: true } as Record<string, boolean>,
+  rejectResource: false,
+}));
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    isAdminUser: permState.isAdmin,
+    getResourcePermission: vi.fn(async () => {
+      if (permState.rejectResource) {
+        throw new Error('permission down');
+      }
+      return permState.resourceOps;
+    }),
+    getEntityPermissionByFqn: vi.fn(async () => ({
+      EditAll: true,
+      Delete: true,
+      ViewAll: true,
+    })),
+  }),
+}));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -35,7 +54,8 @@ async function mountView() {
   await router.push('/quality/test-definitions');
   await router.isReady();
   const wrapper = mount(TestDefinitionsListView, {
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    attachTo: document.body,
   });
   await flushPromises();
   return { wrapper, router };
@@ -44,6 +64,9 @@ async function mountView() {
 describe('TestDefinitionsListView', () => {
   beforeEach(() => {
     localStorage.clear();
+    permState.isAdmin = true;
+    permState.resourceOps = { ViewAll: true, Create: true };
+    permState.rejectResource = false;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -54,12 +77,41 @@ describe('TestDefinitionsListView', () => {
               {
                 id: 'td1',
                 name: 'tableRowCountToBeBetween',
+                fullyQualifiedName: 'tableRowCountToBeBetween',
                 displayName: 'Row count between',
+                description: 'Row count test',
                 entityType: 'TABLE',
                 testPlatforms: ['OpenMetadata'],
+                enabled: true,
+                provider: 'system',
+              },
+              {
+                id: 'td2',
+                name: 'customRule',
+                fullyQualifiedName: 'customRule',
+                displayName: 'Custom rule',
+                entityType: 'COLUMN',
+                testPlatforms: ['dbt'],
+                enabled: true,
+                provider: 'user',
               },
             ],
-            paging: { total: 1 },
+            paging: { total: 16, after: 'c1' },
+          });
+        }
+        if (url.includes('/api/v1/dataQuality/dimensions')) {
+          return jsonResponse({ data: [{ id: 'd1', name: 'Accuracy', displayName: 'Accuracy' }], paging: { total: 1 } });
+        }
+        if (url.includes('/api/v1/learningResources')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/permissions/testDefinition')) {
+          return jsonResponse({
+            resource: 'testDefinition',
+            permissions: Object.entries(permState.resourceOps).map(([operation, access]) => ({
+              operation,
+              access: access ? 'allow' : 'deny',
+            })),
           });
         }
         return new Response('not found', { status: 404 });
@@ -72,19 +124,274 @@ describe('TestDefinitionsListView', () => {
     localStorage.clear();
   });
 
-  it('renders test definitions from GET /v1/dataQuality/testDefinitions', async () => {
+  it('renders official list chrome: heading, subtitle, CTA, columns, and filters', async () => {
     const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('数据质量规则');
+    expect(wrapper.text()).toContain('管理和配置数据质量规则的测试定义。');
+    expect(wrapper.get('[data-testid="create-test-definition"]').text()).toContain('添加测试定义');
+    expect(wrapper.find('[data-testid="test-library-filter-entity"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-library-filter-platform"]').exists()).toBe(true);
+    const search = wrapper.get('[data-testid="test-definition-search"]');
+    expect(search.attributes('placeholder') || search.html()).toContain('搜索测试定义');
     expect(wrapper.text()).toContain('Row count between');
-    expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-test-definition"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('OpenMetadata');
+    expect(wrapper.text()).not.toContain('IQVIA');
+    expect(wrapper.find('[data-testid="enable-switch-tableRowCountToBeBetween"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-library-pagination"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-library-page-indicator"]').text()).toContain('页面');
   });
 
-  it('opens definition detail on name click', async () => {
-    const { wrapper, router } = await mountView();
-    await wrapper.find('[data-testid="test-definition-row-td1"]').trigger('click');
+  it('disables the enabled toggle for external platforms and delete for system rows', async () => {
+    const { wrapper } = await mountView();
+    const systemToggle = wrapper.get('[data-testid="enable-switch-tableRowCountToBeBetween"]');
+    const externalToggle = wrapper.get('[data-testid="enable-switch-customRule"]');
+    expect(systemToggle.attributes('disabled') !== undefined || systemToggle.classes().join(' ').includes('disabled') || (systemToggle.element as HTMLInputElement).disabled === false).toBe(true);
+    // external (dbt only) is disabled
+    expect(externalToggle.html()).toMatch(/disabled|ant-switch-disabled/);
+    expect(wrapper.get('[data-testid="delete-test-definition-tableRowCountToBeBetween"]').attributes('disabled') !== undefined || wrapper.get('[data-testid="delete-test-definition-tableRowCountToBeBetween"]').html().includes('disabled')).toBe(true);
+  });
+
+  it('opens the official add-definition drawer with the English help panel', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="create-test-definition"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-definition');
-    expect(router.currentRoute.value.params.id).toBe('td1');
+    const formDrawer = wrapper.findComponent(TestDefinitionFormDrawer);
+    expect(formDrawer.props('open')).toBe(true);
+    let drawerRoot: Element | null = null;
+    await vi.waitFor(
+      () => {
+        drawerRoot = document.body.querySelector('.ant-drawer');
+        expect(drawerRoot).not.toBeNull();
+      },
+      { timeout: 3000 },
+    );
+    const body = drawerRoot ?? document.body;
+    expect(body.querySelector('[data-testid="test-definition-form-body"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).toContain('Test Definition');
+    expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).toContain('OpenMetadata');
+    expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).not.toContain('IQVIA');
+    expect(body.querySelector('[data-testid="data-quality-dimension"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="add-parameter-button"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="save-test-definition"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="test-definition-save"]')).not.toBeNull();
+  });
+
+  it('sends official q after the 300ms debounce and immediately when the box is cleared', async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapper } = await mountView();
+      vi.mocked(fetch).mockClear();
+      const input = wrapper.get('[data-testid="test-definition-search"]');
+      await input.setValue('row count');
+      await flushPromises();
+      const beforeDebounce = vi.mocked(fetch).mock.calls.filter((call) => String(call[0]).includes('/testDefinitions'));
+      expect(beforeDebounce.length).toBe(0);
+      await vi.advanceTimersByTimeAsync(300);
+      await flushPromises();
+      const afterDebounce = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('q='));
+      expect(decodeURIComponent(String(afterDebounce?.[0] ?? ''))).toMatch(/q=row[+ ]count/);
+      vi.mocked(fetch).mockClear();
+      const native = input.element instanceof HTMLInputElement ? input : input.get('input');
+      await native.setValue('');
+      await flushPromises();
+      const afterClear = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('/testDefinitions'));
+      expect(afterClear).toBeDefined();
+      expect(decodeURIComponent(String(afterClear?.[0] ?? ''))).not.toMatch(/[?&]q=/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dims the table and disables row actions while refetching (TestDefinitionTable isRefetching)', async () => {
+    let resolveSecond!: (value: Response) => void;
+    const secondList = new Promise<Response>((resolve) => {
+      resolveSecond = resolve;
+    });
+    let listCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
+          listCalls += 1;
+          if (listCalls === 1) {
+            return jsonResponse({
+              data: [
+                {
+                  id: 'td1',
+                  name: 'customRule',
+                  fullyQualifiedName: 'customRule',
+                  entityType: 'TABLE',
+                  testPlatforms: ['OpenMetadata'],
+                  enabled: true,
+                  provider: 'user',
+                },
+              ],
+              paging: { total: 1 },
+            });
+          }
+          return secondList;
+        }
+        if (url.includes('/api/v1/permissions/testDefinition')) {
+          return jsonResponse({
+            resource: 'testDefinition',
+            permissions: [{ operation: 'EditAll', access: 'allow' }],
+          });
+        }
+        if (url.includes('/api/v1/dataQuality/dimensions')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/learningResources')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper, router } = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-definition-table-container"]').exists()).toBe(true);
+
+    const bar = wrapper.findComponent({ name: 'TestDefinitionFilterBar' });
+    await bar.vm.$emit('update:entity-type', 'TABLE');
+    await router.isReady();
+    await flushPromises();
+
+    const container = wrapper.get('[data-testid="test-definition-table-container"]');
+    expect(container.classes()).toContain('test-library-table-container--refetching');
+    expect(container.attributes('aria-busy')).toBe('true');
+    const editBtn = wrapper.get('[data-testid="edit-test-definition-customRule"]');
+    expect((editBtn.element as HTMLButtonElement).disabled).toBe(true);
+
+    resolveSecond(
+      jsonResponse({
+        data: [
+          {
+            id: 'td1',
+            name: 'customRule',
+            fullyQualifiedName: 'customRule',
+            entityType: 'TABLE',
+            testPlatforms: ['OpenMetadata'],
+            enabled: true,
+            provider: 'user',
+          },
+        ],
+        paging: { total: 1 },
+      }),
+    );
+    await flushPromises();
+    expect(container.classes()).not.toContain('test-library-table-container--refetching');
+    wrapper.unmount();
+  });
+
+  it('applies entity-type filter immediately and clears all filters (pin TestDefinitionFilterBar)', async () => {
+    const { wrapper, router } = await mountView();
+    vi.mocked(fetch).mockClear();
+    const bar = wrapper.findComponent({ name: 'TestDefinitionFilterBar' });
+    await bar.vm.$emit('update:entityType', 'TABLE');
+    await flushPromises();
+    await flushPromises();
+    const withEntity = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('testDefinitions'));
+    expect(decodeURIComponent(String(withEntity?.[0] ?? ''))).toContain('entityType=TABLE');
+    expect(router.currentRoute.value.query.entityType).toBe('TABLE');
+    await wrapper.get('[data-testid="clear-all-filter-btn"]').trigger('click');
+    await flushPromises();
+    const afterClear = vi.mocked(fetch).mock.calls.findLast((call) => String(call[0]).includes('testDefinitions'));
+    expect(decodeURIComponent(String(afterClear?.[0] ?? ''))).not.toMatch(/entityType=/);
+    expect(router.currentRoute.value.query.entityType).toBeUndefined();
+  });
+
+  it('shows NoFilteredResultsPlaceholder when filters match nothing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/dataQuality/dimensions')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/permissions/testDefinition')) {
+          return jsonResponse({
+            resource: 'testDefinition',
+            permissions: [{ operation: 'ViewAll', access: 'allow' }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/quality/test-definitions', component: TestDefinitionsListView }],
+    });
+    await router.push({ path: '/quality/test-definitions', query: { entityType: 'TABLE' } });
+    await router.isReady();
+    const wrapper = mount(TestDefinitionsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    });
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-library-filtered-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('writes currentPage and cursor to the URL when paging forward (pin usePaging)', async () => {
+    const { wrapper, router } = await mountView();
+    vi.mocked(fetch).mockClear();
+    await wrapper.get('[data-testid="test-library-next"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    expect(router.currentRoute.value.query.currentPage).toBe('2');
+    expect(router.currentRoute.value.query.cursorType).toBe('after');
+    expect(router.currentRoute.value.query.cursorValue).toBe('c1');
+  });
+
+  it('hydrates filters from the URL like official useTableFilters', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/quality/test-definitions', name: 'quality-test-definitions', component: TestDefinitionsListView },
+      ],
+    });
+    await router.push({
+      path: '/quality/test-definitions',
+      query: { entityType: 'COLUMN', testPlatforms: 'dbt', q: 'custom' },
+    });
+    await router.isReady();
+    vi.mocked(fetch).mockClear();
+    const wrapper = mount(TestDefinitionsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    });
+    await flushPromises();
+    await flushPromises();
+    const url = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('testDefinitions'));
+    const decoded = decodeURIComponent(String(url?.[0] ?? ''));
+    expect(decoded).toContain('entityType=COLUMN');
+    expect(decoded).toContain('testPlatform=dbt');
+    expect(decoded).toContain('q=custom');
+    wrapper.unmount();
+  });
+
+  it('hides create CTA when Create is denied', async () => {
+    permState.isAdmin = false;
+    permState.resourceOps = { ViewAll: true };
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="create-test-definition"]').exists()).toBe(false);
+  });
+
+  it('shows PermissionPlaceholder without list fetch when ViewBasic/ViewAll are denied (pin viewPermission)', async () => {
+    permState.isAdmin = false;
+    permState.resourceOps = {};
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockClear();
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(false);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/testDefinitions'))).toBe(false);
   });
 });

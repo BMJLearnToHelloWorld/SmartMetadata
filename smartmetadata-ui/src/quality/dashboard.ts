@@ -7,7 +7,6 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { listGlossaryTerms } from '@/api/glossaryTerms';
 import {
   DQ_COVERED_ASSETS_AGGREGATION,
   DQ_DIMENSION_STATUS_AGGREGATION,
@@ -18,7 +17,6 @@ import {
   getDataQualityReportBatch,
   type DataQualityReportRow,
 } from '@/api/dataQualityReports';
-import { searchAssets } from '@/api/search';
 import { formatChartTs } from '@/features/charts/series';
 import type { ChartPoint } from '@/features/charts/types';
 import {
@@ -28,6 +26,7 @@ import {
   dimensionCardsFromReportRows,
   dqChartMustForValues,
   dqMustForOwner,
+  dqTestCaseListFilterClauses,
   dqMustForTags,
   dqShouldTerm,
   dqTableMustForValues,
@@ -101,6 +100,12 @@ export interface DqDashboardChartFilters {
   endTs?: number;
   entityFQN?: string;
   domainFqn?: string;
+  /** Pin DataQualityDashboardChartFilters list-tab fields. */
+  serviceName?: string;
+  testPlatforms?: string[];
+  dataQualityDimension?: string;
+  testCaseStatus?: string | string[];
+  testCaseType?: string;
 }
 
 /** Test case statuses of the three test-case-status area charts. */
@@ -164,6 +169,27 @@ export function dqDashboardMultiFilters(filters: DqDashboardChartFilters): DqMul
   };
 }
 
+export function dqFullChartMustClauses(
+  filters: DqDashboardChartFilters,
+  range?: DqTimeRange,
+  options?: { unhealthy?: boolean },
+): import('@/quality/landing').DqEsClause[] {
+  const timeRange =
+    range ??
+    (filters.startTs !== undefined && filters.endTs !== undefined
+      ? { startTs: filters.startTs, endTs: filters.endTs }
+      : undefined);
+  const must = dqChartMustForValues(dqDashboardMultiFilters(filters), timeRange, {
+    unhealthy: options?.unhealthy,
+    entityFQN: filters.entityFQN,
+  });
+  const listClauses = dqTestCaseListFilterClauses(filters);
+  if (listClauses.length) {
+    must.splice(Math.max(0, must.length - 1), 0, ...listClauses);
+  }
+  return must;
+}
+
 export function buildDqDashboardChartQuery(
   filters: DqDashboardChartFilters,
   range?: DqTimeRange,
@@ -172,10 +198,7 @@ export function buildDqDashboardChartQuery(
   return JSON.stringify({
     query: {
       bool: {
-        must: dqChartMustForValues(dqDashboardMultiFilters(filters), range, {
-          unhealthy: options?.unhealthy,
-          entityFQN: filters.entityFQN,
-        }),
+        must: dqFullChartMustClauses(filters, range, options),
       },
     },
   });
@@ -200,9 +223,7 @@ export function buildDqDashboardNoDimensionQuery(
   return JSON.stringify({
     query: {
       bool: {
-        must: dqChartMustForValues(dqDashboardMultiFilters(filters), range, {
-          entityFQN: filters.entityFQN,
-        }),
+        must: dqFullChartMustClauses(filters, range),
         must_not: [{ exists: { field: DQ_DIMENSION_FIELD } }],
       },
     },
@@ -421,11 +442,9 @@ function domainOf(filters: DqDashboardChartFilters): string | undefined {
 /**
  * The six-item aggregation batch: status, dimensions (+ no-dimension),
  * coverage, unhealthy-covered (health pie), total tables. One POST,
- * shared by the dashboard and the landing view — the landing view
- * ignores `health` and keeps its list-derived health plus its
- * residual note. `totalTablesFallback` is the landing view's facet
- * table count, used only when the batch's totalTables cardinality
- * comes back without rows; the dashboard passes none.
+ * shared by the dashboard and the landing view. Landing health comes
+ * from the official covered / unhealthy-covered cardinalities
+ * (fetchEntityCoveredWithDQ, Failed/Aborted must-filter).
  */
 export async function fetchDqDashboardAggregations(
   filters: DqDashboardChartFilters,
@@ -580,39 +599,3 @@ export function filterStateToChartFilters(
   };
 }
 
-export interface DqDashboardFilterOptions {
-  owner: Array<{ value: string; label: string }>;
-  tier: Array<{ value: string; label: string }>;
-  certification: Array<{ value: string; label: string }>;
-  tag: Array<{ value: string; label: string }>;
-  glossaryTerm: Array<{ value: string; label: string }>;
-  dataProduct: Array<{ value: string; label: string }>;
-}
-
-/**
- * Filter-bar options, landing-view precedent: one search for the
- * facet buckets plus the glossary-term list (only when the glossary
- * filter is visible — hidden facets never trigger their loads).
- */
-export async function fetchDqDashboardFilterOptions(
-  includeGlossaryTerms: boolean,
-): Promise<DqDashboardFilterOptions> {
-  const [searchPage, glossaryPage] = await Promise.all([
-    searchAssets('*', 0, 1),
-    includeGlossaryTerms
-      ? listGlossaryTerms({ limit: 50 })
-      : Promise.resolve({ data: [] as Array<{ fullyQualifiedName?: string; name: string; displayName?: string }> }),
-  ]);
-  const facets = searchPage.facets ?? [];
-  return {
-    owner: facetOptions(facets, 'owner'),
-    tier: facetOptions(facets, 'tier'),
-    certification: facetOptions(facets, 'certification'),
-    tag: facetOptions(facets, 'tagFqn'),
-    glossaryTerm: (glossaryPage.data ?? []).map((term) => ({
-      value: term.fullyQualifiedName || term.name,
-      label: term.displayName || term.name,
-    })),
-    dataProduct: facetOptions(facets, 'dataProduct'),
-  };
-}

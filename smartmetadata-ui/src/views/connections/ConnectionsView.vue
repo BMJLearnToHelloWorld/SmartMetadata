@@ -30,6 +30,7 @@ import { useConnectionsData } from '@/features/connections/useConnectionsData';
 import { useConnectionsViewMode } from '@/features/connections/useConnectionsViewMode';
 import { useAddServiceAction } from '@/features/home/useAddServiceAction';
 import { serviceCategoryByKind } from '@/ingestion/serviceCategories';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import { filterUnsupportedServiceType } from '@/ingestion/wizardServiceTypes';
 import {
   Button,
@@ -368,10 +369,11 @@ function openService(service: ServiceSummary): void {
   if (!kind) {
     return;
   }
-  void router.push({
-    name: 'ingestion-service',
-    params: { kind, id: service.id },
-  });
+  const category = serviceCategoryByKind(kind)?.enumValue;
+  const fqn = service.fullyQualifiedName;
+  if (category && fqn) {
+    void router.push(getServiceDetailsPath(fqn, category));
+  }
 }
 
 function logoSource(service: ServiceSummary): ServiceLogoSource {

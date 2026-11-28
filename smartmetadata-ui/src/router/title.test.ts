@@ -62,8 +62,8 @@ describe('document title', () => {
     // Legacy names under /settings/ (SETTINGS_SPACE_NAMES).
     expect(documentTitleFor(route('workflows'), t)).toBe('Settings - iSmart');
     expect(documentTitleFor(route('workflow-detail'), t)).toBe('Settings - iSmart');
-    expect(documentTitleFor(route('observability-alerts'), t)).toBe('Settings - iSmart');
-    expect(documentTitleFor(route('observability-alert'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('settings-notification-alerts'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('settings-notification-alert'), t)).toBe('Settings - iSmart');
     expect(documentTitleFor(route('announcements'), t)).toBe('Settings - iSmart');
     expect(documentTitleFor(route('announcement-duplicate'), t)).toBe('Settings - iSmart');
     // Prefix-attributed settings routes.

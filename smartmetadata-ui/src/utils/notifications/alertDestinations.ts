@@ -212,3 +212,30 @@ export const getDestinationStatusLabel = (
   t: TranslateFn,
 ): string =>
   destinationStatus === 'Success' ? t('label.success') : t('label.failed');
+
+/** Options for one official destination dropdown tab (内部 / 外部). */
+export function destinationOptionsForTab(
+  tab: 'internal' | 'external',
+  offeredCategories: string[] = [],
+  currentCategory?: string,
+): GroupedDestinationOption[] {
+  if (tab === 'external') {
+    return EXTERNAL_CATEGORY_OPTIONS.map((value) => ({
+      id: value,
+      label: startCase(value),
+      iconValue: value,
+    }));
+  }
+  const shown = new Set(offeredCategories);
+  if (currentCategory) {
+    shown.add(currentCategory);
+  }
+  const internal = shown.size
+    ? INTERNAL_CATEGORY_OPTIONS.filter((value) => shown.has(value))
+    : INTERNAL_CATEGORY_OPTIONS;
+  return internal.map((value) => ({
+    id: value,
+    label: startCase(value),
+    iconValue: value,
+  }));
+}

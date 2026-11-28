@@ -508,4 +508,12 @@ export interface AssetDetail {
   relatedMetrics?: EntityRef[];
   /** Soft-delete flag; the table_queries tab skips its fetch for deleted tables (pin isTableDeleted). */
   deleted?: boolean;
+  /** Present on official version snapshots (`GET /v1/{collection}/{id}/versions/{version}`). */
+  version?: number | string;
+  changeDescription?: {
+    fieldsAdded?: { field?: string; oldValue?: unknown; newValue?: unknown }[];
+    fieldsDeleted?: { field?: string; oldValue?: unknown; newValue?: unknown }[];
+    fieldsUpdated?: { field?: string; oldValue?: unknown; newValue?: unknown }[];
+    previousVersion?: string;
+  };
 }

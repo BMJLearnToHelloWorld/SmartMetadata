@@ -92,8 +92,8 @@ describe('settings-space highlight rule (DESIGN §6.6)', () => {
 
   it('attributes the retained legacy names whose pages moved under /settings/', () => {
     const names = [
-      'observability-alerts',
-      'observability-alert',
+      'settings-notification-alerts',
+      'settings-notification-alert',
       'announcements',
       'announcement-duplicate',
       'workflows',
@@ -262,12 +262,12 @@ describe('nav IA', () => {
     expect(selectedNavKey('settings-members-team-import')).toBe('admin-settings');
     expect(selectedNavKey('settings-members-online-users')).toBe('admin-settings');
     expect(selectedNavKey('settings-bots')).toBe('admin-settings');
-    // The alerts/announcements list and detail faces are the shell
-    // batch's canonical records (observability-alerts, announcements);
-    // the proposed settings-notification-* list/detail names never
-    // existed in the router and are not mapped here.
-    expect(selectedNavKey('observability-alerts')).toBe('admin-settings');
-    expect(selectedNavKey('observability-alert')).toBe('admin-settings');
+    // Observability alerts are a 数据监控 leaf; settings notification
+    // alerts stay in the Settings hub. Announcements stay in Settings.
+    expect(selectedNavKey('observability-alerts')).toBe('observability-alerts');
+    expect(selectedNavKey('observability-alert')).toBe('observability-alerts');
+    expect(selectedNavKey('settings-notification-alerts')).toBe('admin-settings');
+    expect(selectedNavKey('settings-notification-alert')).toBe('admin-settings');
     expect(selectedNavKey('announcements')).toBe('admin-settings');
     expect(selectedNavKey('observability-alert-add')).toBe('observability-alerts');
     expect(selectedNavKey('observability-alert-edit')).toBe('observability-alerts');

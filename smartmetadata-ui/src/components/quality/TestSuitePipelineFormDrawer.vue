@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch, withDefaults } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Checkbox, Drawer, Form, Input, Select, message } from 'ant-design-vue';
 import {
@@ -35,11 +35,16 @@ import type { TestSuite } from '@/types/quality';
  * list; a deploy failure is a toast, never a blocked close, and the
  * deploy is skipped entirely when Airflow is unavailable.
  */
-const props = defineProps<{
-  open: boolean;
-  suite: TestSuite | null;
-  ingestionPipeline?: IngestionPipeline | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    suite: TestSuite | null;
+    ingestionPipeline?: IngestionPipeline | null;
+    /** Official TestSuiteIngestion page uses the same form without a drawer. */
+    variant?: 'drawer' | 'page';
+  }>(),
+  { variant: 'drawer' },
+);
 const emit = defineEmits<{
   close: [];
   success: [];
@@ -185,7 +190,7 @@ async function onSave(): Promise<void> {
     return;
   }
   if (!form.selectAll && form.selectedCases.length === 0) {
-    casesError.value = t('quality.testSuites.testCasesRequired');
+    casesError.value = t('label.field-required', { field: t('label.test-case') });
     return;
   }
   const cronErrorKey = await cronValidator(form.cron ?? '');
@@ -258,14 +263,26 @@ function handleClose(): void {
 </script>
 
 <template>
-  <Drawer
-    :open="open"
-    :title="isEdit ? t('quality.testSuites.editIngestionTitle') : t('quality.testSuites.addIngestionTitle')"
-    width="560"
-    @close="handleClose"
+  <component
+    :is="variant === 'page' ? 'div' : Drawer"
+    v-bind="
+      variant === 'page'
+        ? { 'data-testid': 'test-suite-ingestion-page-form' }
+        : {
+            open,
+            title: isEdit
+              ? t('label.edit-entity', { entity: t('label.pipeline') })
+              : t('label.add-entity', { entity: t('label.pipeline') }),
+            width: 560,
+            onClose: handleClose,
+          }
+    "
   >
+    <h2 v-if="variant === 'page'" data-testid="test-suite-ingestion-title">
+      {{ isEdit ? t('label.edit-entity', { entity: t('label.ingestion') }) : t('label.add-entity', { entity: t('label.ingestion') }) }}
+    </h2>
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')">
+      <Form.Item :label="t('label.name')">
         <Input v-model:value="form.name" data-testid="pipeline-name" />
       </Form.Item>
       <Form.Item
@@ -281,22 +298,22 @@ function handleClose(): void {
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.debugLog" data-testid="test-suite-ingestion-debug">
-          {{ t('quality.testSuites.enableDebugLog') }}
+          {{ t('label.enable-debug-log') }}
         </Checkbox>
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.raiseOnError" data-testid="test-suite-ingestion-raise">
-          {{ t('quality.testSuites.raiseOnError') }}
+          {{ t('label.raise-on-error') }}
         </Checkbox>
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.selectAll" data-testid="test-suite-ingestion-select-all">
-          {{ t('quality.testSuites.selectAllTestCases') }}
+          {{ t('label.select-all-entity', { entity: t('label.test-case-plural') }) }}
         </Checkbox>
       </Form.Item>
       <Form.Item
         v-if="!form.selectAll"
-        :label="t('quality.testCases.title')"
+        :label="t('label.test-case-plural')"
         :validate-status="casesError ? 'error' : undefined"
         :help="casesError || undefined"
       >
@@ -315,12 +332,12 @@ function handleClose(): void {
       </Form.Item>
       <div style="display: flex; gap: 8px; margin-top: 16px">
         <Button type="primary" data-testid="test-suite-ingestion-save" :loading="saving" @click="onSave">
-          {{ isEdit ? t('crud.save') : t('crud.create') }}
+          {{ isEdit ? t('label.save') : t('label.create') }}
         </Button>
         <Button data-testid="test-suite-ingestion-cancel" @click="handleClose">
-          {{ t('crud.cancel') }}
+          {{ t('label.cancel') }}
         </Button>
       </div>
     </Form>
-  </Drawer>
+  </component>
 </template>

@@ -88,8 +88,8 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('quality.testSuites.title');
     expect(keys).toContain('quality.landing.title');
     expect(keys).toContain('quality.landing.tabs.dashboard');
-    expect(keys).toContain('quality.landing.residualHealthCap');
-    expect(keys).toContain('quality.landing.residualAggregationFallback');
+    expect(keys).toContain('quality.asset.add');
+    expect(keys).toContain('quality.asset.addPipeline');
     expect(keys).toContain('quality.testCases.empty');
     expect(keys).toContain('quality.testSuites.tableSuites');
     expect(keys).toContain('observability.alerts.title');

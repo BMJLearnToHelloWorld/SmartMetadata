@@ -15,9 +15,11 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import { ApiError } from '@/api/client';
 import type { LimitConfig } from '@/api/limits';
 import AlertDeleteModal from '@/components/notifications/AlertDeleteModal.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { createTestI18n } from '@/test/i18n';
 import type { EventSubscription } from '@/types/quality';
 import AlertsListView from './AlertsListView.vue';
+import { USER_PREFERENCES_KEY } from '@/utils/userPageSizePreference';
 
 const getAllAlerts = vi.fn();
 const getAlertsFromName = vi.fn();
@@ -105,6 +107,11 @@ async function mountView(path: string): Promise<{ wrapper: VueWrapper; router: R
         component: stub,
       },
       { path: '/observability/alerts', name: 'observability-alerts', component: AlertsListView },
+        { path: '/observability/alert/:fqn/:tab?', name: 'observability-alert', component: { template: '<div />' } },
+        { path: '/settings/notifications/alerts', name: 'settings-notification-alerts', component: AlertsListView },
+        { path: '/settings/notifications/alerts/:fqn/:tab?', name: 'settings-notification-alert', component: { template: '<div />' } },
+        { path: '/settings/notifications/edit-notification/:fqn', name: 'settings-notification-alert-edit', component: stub },
+        { path: '/observability/alerts/edit/:fqn', name: 'observability-alert-edit', component: stub },
       { path: '/observability/alerts/:id', name: 'observability-alert', component: { template: '<div />' } },
       { path: '/observability/alerts/add', name: 'observability-alerts-add', component: stub },
       { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
@@ -166,6 +173,54 @@ afterEach(() => {
 });
 
 describe('observability face (C chain)', () => {
+  it('renders observability list breadcrumbs (AlertsPage.tsx HeaderBreadcrumb)', async () => {
+    const { wrapper } = await mountView('/observability/alerts');
+    const crumbs = wrapper.findComponent(SmBreadcrumb);
+    expect(crumbs.props('items')).toEqual([
+      { label: 'Observability' },
+      { label: 'Alerts' },
+    ]);
+  });
+
+  it('uses ObservabilityPageShell and gradient header instead of a plain Card (AlertsPage.tsx)', async () => {
+    const { wrapper } = await mountView('/observability/alerts');
+    expect(wrapper.find('[data-testid="observability-page-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-gradient-page-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-page-content"]').exists()).toBe(true);
+  });
+
+  it('shows a full-page spinner until observability resource permission resolves', async () => {
+    let resolvePerm!: (value: ReturnType<typeof resourcePermission>) => void;
+    getResourcePermission.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePerm = resolve;
+        }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/observability/alerts', name: 'observability-alerts', component: AlertsListView },
+        { path: '/observability/alerts/add', name: 'observability-alerts-add', component: stub },
+      ],
+    });
+    await router.push('/observability/alerts');
+    await router.isReady();
+    const wrapper = mount(AlertsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.alerts-list-view__initial-loader').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-alert-button"]').exists()).toBe(false);
+    resolvePerm(resourcePermission(['Create']));
+    await settle(wrapper);
+    expect(wrapper.find('.alerts-list-view__initial-loader').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-alert-button"]').exists()).toBe(true);
+  });
+
   it('renders rows, filters provider-System rows, and never fetches the system alert', async () => {
     getAllAlerts.mockResolvedValue({
       data: [alertFixture(), systemAlert],
@@ -292,7 +347,7 @@ describe('observability face (C chain)', () => {
     expect(wrapper.findComponent(AlertDeleteModal).props('open')).toBe(false);
   }, 10000);
 
-  it('toasts the delete failure without refreshing the limit or reloading, and shows the permanent-delete wording', async () => {
+  it('toasts the delete failure without refreshing the limit or reloading, and shows the official delete-entity-message', async () => {
     // The rejection targets the delete path (no list fetch runs between
     // mount and confirm).
     deleteEventSubscription.mockRejectedValueOnce(new ApiError(500, 'boom'));
@@ -300,7 +355,7 @@ describe('observability face (C chain)', () => {
     await wrapper.get('[data-testid="alert-delete-dq-alert"]').trigger('click');
     await waitForBodySelector('[data-testid="delete-modal"]');
     expect(document.body.querySelector('.alert-delete-modal__message')?.textContent).toBe(
-      "Delete this dq alert and all its metadata forever. This can't be undone.",
+      'Are you sure you want to delete DQ Alert? This action cannot be undone.',
     );
     const confirm = (await waitForBodySelector('[data-testid="confirm-button"]')) as HTMLElement;
     confirm.click();
@@ -315,7 +370,7 @@ describe('observability face (C chain)', () => {
 
   it('navigates to the observability add path from the header CTA', async () => {
     const { wrapper, router } = await mountView('/observability/alerts');
-    await wrapper.get('[data-testid="create-observability"]').trigger('click');
+    await wrapper.get('[data-testid="add-alert-button"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/observability/alerts/add');
   });
@@ -326,6 +381,20 @@ describe('observability face (C chain)', () => {
     expect(edit.element.closest('a')?.getAttribute('href')).toBe(
       '/observability/alerts/edit/dq-alert',
     );
+  });
+
+  it('does not persist page size in localStorage (pin usePaging)', async () => {
+    getAllAlerts.mockResolvedValue({
+      data: [alertFixture()],
+      after: 'c2',
+      before: undefined,
+      total: 30,
+    });
+    const { wrapper } = await mountView('/observability/alerts');
+    const table = wrapper.findComponent({ name: 'AlertListTable' });
+    table.props('onShowSizeChange')(25);
+    await settle(wrapper);
+    expect(localStorage.getItem(USER_PREFERENCES_KEY)).toBeNull();
   });
 });
 

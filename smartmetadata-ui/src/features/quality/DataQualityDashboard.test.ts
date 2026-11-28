@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import SmChart from '@/features/charts/SmChart.vue';
+import DqDashboardFilterSelect from '@/components/quality/DqDashboardFilterSelect.vue';
 import DataQualityDashboard from './DataQualityDashboard.vue';
 import type { DqDashboardChartFilters, DqHiddenFilter } from '@/quality/dashboard';
 
@@ -86,17 +87,28 @@ function stubFetch(): void {
         });
       }
       if (url.includes('/api/v1/search/query')) {
+        const index = new URL(url, 'http://local.test').searchParams.get('index') ?? '';
+        const q = new URL(url, 'http://local.test').searchParams.get('q') ?? '';
+        if (index === 'tag' && q.includes('classification.name:Tier')) {
+          return jsonResponse({
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _source: {
+                    name: 'Gold',
+                    displayName: 'Gold',
+                    fullyQualifiedName: 'Tier.Gold',
+                    classification: { name: 'Tier' },
+                  },
+                },
+              ],
+            },
+          });
+        }
         return jsonResponse({
-          hits: { total: { value: 20 }, hits: [] },
-          aggregations: {
-            'sterms#entityType': { buckets: [{ key: 'table', doc_count: 20 }] },
-            'sterms#ownerDisplayName': { buckets: [{ key: 'alice', doc_count: 3 }] },
-            'sterms#tier.tagFQN': { buckets: [{ key: 'Tier.Gold', doc_count: 1 }] },
-          },
+          hits: { total: { value: 0 }, hits: [] },
         });
-      }
-      if (url.includes('/api/v1/glossaryTerms')) {
-        return jsonResponse({ data: [] });
       }
       return new Response('not found', { status: 404 });
     }),
@@ -108,13 +120,9 @@ async function createTestRouter(): Promise<Router> {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
+      { path: '/data-quality/:tab/:subTab?', name: 'quality-data-quality-tab', component: { template: '<div>cases</div>' } },
       { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div>cases</div>' } },
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      {
-        path: '/quality/test-suites',
-        name: 'quality-test-suites',
-        redirect: (to) => ({ name: 'quality-test-cases', query: { ...to.query, tab: 'test-suites' } }),
-      },
       { path: '/observability/incidents', name: 'observability-incidents', component: { template: '<div>incidents</div>' } },
     ],
   });
@@ -191,11 +199,13 @@ describe('DataQualityDashboard', () => {
 
   it('derives coverage, health and results from the shared batch', async () => {
     const { wrapper } = await mountDashboard();
-    expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('Tables 20');
+    expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('Data Assets Coverage');
+    expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('20');
     expect(wrapper.get('[data-testid="dq-dashboard-coverage-card"]').text()).toContain('Covered 2');
-    expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Entities 2');
+    expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Healthy Data Assets');
     expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Healthy 1');
     expect(wrapper.get('[data-testid="dq-dashboard-healthy-card"]').text()).toContain('Unhealthy 1');
+    expect(wrapper.get('[data-testid="dq-dashboard-results-card"]').text()).toContain('Total Tests');
     expect(wrapper.get('[data-testid="dq-dashboard-results-card"]').text()).toContain('Success 3');
     expect(wrapper.get('[data-testid="dq-dashboard-results-card"]').text()).toContain('Failed 1');
     expect(wrapper.find('[data-testid="dq-dashboard-dimension-Completeness"]').exists()).toBe(true);
@@ -217,6 +227,13 @@ describe('DataQualityDashboard', () => {
     expect(wrapper.get('[data-testid="dq-dashboard-status-success-chart"]').attributes('data-points')).toBe('1');
     expect(wrapper.get('[data-testid="dq-dashboard-incidents-open-chart"]').attributes('data-points')).toBe('1');
     expect(wrapper.get('[data-testid="dq-dashboard-incidents-response-chart"]').attributes('data-points')).toBe('1');
+  });
+
+  it('uses UserTeam and glossary tree pickers for owner and glossary facets (pin filter types)', async () => {
+    const { wrapper } = await mountDashboard();
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-owner"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-glossary"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-dashboard-owner-user-team"]').exists()).toBe(false);
   });
 
   it('hides hidden filters but still applies the initial filter to the queries', async () => {
@@ -290,8 +307,9 @@ describe('DataQualityDashboard', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[0].vm.$emit('segment-click', 0);
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-suites');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-suites');
+    expect(router.currentRoute.value.params.tab).toBe('test-suites');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
   });
 
   it('drills the coverage donut not-covered slice to explore (pin ROUTES.EXPLORE)', async () => {
@@ -307,8 +325,9 @@ describe('DataQualityDashboard', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[1].vm.$emit('segment-click', 0);
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.params.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Success', 'Queued']);
     await charts[1].vm.$emit('segment-click', 1);
     await flushPromises();
@@ -336,8 +355,9 @@ describe('DataQualityDashboard', () => {
     });
     await wrapper.get('[data-testid="dq-dashboard-dimension-Completeness"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.params.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.dataQualityDimension).toBe('Completeness');
     expect(router.currentRoute.value.query.tags).toContain('PII.Sensitive');
   });
@@ -346,8 +366,9 @@ describe('DataQualityDashboard', () => {
     const { wrapper, router } = await mountDashboard();
     await wrapper.get('[data-testid="dq-dashboard-status-failed"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.params.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
   });
 
@@ -369,11 +390,13 @@ describe('DataQualityDashboard', () => {
 
   it('applies two tier picks to the queries (multi-select)', async () => {
     const { wrapper } = await mountDashboard();
-    const selects = wrapper.findAllComponents({ name: 'ASelect' });
-    // Filter-bar order: owner, tier, certification, tag, glossary, data product.
-    const tierSelect = selects[1];
-    expect(tierSelect.exists()).toBe(true);
-    await tierSelect.vm.$emit('change', ['Tier.Gold', 'Tier.Silver']);
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-tier"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="search-dropdown-tier"]').exists()).toBe(true);
+    const tierFilter = wrapper
+      .findAllComponents(DqDashboardFilterSelect)
+      .find((component) => component.props('testId') === 'dq-dashboard-filter-tier');
+    expect(tierFilter).toBeDefined();
+    await tierFilter!.vm.$emit('update:modelValue', ['Tier.Gold', 'Tier.Silver']);
     await flushPromises();
     await flushPromises();
     const q = lastBatchItem('status')?.q ?? '';
@@ -383,21 +406,19 @@ describe('DataQualityDashboard', () => {
 
   it('selects every loaded option from the tier dropdown (select all)', async () => {
     const { wrapper } = await mountDashboard();
-    const selector = wrapper
-      .find('[data-testid="dq-dashboard-filter-tier"] .ant-select-selector')
-      .element as HTMLElement;
-    selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    selector.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wrapper.get('[data-testid="search-dropdown-tier"]').trigger('click');
     await flushPromises();
     const selectAllButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Select all'),
+      button.textContent?.includes('Select All'),
     ) as HTMLElement | undefined;
     expect(selectAllButton).toBeDefined();
     selectAllButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     await flushPromises();
-    const selects = wrapper.findAllComponents({ name: 'ASelect' });
-    expect(selects[1].props('value')).toEqual(['Tier.Gold']);
+    const tierFilter = wrapper
+      .findAllComponents(DqDashboardFilterSelect)
+      .find((component) => component.props('testId') === 'dq-dashboard-filter-tier');
+    expect(tierFilter?.props('modelValue')).toEqual(['Tier.Gold']);
     expect(lastBatchItem('status')?.q ?? '').toContain('Tier.Gold');
   });
 
@@ -420,8 +441,9 @@ describe('DataQualityDashboard', () => {
     const q = batchItem('status')?.q ?? '';
     expect(q).toContain('PII.A');
     expect(q).toContain('PII.B');
-    // Filter-bar order: owner, tier, certification, tag, glossary, data product.
-    const tagSelect = wrapper.findAllComponents({ name: 'ASelect' })[3];
-    expect(tagSelect.props('value')).toEqual(['PII.A', 'PII.B']);
+    const tagFilter = wrapper
+      .findAllComponents(DqDashboardFilterSelect)
+      .find((component) => component.props('testId') === 'dq-dashboard-filter-tag');
+    expect(tagFilter?.props('modelValue')).toEqual(['PII.A', 'PII.B']);
   });
 });

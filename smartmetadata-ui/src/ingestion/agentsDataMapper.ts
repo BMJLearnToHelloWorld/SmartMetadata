@@ -279,10 +279,11 @@ export function mapPipelineToAgent(pipeline: IngestionPipeline): Agent {
  * components/ServiceAgents/utils/agentsDataMapper.ts
  * (`mapPipelineStatusToRun`, `mapStepSummaryToRunStep`) plus the
  * step/attention shapes the run step row renders (pin
- * RunStepRow.component.tsx). The pipeline-state table below is keyed
- * on the capitalized enum values the server returns in
- * `PipelineStatus.pipelineState`, unlike the lowercase-keyed
- * `PIPELINE_STATE_TO_RUN_STATUS` used for recent-run dots.
+ * RunStepRow.component.tsx). `toRunStatus` and recent-run dots share
+ * the same lowercase official `PipelineState` values (`success`,
+ * `partialSuccess`, `failed`, `running`, `queued`, `stopped`).
+ * The API, JSON schema, and Alma live `pipelineState` values use
+ * those strings, not PascalCase TypeScript member names.
  */
 export interface RunAttention {
   severity: 'error' | 'warning';
@@ -320,17 +321,8 @@ export interface AgentRun {
   steps: RunStep[];
 }
 
-const RUN_HISTORY_PIPELINE_STATE_TO_RUN_STATUS: Record<string, RunStatus> = {
-  Success: 'success',
-  PartialSuccess: 'partial',
-  Failed: 'failed',
-  Running: 'running',
-  Queued: 'skipped',
-  Stopped: 'skipped',
-};
-
 export function toRunStatus(state?: string): RunStatus {
-  return state ? (RUN_HISTORY_PIPELINE_STATE_TO_RUN_STATUS[state] ?? 'skipped') : 'skipped';
+  return state ? (PIPELINE_STATE_TO_RUN_STATUS[state] ?? 'skipped') : 'skipped';
 }
 
 const RUN_STARTED_AT_MONTHS = [

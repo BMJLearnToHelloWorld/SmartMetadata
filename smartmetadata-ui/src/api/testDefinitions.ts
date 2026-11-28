@@ -17,8 +17,17 @@ export const TEST_DEFINITION_FIELDS = 'owners';
 export interface ListTestDefinitionsQuery {
   limit?: number;
   after?: string;
+  before?: string;
   entityType?: string;
   testPlatform?: string;
+  q?: string;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface DeleteTestDefinitionOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
 }
 
 function mapParameterDefinition(value: unknown): TestParameterDefinition[] {
@@ -66,6 +75,15 @@ function mapTestDefinition(raw: Record<string, unknown>): TestDefinition | null 
     dataQualityDimension: asString(raw.dataQualityDimension) || undefined,
     parameterDefinition: mapParameterDefinition(raw.parameterDefinition),
     provider: asString(raw.provider) || undefined,
+    supportedDataTypes: Array.isArray(raw.supportedDataTypes)
+      ? raw.supportedDataTypes.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    supportedServices: Array.isArray(raw.supportedServices)
+      ? raw.supportedServices.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    enabled: raw.enabled === undefined ? undefined : Boolean(raw.enabled),
+    sqlExpression: asString(raw.sqlExpression) || undefined,
+    supportsRowLevelPassedFailed: raw.supportsRowLevelPassedFailed === true ? true : undefined,
   };
 }
 
@@ -73,10 +91,14 @@ export function listTestDefinitions(query: ListTestDefinitionsQuery = {}): Promi
   return apiRequest<unknown>('/v1/dataQuality/testDefinitions', {
     query: {
       fields: TEST_DEFINITION_FIELDS,
-      limit: query.limit ?? 50,
+      limit: query.limit ?? 15,
       after: query.after,
+      before: query.before,
       entityType: query.entityType,
       testPlatform: query.testPlatform,
+      q: query.q,
+      sortField: query.sortField,
+      sortOrder: query.sortOrder,
     },
   }).then((payload) => parsePaged(payload, mapTestDefinition));
 }
@@ -115,4 +137,34 @@ export async function updateTestDefinition(body: CreateTestDefinitionRequest): P
     throw new Error('Update test definition succeeded but the response had no definition');
   }
   return mapped;
+}
+
+export async function patchTestDefinition(
+  id: string,
+  operations: Array<{ op: string; path: string; value?: unknown }>,
+): Promise<TestDefinition> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/dataQuality/testDefinitions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: operations,
+    contentType: 'application/json-patch+json',
+  });
+  const mapped = mapTestDefinition(raw);
+  if (!mapped) {
+    throw new Error('Patch test definition succeeded but the response had no definition');
+  }
+  return mapped;
+}
+
+/** Official deleteTestDefinitionByFqn: DELETE /v1/dataQuality/testDefinitions/name/{fqn} with hardDelete+recursive. */
+export async function deleteTestDefinition(
+  fqn: string,
+  options: DeleteTestDefinitionOptions = {},
+): Promise<void> {
+  await apiRequest(`/v1/dataQuality/testDefinitions/name/${encodeURIComponent(fqn)}`, {
+    method: 'DELETE',
+    query: {
+      hardDelete: options.hardDelete ?? true,
+      recursive: options.recursive ?? true,
+    },
+  });
 }

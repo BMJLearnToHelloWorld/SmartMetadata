@@ -22,6 +22,13 @@ import { apiRequest } from './client';
  * The kind → collection table is the single source; the snapshot is
  * mapped with the same per-kind mapper as the live record.
  */
+export function serviceKindFromCategory(category: string): ServiceKind | undefined {
+  const entry = (Object.entries(SERVICE_COLLECTION_BY_KIND) as Array<[ServiceKind, string]>).find(
+    ([, collection]) => collection === category,
+  );
+  return entry?.[0];
+}
+
 export const SERVICE_COLLECTION_BY_KIND: Record<ServiceKind, string> = {
   database: 'databaseServices',
   messaging: 'messagingServices',

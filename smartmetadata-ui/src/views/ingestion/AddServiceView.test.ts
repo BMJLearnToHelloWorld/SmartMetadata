@@ -126,8 +126,8 @@ async function mountWizard(
     routes: [
       { path: '/:serviceCategory/add-service', name: 'ingestion-service-add', component: AddServiceView },
       {
-        path: '/ingestion/services/:kind/:id',
-        name: 'ingestion-service',
+        path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+        name: 'service-detail',
         component: { template: '<div>svc</div>' },
         props: true,
       },
@@ -530,8 +530,8 @@ describe('AddServiceView', () => {
       calls.some((call) => call.url.includes('/api/v1/apps/trigger/') && call.method === 'POST'),
     ).toBe(true);
     expect(successSpy).toHaveBeenCalledWith(expect.any(String), 5);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's9' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'databaseServices', fqn: 'warehouse' });
   });
 
   it('creates a security service with no AutoPilot trigger and no AutoPilot toast', async () => {
@@ -562,8 +562,8 @@ describe('AddServiceView', () => {
       calls.some((call) => call.url.includes('/api/v1/apps/trigger/')),
     ).toBe(false);
     expect(successSpy).not.toHaveBeenCalled();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toMatchObject({ kind: 'security', id: 's9' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'securityServices', fqn: 'warehouse' });
     successSpy.mockRestore();
   });
 
@@ -724,8 +724,8 @@ describe('AddServiceView', () => {
     await clickWizardNext(wrapper);
     await flushPromises();
     expect(errorSpy).toHaveBeenCalled();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 'warehouse' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'databaseServices', fqn: 'warehouse' });
   });
 
   it('still navigates when the AutoPilot trigger fails, with both toasts', async () => {
@@ -749,7 +749,7 @@ describe('AddServiceView', () => {
     await flushPromises();
     expect(errorSpy).toHaveBeenCalled();
     expect(successSpy).toHaveBeenCalledWith(expect.any(String), 5);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
   });
 
   it('shows the connected message on the filter step only after a passed test connection', async () => {

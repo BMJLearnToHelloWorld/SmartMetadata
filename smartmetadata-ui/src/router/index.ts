@@ -9,6 +9,7 @@
  */
 import { loadSession } from '@/auth/token';
 import AppShell from '@/layouts/AppShell.vue';
+import { officialEntityDetailGuard, OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN } from './entityDetailGuard';
 /**
  * Route views are lazy-loaded (R8 code-splitting): the shell stays in the
  * entry chunk, each view becomes its own chunk, so the initial download
@@ -17,7 +18,7 @@ import AppShell from '@/layouts/AppShell.vue';
  * component, so this conversion changes no route behaviour.
  */
 const AssetDetailView = () => import('@/views/AssetDetailView.vue');
-const AssetVersionView = () => import('@/views/shell/AssetVersionView.vue');
+const EntityVersionPage = () => import('@/views/entityVersion/EntityVersionPage.vue');
 const InsightsView = () => import('@/views/insights/InsightsView.vue');
 const DataAssetsView = () => import('@/views/insights/DataAssetsView.vue');
 const AppAnalyticsView = () => import('@/views/insights/AppAnalyticsView.vue');
@@ -99,9 +100,10 @@ const IncidentDetailView = () => import('@/views/observability/IncidentDetailVie
 const IncidentsListView = () => import('@/views/observability/IncidentsListView.vue');
 const DataQualityLandingView = () => import('@/views/quality/DataQualityLandingView.vue');
 const TestCaseDetailView = () => import('@/views/quality/TestCaseDetailView.vue');
-const TestDefinitionDetailView = () => import('@/views/quality/TestDefinitionDetailView.vue');
+const TestCaseDimensionsView = () => import('@/views/quality/TestCaseDimensionsView.vue');
 const TestDefinitionsListView = () => import('@/views/quality/TestDefinitionsListView.vue');
 const TestSuiteDetailView = () => import('@/views/quality/TestSuiteDetailView.vue');
+const TestSuiteIngestionView = () => import('@/views/quality/TestSuiteIngestionView.vue');
 const EditPipelineView = () => import('@/views/ingestion/EditPipelineView.vue');
 const PipelineDetailView = () => import('@/views/ingestion/PipelineDetailView.vue');
 const AddServiceView = () => import('@/views/ingestion/AddServiceView.vue');
@@ -140,6 +142,7 @@ const GlossaryTermRelationSettingsView = () =>
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
 const OntologyStudioView = () => import('@/views/governance/OntologyStudioView.vue');
 const GovernanceVersionView = () => import('@/views/governance/GovernanceVersionView.vue');
+const GlossaryVersion = () => import('@/views/glossary/GlossaryVersion.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const WorkflowDetailView = () => import('@/views/governance/WorkflowDetailView.vue');
 const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
@@ -251,18 +254,6 @@ export const router = createRouter({
         // ConnectionsPage, RoutePosition.APP) — the retired
         // `ingestion/services` aggregate list lives here now.
         { path: 'connections', name: 'connections', component: ConnectionsView },
-        {
-          path: 'assets/:entityType/:fqn',
-          name: 'asset',
-          component: AssetDetailView,
-          props: true,
-        },
-        {
-          path: 'assets/:entityType/:fqn/versions',
-          name: 'asset-version',
-          component: AssetVersionView,
-          props: true,
-        },
         { path: 'insights', name: 'insights', component: InsightsView },
         // G-10 (visual comparison): official DATA_INSIGHT_WITH_TAB
         // '/data-insights/:tab' with tab 'data-assets'
@@ -608,34 +599,58 @@ export const router = createRouter({
           }),
         },
         {
-          path: 'governance/glossaries/:id/versions/:version',
-          name: 'governance-glossary-version',
-          component: GovernanceVersionView,
+          path: 'glossary/:id/versions/:version',
+          name: 'glossary-version',
+          component: GlossaryVersion,
           props: (route) => ({
-            kind: 'glossary',
+            isGlossary: true,
             id: route.params.id as string,
             version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'glossary-term/:id/versions/:version',
+          name: 'glossary-term-version',
+          component: GlossaryVersion,
+          props: (route) => ({
+            isGlossary: false,
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'glossary-term/:id/versions/:version/:tab',
+          name: 'glossary-term-version-tab',
+          component: GlossaryVersion,
+          props: (route) => ({
+            isGlossary: false,
+            id: route.params.id as string,
+            version: route.params.version as string,
+            tab: route.params.tab as string,
+          }),
+        },
+        {
+          path: 'governance/glossaries/:id/versions/:version',
+          name: 'governance-glossary-version',
+          redirect: (to) => ({
+            name: 'glossary-version',
+            params: { id: to.params.id, version: to.params.version },
           }),
         },
         {
           path: 'governance/terms/:id/versions/:version',
           name: 'governance-term-version',
-          component: GovernanceVersionView,
-          props: (route) => ({
-            kind: 'term',
-            id: route.params.id as string,
-            version: route.params.version as string,
+          redirect: (to) => ({
+            name: 'glossary-term-version',
+            params: { id: to.params.id, version: to.params.version },
           }),
         },
         {
           path: 'governance/terms/:id/versions/:version/:tab',
           name: 'governance-term-version-tab',
-          component: GovernanceVersionView,
-          props: (route) => ({
-            kind: 'term',
-            id: route.params.id as string,
-            version: route.params.version as string,
-            tab: route.params.tab as string,
+          redirect: (to) => ({
+            name: 'glossary-term-version-tab',
+            params: { id: to.params.id, version: to.params.version, tab: to.params.tab },
           }),
         },
         {
@@ -897,16 +912,29 @@ export const router = createRouter({
           path: 'quality/test-definitions',
           name: 'quality-test-definitions',
           component: TestDefinitionsListView,
+          alias: 'test-library',
+          meta: { guard: { resource: 'TEST_DEFINITION', operation: 'view' } },
         },
         {
           path: 'quality/test-definitions/:id',
           name: 'quality-test-definition',
-          component: TestDefinitionDetailView,
-          props: true,
+          redirect: { name: 'quality-test-definitions' },
         },
         // G-02 (visual comparison): official DATA_QUALITY
         // '/data-quality'.
-        { path: 'quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView, alias: 'data-quality' },
+        {
+          path: 'quality/test-cases',
+          name: 'quality-test-cases',
+          component: DataQualityLandingView,
+          alias: 'data-quality',
+          meta: { guard: { resource: 'TEST_SUITE', operation: 'view' } },
+        },
+        {
+          path: 'data-quality/:tab/:subTab?',
+          name: 'quality-data-quality-tab',
+          component: DataQualityLandingView,
+          meta: { guard: { resource: 'TEST_SUITE', operation: 'view' } },
+        },
         {
           path: 'quality/test-cases/:id',
           name: 'quality-test-case',
@@ -919,26 +947,54 @@ export const router = createRouter({
             id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
             tab: route.params.tab as string | undefined,
           }),
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'quality/test-cases/:id/versions/:version',
           name: 'quality-test-case-version',
-          component: GovernanceVersionView,
+          component: TestCaseDetailView,
           props: (route) => ({
-            kind: 'testCase',
             id: route.params.id as string,
             version: route.params.version as string,
           }),
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'quality/test-cases/:id/versions/:version/:tab',
           name: 'quality-test-case-version-tab',
-          component: GovernanceVersionView,
+          component: TestCaseDetailView,
           props: (route) => ({
-            kind: 'testCase',
             id: route.params.id as string,
             version: route.params.version as string,
             tab: route.params.tab as string,
+          }),
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
+        },
+        {
+          path: 'test-case/:fqn/versions/:version',
+          redirect: (to) => ({
+            name: 'quality-test-case-version',
+            params: { id: to.params.fqn, version: to.params.version },
+          }),
+        },
+        {
+          path: 'test-case/:fqn/versions/:version/:tab',
+          redirect: (to) => ({
+            name: 'quality-test-case-version-tab',
+            params: { id: to.params.fqn, version: to.params.version, tab: to.params.tab },
+          }),
+        },
+        {
+          path: 'test-case/:fqn/dimensions/:dimensionKey/:tab?',
+          name: 'quality-test-case-dimensions',
+          component: TestCaseDimensionsView,
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
+        },
+        {
+          path: 'quality/test-cases/:id/dimensions/:dimensionKey/:tab?',
+          redirect: (to) => ({
+            name: 'quality-test-case-dimensions',
+            params: { fqn: to.params.id, dimensionKey: to.params.dimensionKey, tab: to.params.tab },
           }),
         },
         // G-03 (visual comparison), tab half: official
@@ -948,10 +1004,9 @@ export const router = createRouter({
         {
           path: 'quality/test-suites',
           name: 'quality-test-suites',
-          alias: 'data-quality/test-suites',
           redirect: (to) => ({
-            name: 'quality-test-cases',
-            query: { ...to.query, tab: 'test-suites' },
+            path: '/data-quality/test-suites',
+            query: to.query,
           }),
         },
         // G-03 (visual comparison), detail half: official
@@ -965,25 +1020,21 @@ export const router = createRouter({
           props: true,
         },
         {
-          // P-22: the add/edit ingestion page is a drawer on the suite
-          // detail Pipelines Tab now (official TestSuiteIngestionRedirect);
-          // the old routes land there instead of a page.
-          path: 'quality/test-suites/:id/add-ingestion',
+          // Official TEST_SUITES_ADD_INGESTION / TEST_SUITES_EDIT_INGESTION
+          // (AuthenticatedAppRouter + TestSuiteIngestionPage). The prior
+          // product redirect to suite detail ?tab=pipeline is not official.
+          path: 'test-suites/:fqn/add-ingestion',
           name: 'quality-test-suite-add-ingestion',
-          redirect: (to) => ({
-            name: 'quality-test-suite',
-            params: { id: to.params.id },
-            query: { tab: 'pipeline' },
-          }),
+          component: TestSuiteIngestionView,
+          alias: 'quality/test-suites/:fqn/add-ingestion',
+          props: true,
         },
         {
-          path: 'quality/test-suites/:id/edit-ingestion/:ingestionFqn',
+          path: 'test-suites/:fqn/edit-ingestion/:ingestionFqn',
           name: 'quality-test-suite-edit-ingestion',
-          redirect: (to) => ({
-            name: 'quality-test-suite',
-            params: { id: to.params.id },
-            query: { tab: 'pipeline' },
-          }),
+          component: TestSuiteIngestionView,
+          alias: 'quality/test-suites/:fqn/edit-ingestion/:ingestionFqn',
+          props: true,
         },
         {
           path: 'query-view/:fqn/:queryId',
@@ -1003,6 +1054,7 @@ export const router = createRouter({
           component: IncidentsListView,
           // Official /incident-manager path (F-D-1 classic list).
           alias: 'incident-manager',
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'observability/incidents/:id',
@@ -1010,18 +1062,38 @@ export const router = createRouter({
           component: IncidentDetailView,
           props: true,
         },
-        { path: 'settings/notifications/alerts', name: 'observability-alerts', component: AlertsListView, meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } } },
+        { path: 'settings/notifications/alerts', name: 'settings-notification-alerts', component: AlertsListView, meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } } },
         {
-          path: 'settings/notifications/alerts/:id',
-          name: 'observability-alert',
+          path: 'settings/notifications/alerts/:fqn/:tab?',
+          name: 'settings-notification-alert',
           component: AlertDetailView,
-          props: true,
+          props: (route) => ({
+            id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
+            tab: route.params.tab as string | undefined,
+          }),
           meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
         },
         // 07 §12 #6-8 (pin constants.ts:320-324): the add/edit faces
         // keep the plural `alerts/` prefix. They carry no declaration:
         // under the old table /observability was not an admin prefix,
         // so they were session-only there.
+        {
+          path: 'observability/alerts',
+          name: 'observability-alerts',
+          component: AlertsListView,
+          alias: 'observability/alert',
+          meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
+        },
+        {
+          path: 'observability/alert/:fqn/:tab?',
+          name: 'observability-alert',
+          component: AlertDetailView,
+          props: (route) => ({
+            id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
+            tab: route.params.tab as string | undefined,
+          }),
+          meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
+        },
         {
           path: 'observability/alerts/add',
           name: 'observability-alert-add',
@@ -1032,14 +1104,43 @@ export const router = createRouter({
           name: 'observability-alert-edit',
           component: AlertFormView,
         },
-        // The old plural detail shape redirects to the canonical
-        // detail record above (which takes :id).
+        // Legacy plural detail shape: official detail is singular /observability/alert/:fqn/:tab.
         {
           path: 'observability/alerts/:id',
           redirect: (to) => ({
             name: 'observability-alert',
-            params: { id: to.params.id },
+            params: { fqn: to.params.id, tab: 'configuration' },
           }),
+        },
+        // Official ClassicObservabilityRedirect (AuthenticatedAppRouter): strip
+        // the /observability prefix so shared AI-mode links open the classic pages.
+        // Do not add a catch-all under /observability — that would steal alerts.
+        { path: 'observability', redirect: '/data-quality' },
+        {
+          path: 'observability/data-quality/:pathMatch(.*)*',
+          redirect: (to) => {
+            const rest = to.params.pathMatch;
+            const suffix = rest ? '/' + (Array.isArray(rest) ? rest.join('/') : rest) : '';
+            return { path: '/data-quality' + suffix, query: to.query, hash: to.hash };
+          },
+        },
+        { path: 'observability/incident-manager', redirect: '/incident-manager' },
+        { path: 'observability/test-library', redirect: '/test-library' },
+        {
+          path: 'observability/test-suites/:pathMatch(.*)*',
+          redirect: (to) => {
+            const rest = to.params.pathMatch;
+            const suffix = rest ? '/' + (Array.isArray(rest) ? rest.join('/') : rest) : '';
+            return { path: '/test-suites' + suffix, query: to.query, hash: to.hash };
+          },
+        },
+        {
+          path: 'observability/test-case/:pathMatch(.*)*',
+          redirect: (to) => {
+            const rest = to.params.pathMatch;
+            const suffix = rest ? '/' + (Array.isArray(rest) ? rest.join('/') : rest) : '';
+            return { path: '/test-case' + suffix, query: to.query, hash: to.hash };
+          },
         },
         // B-7(c): `ingestion/services` is retired with ServicesListView
         // (health chips + kind Tabs + `?health=` buckets); the aggregate
@@ -1056,36 +1157,41 @@ export const router = createRouter({
         // change, no separate step); the route name is kept so the
         // callers below only change path + params.
         { path: ':serviceCategory/add-service', name: 'ingestion-service-add', component: AddServiceView },
+        // Official service routes (RouterUtils / constants ROUTES). More
+        // specific paths must be registered before SERVICE_WITH_TAB so
+        // versions / add-ingestion / edit-connection are not eaten as tabs.
+        // Official has no /ingestion/services/:kind/:id compatibility path.
         {
-          path: 'ingestion/services/:kind/:id/connection',
+          path: 'service/:serviceCategory/:fqn/connection/edit-connection',
           name: 'ingestion-service-connection',
           component: EditServiceConnectionView,
           props: true,
         },
         {
-          path: 'ingestion/services/:kind/:id/add-ingestion/:ingestionType',
+          path: 'service/:serviceCategory/:fqn/add-ingestion/:ingestionType',
           name: 'ingestion-service-add-ingestion',
           component: AddServiceIngestionView,
           props: true,
         },
         {
-          path: 'ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: ServiceDetailView,
+          // Official EDIT_INGESTION (constants ROUTES / AuthenticatedAppRouter).
+          path: 'service/:serviceCategory/:fqn/edit-ingestion/:ingestionFQN/:ingestionType',
+          name: 'ingestion-service-edit-ingestion',
+          component: EditPipelineView,
           props: true,
         },
         {
-          path: 'ingestion/services/:kind/:id/versions/:version',
+          path: 'service/:serviceCategory/:fqn/versions/:version',
           name: 'ingestion-service-version',
           component: ServiceVersionView,
           props: true,
         },
         {
-          path: 'ingestion/pipelines/:id/edit',
-          name: 'ingestion-pipeline-edit',
-          component: EditPipelineView,
+          // Official SERVICE / SERVICE_WITH_TAB / SERVICE_WITH_SUB_TAB.
+          path: 'service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
+          component: ServiceDetailView,
           props: true,
-          meta: { guard: 'admin-only' },
         },
         {
           path: 'ingestion/pipelines/:id',
@@ -1112,6 +1218,47 @@ export const router = createRouter({
           name: 'announcement-duplicate',
           component: AnnouncementsListView,
           meta: { guard: 'admin-only' },
+        },
+        // Official EntityRouter (AuthenticatedAppRouter mounts
+        // `/:entityType/*`, then ENTITY_DETAILS / WITH_TAB /
+        // WITH_SUB_TAB, with version routes registered first so
+        // `versions` is never read as a tab). Official has no
+        // `?tab=`/`?subTab=` compatibility redirect and no
+        // `/assets/` prefix — constructors emit these paths only.
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions/:version/:tab`,
+          name: 'asset-version-tab',
+          component: EntityVersionPage,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions/:version`,
+          name: 'asset-version-detail',
+          component: EntityVersionPage,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/:tab/:subTab`,
+          name: 'asset-subtab',
+          component: AssetDetailView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/:tab`,
+          name: 'asset-tab',
+          component: AssetDetailView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn`,
+          name: 'asset',
+          component: AssetDetailView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
         },
         { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },
       ],

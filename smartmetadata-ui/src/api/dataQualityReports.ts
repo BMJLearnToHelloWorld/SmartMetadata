@@ -218,3 +218,70 @@ export async function getDataQualityReport(query: DataQualityReportQuery): Promi
   }
   return report;
 }
+
+/**
+ * Official dataQualityDashboardAPI.fetchTestCaseResultByTestSuiteId:
+ * QualityTab summary cards come from this single GET report (not a
+ * 100-row test-case list). The query matches both the nested
+ * testSuites.id field and testSuite.id, always excludes deleted, and
+ * optionally filters by testCaseResult.testCaseStatus.
+ */
+export const DQ_TEST_CASE_RESULT_BY_SUITE_AGGREGATION =
+  'bucketName=entityLinks:aggType=terms:field=entityFQN,bucketName=status_counts:aggType=terms:field=testCaseResult.testCaseStatus';
+
+export function testCaseResultByTestSuiteQuery(testSuiteId: string, status?: string): string {
+  return JSON.stringify({
+    query: {
+      bool: {
+        must: [
+          {
+            bool: {
+              should: [
+                {
+                  nested: {
+                    path: 'testSuites',
+                    query: {
+                      term: {
+                        'testSuites.id': testSuiteId,
+                      },
+                    },
+                  },
+                },
+                {
+                  term: {
+                    'testSuite.id': testSuiteId,
+                  },
+                },
+              ],
+            },
+          },
+          {
+            term: {
+              deleted: false,
+            },
+          },
+          ...(status
+            ? [
+                {
+                  term: {
+                    'testCaseResult.testCaseStatus': status,
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+    },
+  });
+}
+
+export async function fetchTestCaseResultByTestSuiteId(
+  testSuiteId: string,
+  status?: string,
+): Promise<DataQualityReport> {
+  return getDataQualityReport({
+    q: testCaseResultByTestSuiteQuery(testSuiteId, status),
+    aggregationQuery: DQ_TEST_CASE_RESULT_BY_SUITE_AGGREGATION,
+    index: DQ_TEST_CASE_INDEX,
+  });
+}

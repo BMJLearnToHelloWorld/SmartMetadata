@@ -16,7 +16,6 @@ describe('assetTabKeys', () => {
       'overview',
       'schema',
       'lineage',
-      'quality',
       'activity',
       'customProperties',
     ]);
@@ -26,12 +25,11 @@ describe('assetTabKeys', () => {
     expect(assetTabKeys('dashboard')).toContain('charts');
     expect(assetTabKeys('dashboard')).not.toContain('schema');
     expect(assetTabKeys('pipeline')).toEqual([
-      'overview',
       'tasks',
       'executions',
       'lineage',
-      'quality',
       'activity',
+      'contract',
       'customProperties',
     ]);
     expect(assetTabKeys('mlmodel')).toContain('features');
@@ -45,7 +43,12 @@ describe('assetTabKeys', () => {
   });
 
   it('does not invent a schema tab for types without a schema payload', () => {
-    expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'quality', 'activity', 'customProperties']);
-    expect(assetTabKeys('query')).toEqual(['overview', 'lineage', 'quality', 'activity', 'customProperties']);
+    // Official asset-detail TabsIds have no top-level Quality tab; table
+    // quality lives under Data Observability / Profiler.
+    expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('query')).toEqual([]);
+    expect(assetTabKeys('directory')).toEqual(['children', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('spreadsheet')).toEqual(['worksheets', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('worksheet')).toEqual(['schema', 'lineage', 'activity', 'customProperties']);
   });
 });

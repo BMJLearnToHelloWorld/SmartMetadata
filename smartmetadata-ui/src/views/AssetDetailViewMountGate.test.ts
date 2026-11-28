@@ -61,11 +61,13 @@ async function mountView(entityType: string, fqn: string) {
     history: createMemoryHistory(),
     routes: [
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
     ],
   });
-  await router.push(`/assets/${entityType}/${fqn}`);
+  await router.push(`/${entityType}/${fqn}`);
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
     props: { entityType, fqn },

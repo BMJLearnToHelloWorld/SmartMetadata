@@ -55,12 +55,12 @@ describe('assetHealthRows', () => {
   it('picks the pipeline status with the latest start date', () => {
     const latest = getLatestPipelineStatus(
       pipeline([
-        { pipelineState: 'Success', startDate: 1000 },
-        { pipelineState: 'Failed', startDate: 2000 },
-        { pipelineState: 'Running' },
+        { pipelineState: 'success', startDate: 1000 },
+        { pipelineState: 'failed', startDate: 2000 },
+        { pipelineState: 'running' },
       ]),
     );
-    expect(latest?.pipelineState).toBe('Failed');
+    expect(latest?.pipelineState).toBe('failed');
     expect(getLatestPipelineStatus(undefined)).toBeUndefined();
   });
 
@@ -73,21 +73,21 @@ describe('assetHealthRows', () => {
 
   it('pipeline row: running shows started time, success shows last run time', () => {
     const running = getPipelineHealthRow(
-      pipeline([{ pipelineState: 'Running', startDate: 1000 }]),
+      pipeline([{ pipelineState: 'running', startDate: 1000 }]),
       t,
     );
     expect(running.tone).toBe('info');
     expect(running.badgeLabel).toBe('label.running');
     expect(running.subtitle).toContain('message.started-time');
     const healthy = getPipelineHealthRow(
-      pipeline([{ pipelineState: 'Success', startDate: 1000, endDate: 2000 }]),
+      pipeline([{ pipelineState: 'success', startDate: 1000, endDate: 2000 }]),
       t,
     );
     expect(healthy.tone).toBe('success');
     expect(healthy.badgeLabel).toBe('label.healthy');
     expect(healthy.subtitle).toContain('message.last-run-time');
     const unknown = getPipelineHealthRow(
-      pipeline([{ pipelineState: 'Failed', startDate: 1000 }]),
+      pipeline([{ pipelineState: 'failed', startDate: 1000 }]),
       t,
     );
     expect(unknown.tone).toBe('error');

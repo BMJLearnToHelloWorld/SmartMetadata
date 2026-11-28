@@ -100,8 +100,10 @@ import { useMetadataAgents } from '@/ingestion/useMetadataAgents';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { getEntityFeedLink } from '@/utils/entityLink';
 import { SERVICE_DELETE_API, SERVICE_GET_API, SERVICE_RESTORE_API } from '@/ingestion/serviceApis';
+import { getServiceByFqn } from '@/api/serviceLookup';
+import { serviceKindFromCategory } from '@/api/serviceVersions';
+import { getEditConnectionPath, getServiceDetailsPath, getServiceVersionPath } from '@/utils/fqnPaths';
 import { waitForServiceDelete, type DeleteType } from '@/ingestion/serviceDelete';
-import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
 import type { EntityRef } from '@/types/api';
 import type {
   Agent,
@@ -115,7 +117,12 @@ import type {
 import IngestionLogsModal from './IngestionLogsModal.vue';
 import KillPipelineModal from './KillPipelineModal.vue';
 
-const props = defineProps<{ kind: string; id: string }>();
+const props = defineProps<{
+  serviceCategory: string;
+  fqn: string;
+  tab?: string;
+  subTab?: string;
+}>();
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
@@ -150,13 +157,20 @@ const gatedFlags = computed(() =>
   getDerivedPermissionFlags(servicePermission.value, service.value?.deleted ?? false),
 );
 
-const kind = computed<ServiceKind>(() =>
-  (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(props.kind as ServiceKind)
-    ? (props.kind as ServiceKind)
-    : 'database',
-);
+const kind = computed(() => serviceKindFromCategory(props.serviceCategory));
+
+function requireKind(): ServiceKind {
+  const value = kind.value;
+  if (!value) {
+    throw new Error(t('crud.loadFailed'));
+  }
+  return value;
+}
+
 /** Kind-specific service-type label for the delete/restore modals (pin: never a generic "Service"). */
-const serviceTypeLabel = computed(() => t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.value]));
+const serviceTypeLabel = computed(() =>
+  kind.value ? t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.value]) : t('ingestion.services.title'),
+);
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   // DESIGN §6.7 row 3: the parent chain points at the Services
@@ -203,9 +217,11 @@ const agentsSearchText = ref('');
 const agentsTypeFilter = ref<string[]>([]);
 const agentsStatusFilter = ref<string[]>([]);
 
-const serviceEntityType = computed(() => entityTypeForKind(kind.value));
+const serviceEntityType = computed(() => (kind.value ? entityTypeForKind(kind.value) : undefined));
 const serviceEntityLink = computed(() =>
-  getEntityFeedLink(serviceEntityType.value, service.value?.fullyQualifiedName),
+  serviceEntityType.value
+    ? getEntityFeedLink(serviceEntityType.value, service.value?.fullyQualifiedName)
+    : undefined,
 );
 
 /**
@@ -235,29 +251,29 @@ const showAgentsTab = computed(() => {
 });
 
 const tabDefs = computed(() =>
-  resolveServiceDetailTabs({
-    kind: kind.value,
-    showAgentsTab: showAgentsTab.value,
-    canEditAll: ungatedFlags.value.canEditAll,
-  }),
+  kind.value
+    ? resolveServiceDetailTabs({
+        kind: kind.value,
+        showAgentsTab: showAgentsTab.value,
+        canEditAll: ungatedFlags.value.canEditAll,
+      })
+    : [],
 );
 
 /** The main tab's dynamic slot key (English count-label slug); empty when the kind has no main tab. */
 const mainTabKey = computed(() => tabDefs.value.find((def) => def.kind === 'main')?.key ?? '');
 
 /**
- * URL-driven tab (ADR:2026-11-17-service-detail-tab-query): `?tab=`
- * is the only tab state. An absent tab resolves to the kind default
- * (metadata → agents, security → connection, else insights); an
- * invalid tab falls back to the first visible tab without rewriting
- * the URL. An empty tab set renders no tab rather than crashing.
+ * URL-driven tab (official SERVICE_WITH_TAB path): the tab lives in
+ * the route path, not `?tab=`. An absent tab resolves to the kind
+ * default (metadata → agents, security → connection, else insights);
+ * an invalid tab falls back to the first visible tab without
+ * rewriting the URL. An empty tab set renders no tab rather than
+ * crashing.
  */
-const urlTab = computed(() => {
-  const raw = route.query.tab;
-  return typeof raw === 'string' ? raw : undefined;
-});
+const urlTab = computed(() => (typeof props.tab === 'string' && props.tab ? props.tab : undefined));
 const renderedTab = computed(() => {
-  const wanted = urlTab.value ?? defaultServiceDetailTab(kind.value);
+  const wanted = urlTab.value ?? (kind.value ? defaultServiceDetailTab(kind.value) : undefined);
   if (tabDefs.value.some((def) => def.key === wanted)) {
     return wanted;
   }
@@ -276,7 +292,11 @@ function activeTabHandler(key: string): void {
   // Switching tabs clears every other query param (pin navigation
   // semantics): paging, search, and show-deleted state do not leak
   // across tabs.
-  void router.push({ query: { tab: key } });
+  const fqn = props.fqn || service.value?.fullyQualifiedName;
+  const category = props.serviceCategory;
+  if (fqn && category) {
+    void router.push(getServiceDetailsPath(fqn, category, key, key === 'agents' ? props.subTab || 'metadata' : undefined));
+  }
 }
 
 const tabs = computed<EntityDetailTab[]>(() =>
@@ -307,7 +327,7 @@ const showAddAgent = computed(
 
 /** Flag-driven add menu (ADR:2026-11-14-autopilot-agents-ui-parity), one-Usage rule applied. */
 const supportedTypes = computed(() =>
-  service.value
+  service.value && kind.value
     ? getIngestionTypes(
         getSupportedPipelineTypes(service.value, kind.value),
         [...pipelinesByFqn.value.values()],
@@ -329,6 +349,7 @@ const isDataInsightExists = computed(() =>
 const showTriggerButton = computed(
   () =>
     service.value !== null &&
+    !!serviceEntityType.value &&
     isAutoPilotServiceType(serviceEntityType.value) &&
     !isExcludedAutoPilotServiceType(serviceEntityType.value) &&
     applicationTriggerAllowed.value,
@@ -363,6 +384,8 @@ const serviceRowActions = usePipelineRowActions({
   isAdminUser: () => permissionStore.isAdminUser,
   getOps: (pipeline) => servicePipelinePermissions.value.get(pipeline.id),
   refresh: () => reloadPipelines(),
+  serviceCategory: () => props.serviceCategory,
+  serviceFqn: () => service.value?.fullyQualifiedName ?? props.fqn,
 });
 
 /**
@@ -429,13 +452,14 @@ function setChildrenLoading(loadingValue: boolean): void {
  */
 async function loadChildren(): Promise<void> {
   const fqn = service.value?.fullyQualifiedName;
-  if (!fqn || !childPermissionSettled.value || schemaSearch.value) {
+  if (!fqn || !kind.value || !childPermissionSettled.value || schemaSearch.value) {
     return;
   }
+  const serviceKind = kind.value;
   const cursor = mainPaging.pagingCursor.value;
-  const page = fetchServiceChildren(kind.value, {
+  const page = fetchServiceChildren(serviceKind, {
     service: fqn,
-    fields: buildServiceChildrenFields(kind.value, childViewUsageAllowed.value),
+    fields: buildServiceChildrenFields(serviceKind, childViewUsageAllowed.value),
     paging: {
       limit: mainPaging.pageSize.value,
       after: cursor.cursorType === 'after' ? cursor.cursorValue : undefined,
@@ -546,7 +570,7 @@ async function probeOrchestrator(): Promise<void> {
 
 async function fetchAgentsPage(mode: 'list' | 'search'): Promise<void> {
   const target = service.value;
-  if (!target?.fullyQualifiedName) {
+  if (!target?.fullyQualifiedName || !kind.value) {
     return;
   }
   pipelinesLoading.value = true;
@@ -565,7 +589,7 @@ async function fetchAgentsPage(mode: 'list' | 'search'): Promise<void> {
           })
         : await listServiceAgents({
             serviceFqn: target.fullyQualifiedName,
-            kind: kind.value,
+            kind: requireKind(),
             pageSize: PAGE_SIZE_BASE,
           });
     servicePipelines.value = page.data;
@@ -832,8 +856,8 @@ async function onToggleFollow(): Promise<void> {
   followLoading.value = true;
   try {
     const payload = wasFollowing
-      ? await unfollowService(kind.value, target.id, userId)
-      : await followService(kind.value, target.id, userId);
+      ? await unfollowService(requireKind(), target.id, userId)
+      : await followService(requireKind(), target.id, userId);
     const followers = wasFollowing
       ? applyUnfollowChange(target.followers ?? [], payload)
       : applyFollowChange(target.followers ?? [], payload);
@@ -849,14 +873,31 @@ async function onToggleFollow(): Promise<void> {
   }
 }
 
+function officialCategoryAndFqn(): { category: string; fqn: string } | null {
+  const fqn = props.fqn || service.value?.fullyQualifiedName;
+  const category = props.serviceCategory;
+  if (!fqn || !category) {
+    return null;
+  }
+  return { category, fqn };
+}
+
+function onEditConnection(): void {
+  const target = officialCategoryAndFqn();
+  if (target) {
+    void router.push(getEditConnectionPath(target.category, target.fqn));
+  }
+}
+
 function onOpenVersions(): void {
   if (service.value?.version === undefined) {
     return;
   }
-  void router.push({
-    name: 'ingestion-service-version',
-    params: { kind: props.kind, id: props.id, version: String(service.value.version) },
-  });
+  const fqn = props.fqn || service.value.fullyQualifiedName;
+  const category = props.serviceCategory;
+  if (fqn && category) {
+    void router.push(getServiceVersionPath(category, fqn, String(service.value.version)));
+  }
 }
 
 const canEditDisplayName = computed(() => ungatedFlags.value.canEditDisplayName);
@@ -882,7 +923,7 @@ async function onRename(): Promise<void> {
     // Pin handleUpdateDisplayName merges only the displayName from
     // the PATCH response; clearing sends `replace ''`, never remove.
     const response = await patchService(
-      kind.value,
+      requireKind(),
       target.id,
       setFieldPatch('/displayName', target.displayName, displayName),
     );
@@ -909,7 +950,7 @@ async function onSaveUpdatedServiceData(updated: ServiceMainTabDetails): Promise
   }
   try {
     service.value = await patchService(
-      kind.value,
+      requireKind(),
       target.id,
       setFieldPatch('/tags', target.tags, updated.tags),
     );
@@ -926,7 +967,7 @@ async function onDescriptionUpdate(html: string): Promise<void> {
   }
   try {
     service.value = await patchService(
-      kind.value,
+      requireKind(),
       target.id,
       descriptionPatch(target.description, html),
     );
@@ -943,7 +984,7 @@ async function onDataProductUpdate(refs: EntityRef[]): Promise<void> {
   }
   try {
     service.value = await patchService(
-      kind.value,
+      requireKind(),
       target.id,
       setFieldPatch('/dataProducts', target.dataProducts, refs),
     );
@@ -987,7 +1028,7 @@ async function onSaveServiceAttributes(attributes: ServiceAttributes): Promise<v
   }
   try {
     const response = await patchService(
-      kind.value,
+      requireKind(),
       target.id,
       setFieldPatch('/serviceAttributes', target.serviceAttributes, attributes),
     );
@@ -1041,7 +1082,7 @@ async function onTestConnection(): Promise<void> {
     }
     const workflow = await createTestConnectionWorkflow({
       serviceName: service.value.name,
-      kind: kind.value,
+      kind: requireKind(),
       connectionType: service.value.serviceType,
       connection: (service.value.connection ?? {}) as Record<string, unknown>,
     });
@@ -1091,7 +1132,8 @@ async function load(): Promise<void> {
     // Include.All (pin ServiceDetailsPage): the server default is
     // non-deleted, so opening a soft-deleted service would 404 without
     // it (D-F9). The mapper carries the deleted flag to the shell badge.
-    service.value = await SERVICE_GET_API[kind.value](props.id, 'all');
+    const serviceKind = requireKind();
+    service.value = await getServiceByFqn(serviceKind, props.fqn, { include: 'all' });
     pipelinesLoaded.value = false;
     servicePipelines.value = [];
     pipelinesTotal.value = 0;
@@ -1115,11 +1157,11 @@ async function load(): Promise<void> {
     // delete/restore entries; it fails closed the same way. The fourth
     // fetch is the child entity's resource permission, whose
     // ViewUsage bit decides the usageSummary field on the main tab.
-    const childEntityType = CHILD_ENTITY_TYPE_BY_KIND[kind.value];
+    const childEntityType = CHILD_ENTITY_TYPE_BY_KIND[serviceKind];
     const [createOps, triggerOps, serviceOps, childOps] = await Promise.all([
       permissionStore.getResourcePermission('ingestionPipeline').catch(() => null),
       permissionStore.getResourcePermission('app').catch(() => null),
-      service.value.fullyQualifiedName
+      service.value.fullyQualifiedName && serviceEntityType.value
         ? permissionStore
             .getEntityPermissionByFqn(serviceEntityType.value, service.value.fullyQualifiedName)
             .catch(() => null)
@@ -1175,7 +1217,7 @@ async function onDeleteConfirm(deleteType: DeleteType): Promise<void> {
   const hardDelete = deleteType === 'hard-delete';
   deleting.value = true;
   try {
-    const job = await SERVICE_DELETE_API[kind.value](target.id, { hardDelete, recursive: true });
+    const job = await SERVICE_DELETE_API[requireKind()](target.id, { hardDelete, recursive: true });
     const jobMessage = job?.message?.trim();
     message.success(
       jobMessage ? jobMessage : t('ingestion.services.asyncDeleteSubmitted', { name: target.name }),
@@ -1193,7 +1235,7 @@ async function onDeleteConfirm(deleteType: DeleteType): Promise<void> {
   }
   try {
     const confirmed = await waitForServiceDelete(hardDelete, () =>
-      SERVICE_GET_API[kind.value](target.id, 'all'),
+      SERVICE_GET_API[requireKind()](target.id, 'all'),
     );
     if (confirmed) {
       message.success(t('ingestion.services.deletedSuccessfully', { entity: target.name }));
@@ -1227,7 +1269,7 @@ async function onRestoreConfirm(): Promise<void> {
   const target = service.value;
   restoring.value = true;
   try {
-    await SERVICE_RESTORE_API[kind.value](target.id);
+    await SERVICE_RESTORE_API[requireKind()](target.id);
     message.success(
       t('ingestion.services.restoreSuccess', { entity: t('ingestion.services.service') }),
     );
@@ -1243,7 +1285,7 @@ async function onRestoreConfirm(): Promise<void> {
 }
 
 watch(
-  () => [props.kind, props.id],
+  () => [props.serviceCategory, props.fqn],
   () => {
     void load();
   },
@@ -1270,7 +1312,7 @@ onMounted(() => {
   >
     <template #meta>
       <ServiceHeaderFacets
-        v-if="service"
+        v-if="service && kind"
         :service-id="service.id"
         :service-kind="kind"
         :owners="service.owners"
@@ -1321,7 +1363,7 @@ onMounted(() => {
         <Button
           data-testid="edit-service"
           :disabled="!service || !canEditConnection"
-          @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })"
+          @click="onEditConnection"
         >
           {{ t('crud.edit') }}
         </Button>
@@ -1354,7 +1396,7 @@ onMounted(() => {
     </template>
     <template #insights>
       <ServiceInsightsTab
-        v-if="service"
+        v-if="service && kind"
         :service-name="service.name"
         :service-kind="kind"
         :ingestion-pipelines="servicePipelines"
@@ -1424,7 +1466,7 @@ onMounted(() => {
       />
       <p class="entity-detail__tab-lead">{{ t('ingestion.services.connectionTitle') }}</p>
       <ServiceConnectionDetails
-        v-if="service"
+        v-if="service && kind"
         :config="service.connection?.config"
         :kind="kind"
         :service-type="service.serviceType"
@@ -1435,7 +1477,7 @@ onMounted(() => {
             v-if="service"
             data-testid="edit-service-connection"
             :disabled="!canEditConnection"
-            @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })"
+            @click="onEditConnection"
           >
             {{ t('ingestion.services.editConnection') }}
           </Button>
@@ -1515,6 +1557,7 @@ onMounted(() => {
       <template v-else>
         <DeploymentSummaryCard :agents="agents" :total-agents="agentsTabCount" />
         <MetadataAgentsView
+          v-if="kind"
           :agents="agents"
           :pipelines-by-fqn="pipelinesByFqn"
           :permissions-by-id="servicePipelinePermissions"
@@ -1528,8 +1571,9 @@ onMounted(() => {
           :show-add-agent="showAddAgent"
           :supported-types="supportedTypes"
           :is-data-insight-exists="isDataInsightExists"
-          :service-kind="props.kind"
-          :service-id="props.id"
+          :service-kind="kind"
+          :service-id="service?.id ?? ''"
+          :service-fqn="service?.fullyQualifiedName ?? props.fqn"
           @refresh="reloadPipelines"
           @action="onAgentAction"
           @logs="serviceRowActions.onLogs"

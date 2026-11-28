@@ -3,18 +3,53 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import { Button, Form, Input, Select, message } from 'ant-design-vue';
-import FormModal from '@/components/shared/FormModal.vue';
-import { createTestCase, deleteTestCase, listTestCases, listTestCasesBySearch } from '@/api/testCases';
-import { confirmDelete } from '@/features/crud/confirmDelete';
-import { listTestDefinitions } from '@/api/testDefinitions';
+import { useRoute, useRouter } from 'vue-router';
+import { Button, Dropdown, Menu, Select, Switch, message } from 'ant-design-vue';
+import {
+  deleteTestCase,
+  exportTestCasesInCSV,
+  listTestCases,
+  listTestCasesBySearch,
+  removeTestCaseFromTestSuite,
+} from '@/api/testCases';
+import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
+import { downloadCsv } from '@/features/csv/csv';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { ApiError } from '@/api/client';
 import { formatChartTs } from '@/features/charts/series';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { requiredField } from '@/features/crud/formRules';
+import AddToBundleSuiteModal from '@/components/quality/AddToBundleSuiteModal.vue';
+import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
+import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
+import TestCaseDeleteModal from '@/components/quality/TestCaseDeleteModal.vue';
+import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
+import TestCaseInsightDonuts from '@/components/quality/TestCaseInsightDonuts.vue';
+import TestCaseListIncidentCell from '@/components/quality/TestCaseListIncidentCell.vue';
+import TestCaseFilterAsyncSelect from '@/components/quality/TestCaseFilterAsyncSelect.vue';
+import {
+  fetchDataProductFilterOptions,
+  fetchDimensionFilterOptions,
+  fetchServiceFilterOptions,
+  fetchTableFilterOptions,
+  fetchTagFilterOptions,
+  fetchTierFilterOptions,
+} from '@/quality/testCaseFilterOptions';
+import type { IncidentDateRange } from '@/quality/incidentDatePresets';
+import {
+  DEFAULT_VISIBLE_TEST_CASE_FILTERS,
+  TEST_CASE_ADVANCED_FILTER_MENU,
+  TEST_CASE_FILTER_I18N,
+  TEST_CASE_FILTER_KEYS,
+  TEST_CASE_PLATFORMS,
+  type TestCaseFilterKey,
+  isTestCaseFilterVisible,
+  requiresSearchPath,
+  toggleTestCaseFilter,
+} from '@/quality/testCaseFilters';
+import { columnFromEntity, tableFqnFromEntity, TEST_CASE_TYPES } from '@/quality/testCaseForm';
+import type { CoverageCounts, HealthCounts, StatusCounts } from '@/quality/landing';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -27,10 +62,25 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import { filterCasesForSearch } from '@/quality/landing';
+import { confirmDelete } from '@/features/crud/confirmDelete';
+import { useDataQualityContext } from '@/quality/dataQualityContext';
+import {
+  mergeTestCaseListFiltersToQuery,
+  parseTestCaseListRouteQuery,
+  type TestCaseListRouteParams,
+} from '@/quality/testCaseListRouteParams';
 import { toEntityLink } from '@/quality/entityLink';
-import TableDiffFields from '@/features/quality/TableDiffFields.vue';
-import { TABLE2_PARAM, isTableDiffDefinition } from '@/features/quality/tableDiffParams';
-import { TEST_CASE_STATUSES, type TestCase, type TestDefinition } from '@/types/quality';
+import { getTestCaseExportFilters } from '@/quality/testCaseExport.utils';
+import {
+  canEditTestCaseListIncident,
+  inlineIncidentFromTestCase,
+} from '@/quality/testCaseListIncident.utils';
+import type { ResourcePermission } from '@/api/permissions';
+import {
+  buildTestCaseListOriginBreadcrumb,
+  type BreadcrumbLink,
+} from '@/utils/qualityDetailBreadcrumbs';
+import { TEST_CASE_STATUSES, type TestCase, type TestIncident, type TestSuite } from '@/types/quality';
 
 const props = withDefaults(
   defineProps<{
@@ -48,19 +98,53 @@ const props = withDefaults(
     dataQualityDimension?: string;
     /** Dashboard drill-down (pin getTestCaseListPath tableFqn): search-path entity scope. */
     entityFqn?: string;
+    /** Scope the list to a logical test suite (suite detail tab). */
+    testSuiteId?: string;
+    /** Hide dashboard donuts and list chrome; keep filters and columns. */
+    suiteDetailMode?: boolean;
+    removeFromSuite?: { suiteId: string; allowed: boolean };
+    coverage?: CoverageCounts | null;
+    health?: HealthCounts | null;
+    results?: StatusCounts | null;
+    /** Origin trail for test-case detail breadcrumbs (official DataQualityTab `breadcrumbData`). */
+    breadcrumbData?: BreadcrumbLink[];
   }>(),
   {
-    embedded: false,
+    embedded: true,
     preferSearch: false,
   },
 );
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const cases = ref<TestCase[]>([]);
+const listEntityPermissions = ref<Record<string, ResourcePermission>>({});
 const total = ref<number | undefined>();
+const emit = defineEmits<{ 'update:total': [total: number]; 'removed-from-suite': [] }>();
+const suiteDetailList = computed(() => props.suiteDetailMode === true);
+const canRemoveFromSuite = computed(() => props.removeFromSuite?.allowed === true && Boolean(props.removeFromSuite?.suiteId));
+
+/** Trail written to router state when opening a test case (official DataQualityTab). */
+const navigationBreadcrumbData = computed((): BreadcrumbLink[] => {
+  if (props.breadcrumbData?.length) {
+    return props.breadcrumbData;
+  }
+  if (props.suiteDetailMode) {
+    return [];
+  }
+  return buildTestCaseListOriginBreadcrumb(t);
+});
+
+function openTestCaseDetail(testCase: TestCase): void {
+  void router.push({
+    name: 'quality-test-case',
+    params: { id: testCase.id },
+    state: { breadcrumbData: navigationBreadcrumbData.value },
+  });
+}
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref(0);
@@ -82,83 +166,153 @@ function onStatusFilterChange(value: unknown): void {
   statusFilter.value = typeof value === 'string' && value ? value : undefined;
   onFilterChange();
 }
+
+function isFilterVisible(key: TestCaseFilterKey): boolean {
+  return isTestCaseFilterVisible(visibleFilters.value, key);
+}
+
+function onAdvancedMenu({ key }: { key: string | number }): void {
+  visibleFilters.value = toggleTestCaseFilter(visibleFilters.value, String(key) as TestCaseFilterKey);
+}
+
+function onLastRunApply(range: IncidentDateRange): void {
+  lastRunStartTs.value = range.startTs;
+  lastRunEndTs.value = range.endTs;
+  lastRunKey.value = range.key;
+  lastRunTitle.value = range.title;
+  onFilterChange();
+}
+
+function onLastRunClear(): void {
+  lastRunStartTs.value = undefined;
+  lastRunEndTs.value = undefined;
+  lastRunKey.value = undefined;
+  lastRunTitle.value = undefined;
+  onFilterChange();
+}
+
+const startTimestamp = computed(() => lastRunStartTs.value ?? props.startTs);
+const endTimestamp = computed(() => lastRunEndTs.value ?? props.endTs);
 const searchValue = ref('');
-const definitions = ref<TestDefinition[]>([]);
-const createOpen = ref(false);
-const creating = ref(false);
-const form = reactive({
-  name: '',
-  displayName: '',
-  description: '',
-  testDefinition: '',
-  entityType: 'table',
-  entityFqn: '',
-  column: '',
-  parameterText: '',
-  /** Values for the selected definition's parameterDefinition, keyed by parameter name. */
-  parameterValues: {} as Record<string, string>,
-});
-
-/** The selected definition's declared parameters; empty when none selected or none declared. */
-const selectedParameters = computed(() => {
-  const definition = definitions.value.find(
-    (item) => (item.fullyQualifiedName || item.name) === form.testDefinition,
+const typeFilter = ref<string | undefined>();
+const tableFilter = ref(props.entityFqn ?? '');
+const tagFilter = ref(props.tags ?? '');
+const showDeleted = ref(false);
+const visibleFilters = ref<TestCaseFilterKey[]>([...DEFAULT_VISIBLE_TEST_CASE_FILTERS]);
+const platformFilter = ref<string[]>([]);
+const lastRunStartTs = ref<number | undefined>();
+const lastRunEndTs = ref<number | undefined>();
+const lastRunKey = ref<string | undefined>();
+const lastRunTitle = ref<string | undefined>();
+const tierFilter = ref(props.tier ?? '');
+const serviceFilter = ref('');
+const dimensionFilter = ref(props.dataQualityDimension ?? '');
+const dataProductFilter = ref(props.dataProductFqn ?? '');
+const hasActiveFilters = computed(() => {
+  const tableIsUser = Boolean(tableFilter.value) && tableFilter.value !== (props.entityFqn ?? '');
+  const tagIsUser = Boolean(tagFilter.value) && tagFilter.value !== (props.tags ?? '');
+  const tierIsUser = Boolean(tierFilter.value) && tierFilter.value !== (props.tier ?? '');
+  const dimensionIsUser =
+    Boolean(dimensionFilter.value) && dimensionFilter.value !== (props.dataQualityDimension ?? '');
+  const dataProductIsUser =
+    Boolean(dataProductFilter.value) && dataProductFilter.value !== (props.dataProductFqn ?? '');
+  return Boolean(
+    searchValue.value ||
+      typeFilter.value ||
+      tableIsUser ||
+      tagIsUser ||
+      platformFilter.value.length ||
+      lastRunStartTs.value !== undefined ||
+      lastRunEndTs.value !== undefined ||
+      tierIsUser ||
+      serviceFilter.value ||
+      dimensionIsUser ||
+      dataProductIsUser,
   );
-  return definition?.parameterDefinition ?? [];
+});
+const emptyText = computed(() =>
+  hasActiveFilters.value ? t('message.no-matching-test-cases') : t('message.no-test-cases-yet'),
+);
+const dqContext = useDataQualityContext();
+const embeddedCreateActions = computed(() =>
+  props.embedded ? dqContext.createActions : undefined,
+);
+const showEmptyCreateCta = computed(
+  () =>
+  !showDeleted.value && Boolean(embeddedCreateActions.value?.canCreateTestCase),
+);
+/** Official getTestCaseListDisplayState: bulk only when testSuite Create (DataQualityTab). */
+const enableBulkActions = computed(
+  () =>
+    props.embedded &&
+    !showDeleted.value &&
+    Boolean(embeddedCreateActions.value?.canCreateBundleSuite),
+);
+const selectedRowKeys = ref<string[]>([]);
+const addToBundleModalOpen = ref(false);
+const bundleSuiteDrawerOpen = ref(false);
+const bundlePresetCaseIds = ref<string[]>([]);
+const selectedTestCases = computed(() =>
+  cases.value.filter((item) => item.id && selectedRowKeys.value.includes(item.id)),
+);
+const listTitle = computed(() => t('label.test-case-insight-plural'));
+const listLead = computed(() => t('message.test-case-insight-description'));
+const rowSelection = computed(() => {
+  if (!enableBulkActions.value) {
+    return undefined;
+  }
+  return {
+    selectedRowKeys: selectedRowKeys.value,
+    onChange: (keys: (string | number)[]) => {
+      selectedRowKeys.value = keys.map(String);
+    },
+  };
+});
+const formOpen = ref(false);
+const editing = ref<TestCase | undefined>();
+const deleting = ref<TestCase | undefined>();
+const columns = computed<EntityListColumn[]>(() => {
+  const base: EntityListColumn[] = [
+    { title: t('label.status'), key: 'status', width: 110 },
+    { title: t('label.failed-slash-aborted-reason'), key: 'failureReason', ellipsis: true },
+    {
+      title: t('label.last-run'),
+      key: 'lastRun',
+      width: 170,
+      sorter: (left, right) =>
+        ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
+    },
+    {
+      title: t('label.name'),
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (left, right) => entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
+    },
+    { title: t('label.incident'), key: 'incident', width: 120 },
+  ];
+  if (!props.testSuiteId) {
+    base.splice(4, 0, { title: t('label.table'), key: 'entityFQN' }, { title: t('label.column'), key: 'column', width: 140 });
+  }
+  return base;
 });
 
-const selectedDefinition = computed(() =>
-  definitions.value.find(
-    (item) => (item.fullyQualifiedName || item.name) === form.testDefinition,
-  ),
-);
-
-/** tableDiff 用专属字段表单（TableDiffFields），其余定义沿用通用文本输入。 */
-const isTableDiff = computed(() =>
-  isTableDiffDefinition(selectedDefinition.value?.name, selectedDefinition.value?.fullyQualifiedName),
-);
-
-/** Switching definitions must not carry the previous definition's values forward. */
-function onDefinitionChange(): void {
-  form.parameterValues = {};
+function includeMode(): 'non-deleted' | 'deleted' {
+  return showDeleted.value ? 'deleted' : 'non-deleted';
 }
 
-function collectParameterValues(): Array<{ name: string; value: string }> {
-  if (selectedParameters.value.length > 0) {
-    return selectedParameters.value
-      .map((param) => ({ name: param.name, value: (form.parameterValues[param.name] ?? '').trim() }))
-      .filter((entry) => entry.value.length > 0);
+function canEditListIncident(testCase: TestCase): boolean {
+  return canEditTestCaseListIncident(testCase, listEntityPermissions.value, false);
+}
+
+function onListIncidentUpdated(testCaseId: string, latest: TestIncident): void {
+  const row = cases.value.find((item) => item.id === testCaseId);
+  if (row) {
+    row.incidentStatus = latest;
+    if (latest.testCaseResolutionStatusType) {
+      row.incidentId = latest.stateId ?? row.incidentId;
+    }
   }
-  return parseParameterValues(form.parameterText);
 }
-
-const columns = computed<EntityListColumn[]>(() => [
-  {
-    title: t('crud.name'),
-    dataIndex: 'name',
-    key: 'name',
-    sorter: (left, right) =>
-      entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
-  },
-  { title: t('quality.testCases.asset'), key: 'entityFQN' },
-  { title: t('quality.testCases.definition'), key: 'testDefinition' },
-  {
-    title: t('quality.testCases.latestStatus'),
-    key: 'status',
-    width: 140,
-    sorter: (left, right) =>
-      String((left as TestCase).testCaseResult?.testCaseStatus || (left as TestCase).testCaseStatus || '').localeCompare(
-        String((right as TestCase).testCaseResult?.testCaseStatus || (right as TestCase).testCaseStatus || ''),
-      ),
-  },
-  {
-    title: t('quality.testCases.lastRun'),
-    key: 'lastRun',
-    width: 160,
-    sorter: (left, right) =>
-      ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
-  },
-]);
 
 const visibleCases = computed(() =>
   usingSearch.value ? cases.value : filterCasesForSearch(cases.value, searchValue.value),
@@ -172,20 +326,6 @@ const hasNext = computed(() =>
 );
 const hasPrev = computed(() => (usingSearch.value ? offset.value > 0 : canGoPrev(cursor.value)));
 
-function parseParameterValues(text: string) {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      const eq = line.indexOf('=');
-      if (eq <= 0) {
-        return [];
-      }
-      return [{ name: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() }];
-    });
-}
-
 function resetPager(): void {
   cursor.value = createCursorPager();
   offset.value = 0;
@@ -196,27 +336,46 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    if (props.preferSearch) {
+    const useSearch =
+      props.preferSearch ||
+      requiresSearchPath({
+        testPlatforms: platformFilter.value,
+        lastRunStartTs: lastRunStartTs.value,
+        lastRunEndTs: lastRunEndTs.value,
+        tier: tierFilter.value,
+        serviceName: serviceFilter.value,
+        dataQualityDimension: dimensionFilter.value,
+        dataProductFqn: dataProductFilter.value,
+      });
+    if (useSearch) {
       try {
         const page = await listTestCasesBySearch({
           q: searchValue.value.trim() || undefined,
           limit: DEFAULT_PAGE_SIZE,
           offset: offset.value,
           includeAllTests: true,
+          includePermissions: true,
           testCaseStatus: statusFilter.value,
+          testCaseType: typeFilter.value,
           owner: props.ownerFqn,
           tier: props.tier,
-          tags: props.tags,
-          dataProductFqn: props.dataProductFqn,
-          dataQualityDimension: props.dataQualityDimension,
-          entityFQN: props.entityFqn,
-          startTimestamp: props.startTs,
-          endTimestamp: props.endTs,
+          tags: tagFilter.value || props.tags,
+          dataProductFqn: dataProductFilter.value || props.dataProductFqn,
+          dataQualityDimension: dimensionFilter.value || props.dataQualityDimension,
+          entityFQN: tableFilter.value.trim() || props.entityFqn,
+          testSuiteId: props.testSuiteId,
+          include: includeMode(),
+          startTimestamp: startTimestamp.value,
+          endTimestamp: endTimestamp.value,
+          testPlatforms: platformFilter.value.length ? platformFilter.value : undefined,
+          tier: tierFilter.value || props.tier,
+          serviceName: serviceFilter.value || undefined,
           sortField: 'testCaseResult.timestamp',
           sortType: 'desc',
         });
         cases.value = page.data;
         total.value = page.total;
+        listEntityPermissions.value = page.entityPermissions ?? {};
         usingSearch.value = true;
         return;
       } catch (error) {
@@ -230,17 +389,22 @@ async function load(): Promise<void> {
       limit: DEFAULT_PAGE_SIZE,
       after: cursor.value.after,
       includeAllTests: true,
+      includePermissions: true,
       testCaseStatus: statusFilter.value,
+      testCaseType: typeFilter.value,
+      include: includeMode(),
       // No dimension parameter on the plain list endpoint: a dimension
       // drill-down only narrows the search path above.
-      entityFQN: props.entityFqn,
+      entityFQN: tableFilter.value.trim() || props.entityFqn,
+      testSuiteId: props.testSuiteId,
     });
     cases.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
+    listEntityPermissions.value = page.entityPermissions ?? {};
   } catch (error) {
     cases.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
     loading.value = false;
   }
@@ -264,113 +428,343 @@ function onPrev(): void {
   void load();
 }
 
+function snapshotRouteFilters(): TestCaseListRouteParams {
+  return {
+    searchValue: searchValue.value.trim() || undefined,
+    tableFqn: tableFilter.value.trim() || undefined,
+    testPlatforms: platformFilter.value.length ? platformFilter.value : undefined,
+    testCaseStatus: statusFilter.value,
+    testCaseType: typeFilter.value,
+    tier: tierFilter.value || undefined,
+    tags: tagFilter.value || undefined,
+    serviceName: serviceFilter.value || undefined,
+    dataQualityDimension: dimensionFilter.value || undefined,
+    dataProductFqn: dataProductFilter.value || undefined,
+    lastRunStartTs: lastRunStartTs.value,
+    lastRunEndTs: lastRunEndTs.value,
+    lastRunKey: lastRunKey.value,
+    lastRunTitle: lastRunTitle.value,
+  };
+}
+
+function applyRouteParams(params: TestCaseListRouteParams, seedFromProps: boolean): void {
+  if (params.searchValue !== undefined) {
+    searchValue.value = params.searchValue;
+  }
+  if (params.tableFqn !== undefined) {
+    tableFilter.value = params.tableFqn;
+  } else if (seedFromProps && props.entityFqn) {
+    tableFilter.value = props.entityFqn;
+  }
+  if (params.testPlatforms !== undefined) {
+    platformFilter.value = params.testPlatforms;
+  }
+  if (params.testCaseStatus !== undefined) {
+    statusFilter.value = params.testCaseStatus;
+  } else if (seedFromProps && props.status !== undefined) {
+    statusFilter.value = props.status;
+  }
+  if (params.testCaseType !== undefined) {
+    typeFilter.value = params.testCaseType;
+  }
+  if (params.tier !== undefined) {
+    tierFilter.value = params.tier;
+  } else if (seedFromProps && props.tier) {
+    tierFilter.value = props.tier;
+  }
+  if (params.tags !== undefined) {
+    tagFilter.value = params.tags;
+  } else if (seedFromProps && props.tags) {
+    tagFilter.value = props.tags;
+  }
+  if (params.serviceName !== undefined) {
+    serviceFilter.value = params.serviceName;
+  }
+  if (params.dataQualityDimension !== undefined) {
+    dimensionFilter.value = params.dataQualityDimension;
+  } else if (seedFromProps && props.dataQualityDimension) {
+    dimensionFilter.value = props.dataQualityDimension;
+  }
+  if (params.dataProductFqn !== undefined) {
+    dataProductFilter.value = params.dataProductFqn;
+  } else if (seedFromProps && props.dataProductFqn) {
+    dataProductFilter.value = props.dataProductFqn;
+  }
+  if (params.lastRunStartTs !== undefined) {
+    lastRunStartTs.value = params.lastRunStartTs;
+  } else if (seedFromProps && props.startTs !== undefined) {
+    lastRunStartTs.value = props.startTs;
+  }
+  if (params.lastRunEndTs !== undefined) {
+    lastRunEndTs.value = params.lastRunEndTs;
+  } else if (seedFromProps && props.endTs !== undefined) {
+    lastRunEndTs.value = props.endTs;
+  }
+  if (params.lastRunKey !== undefined) {
+    lastRunKey.value = params.lastRunKey;
+  }
+  if (params.lastRunTitle !== undefined) {
+    lastRunTitle.value = params.lastRunTitle;
+  }
+}
+
+function pushFiltersToRoute(): void {
+  const query = mergeTestCaseListFiltersToQuery(route.query, snapshotRouteFilters());
+  void router.replace({ path: route.path, query });
+}
+
+function hydrateFromRoute(seedFromProps: boolean): void {
+  applyRouteParams(parseTestCaseListRouteQuery(route.query), seedFromProps);
+}
+
 function onFilterChange(): void {
   resetPager();
+  pushFiltersToRoute();
   void load();
 }
 
 function onSearch(): void {
   if (usingSearch.value || props.preferSearch) {
     resetPager();
+    pushFiltersToRoute();
     void load();
-  }
-}
-
-async function onCreate(): Promise<void> {
-  if (isTableDiff.value && !(form.parameterValues[TABLE2_PARAM] ?? '').trim()) {
-    message.error(t('quality.testCases.tableDiffTable2Required'));
-    return;
-  }
-  creating.value = true;
-  try {
-    const created = await createTestCase({
-      name: form.name.trim(),
-      testDefinition: form.testDefinition,
-      entityLink: toEntityLink(form.entityType, form.entityFqn, form.column),
-      description: form.description.trim() || undefined,
-      displayName: form.displayName.trim() || undefined,
-      parameterValues: collectParameterValues(),
-    });
-    createOpen.value = false;
-    message.success(t('quality.testCases.created', { name: created.name }));
-    resetPager();
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
   }
 }
 
 function openCreate(): void {
-  createOpen.value = true;
+  editing.value = undefined;
+  formOpen.value = true;
+}
+
+function onEmptyCreate(): void {
+  const add = embeddedCreateActions.value?.onAddTestCase;
+  if (add) {
+    add();
+    return;
+  }
+  openCreate();
+}
+
+function openEdit(record: TestCase): void {
+  editing.value = record;
+  formOpen.value = true;
+}
+
+async function onFormSubmitted(saved: TestCase): Promise<void> {
+  const wasEdit = Boolean(editing.value);
+  formOpen.value = false;
+  editing.value = undefined;
+  message.success(
+      t(wasEdit ? 'server.update-entity-success' : 'server.create-entity-success', {
+        entity: t('label.test-case'),
+      }),
+    );
+  resetPager();
+  await load();
+}
+
+function onManageMenu({ key }: { key: string | number }): void {
+  if (key === 'import') {
+    void router.push({ path: '/bulk/import/testCase/*' });
+  } else if (key === 'export') {
+    void exportCases();
+  } else if (key === 'bulk') {
+    void router.push({ path: '/bulk/edit/testCase/*' });
+  }
+}
+
+function buildExportFilterParams(): ReturnType<typeof getTestCaseExportFilters> {
+  const tableFqn = tableFilter.value.trim() || props.entityFqn;
+  return getTestCaseExportFilters({
+    q: searchValue.value.trim() || undefined,
+    testCaseStatus: statusFilter.value,
+    testCaseType: typeFilter.value,
+    owner: props.ownerFqn,
+    tier: tierFilter.value || props.tier,
+    tags: tagFilter.value || props.tags,
+    dataProductFqn: dataProductFilter.value || props.dataProductFqn,
+    dataQualityDimension: dimensionFilter.value || props.dataQualityDimension,
+    entityLink: tableFqn ? toEntityLink('table', tableFqn) : undefined,
+    testPlatforms: platformFilter.value.length ? platformFilter.value : undefined,
+    serviceName: serviceFilter.value || undefined,
+    startTimestamp: startTimestamp.value,
+    endTimestamp: endTimestamp.value,
+  });
+}
+
+async function exportCases(): Promise<void> {
+  try {
+    const result = await exportTestCasesInCSV('*', {
+      recursive: true,
+      ...buildExportFilterParams(),
+    });
+    if (typeof result === 'string') {
+      downloadCsv(result, `*_${new Date().toISOString().slice(0, 10)}.csv`);
+      return;
+    }
+    const jobId = result && typeof result === 'object' && 'jobId' in result
+      ? (result as { jobId?: unknown }).jobId
+      : undefined;
+    markCsvJobOwned(typeof jobId === 'string' ? jobId : undefined);
+    notifyCsvJobsRefresh();
+  } catch (error) {
+    message.error(getErrorText(error, t('server.unexpected-error')));
+  }
 }
 
 watch(
-  () =>
-    [
-      props.preferSearch,
-      props.ownerFqn,
-      props.tier,
-      props.tags,
-      props.dataProductFqn,
-      props.startTs,
-      props.endTs,
-    ].join('|'),
+  () => route.query,
   () => {
+    if (suiteDetailList.value) {
+      return;
+    }
+    hydrateFromRoute(false);
     resetPager();
     void load();
   },
 );
 
-// Dashboard drill-down props (status / dimension / entity) arrive after
-// mount when the landing view forwards a new route query: seed the
-// status filter from the prop and reload on any of them changing.
 watch(
-  () => [props.status, props.dataQualityDimension, props.entityFqn].join('|'),
+  () => props.testSuiteId,
   () => {
-    statusFilter.value = props.status;
     resetPager();
     void load();
   },
 );
 
-async function onDelete(record: TestCase): Promise<void> {
+function openDelete(record: TestCase): void {
+  deleting.value = record;
+}
+
+function onRowDelete(record: TestCase): void {
+  if (canRemoveFromSuite.value) {
+    void onRemoveFromSuite(record);
+    return;
+  }
+  openDelete(record);
+}
+
+async function onRemoveFromSuite(record: TestCase): Promise<void> {
+  const suiteId = props.removeFromSuite?.suiteId;
+  if (!suiteId || !record.id) {
+    return;
+  }
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
+    title: t('label.delete'),
+    content: t('message.delete-entity-message', { entity: entityLabel(record) }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
   });
   if (!confirmed) {
     return;
   }
   try {
-    await deleteTestCase(record.id, { hardDelete: true });
-    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    await removeTestCaseFromTestSuite(suiteId, record.id);
+    message.success(t('server.entity-deleted-successfully', { entity: entityLabel(record) }));
+    emit('removed-from-suite');
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-suite') })));
   }
 }
 
-onMounted(() => {
-  void load();
-  void listTestDefinitions({ limit: 100 })
-    .then((page) => {
-      definitions.value = page.data;
-    })
-    .catch(() => undefined);
+async function onDeleteConfirm(mode: 'soft' | 'hard'): Promise<void> {
+  const record = deleting.value;
+  if (!record) {
+    return;
+  }
+  try {
+    await deleteTestCase(record.id, { hardDelete: mode === 'hard', recursive: mode === 'hard' });
+    deleting.value = undefined;
+    message.success(t('server.entity-deleted-successfully', { entity: record.displayName || record.name }));
+    await load();
+  } catch (error) {
+    message.error(getErrorText(error, t('server.delete-entity-error', { entity: t('label.test-case') })));
+  }
+}
+
+watch(total, (value) => {
+  emit('update:total', value ?? 0);
+}, { immediate: true });
+
+function clearBulkSelection(): void {
+  selectedRowKeys.value = [];
+}
+
+function onBundleSuiteMenu({ key }: { key: string | number }): void {
+  if (key === 'existing') {
+    addToBundleModalOpen.value = true;
+    return;
+  }
+  if (key === 'new') {
+    bundlePresetCaseIds.value = selectedTestCases.value
+      .map((item) => item.id)
+      .filter((id): id is string => Boolean(id));
+    bundleSuiteDrawerOpen.value = true;
+  }
+}
+
+function onBundleSuiteDrawerSubmitted(suite: TestSuite): void {
+  bundleSuiteDrawerOpen.value = false;
+  bundlePresetCaseIds.value = [];
+  clearBulkSelection();
+  void router.push({ name: 'quality-test-suite', params: { id: suite.id ?? '' } });
+}
+
+function onAddedToExistingBundle(): void {
+  clearBulkSelection();
+}
+
+watch(showDeleted, () => {
+  clearBulkSelection();
 });
 
-defineExpose({ openCreate });
+onMounted(() => {
+  hydrateFromRoute(true);
+  void load();
+});
+
+defineExpose({ openCreate, total });
 </script>
 
 <template>
+  <div>
+    <TestCaseInsightDonuts
+      v-if="embedded && !suiteDetailList && (results || health || coverage)"
+      :results="results"
+      :health="health"
+      :coverage="coverage"
+    />
+    <div
+      v-if="enableBulkActions && selectedRowKeys.length"
+      class="tc-bulk-toolbar"
+      data-testid="bulk-selection-toolbar"
+    >
+      <span>{{ t('label.bundle-test-case-selected-count', { count: selectedRowKeys.length }) }}</span>
+      <Button data-testid="bulk-clear-test-case-selection" @click="clearBulkSelection">
+        {{ t('label.clear-selection') }}
+      </Button>
+      <Dropdown :trigger="['click']">
+        <Button type="primary" data-testid="add-selected-to-bundle-suite">
+          {{ t('label.add-to-bundle-suite') }}
+        </Button>
+        <template #overlay>
+          <Menu @click="onBundleSuiteMenu">
+            <Menu.Item key="existing" data-testid="add-to-existing-bundle-suite">
+              {{ t('label.add-to-existing-bundle-suite') }}
+            </Menu.Item>
+            <Menu.Item key="new" data-testid="create-new-bundle-suite">
+              {{ t('label.create-new-bundle-suite') }}
+            </Menu.Item>
+          </Menu>
+        </template>
+      </Dropdown>
+    </div>
   <EntityListShell
-    :title="t('quality.testCases.title')"
-    :lead="t('quality.testCases.lead')"
-    :hide-heading="embedded"
+    :title="listTitle"
+    :lead="listLead"
+    :hide-heading="suiteDetailList"
+    :row-selection="rowSelection"
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
@@ -378,32 +772,98 @@ defineExpose({ openCreate });
     table-test-id="test-cases-table"
     show-search
     :search-value="searchValue"
-    :search-placeholder="t('quality.testCases.searchPlaceholder')"
+    :search-placeholder="t('label.search-entity', { entity: t('label.test-case-lowercase') })"
     show-row-actions
-    show-edit-action
+    :show-edit-action="!suiteDetailList"
+    :show-delete-action="canRemoveFromSuite"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
-    :empty-text="t('quality.testCases.empty')"
+    :empty-text="emptyText"
     @update:search-value="searchValue = $event"
     @search="onSearch"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
-    @view="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
-    @edit="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
-    @delete="(record) => onDelete(record as TestCase)"
+    @view="(record) => openTestCaseDetail(record as TestCase)"
+    @edit="(record) => openEdit(record as TestCase)"
+    @delete="(record) => onRowDelete(record as TestCase)"
   >
-    <template #actions>
-      <Button type="primary" data-testid="create-test-case" @click="openCreate">
-        {{ t('quality.testCases.create') }}
-      </Button>
+    <template v-if="!suiteDetailList && !(embedded && entityFqn)" #actions>
+      <Dropdown :trigger="['click']">
+        <Button data-testid="test-cases-manage">⋯</Button>
+        <template #overlay>
+          <Menu @click="onManageMenu">
+            <Menu.Item key="import" data-testid="test-cases-import">{{ t('label.import') }}</Menu.Item>
+            <Menu.Item key="export" data-testid="test-cases-export">{{ t('label.export') }}</Menu.Item>
+            <Menu.Item key="bulk" data-testid="test-cases-bulk-edit">{{ t('label.bulk-edit') }}</Menu.Item>
+          </Menu>
+        </template>
+      </Dropdown>
     </template>
     <template #filters>
+      <Dropdown :trigger="['click']">
+        <Button data-testid="test-cases-advanced">{{ t('label.advanced') }}</Button>
+        <template #overlay>
+          <Menu data-testid="test-cases-advanced-menu" @click="onAdvancedMenu">
+            <Menu.Item
+              v-for="key in TEST_CASE_ADVANCED_FILTER_MENU"
+              :key="key"
+              :data-testid="`test-cases-advanced-${key}`"
+            >
+              <span v-if="isFilterVisible(key)">✓ </span>{{ t(TEST_CASE_FILTER_I18N[key]) }}
+            </Menu.Item>
+          </Menu>
+        </template>
+      </Dropdown>
+      <IncidentDateRangeFilter
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.lastRun)"
+        :start-ts="lastRunStartTs"
+        :end-ts="lastRunEndTs"
+        :range-key="lastRunKey"
+        :range-title="lastRunTitle"
+        test-id="test-cases-last-run-filter"
+        @apply="onLastRunApply"
+        @clear="onLastRunClear"
+      />
+      <TestCaseFilterAsyncSelect
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.table)"
+        v-model="tableFilter"
+        :placeholder="t('label.table')"
+        test-id="test-cases-table-filter"
+        :fetch-options="fetchTableFilterOptions"
+        @change="onFilterChange"
+      />
       <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.platform)"
+        v-model:value="platformFilter"
+        mode="multiple"
+        allow-clear
+        :placeholder="t('label.platform')"
+        data-testid="test-cases-platform-filter"
+        style="width: 180px"
+        @change="onFilterChange"
+      >
+        <Select.Option v-for="platform in TEST_CASE_PLATFORMS" :key="platform" :value="platform">
+          {{ platform }}
+        </Select.Option>
+      </Select>
+      <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.type)"
+        v-model:value="typeFilter"
+        allow-clear
+        :placeholder="t('label.type')"
+        data-testid="test-cases-type-filter"
+        style="width: 140px"
+        @change="onFilterChange"
+      >
+        <Select.Option v-for="type in TEST_CASE_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
+      </Select>
+      <Select
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.status)"
         :value="statusSelectValue"
         allow-clear
-        :placeholder="t('quality.testCases.statusFilter')"
+        :placeholder="t('label.status')"
         data-testid="test-cases-status-filter"
         style="width: 160px"
         @change="onStatusFilterChange"
@@ -412,10 +872,66 @@ defineExpose({ openCreate });
           {{ status }}
         </Select.Option>
       </Select>
+      <TestCaseFilterAsyncSelect
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tags)"
+        v-model="tagFilter"
+        :placeholder="t('label.tag-plural')"
+        test-id="test-cases-tag-filter"
+        width="160px"
+        :fetch-options="fetchTagFilterOptions"
+        @change="onFilterChange"
+      />
+      <TestCaseFilterAsyncSelect
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.tier)"
+        v-model="tierFilter"
+        :placeholder="t('label.tier')"
+        test-id="test-cases-tier-filter"
+        width="140px"
+        :remote="false"
+        :fetch-options="fetchTierFilterOptions"
+        @change="onFilterChange"
+      />
+      <TestCaseFilterAsyncSelect
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.service)"
+        v-model="serviceFilter"
+        :placeholder="t('label.service')"
+        test-id="test-cases-service-filter"
+        width="160px"
+        :fetch-options="fetchServiceFilterOptions"
+        @change="onFilterChange"
+      />
+      <TestCaseFilterAsyncSelect
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dimension)"
+        v-model="dimensionFilter"
+        :placeholder="t('label.dimension')"
+        test-id="test-cases-dimension-filter"
+        width="160px"
+        :remote="false"
+        :fetch-options="() => fetchDimensionFilterOptions(t('label.no-dimension'))"
+        @change="onFilterChange"
+      />
+      <TestCaseFilterAsyncSelect
+        v-if="isFilterVisible(TEST_CASE_FILTER_KEYS.dataProduct)"
+        v-model="dataProductFilter"
+        :placeholder="t('label.data-product-plural')"
+        test-id="test-cases-data-product-filter"
+        width="180px"
+        :fetch-options="fetchDataProductFilterOptions"
+        @change="onFilterChange"
+      />
+      <span class="tc-deleted-toggle">
+        <Switch v-model:checked="showDeleted" data-testid="test-cases-show-deleted" @change="onFilterChange" />
+        {{ t('label.show-deleted') }}
+      </span>
     </template>
     <template #emptyExtra>
-      <Button type="primary" data-testid="test-cases-empty-cta" @click="openCreate">
-        {{ t('quality.testCases.create') }}
+      <Button
+        v-if="showEmptyCreateCta"
+        type="primary"
+        data-testid="test-cases-empty-cta"
+        @click="onEmptyCreate"
+      >
+        {{ t('label.new-entity', { entity: t('label.test-case') }) }}
       </Button>
     </template>
     <template #bodyCell="{ column, record }">
@@ -423,20 +939,28 @@ defineExpose({ openCreate });
         <a
           href="#"
           :data-testid="`test-case-row-${(record as TestCase).id}`"
-          @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
+          @click.prevent="openTestCaseDetail(record as TestCase)"
         >
           {{ entityLabel(record as TestCase) }}
         </a>
       </template>
       <template v-else-if="column.key === 'entityFQN'">
-        {{ (record as TestCase).entityFQN || (record as TestCase).entityLink || '—' }}
+        {{ tableFqnFromEntity(record as TestCase) || (record as TestCase).entityFQN || '—' }}
       </template>
-      <template v-else-if="column.key === 'testDefinition'">
-        {{
-          (record as TestCase).testDefinition?.fullyQualifiedName ||
-          (record as TestCase).testDefinition?.name ||
-          '—'
-        }}
+      <template v-else-if="column.key === 'column'">
+        {{ columnFromEntity(record as TestCase) || '—' }}
+      </template>
+      <template v-else-if="column.key === 'failureReason'">
+        {{ (record as TestCase).testCaseResult?.result || '—' }}
+      </template>
+      <template v-else-if="column.key === 'incident'">
+        <TestCaseListIncidentCell
+          :test-case="record as TestCase"
+          :incident="inlineIncidentFromTestCase(record as TestCase)"
+          :editable="canEditListIncident(record as TestCase)"
+          :incidents-loading="loading && cases.length === 0"
+          @incident-updated="onListIncidentUpdated"
+        />
       </template>
       <template v-else-if="column.key === 'status'">
         {{
@@ -448,77 +972,47 @@ defineExpose({ openCreate });
       </template>
     </template>
   </EntityListShell>
-  <FormModal
-    :open="createOpen"
-    :title="t('quality.testCases.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
-    @cancel="createOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-test-case-name" />
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.definition')" required>
-        <Select
-          v-model:value="form.testDefinition"
-          show-search
-          option-filter-prop="label"
-          data-testid="create-test-case-definition"
-          @change="onDefinitionChange"
-        >
-          <Select.Option
-            v-for="definition in definitions"
-            :key="definition.id"
-            :value="definition.fullyQualifiedName || definition.name"
-            :label="entityLabel(definition)"
-          >
-            {{ entityLabel(definition) }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.entityType')" required>
-        <Select v-model:value="form.entityType">
-          <Select.Option value="table">table</Select.Option>
-          <Select.Option value="topic">topic</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.entityFqn')" required>
-        <Input v-model:value="form.entityFqn" data-testid="create-test-case-fqn" />
-      </Form.Item>
-      <Form.Item :label="t('quality.testCases.column')">
-        <Input v-model:value="form.column" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="2" />
-      </Form.Item>
-      <TableDiffFields
-        v-if="isTableDiff"
-        :definitions="selectedParameters"
-        :entity-fqn="form.entityFqn"
-        :entity-type="form.entityType"
-        :model-value="form.parameterValues"
-        @update:model-value="form.parameterValues = $event"
-      />
-      <template v-else-if="selectedParameters.length > 0">
-        <Form.Item
-          v-for="param in selectedParameters"
-          :key="param.name"
-          :label="param.displayName || param.name"
-          :required="param.required === true"
-          :extra="param.description"
-        >
-          <Input
-            v-model:value="form.parameterValues[param.name]"
-            :data-testid="`create-test-case-param-${param.name}`"
-          />
-        </Form.Item>
-      </template>
-      <Form.Item v-else :label="t('quality.testCases.parameters')">
-        <Input.TextArea v-model:value="form.parameterText" :rows="3" placeholder="minValue=1&#10;maxValue=100" />
-      </Form.Item>
-    </Form>
-  </FormModal>
+  <TestCaseFormDrawer
+    :open="formOpen"
+    :test-case="editing"
+    @cancel="formOpen = false; editing = undefined"
+    @submitted="onFormSubmitted"
+  />
+  <TestCaseDeleteModal
+    :open="Boolean(deleting)"
+    :name="deleting?.displayName || deleting?.name || ''"
+    @cancel="deleting = undefined"
+    @confirm="onDeleteConfirm"
+  />
+  <AddToBundleSuiteModal
+    :open="addToBundleModalOpen"
+    :selected-test-cases="selectedTestCases"
+    @cancel="addToBundleModalOpen = false"
+    @added="onAddedToExistingBundle"
+  />
+  <LogicalTestSuiteDrawer
+    :open="bundleSuiteDrawerOpen"
+    :preset-test-case-ids="bundlePresetCaseIds"
+    @cancel="bundleSuiteDrawerOpen = false"
+    @submitted="onBundleSuiteDrawerSubmitted"
+  />
+  </div>
 </template>
+
+<style scoped>
+.tc-bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--sm-fill-secondary, rgba(0, 0, 0, 0.02));
+  border-radius: 8px;
+}
+.tc-deleted-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+</style>

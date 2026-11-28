@@ -16,6 +16,8 @@ import NextPrevious from '@/components/shared/NextPrevious.vue';
 import ServiceVersionTimeline from '@/components/ingestion/ServiceVersionTimeline.vue';
 import { createTestI18n } from '@/test/i18n';
 import ServiceVersionView from './ServiceVersionView.vue';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
+import type { ServiceKind } from '@/types/ingestion';
 
 // New keys under settings.services.version.* (never written to the locale
 // files by this worker; merged here so the view renders real copy).
@@ -218,7 +220,7 @@ function stubFetch(fixture: VersionFixture): void {
         });
       }
       // Resolution: /services/<collection>/s1 (no /versions segment).
-      if (/\/api\/v1\/services\/[^/]+\/s1(\?|$)/.test(url)) {
+      if (/\/api\/v1\/services\/[^/]+\/s1(\?|$)/.test(url) || /\/api\/v1\/services\/[^/]+\/name\/pg\.warehouse(\?|$)/.test(url)) {
         if (fixture.holdResolution) {
           await new Promise<void>((resolve) => {
             releaseResolution = resolve;
@@ -254,13 +256,13 @@ async function mountView(fixture: VersionFixture, version = '0.2') {
         component: { template: '<div>list</div>' },
       },
       {
-        path: '/ingestion/services/:kind/:id',
-        name: 'ingestion-service',
+        path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+        name: 'service-detail',
         component: { template: '<div>detail</div>' },
         props: true,
       },
       {
-        path: '/ingestion/services/:kind/:id/versions/:version',
+        path: '/service/:serviceCategory/:fqn/versions/:version',
         name: 'ingestion-service-version',
         component: ServiceVersionView,
         props: true,
@@ -279,10 +281,12 @@ async function mountView(fixture: VersionFixture, version = '0.2') {
       },
     ],
   });
-  await router.push(`/ingestion/services/${fixture.kind}/s1/versions/${version}`);
+  const serviceCategory = SERVICE_COLLECTION_BY_KIND[fixture.kind as ServiceKind] ?? fixture.kind;
+  const fqn = 'pg.warehouse';
+  await router.push(`/service/${serviceCategory}/${encodeURIComponent(fqn)}/versions/${version}`);
   await router.isReady();
   const wrapper = mount(ServiceVersionView, {
-    props: { kind: fixture.kind, id: 's1', version },
+    props: { serviceCategory, fqn, version },
     attachTo: document.body,
     global: { plugins: [pinia, router, Antd, i18n] },
   });
@@ -684,10 +688,10 @@ describe('ServiceVersionView', () => {
     });
     await wrapper.find('[data-testid="version-button"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
     expect(router.currentRoute.value.params).toMatchObject({
-      kind: 'database',
-      id: 's1',
+      serviceCategory: 'databaseServices',
+      fqn: 'pg.warehouse',
     });
   });
 
@@ -700,7 +704,7 @@ describe('ServiceVersionView', () => {
     });
     await wrapper.find('[data-testid="versions-list-close"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
   });
 
   it('reloads only the snapshot when the version prop changes', async () => {

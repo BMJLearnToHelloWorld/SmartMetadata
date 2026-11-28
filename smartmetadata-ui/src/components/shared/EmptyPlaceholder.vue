@@ -133,6 +133,7 @@ const innerStyle = computed(() => {
               :data-testid="action.testId"
               @click="action.onPress?.()"
             >
+              <component :is="action.icon" v-if="action.icon" />
               {{ action.label }}
             </a-button>
           </div>

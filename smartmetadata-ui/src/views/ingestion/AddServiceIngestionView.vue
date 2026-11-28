@@ -23,7 +23,9 @@ import {
   isPipelineDeployed,
 } from '@/api/ingestionPipelines';
 import { ApiError } from '@/api/client';
-import { SERVICE_GET_API } from '@/ingestion/serviceApis';
+import { getServiceByFqn } from '@/api/serviceLookup';
+import { serviceKindFromCategory } from '@/api/serviceVersions';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import { entityTypeForKind } from '@/ingestion/connections';
 import { getSupportedPipelineTypes } from '@/ingestion/supportedPipelines';
 import { generateUUID, getIngestionName } from '@/ingestion/uuid';
@@ -46,7 +48,6 @@ import type {
   CatalogService,
   CreateIngestionPipelineRequest,
   PipelineType,
-  ServiceKind,
 } from '@/types/ingestion';
 import { PIPELINE_TYPES } from '@/types/ingestion';
 import type { EntityRef } from '@/types/api';
@@ -63,7 +64,7 @@ import type { EntityRef } from '@/types/api';
  * loggerLevel, and owners; a deploy that fails leaves the success screen
  * with a retry button instead of navigating away.
  */
-const props = defineProps<{ kind: string; id: string; ingestionType?: string }>();
+const props = defineProps<{ serviceCategory: string; fqn: string; ingestionType?: string }>();
 
 const { t } = useI18n();
 const router = useRouter();
@@ -98,29 +99,9 @@ const deployFailed = ref(false);
 const createdName = ref('');
 const createdId = ref('');
 
-const kind = computed<ServiceKind>(() =>
-  (
-    [
-      'database',
-      'messaging',
-      'dashboard',
-      'storage',
-      'pipeline',
-      'api',
-      'mlmodel',
-      'metadata',
-      'drive',
-      'search',
-      'llm',
-      'mcp',
-      'security',
-    ] as const
-  ).includes(props.kind as ServiceKind)
-    ? (props.kind as ServiceKind)
-    : 'database',
-);
+const kind = computed(() => serviceKindFromCategory(props.serviceCategory));
 const typeOptions = computed<readonly PipelineType[]>(() =>
-  service.value
+  service.value && kind.value
     ? getSupportedPipelineTypes(service.value, kind.value)
     : (['metadata'] as const),
 );
@@ -153,14 +134,17 @@ function yesterdayStartDateIso(): string {
 }
 
 function goToService(): void {
-  void router.push({ name: 'ingestion-service', params: { kind: props.kind, id: props.id } });
+  void router.push(getServiceDetailsPath(props.fqn, props.serviceCategory));
 }
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    service.value = await SERVICE_GET_API[kind.value](props.id);
+    if (!kind.value) {
+      throw new Error(t('crud.loadFailed'));
+    }
+    service.value = await getServiceByFqn(kind.value, props.fqn);
     const routeType = props.ingestionType;
     const initial =
       routeType && (PIPELINE_TYPES as readonly string[]).includes(routeType) ? routeType : 'metadata';
@@ -250,9 +234,10 @@ async function handleDeploy(): Promise<boolean> {
 }
 
 async function onCreate(): Promise<void> {
-  if (!service.value) {
+  if (!service.value || !kind.value) {
     return;
   }
+  const serviceKind = kind.value;
   const cronErrorKey = await cronValidator(scheduleInterval.value ?? '');
   if (cronErrorKey) {
     scheduleError.value = t(cronErrorKey);
@@ -265,10 +250,10 @@ async function onCreate(): Promise<void> {
       name,
       displayName: displayName.value.trim(),
       pipelineType: pipelineType.value,
-      service: { id: service.value.id, type: entityTypeForKind(kind.value) },
+      service: { id: service.value.id, type: entityTypeForKind(serviceKind) },
       sourceConfig: buildSourceConfig({
         pipelineType: pipelineType.value,
-        serviceKind: kind.value,
+        serviceKind,
         sourceConfigData: sourceConfigData.value,
       }),
       airflowConfig: {

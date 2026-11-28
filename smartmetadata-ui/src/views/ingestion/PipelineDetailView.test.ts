@@ -102,9 +102,15 @@ async function mountView() {
   await router.push('/ingestion/pipelines/p1');
   await router.isReady();
   router.addRoute({
-    path: '/ingestion/pipelines/:id/edit',
-    name: 'ingestion-pipeline-edit',
+    path: '/service/:serviceCategory/:fqn/edit-ingestion/:ingestionFQN/:ingestionType',
+    name: 'ingestion-service-edit-ingestion',
     component: { template: '<div>edit</div>' },
+    props: true,
+  });
+  router.addRoute({
+    path: '/test-suites/:fqn/edit-ingestion/:ingestionFqn',
+    name: 'quality-test-suite-edit-ingestion',
+    component: { template: '<div>suite-edit</div>' },
     props: true,
   });
   const wrapper = mount(PipelineDetailView, {
@@ -206,11 +212,14 @@ describe('PipelineDetailView', () => {
     document.body.innerHTML = '';
   });
 
-  it('routes Edit to the standalone two-step edit page instead of a modal', async () => {
+  it('routes Edit to the official EDIT_INGESTION path instead of a modal', async () => {
     const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="edit-pipeline"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
+    expect(router.currentRoute.value.name).toBe('ingestion-service-edit-ingestion');
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/service/databaseServices/warehouse/edit-ingestion/warehouse.warehouse-metadata/metadata',
+    );
   });
 
   it('shows the description edit button with EditAll and PATCHes the description on save (D-3)', async () => {

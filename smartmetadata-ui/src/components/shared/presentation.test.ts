@@ -42,6 +42,10 @@ describe('shared presentation tables (R1)', () => {
       relationTypeForm: 500,
       workflowCreate: 640,
       intakeDesigner: '75%',
+      // Official formHint.constants.ts FORM_DRAWER_WIDTH_WITH_HINT /
+      // FORM_DRAWER_WIDTH_WITHOUT_HINT, used by CustomMetricFormDrawer.
+      formWithHint: '80vw',
+      formWithoutHint: '60vw',
     });
   });
 

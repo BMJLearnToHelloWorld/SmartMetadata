@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { getContractByEntityId } from './dataContracts';
+import { getContractByEntityId, mapDataContract, updateContract } from './dataContracts';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -58,6 +58,39 @@ describe('dataContracts API', () => {
   it('returns null when no contract exists (404)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
     await expect(getContractByEntityId('table-1', 'table')).resolves.toBeNull();
+  });
+
+  it('PATCHes an existing contract at /v1/dataContracts/{id}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'c1', name: 'orders-contract', description: 'Updated' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const updated = await updateContract('c1', [{ op: 'replace', path: '/description', value: 'Updated' }]);
+    expect(updated?.description).toBe('Updated');
+    expect(lastFetch().url).toContain('/api/v1/dataContracts/c1');
+    expect(lastFetch().init?.method).toBe('PATCH');
+    expect(new Headers(lastFetch().init?.headers).get('Content-Type')).toBe('application/json-patch+json');
+  });
+
+  it('maps inherited, semantics, sla, and termsOfUse from the official payload', () => {
+    const mapped = mapDataContract({
+      id: 'c1',
+      name: 'orders',
+      inherited: true,
+      termsOfUse: { content: 'Be kind', inherited: false },
+      sla: { availabilityTime: '09:00 UTC', timezone: 'GMT+00:00 (Europe/London)', maxLatency: { unit: 'hour', value: 4 } },
+      semantics: [{ name: 'named', rule: '{"==":[1,1]}', enabled: true, jsonTree: '{}' }],
+    });
+    expect(mapped?.inherited).toBe(true);
+    expect(mapped?.termsOfUse).toEqual({ content: 'Be kind', inherited: undefined });
+    expect(mapped?.sla?.availabilityTime).toBe('09:00 UTC');
+    expect(mapped?.sla?.maxLatency).toEqual({ unit: 'hour', value: 4 });
+    expect(mapped?.semantics?.[0]).toMatchObject({ name: 'named', rule: '{"==":[1,1]}', enabled: true });
   });
 
   it('drops an unknown latestResult status instead of passing it through', async () => {

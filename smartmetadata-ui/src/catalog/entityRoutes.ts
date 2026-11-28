@@ -21,6 +21,8 @@
  * the permission is known; `joins` is in the VIEW_BASIC group and is
  * requested unconditionally for tables.
  */
+import { getEntityDetailsPath, getQueryPath } from '@/utils/fqnPaths';
+
 export const TABLE_USAGE_SUMMARY_FIELD = 'usageSummary';
 
 /**
@@ -158,19 +160,18 @@ export function lineageLocation(entityType: string, fqn: string): { name: string
  * (`EntitySummaryPanel.component.tsx:866-874`) navigates to the entity
  * detail page's Lineage tab
  * (`getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`). The product
- * detail page addresses its tabs through the `?tab=` query param
- * (`AssetDetailView.onTabChange` / `getRenderedActiveTab`), so the
- * product analogue is the `asset` route with `query: { tab }`.
+ * detail page addresses its tabs through official path segments
+ * (`getEntityDetailsPath(type, fqn, tab, subTab)` /
+ * `AssetDetailView.onTabChange`).
  */
 export function assetTabLocation(
   entityType: string,
   fqn: string,
   tab: string,
-): { name: string; params: { entityType: string; fqn: string }; query: { tab: string } } {
+  subTab?: string,
+): { path: string } {
   return {
-    name: 'asset',
-    params: { entityType, fqn },
-    query: { tab },
+    path: getEntityDetailsPath(entityType, fqn, tab, subTab),
   };
 }
 
@@ -228,10 +229,11 @@ export function governanceDetailLocation(
 
 /** A router location a search hit can navigate to: asset/lineage
  * locations carry entityType + fqn, governance detail locations carry
- * the entity id. An asset location may also carry a `?tab=` query
- * (E-3d: pin's detail-page tab links, e.g. the Lineage tab). */
+ * the entity id. An asset location may also be a path string when a
+ * detail tab/sub-tab is selected (official getEntityDetailsPath). */
 export type SearchHitLocation =
   | { name: string; params: { entityType: string; fqn: string }; query?: { tab: string } }
+  | { path: string }
   | { name: string; params: { id: string } };
 
 /**
@@ -241,12 +243,45 @@ export type SearchHitLocation =
  * the honest unwired marker — callers keep the hit selected (preview)
  * instead of navigating.
  */
+/**
+ * Official QueryPage is /query-view/{tableFqn}/{queryId} (getQueryPath).
+ * Official SearchClassBase.getEntityLink / getEntityLinkFromType has no
+ * QUERY builder, so a query hit without a table FQN and id is unwired
+ * rather than sent to the generic /query/{fqn} asset route (which official
+ * EntityRouter 404s). Table FQN comes from the hit's tableFqn or the first
+ * queryUsedIn table, matching QueryCard's datasetFQN + query.id.
+ */
+export function queryLocation(
+  hit: {
+    id?: string;
+    tableFqn?: string;
+    queryUsedIn?: Array<{ fullyQualifiedName?: string }>;
+  },
+): { path: string } | null {
+  const tableFqn =
+    hit.tableFqn ||
+    hit.queryUsedIn?.find((table) => table.fullyQualifiedName)?.fullyQualifiedName;
+  if (!hit.id || !tableFqn) {
+    return null;
+  }
+  return { path: getQueryPath(tableFqn, hit.id) };
+}
+
 export function detailLocationForHit(
-  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string; id?: string },
+  hit: {
+    entityType: string;
+    fullyQualifiedName: string;
+    tableFqn?: string;
+    id?: string;
+    queryUsedIn?: Array<{ fullyQualifiedName?: string }>;
+  },
 ): SearchHitLocation | null {
   const parent = parentTableLocation(hit.entityType, hit.tableFqn);
   if (parent) {
     return parent;
+  }
+  if (hit.entityType === 'query') {
+    return queryLocation(hit);
   }
   if (hit.entityType && hit.fullyQualifiedName && isDetailWired(hit.entityType)) {
     return assetLocation(hit.entityType, hit.fullyQualifiedName);
@@ -308,7 +343,13 @@ export function parentTableLocation(
  */
 export function openSearchHit(
   push: (to: SearchHitLocation) => unknown,
-  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string; id?: string },
+  hit: {
+    entityType: string;
+    fullyQualifiedName: string;
+    tableFqn?: string;
+    id?: string;
+    queryUsedIn?: Array<{ fullyQualifiedName?: string }>;
+  },
 ): boolean {
   const location = detailLocationForHit(hit);
   if (!location) {

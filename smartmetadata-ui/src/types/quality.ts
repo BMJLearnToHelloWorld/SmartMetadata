@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import type { EntityRef } from './api';
+import type { ChangeDescription } from '@/api/entities';
+import type { EntityRef, TagRef } from './api';
 import type { EntityReferenceInput } from './admin';
 
 export const TEST_DEFINITION_ENTITY_TYPES = ['TABLE', 'COLUMN'] as const;
@@ -25,6 +26,14 @@ export type TestPlatform = (typeof TEST_PLATFORMS)[number];
 
 export const TEST_CASE_STATUSES = ['Success', 'Failed', 'Aborted', 'Queued'] as const;
 export type TestCaseStatus = (typeof TEST_CASE_STATUSES)[number];
+
+/** Official TEST_CASE_STATUS_LABELS (profiler.constant.ts). */
+export const TEST_CASE_STATUS_LABELS: Record<TestCaseStatus, string> = {
+  Aborted: 'label.aborted',
+  Failed: 'label.failed',
+  Queued: 'label.queued',
+  Success: 'label.success',
+};
 
 export const INCIDENT_STATUSES = ['New', 'Ack', 'Assigned', 'Resolved'] as const;
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
@@ -60,6 +69,22 @@ export interface TestParameterValue {
 export interface TestResultValue {
   name: string;
   value: string;
+  predictedValue?: string;
+}
+
+export interface TestCaseErrorDetails {
+  message?: string;
+  errorType?: string;
+  stackTrace?: string;
+}
+
+/** Official testCaseEvaluationScope (openmetadata-spec tests/basic.json). */
+export interface TestCaseEvaluationScope {
+  sampled?: boolean;
+  profileSample?: number;
+  profileSampleType?: 'PERCENTAGE' | 'ROWS';
+  partitioned?: boolean;
+  partitionColumnName?: string;
 }
 
 export interface TestCaseResult {
@@ -67,6 +92,16 @@ export interface TestCaseResult {
   testCaseStatus?: string;
   result?: string;
   testCaseFQN?: string;
+  incidentId?: string;
+  duration?: number;
+  minBound?: number;
+  maxBound?: number;
+  passedRows?: number;
+  failedRows?: number;
+  passedRowsPercentage?: number;
+  failedRowsPercentage?: number;
+  errorDetails?: TestCaseErrorDetails;
+  evaluationScope?: TestCaseEvaluationScope;
   /**
    * Named measured values (official TestCaseResult.testResultValue), e.g. a
    * tableDiff run's removedRows / addedRows / diffCount. Only entries the
@@ -95,6 +130,12 @@ export interface TestDefinition {
   dataQualityDimension?: string;
   parameterDefinition: TestParameterDefinition[];
   provider?: string;
+  supportedDataTypes?: string[];
+  supportedServices?: string[];
+  enabled?: boolean;
+  /** Official testDefinition.sqlExpression / custom SQL body. */
+  sqlExpression?: string;
+  supportsRowLevelPassedFailed?: boolean;
 }
 
 export interface CreateTestDefinitionRequest {
@@ -103,6 +144,13 @@ export interface CreateTestDefinitionRequest {
   testPlatforms: string[];
   description?: string;
   displayName?: string;
+  dataQualityDimension?: string;
+  supportedDataTypes?: string[];
+  supportedServices?: string[];
+  enabled?: boolean;
+  parameterDefinition?: TestParameterDefinition[];
+  sqlExpression?: string;
+  validatorClass?: string;
 }
 
 export interface TestCase {
@@ -120,11 +168,24 @@ export interface TestCase {
   testCaseResult?: TestCaseResult;
   testCaseStatus?: string;
   incidentId?: string;
-  /** Incident workflow state riding on the row (official fields list). */
-  incidentStatus?: string;
+  /** Inlined latest incident status from list/search (testCase.json incidentStatus). */
+  incidentStatus?: TestIncident;
   owners?: EntityRef[];
+  domains?: EntityRef[];
+  dataProducts?: EntityRef[];
+  tags?: TagRef[];
+  useDynamicAssertion?: boolean;
+  computePassedFailedRowCount?: boolean;
+  dataQualityDimension?: EntityRef;
+  deleted?: boolean;
+  /** Official testCase.topDimensions (dimension-level tests). */
+  topDimensions?: number;
   /** Columns to group results by dimensions (testCase.json dimensionColumns). */
   dimensionColumns?: string[];
+  /** Official testCase.inspectionQuery; gates the SQL query tab. */
+  inspectionQuery?: string;
+  /** Version snapshot diff (entity history responses). */
+  changeDescription?: ChangeDescription;
 }
 
 /**
@@ -148,6 +209,11 @@ export interface CreateTestCaseRequest {
   description?: string;
   displayName?: string;
   parameterValues?: TestParameterValue[];
+  tags?: Array<{ tagFQN: string; source?: string; name?: string; labelType?: string; state?: string }>;
+  dimensionColumns?: string[];
+  topDimensions?: number;
+  dataQualityDimension?: string;
+  computePassedFailedRowCount?: boolean;
 }
 
 export interface TestSuite {
@@ -156,11 +222,14 @@ export interface TestSuite {
   displayName?: string;
   description?: string;
   fullyQualifiedName?: string;
+  /** Official TestSuite.deleted: when true the entity has been soft deleted. */
+  deleted?: boolean;
   basic?: boolean;
   basicEntityReference?: string;
   tests: EntityRef[];
   summary?: TestSummary;
   owners: EntityRef[];
+  domains?: EntityRef[];
 }
 
 export interface CreateTestSuiteRequest {

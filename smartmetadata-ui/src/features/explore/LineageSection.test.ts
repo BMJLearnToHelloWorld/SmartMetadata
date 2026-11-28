@@ -36,7 +36,12 @@ async function mountSection() {
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
       {
-        path: '/assets/:entityType/:fqn',
+        path: '/:entityType/:fqn/:tab',
+        name: 'asset-tab',
+        component: { template: '<div>asset</div>' },
+      },
+      {
+        path: '/:entityType/:fqn',
         name: 'asset',
         component: { template: '<div>asset</div>' },
       },
@@ -75,10 +80,10 @@ describe('LineageSection (Q-TAB-4)', () => {
     expect(wrapper.find('[data-testid="downstream-count"]').text()).toBe('2');
     await wrapper.find('[data-testid="upstream-lineage"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('asset');
+    expect(router.currentRoute.value.name).toBe('asset-tab');
     expect(router.currentRoute.value.params.entityType).toBe('table');
     expect(router.currentRoute.value.params.fqn).toBe('svc.db.schema.orders');
-    expect(router.currentRoute.value.query).toMatchObject({ tab: 'lineage' });
+    expect(router.currentRoute.value.params.tab).toBe('lineage');
     wrapper.unmount();
   });
 

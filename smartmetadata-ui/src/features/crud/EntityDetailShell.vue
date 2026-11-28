@@ -27,6 +27,8 @@ const props = withDefaults(
     tabs?: EntityDetailTab[];
     activeTab?: string;
     tabsTestId?: string;
+    headerContainerTestId?: string;
+    entityPageHeaderTestId?: string;
     isBeta?: boolean;
     learningPageId?: string;
   }>(),
@@ -42,6 +44,8 @@ const props = withDefaults(
     tabs: () => [],
     activeTab: '',
     tabsTestId: 'entity-detail-tabs',
+    headerContainerTestId: undefined,
+    entityPageHeaderTestId: undefined,
     isBeta: false,
     learningPageId: undefined,
   },
@@ -99,21 +103,43 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
   <Card data-testid="entity-detail-shell">
     <Spin :spinning="loading">
       <Space direction="vertical" size="middle" style="width: 100%">
-        <Breadcrumb v-if="breadcrumbs.length" data-testid="entity-detail-breadcrumb">
-          <Breadcrumb.Item v-for="(item, index) in breadcrumbs" :key="`${item.label}-${index}`">
-            <a
-              v-if="item.to"
-              href="#"
-              :data-testid="`entity-detail-crumb-${index}`"
-              @click.prevent="onBreadcrumb(item)"
-            >
-              {{ item.label }}
-            </a>
-            <span v-else>{{ item.label }}</span>
-          </Breadcrumb.Item>
-        </Breadcrumb>
-        <div class="entity-detail__head">
+        <div
+          :data-testid="headerContainerTestId || undefined"
+          class="entity-detail__header-block"
+        >
+          <div
+            v-if="breadcrumbs.length || $slots['header-toolbar']"
+            class="entity-detail__crumb-row"
+          >
+            <Breadcrumb v-if="breadcrumbs.length" data-testid="entity-detail-breadcrumb">
+              <Breadcrumb.Item v-for="(item, index) in breadcrumbs" :key="`${item.label}-${index}`">
+                <a
+                  v-if="item.to"
+                  href="#"
+                  :data-testid="`entity-detail-crumb-${index}`"
+                  @click.prevent="onBreadcrumb(item)"
+                >
+                  {{ item.label }}
+                </a>
+                <span v-else>{{ item.label }}</span>
+              </Breadcrumb.Item>
+            </Breadcrumb>
+            <div v-if="$slots['header-toolbar']" class="entity-detail__toolbar">
+              <slot name="header-toolbar" />
+            </div>
+          </div>
+          <div class="entity-detail__head" :data-testid="entityPageHeaderTestId || undefined">
+          <div v-if="$slots['header-title']" class="entity-detail__head-custom">
+            <slot name="header-title" />
+            <div v-if="lead || $slots.meta" class="entity-detail__head-below">
+              <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-detail-lead">
+                {{ lead }}
+              </Typography.Paragraph>
+              <slot name="meta" />
+            </div>
+          </div>
           <PageHeader
+            v-else
             :header="title"
             :sub-header="subtitleText || undefined"
             :is-beta="isBeta"
@@ -133,6 +159,7 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
           <Space class="entity-detail__actions" wrap>
             <slot name="actions" />
           </Space>
+          </div>
         </div>
         <Alert v-if="error" type="error" show-icon :message="error" data-testid="entity-detail-error" />
         <!-- Additive error-action slot (M-3): rendered only when an error
@@ -154,32 +181,41 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
           </template>
         </Empty>
         <template v-else-if="!empty">
-          <Tabs
+          <div
             v-if="tabs.length"
-            class="entity-detail-tabs"
-            :data-testid="tabsTestId"
-            :active-key="currentTab"
-            @change="(key: string | number) => emit('update:activeTab', String(key))"
+            class="entity-detail__tab-bar"
+            :class="{ 'entity-detail__tab-bar--with-extra': $slots['tab-bar-extra'] }"
           >
-            <Tabs.TabPane v-for="tab in tabs" :key="tab.key" force-render :data-testid="tab.testId">
-              <!-- No :tab prop: antd's parseTabList prefers the prop over
-                   the slot, so the label (and the count pill) must come
-                   from this slot for every tab. -->
+            <Tabs
+              class="entity-detail-tabs"
+              :data-testid="tabsTestId"
+              :active-key="currentTab"
+              @change="(key: string | number) => emit('update:activeTab', String(key))"
+            >
+            <Tabs.TabPane v-for="tab in tabs" :key="tab.key" force-render>
+              <!-- Official Tabs.Item puts data-testid on the tab label
+                   (TestCaseClassBase labelProps.id), not the panel. -->
               <template #tab>
-                <template v-if="tab.count !== undefined">
-                  <span class="entity-detail-tab-label">{{ tab.label }}</span>
-                  <span
-                    class="entity-detail-tab-count"
-                    :data-testid="tab.testId ? `${tab.testId}-count` : undefined"
-                  >
-                    {{ tab.count }}
-                  </span>
-                </template>
-                <template v-else>{{ tab.label }}</template>
+                <span :data-testid="tab.testId" class="entity-detail-tab-label-anchor">
+                  <template v-if="tab.count !== undefined">
+                    <span class="entity-detail-tab-label">{{ tab.label }}</span>
+                    <span
+                      class="entity-detail-tab-count"
+                      :data-testid="tab.testId ? `${tab.testId}-count` : undefined"
+                    >
+                      {{ tab.count }}
+                    </span>
+                  </template>
+                  <template v-else>{{ tab.label }}</template>
+                </span>
               </template>
               <slot :name="tab.key" />
             </Tabs.TabPane>
-          </Tabs>
+            </Tabs>
+            <div v-if="$slots['tab-bar-extra']" class="entity-detail__tab-extra">
+              <slot name="tab-bar-extra" />
+            </div>
+          </div>
           <slot v-else />
         </template>
       </Space>
@@ -188,11 +224,50 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
 </template>
 
 <style scoped>
+.entity-detail__crumb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.entity-detail__toolbar {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .entity-detail__head {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+}
+
+.entity-detail__head-custom {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entity-detail__head-below {
+  margin-top: 8px;
+}
+
+.entity-detail__tab-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--sm-border-secondary);
+}
+
+.entity-detail__tab-bar--with-extra {
+  min-height: 42px;
+}
+
+.entity-detail__tab-extra {
+  flex-shrink: 0;
+  padding-bottom: 4px;
 }
 
 .entity-detail__actions {

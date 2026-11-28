@@ -331,6 +331,8 @@ export interface FetchAssetDetailOptions {
    * decides; this function never requests a gated field on its own.
    */
   extraFields?: string[];
+  /** Official version pages fetch the current entity with Include.All so a soft-deleted asset still resolves. */
+  include?: 'all' | 'non-deleted' | 'deleted';
 }
 
 /**
@@ -353,8 +355,8 @@ export interface FetchAssetDetailOptions {
 const PREFETCH_CACHE_MAX = 50;
 const prefetchedAssetDetails = new Map<string, Promise<AssetDetail>>();
 
-function prefetchCacheKey(entityType: string, fqn: string, extraFields: string[]): string {
-  return [entityType, fqn, [...extraFields].sort().join(',')].join('\0');
+function prefetchCacheKey(entityType: string, fqn: string, extraFields: string[], include?: string): string {
+  return [entityType, fqn, [...extraFields].sort().join(','), include ?? ''].join('\0');
 }
 
 function storePrefetched(key: string, promise: Promise<AssetDetail>): Promise<AssetDetail> {
@@ -404,7 +406,7 @@ export async function fetchAssetDetail(
     .filter((field, index, all) => field && all.indexOf(field) === index)
     .join(',');
   const extraFields = options.extraFields ?? [];
-  const key = prefetchCacheKey(entityType, fqn, extraFields);
+  const key = prefetchCacheKey(entityType, fqn, extraFields, options.include);
   const cached = prefetchedAssetDetails.get(key);
   if (cached) {
     // Consume-once: the warmed slot serves the click that follows the
@@ -413,7 +415,7 @@ export async function fetchAssetDetail(
     return cached;
   }
   const body = await apiRequest<Record<string, unknown>>(endpoint.path, {
-    query: { fields },
+    query: { fields, include: options.include },
   });
   return finishAssetDetail(entityType, fqn, body);
 }
@@ -535,6 +537,8 @@ function finishAssetDetail(entityType: string, fqn: string, body: Record<string,
     testSuite: mapRef(body.testSuite),
     relatedMetrics: mapEntityRefs(body.relatedMetrics),
     deleted: typeof body.deleted === 'boolean' ? body.deleted : undefined,
+    version: typeof body.version === 'number' || typeof body.version === 'string' ? body.version : undefined,
+    changeDescription: mapChangeDescription(body.changeDescription),
   };
 }
 
@@ -651,6 +655,25 @@ export async function listEntityVersions(entityType: string, id: string): Promis
       },
     ];
   });
+}
+
+/**
+ * Official per-entity version snapshot: GET /v1/{collection}/{id}/versions/{version}.
+ */
+export async function getEntityVersion(
+  entityType: string,
+  id: string,
+  version: string,
+): Promise<AssetDetail> {
+  const versionsPath = resolveVersionsPath(entityType, id);
+  if (!versionsPath) {
+    throw new Error(`No version endpoint for entity type "${entityType}"`);
+  }
+  const body = await apiRequest<Record<string, unknown>>(
+    `${versionsPath}/${encodeURIComponent(version)}`,
+  );
+  const fqn = asString(body.fullyQualifiedName) || id;
+  return finishAssetDetail(entityType, fqn, body);
 }
 
 export function patchAsset(entityType: string, id: string, patch: JsonPatchOp[]): Promise<unknown> {

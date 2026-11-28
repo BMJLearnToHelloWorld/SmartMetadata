@@ -176,6 +176,37 @@ export const DEFAULT_ENTITY_PERMISSION: OperationPermissions = {
 };
 
 /**
+ * Official VERSION_VIEW_GLOSSARY_PERMISSION (mocks/Glossary.mock.ts):
+ * ViewAll is true; every Create/Delete/Edit* and other View* flag is
+ * false. GlossaryV1's isVersionsView bypass sets this object on the
+ * header, details, and terms surfaces so version-view widgets stay
+ * read-only.
+ */
+export const VERSION_VIEW_GLOSSARY_PERMISSION: OperationPermissions = {
+  Create: false,
+  Delete: false,
+  EditAll: false,
+  EditCustomFields: false,
+  EditDataProfile: false,
+  EditDescription: false,
+  EditDisplayName: false,
+  EditLineage: false,
+  EditOwners: false,
+  EditQueries: false,
+  EditSampleData: false,
+  EditTags: false,
+  EditTests: false,
+  EditTier: false,
+  ViewAll: true,
+  ViewBasic: false,
+  ViewDataProfile: false,
+  ViewQueries: false,
+  ViewSampleData: false,
+  ViewTests: false,
+  ViewUsage: false,
+};
+
+/**
  * The single UI entry point for entity permissions — the frontend mirror
  * of the backend's authorizer.authorize(subject, operation, resource).
  * Components consume named flags; policy math lives in

@@ -72,7 +72,7 @@ describe('resolveSettingsLocation', () => {
       name: 'settings-preferences-entity-rules',
     });
     expect(resolveSettingsLocation('notifications/alerts')).toEqual({
-      name: 'observability-alerts',
+      name: 'settings-notification-alerts',
     });
   });
 

@@ -5,9 +5,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
 import {Button, Form, Input, Radio, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
+import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
 import { ApiError } from '@/api/client';
 import { createTestSuite, deleteTestSuite, listTestSuites, listTestSuitesBySearch } from '@/api/testSuites';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -31,6 +33,7 @@ import {
   suiteTypeForSubTab,
   type DqSuiteSubTab,
 } from '@/quality/landing';
+import { useDataQualityContext } from '@/quality/dataQualityContext';
 import type { TestSuite } from '@/types/quality';
 
 const props = withDefaults(
@@ -68,16 +71,15 @@ const form = reactive({
 
 const columns = computed<EntityListColumn[]>(() => [
   {
-    title: t('crud.name'),
+    title: t('label.name'),
     dataIndex: 'name',
     key: 'name',
     sorter: (left, right) =>
       entityLabel(left as TestSuite).localeCompare(entityLabel(right as TestSuite)),
   },
-  { title: t('quality.testSuites.suiteType'), key: 'basic', width: 110 },
-  { title: t('quality.testSuites.tests'), key: 'tests', width: 90 },
-  { title: t('quality.testSuites.successPercent'), key: 'successPercent', width: 110 },
-  { title: t('quality.testSuites.owners'), key: 'owners' },
+  { title: t('label.test-plural'), key: 'tests', width: 90 },
+  { title: t('label.success') + ' %', key: 'successPercent', width: 110 },
+  { title: t('label.owner-plural'), key: 'owners' },
 ]);
 
 const visibleSuites = computed(() =>
@@ -91,8 +93,25 @@ const hasNext = computed(() =>
     : canGoNext(pageAfter.value),
 );
 const hasPrev = computed(() => (usingSearch.value ? offset.value > 0 : canGoPrev(cursor.value)));
+const hasSuiteFilters = computed(() => Boolean(searchValue.value.trim()));
+const suiteSearchPlaceholder = computed(() =>
+  t('label.search-entity', {
+    entity:
+      subTab.value === 'table-suites' ? t('label.table-suite-plural') : t('label.bundle-suite-plural'),
+  }),
+);
 const emptyText = computed(() =>
-  subTab.value === 'table-suites' ? t('quality.testSuites.emptyTable') : t('quality.testSuites.emptyBundle'),
+  hasSuiteFilters.value
+    ? t('message.no-matching-test-suites')
+    : subTab.value === 'table-suites'
+      ? t('message.no-table-suites-yet')
+      : t('message.no-bundle-suites-yet'),
+);
+const dqContext = useDataQualityContext();
+const canCreateBundleFromContext = computed(() =>
+  props.embedded
+    ? Boolean(dqContext.createActions?.canCreateBundleSuite)
+    : subTab.value === 'bundle-suites',
 );
 
 function resetPager(): void {
@@ -139,7 +158,7 @@ async function load(): Promise<void> {
     pageAfter.value = page.after;
   } catch (error) {
     suites.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    errorMessage.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
     loading.value = false;
   }
@@ -179,12 +198,12 @@ async function onCreate(): Promise<void> {
       displayName: form.displayName.trim() || undefined,
     });
     createOpen.value = false;
-    message.success(t('quality.testSuites.created', { name: created.name }));
+    message.success(t('server.create-entity-success', { entity: t('label.bundle-suite') }));
     subTab.value = 'bundle-suites';
     resetPager();
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
+    message.error(getErrorText(error, t('server.create-entity-error', { entity: t('label.bundle-suite') })));
   } finally {
     creating.value = false;
   }
@@ -192,6 +211,20 @@ async function onCreate(): Promise<void> {
 
 function openCreate(): void {
   createOpen.value = true;
+}
+
+function onBundleCreatePress(): void {
+  if (props.embedded && dqContext.createActions?.onAddBundleSuite) {
+    dqContext.createActions.onAddBundleSuite();
+    return;
+  }
+  openCreate();
+}
+
+function onBundleCreated(): void {
+  createOpen.value = false;
+  resetPager();
+  void load();
 }
 
 watch(subTab, () => {
@@ -212,20 +245,20 @@ watch(
 
 async function onDelete(record: TestSuite): Promise<void> {
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
+    title: t('label.delete'),
+    content: t('message.delete-entity-message', { entity: record.displayName || record.name }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
   });
   if (!confirmed) {
     return;
   }
   try {
     await deleteTestSuite(record.id, { hardDelete: true });
-    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    message.success(t('server.entity-deleted-successfully', { entity: record.displayName || record.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+    message.error(getErrorText(error, t('server.delete-entity-error', { entity: t('label.test-suite') })));
   }
 }
 
@@ -238,8 +271,8 @@ defineExpose({ openCreate });
 
 <template>
   <EntityListShell
-    :title="t('quality.testSuites.title')"
-    :lead="t('quality.testSuites.lead')"
+    :title="t('label.data-quality')"
+    :lead="t('message.page-sub-header-for-data-quality')"
     :hide-heading="embedded"
     :loading="loading"
     :error="errorMessage"
@@ -248,7 +281,7 @@ defineExpose({ openCreate });
     table-test-id="test-suites-table"
     show-search
     :search-value="searchValue"
-    :search-placeholder="t('quality.testSuites.searchPlaceholder')"
+    :search-placeholder="suiteSearchPlaceholder"
     show-row-actions
     show-edit-action
     :total="total"
@@ -266,12 +299,12 @@ defineExpose({ openCreate });
   >
     <template #actions>
       <Button
-        v-if="subTab === 'bundle-suites'"
+        v-if="subTab === 'bundle-suites' && (!embedded || canCreateBundleFromContext)"
         type="primary"
         data-testid="create-test-suite"
-        @click="openCreate"
+        @click="onBundleCreatePress"
       >
-        {{ t('quality.testSuites.create') }}
+        {{ t('label.new-entity', { entity: t('label.bundle-suite') }) }}
       </Button>
     </template>
     <template #filters>
@@ -281,21 +314,21 @@ defineExpose({ openCreate });
         data-testid="test-suites-subtabs"
       >
         <Radio.Button value="table-suites" data-testid="test-suites-table-subtab">
-          {{ t('quality.testSuites.tableSuites') }}
+          {{ t('label.table-suite-plural') }}
         </Radio.Button>
         <Radio.Button value="bundle-suites" data-testid="test-suites-bundle-subtab">
-          {{ t('quality.testSuites.bundleSuites') }}
+          {{ t('label.bundle-suite-plural') }}
         </Radio.Button>
       </Radio.Group>
     </template>
     <template #emptyExtra>
       <Button
-        v-if="subTab === 'bundle-suites'"
+        v-if="subTab === 'bundle-suites' && (!embedded || canCreateBundleFromContext)"
         type="primary"
         data-testid="test-suites-empty-cta"
-        @click="openCreate"
+        @click="onBundleCreatePress"
       >
-        {{ t('quality.testSuites.create') }}
+        {{ t('label.new-entity', { entity: t('label.bundle-suite') }) }}
       </Button>
     </template>
     <template #bodyCell="{ column, record }">
@@ -307,9 +340,6 @@ defineExpose({ openCreate });
         >
           {{ entityLabel(record as TestSuite) }}
         </a>
-      </template>
-      <template v-else-if="column.key === 'basic'">
-        {{ (record as TestSuite).basic ? t('quality.testSuites.basic') : t('quality.testSuites.logical') }}
       </template>
       <template v-else-if="column.key === 'tests'">
         {{ (record as TestSuite).summary?.total ?? (record as TestSuite).tests.length }}
@@ -331,25 +361,10 @@ defineExpose({ openCreate });
       </template>
     </template>
   </EntityListShell>
-  <FormModal
+  <LogicalTestSuiteDrawer
     :open="createOpen"
-    :title="t('quality.testSuites.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
     @cancel="createOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-test-suite-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="3" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="form.displayName" />
-      </Form.Item>
-    </Form>
-  </FormModal>
+    @submitted="onBundleCreated"
+  />
+  
 </template>

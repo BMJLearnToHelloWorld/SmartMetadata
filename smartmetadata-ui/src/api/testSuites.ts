@@ -10,9 +10,10 @@
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { CreateTestSuiteRequest, TestSuite, TestSummary } from '@/types/quality';
+import { UUID_REGEX } from '@/utils/notifications/alertSelection';
 import { ApiError, apiRequest } from './client';
 
-export const TEST_SUITE_FIELDS = 'owners,reviewers,tests,summary';
+export const TEST_SUITE_FIELDS = 'owners,reviewers,tests,summary,domains';
 
 export interface ListTestSuitesQuery {
   limit?: number;
@@ -63,7 +64,25 @@ function mapTestSuite(raw: Record<string, unknown>): TestSuite | null {
     tests: mapEntityRefs(raw.tests),
     summary: mapSummary(raw.summary),
     owners: mapEntityRefs(raw.owners),
+    domains: mapEntityRefs(raw.domains),
   };
+}
+
+/** Official updateTestSuite patch (rest/testAPI.ts): PATCH /v1/dataQuality/testSuites/{id}. */
+export async function patchTestSuite(id: string, patch: unknown[]): Promise<TestSuite> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testSuites/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      json: patch,
+      contentType: 'application/json-patch+json',
+    },
+  );
+  const mapped = mapTestSuite(raw);
+  if (!mapped) {
+    throw new Error('Update test suite succeeded but the response had no test suite');
+  }
+  return mapped;
 }
 
 export function listTestSuites(query: ListTestSuitesQuery = {}): Promise<Paged<TestSuite>> {
@@ -78,6 +97,19 @@ export function listTestSuites(query: ListTestSuitesQuery = {}): Promise<Paged<T
   }).then((payload) => parsePaged(payload, mapTestSuite));
 }
 
+/** Official getTestSuiteByName: GET /v1/dataQuality/testSuites/name/{fqn}. */
+export async function getTestSuiteByName(fqn: string): Promise<TestSuite> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testSuites/name/${encodeURIComponent(fqn)}`,
+    { query: { fields: TEST_SUITE_FIELDS } },
+  );
+  const mapped = mapTestSuite(raw);
+  if (!mapped) {
+    throw new Error('Test suite response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function getTestSuite(id: string): Promise<TestSuite> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/dataQuality/testSuites/${encodeURIComponent(id)}`, {
     query: { fields: TEST_SUITE_FIELDS },
@@ -87,6 +119,11 @@ export async function getTestSuite(id: string): Promise<TestSuite> {
     throw new Error('Test suite response was missing id and name');
   }
   return mapped;
+}
+
+/** Official TestSuiteDetailsPage: UUID → by id, FQN → getTestSuiteByName. */
+export async function getTestSuiteByRouteParam(idOrFqn: string): Promise<TestSuite> {
+  return UUID_REGEX.test(idOrFqn) ? getTestSuite(idOrFqn) : getTestSuiteByName(idOrFqn);
 }
 
 /**

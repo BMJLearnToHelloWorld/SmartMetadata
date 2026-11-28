@@ -106,6 +106,20 @@ describe('rule helpers', () => {
     ]);
   });
 
+  it('falls back to official English trigger labels when displayName is omitted', () => {
+    const items = getRuleItems(
+      [
+        { name: 'GetTestCaseStatusUpdates' },
+        { name: 'GetTestCaseStatusUpdatesUnderSuite' },
+      ],
+      [],
+    );
+    expect(items.map((item) => item.label)).toEqual([
+      'Get Test Case Status Updates',
+      'Get Test Case Status Updates belonging to a Test Suite',
+    ]);
+  });
+
   it('returns section copy', () => {
     expect(getRuleCopy('filters', t)).toEqual({
       description: 'message.alerts-filter-description',

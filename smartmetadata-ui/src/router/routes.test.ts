@@ -52,7 +52,10 @@ describe('official-path aliases (G-01…G-10)', () => {
     ['/explore', 'search'],
     ['/search', 'search'],
     ['/data-quality', 'quality-test-cases'],
-    ['/data-quality/test-suites', 'quality-test-suites'],
+    ['/data-quality/test-suites', 'quality-data-quality-tab'],
+    ['/data-quality/test-cases', 'quality-data-quality-tab'],
+    ['/data-quality/dashboard', 'quality-data-quality-tab'],
+    ['/test-library', 'quality-test-definitions'],
     ['/test-suites/some-suite', 'quality-test-suite'],
     ['/domain', 'governance-domains'],
     ['/dataProduct', 'governance-data-products'],
@@ -91,6 +94,26 @@ describe('incident-manager aliases (W2-2)', () => {
     const resolved = router.resolve('/test-case/some-case/issues');
     expect(resolved.params).toMatchObject({ fqn: 'some-case', tab: 'issues' });
   });
+
+  it('resolves the official dimension-results page', () => {
+    const resolved = router.resolve('/test-case/some-case/dimensions/region');
+    expect(resolved.name).toBe('quality-test-case-dimensions');
+    expect(resolved.params).toMatchObject({ fqn: 'some-case', dimensionKey: 'region' });
+  });
+
+  it('redirects the product dimension path onto the official route', () => {
+    const resolved = router.resolve('/quality/test-cases/some-case/dimensions/region/test-case-results');
+    const record = resolved.matched[resolved.matched.length - 1];
+    expect(record).toBeDefined();
+    expect(typeof record.redirect).toBe('function');
+    const target = (record.redirect as (to: typeof resolved) => { name: string; params: Record<string, unknown> })(
+      resolved,
+    );
+    expect(target).toMatchObject({
+      name: 'quality-test-case-dimensions',
+      params: { fqn: 'some-case', dimensionKey: 'region', tab: 'test-case-results' },
+    });
+  });
 });
 
 // Route-pattern manifest (DESIGN §4.5 / §15.1). Classification key is
@@ -123,8 +146,8 @@ describe('settings route-pattern manifest (§4.5)', () => {
     ['/settings/persona', 'admin-settings-persona'],
     ['/settings/persona/Analyst', 'admin-settings-persona-detail'],
     ['/settings/sso', 'admin-settings-sso'],
-    ['/settings/notifications/alerts', 'observability-alerts'],
-    ['/settings/notifications/alerts/al1', 'observability-alert'],
+    ['/settings/notifications/alerts', 'settings-notification-alerts'],
+    ['/settings/notifications/alerts/al1', 'settings-notification-alert'],
     ['/settings/notifications/announcements', 'announcements'],
     ['/settings/notifications/announcements/duplicate/a1', 'announcement-duplicate'],
     ['/settings/preferences/appearance', 'settings-preferences-appearance'],
@@ -248,7 +271,18 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
     expect(router.resolve('/connections').name).toBe('connections');
     expect(router.resolve('/ingestion/services').name).toBe('not-found');
-    expect(router.resolve('/ingestion/services/database/s1').name).toBe('ingestion-service');
+    expect(router.resolve('/ingestion/services/database/s1').name).toBe('not-found');
+    expect(router.resolve('/service/databaseServices/pg.warehouse').name).toBe('service-detail');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/connection/edit-connection').name).toBe('ingestion-service-connection');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/add-ingestion/metadata').name).toBe('ingestion-service-add-ingestion');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/edit-ingestion/pg.warehouse.meta/metadata').name).toBe('ingestion-service-edit-ingestion');
+    expect(router.resolve('/service/databaseServices/pg.warehouse/versions/0.1').name).toBe('ingestion-service-version');
+    expect(router.resolve('/glossary/g1/versions/1.0').name).toBe('glossary-version');
+    expect(router.resolve('/glossary-term/t1/versions/0.3').name).toBe('glossary-term-version');
+    expect(router.resolve('/glossary-term/t1/versions/0.3/overview').name).toBe('glossary-term-version-tab');
+    expect(router.resolve('/governance/glossaries/g1/versions/1.0').name).toBe('governance-glossary-version');
+    expect(router.resolve('/governance/terms/t1/versions/0.3').name).toBe('governance-term-version');
+    expect(router.resolve('/governance/terms/t1/versions/0.3/overview').name).toBe('governance-term-version-tab');
     // D-17: the official `/:serviceCategory/add-service` form; the
     // retained `/ingestion/services/add` path is deleted with it.
     expect(router.resolve('/databaseServices/add-service').name).toBe('ingestion-service-add');
@@ -262,7 +296,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/governance/domains/Finance').name).toBe('governance-domain');
     expect(router.resolve('/governance/domains/Finance').params).toMatchObject({ fqn: 'Finance' });
     expect(router.resolve('/ingestion/pipelines/p1').name).toBe('ingestion-pipeline');
-    expect(router.resolve('/ingestion/pipelines/p1/edit').name).toBe('ingestion-pipeline-edit');
+    expect(router.resolve('/ingestion/pipelines/p1/edit').name).toBe('not-found');
     expect(router.resolve('/inbox').name).toBe('inbox');
     expect(router.resolve('/customize-page/fqn/LandingPage').name).toBe('customize-page');
     expect(router.resolve('/settings/services/database').name).toBe('settings-services');
@@ -306,7 +340,6 @@ describe('settings route-pattern manifest (§4.5)', () => {
       '/admin/settings/persona/p1/customize/LandingPage/Table',
       '/announcements',
       '/announcements/duplicate/a1',
-      '/observability/alerts',
       '/govern/workflows',
       '/govern/workflows/w1/workflow',
       '/workflows',
@@ -382,6 +415,14 @@ describe('guard declaration table (§10.2)', () => {
       'admin-app': { resource: 'APPLICATION', operation: 'view' },
       'observability-alerts': { resource: 'EVENT_SUBSCRIPTION', operation: 'view' },
       'observability-alert': { resource: 'EVENT_SUBSCRIPTION', operation: 'view' },
+      'quality-test-cases': { resource: 'TEST_SUITE', operation: 'view' },
+      'quality-data-quality-tab': { resource: 'TEST_SUITE', operation: 'view' },
+      'quality-test-case': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-case-version': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-case-version-tab': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-case-dimensions': { resource: 'TEST_CASE', operation: 'view' },
+      'observability-incidents': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-definitions': { resource: 'TEST_DEFINITION', operation: 'view' },
     };
     for (const [name, declaration] of Object.entries(expected)) {
       expect(declarationOf(name)).toEqual(declaration);
@@ -436,7 +477,6 @@ describe('guard declaration table (§10.2)', () => {
       'admin-settings-governance-glossary-term-relations',
       'customize-page',
       'ingestion-pipeline',
-      'ingestion-pipeline-edit',
       'admin-bot',
     ]) {
       expect(declarationOf(name)).toBe('admin-only');
@@ -502,10 +542,11 @@ describe('guard declaration table (§10.2)', () => {
 
   it('leaves the staged unit, the service family, inbox and column-bulk-ops undeclared', () => {
     for (const name of [
-      'ingestion-service',
+      'service-detail',
       'ingestion-service-add',
       'ingestion-service-connection',
       'ingestion-service-add-ingestion',
+      'ingestion-service-edit-ingestion',
       'ingestion-service-version',
       'inbox',
       'column-bulk-ops',
@@ -538,9 +579,11 @@ describe('settings sections faces', () => {
 
   const redirectCases: Array<[path: string, name: string, params: Record<string, string>]> = [
     ['/settings/members/teams', 'settings-members-team', { fqn: 'Organization' }],
-    // The plural alerts detail redirects to the canonical detail record,
-    // which takes :id (not :fqn/:tab).
-    ['/observability/alerts/a1', 'observability-alert', { id: 'a1' }],
+    // The plural alerts detail redirects to the official singular detail.
+    ['/observability/alerts/a1', 'observability-alert', { fqn: 'a1', tab: 'configuration' }],
+    ['/governance/glossaries/g1/versions/1.0', 'glossary-version', { id: 'g1', version: '1.0' }],
+    ['/governance/terms/t1/versions/0.3', 'glossary-term-version', { id: 't1', version: '0.3' }],
+    ['/governance/terms/t1/versions/0.3/overview', 'glossary-term-version-tab', { id: 't1', version: '0.3', tab: 'overview' }],
   ];
   it.each(redirectCases)('redirects %s to %s', (path, name, params) => {
     const resolved = resolveRedirect(path);
@@ -602,10 +645,13 @@ describe('settings sections faces', () => {
     // Same canonical record, distinct fqn so the case title stays unique.
     ['/settings/governance/workflow-definitions/w2', 'workflow-detail', { fqn: 'w2' }],
     // 07 notifications table (pin constants.ts:318-334).
-    // The settings-notification-alert(s) records were dropped; HEAD's
-    // canonical observability-alerts / observability-alert records win.
-    ['/settings/notifications/alerts', 'observability-alerts', {}],
-    ['/settings/notifications/alerts/a1', 'observability-alert', { id: 'a1' }],
+    // Settings notification list/detail are a separate official face from
+    // observability alerts.
+    ['/settings/notifications/alerts', 'settings-notification-alerts', {}],
+    ['/settings/notifications/alerts/a1', 'settings-notification-alert', { fqn: 'a1' }],
+    ['/settings/notifications/alerts/a1/configuration', 'settings-notification-alert', { fqn: 'a1', tab: 'configuration' }],
+    ['/observability/alerts', 'observability-alerts', {}],
+    ['/observability/alert/a1/configuration', 'observability-alert', { fqn: 'a1', tab: 'configuration' }],
     ['/settings/notifications/add-notification', 'settings-notification-alert-add', {}],
     ['/settings/notifications/edit-notification/a1', 'settings-notification-alert-edit', { fqn: 'a1' }],
     // (The legacy /observability/alert(s) list/detail shapes are
@@ -657,21 +703,17 @@ describe('settings sections faces', () => {
     }
   });
 
-  it('sends the dropped legacy observability and :tab detail shapes to the catch-all', () => {
-    // No /observability/alerts list record and no singular
-    // /observability/alert/:fqn record survive the merge (the canonical
-    // list/detail live under /settings/notifications/alerts, and only the
-    // plural /observability/alerts/:id redirect exists), and the
-    // :tab-suffixed alert detail shape was dropped with the sections
-    // :tab record — all four paths must 404.
-    for (const path of [
-      '/observability/alerts',
-      '/observability/alert/a1',
-      '/observability/alert/a1/recentEvents',
-      '/settings/notifications/alerts/a1/diagnostic-info',
-    ]) {
-      expect(router.resolve(path).name).toBe('not-found');
-    }
+  it('resolves official observability alert paths and classic redirects', () => {
+    expect(router.resolve('/observability/alerts').name).toBe('observability-alerts');
+    expect(router.resolve('/observability/alert').name).toBe('observability-alerts');
+    expect(router.resolve('/observability/alert/a1').name).toBe('observability-alert');
+    expect(router.resolve('/observability/alert/a1/recentEvents').name).toBe('observability-alert');
+    expect(router.resolve('/settings/notifications/alerts/a1/diagnostic-info').name).toBe('settings-notification-alert');
+    expect(router.resolve('/observability').redirectedFrom || router.resolve('/observability').path).toBeTruthy();
+    expect(router.resolve('/test-library').name).toBe('quality-test-definitions');
+    expect(router.getRoutes().find((route) => route.path === '/observability/test-library')?.redirect).toBe('/test-library');
+    expect(router.getRoutes().find((route) => route.path === '/observability/incident-manager')?.redirect).toBe('/incident-manager');
+    expect(router.resolve('/test-library').name).toBe('quality-test-definitions');
   });
 
   it('registers each new path exactly once', () => {
@@ -694,7 +736,7 @@ describe('settings sections faces', () => {
       '/settings/notifications/alerts',
       '/settings/notifications/add-notification',
       '/settings/notifications/edit-notification/:fqn',
-      '/settings/notifications/alerts/:id',
+      '/settings/notifications/alerts/:fqn/:tab?',
       '/settings/notifications/announcements',
       '/settings/notifications/announcements/add',
       '/settings/notifications/announcements/edit/:id',
@@ -771,5 +813,20 @@ describe('marketplace routes (AP-D3 hard cut)', () => {
     expect(router.resolve('/marketplace').name).toBe('marketplace-app-catalog');
     expect(router.resolve('/marketplace').name).not.toBe('marketplace-overview');
     expect(router.resolve('/data-marketplace').name).toBe('marketplace-overview');
+  });
+});
+
+describe('official entity-detail path segments', () => {
+  it('resolves entity, tab, profiler sub-tab, and test-case paths', () => {
+    expect(router.resolve('/table/svc.db.schema.orders').name).toBe('asset');
+    expect(router.resolve('/table/svc.db.schema.orders/schema').name).toBe('asset-tab');
+    expect(router.resolve('/table/svc.db.schema.orders/profiler/data-quality').name).toBe('asset-subtab');
+    expect(router.resolve('/table/svc.db.schema.orders/activity_feed/all').name).toBe('asset-subtab');
+    expect(router.resolve('/test-case/suite.case/test-case-results').name).toBe('quality-test-case');
+  });
+
+  it('does not invent a compatibility redirect from /assets or query tabs', () => {
+    expect(router.resolve('/assets/table/foo').name).toBe('not-found');
+    expect(router.resolve('/query/some.query').name).toBe('not-found');
   });
 });

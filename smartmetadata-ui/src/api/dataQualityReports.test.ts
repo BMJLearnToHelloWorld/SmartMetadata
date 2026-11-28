@@ -22,7 +22,10 @@ import {
   DQ_TABLE_INDEX,
   DQ_TEST_CASE_INDEX,
   DQ_TOTAL_TABLES_AGGREGATION,
+  DQ_TEST_CASE_RESULT_BY_SUITE_AGGREGATION,
+  fetchTestCaseResultByTestSuiteId,
   getDataQualityReportBatch,
+  testCaseResultByTestSuiteQuery,
 } from './dataQualityReports';
 
 function lastFetchBody(): Record<string, unknown> {
@@ -142,14 +145,14 @@ describe('aggregation-row mappers', () => {
     expect(counts).toEqual({ success: 4, failed: 2, aborted: 1, queued: 3, total: 10 });
   });
 
-  it('builds dimension cards from nested rows and maps missing dimensions to No Dimension', () => {
+  it('builds dimension cards from nested rows and maps missing dimensions to NoDimension', () => {
     const cards = dimensionCardsFromReportRows([
       { dataQualityDimensionName: 'Accuracy', 'testCaseResult.testCaseStatus': 'Success', document_count: '2' },
       { dataQualityDimensionName: 'Accuracy', 'testCaseResult.testCaseStatus': 'Failed', document_count: '1' },
       { 'testCaseResult.testCaseStatus': 'Failed', document_count: '5' },
     ]);
     const accuracy = cards.find((card) => card.id === 'Accuracy');
-    const none = cards.find((card) => card.id === 'No Dimension');
+    const none = cards.find((card) => card.id === 'NoDimension');
     expect(accuracy).toMatchObject({ success: 2, failed: 1, total: 3 });
     expect(none).toMatchObject({ failed: 5, total: 5 });
   });
@@ -158,5 +161,76 @@ describe('aggregation-row mappers', () => {
     expect(cardinalityFromReportRows([{ originEntityFQN: '7' }], 'originEntityFQN')).toBe(7);
     expect(cardinalityFromReportRows([], 'originEntityFQN')).toBeUndefined();
     expect(cardinalityFromReportRows([{ originEntityFQN: 'n/a' }], 'originEntityFQN')).toBeUndefined();
+  });
+});
+
+describe('fetchTestCaseResultByTestSuiteId', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('GETs the official test-suite result aggregation, not a test-case list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            metadata: { keys: [], dimensions: ['entityFQN', 'testCaseResult.testCaseStatus'], metrics: ['document_count'] },
+            data: [
+              {
+                document_count: '2',
+                entityFQN: 'sample.db.schema.table.address_id',
+                'testCaseResult.testCaseStatus': 'success',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const report = await fetchTestCaseResultByTestSuiteId('suite-id');
+    const url = String(vi.mocked(fetch).mock.calls.at(-1)?.[0]);
+    expect(url).toContain('/api/v1/dataQuality/testSuites/dataQualityReport?');
+    expect(url).not.toContain('/batch');
+    const parsed = new URL(url, 'http://local');
+    expect(parsed.searchParams.get('index')).toBe(DQ_TEST_CASE_INDEX);
+    expect(parsed.searchParams.get('aggregationQuery')).toBe(DQ_TEST_CASE_RESULT_BY_SUITE_AGGREGATION);
+    const q = JSON.parse(parsed.searchParams.get('q') ?? '{}') as {
+      query: { bool: { must: Array<Record<string, unknown>> } };
+    };
+    const should = (q.query.bool.must[0]?.bool as { should: Array<Record<string, unknown>> }).should;
+    expect(should[0]?.nested).toMatchObject({
+      path: 'testSuites',
+      query: { term: { 'testSuites.id': 'suite-id' } },
+    });
+    expect(should[1]?.term).toEqual({ 'testSuite.id': 'suite-id' });
+    expect(q.query.bool.must[1]?.term).toEqual({ deleted: false });
+    expect(q.query.bool.must).toHaveLength(2);
+    expect(report.data[0]?.document_count).toBe('2');
+    expect(JSON.parse(testCaseResultByTestSuiteQuery('suite-id')).query.bool.must).toHaveLength(2);
+  });
+
+  it('adds the official optional status term when one is provided', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ metadata: { keys: [], dimensions: [], metrics: [] }, data: [] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    await fetchTestCaseResultByTestSuiteId('suite-id', 'failed');
+    const url = String(vi.mocked(fetch).mock.calls.at(-1)?.[0]);
+    const q = JSON.parse(new URL(url, 'http://local').searchParams.get('q') ?? '{}') as {
+      query: { bool: { must: Array<Record<string, unknown>> } };
+    };
+    expect(q.query.bool.must[2]?.term).toEqual({ 'testCaseResult.testCaseStatus': 'failed' });
   });
 });

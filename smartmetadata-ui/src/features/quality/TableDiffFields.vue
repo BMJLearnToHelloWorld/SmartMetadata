@@ -220,7 +220,7 @@ function onSwitchChange(name: string, checked: unknown): void {
           :filter-option="false"
           :loading="tableSearchLoading"
           :options="tableOptions"
-          :placeholder="t('quality.testCases.tableDiffSearchTable')"
+          :placeholder="t('label.table')"
           :data-testid="`table-diff-param-${TABLE2_PARAM}`"
           @search="onTableSearch"
           @change="onTable2Change"
@@ -230,7 +230,7 @@ function onSwitchChange(name: string, checked: unknown): void {
           mode="tags"
           :value="arrayValue(param.name)"
           :options="table1ColumnOptions(crossListExcluded)"
-          :placeholder="t('quality.testCases.tableDiffTypeColumn')"
+          :placeholder="t('message.select-column-name')"
           :data-testid="`table-diff-param-${param.name}`"
           @change="(value: unknown) => onArrayChange(param.name, value)"
         />
@@ -240,7 +240,7 @@ function onSwitchChange(name: string, checked: unknown): void {
           :value="arrayValue(param.name)"
           :options="table2Columns.map((column) => ({ value: column.name, label: column.name }))"
           :disabled="!table2Fqn"
-          :placeholder="t('quality.testCases.tableDiffTypeColumn')"
+          :placeholder="t('message.select-column-name')"
           :data-testid="`table-diff-param-${TABLE2_KEY_COLUMNS_PARAM}`"
           @change="(value: unknown) => onArrayChange(param.name, value)"
         />
@@ -266,7 +266,7 @@ function onSwitchChange(name: string, checked: unknown): void {
       </Form.Item>
     </template>
     <p v-if="table1LoadFailed" class="table-diff-fields__hint">
-      {{ t('quality.testCases.tableDiffColumnsUnavailable') }}
+      {{ t('label.no-data') }}
     </p>
   </div>
 </template>

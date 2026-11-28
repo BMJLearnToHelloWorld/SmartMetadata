@@ -13,6 +13,7 @@ import {
   getAlertDetailsBreadcrumbs,
   getAlertFormBreadcrumbs,
   getAnnouncementFormBreadcrumbs,
+  getObservabilityAlertsListBreadcrumbs,
 } from './notificationBreadcrumbs';
 
 const t = ((key: string, params?: Record<string, unknown>) =>
@@ -28,7 +29,7 @@ describe('notification breadcrumbs', () => {
         routeName: 'settings-category',
         routeParams: { category: 'notifications' },
       },
-      { label: 'label.alert-plural', routeName: 'observability-alerts' },
+      { label: 'label.alert-plural', routeName: 'settings-notification-alerts' },
       { label: 'DQ Alert' },
     ]);
   });
@@ -36,9 +37,16 @@ describe('notification breadcrumbs', () => {
   it('builds the three-level observability detail trail with an unlinked first crumb', () => {
     const crumbs = getAlertDetailsBreadcrumbs('Observability', 'dq-alert', undefined, t);
     expect(crumbs).toEqual([
-      { label: 'label.observability' },
+      { label: 'nav.observability' },
       { label: 'label.alert-plural', routeName: 'observability-alerts' },
       { label: 'dq-alert' },
+    ]);
+  });
+
+  it('builds the two-level observability alerts list trail (AlertsPage.tsx)', () => {
+    expect(getObservabilityAlertsListBreadcrumbs(t)).toEqual([
+      { label: 'nav.observability' },
+      { label: 'label.alert-plural' },
     ]);
   });
 
@@ -51,7 +59,7 @@ describe('notification breadcrumbs', () => {
         routeName: 'settings-category',
         routeParams: { category: 'notifications' },
       },
-      { label: 'label.alert-plural', routeName: 'observability-alerts' },
+      { label: 'label.alert-plural', routeName: 'settings-notification-alerts' },
       { label: 'label.create-entity:{"entity":"label.alert"}' },
     ]);
     expect(create[create.length - 1]).toEqual({
@@ -61,7 +69,7 @@ describe('notification breadcrumbs', () => {
     expect(edit[edit.length - 1]).toEqual({
       label: 'label.edit-entity:{"entity":"label.alert"}',
     });
-    expect(edit[0]).toEqual({ label: 'label.observability' });
+    expect(edit[0]).toEqual({ label: 'nav.observability' });
   });
 
   it('builds the announcement form trail', () => {

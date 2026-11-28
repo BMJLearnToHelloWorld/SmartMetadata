@@ -13,19 +13,29 @@ export type AssetTabKey =
   | 'overview'
   | 'schema'
   | 'charts'
+  | 'children'
+  | 'worksheets'
   | 'features'
   | 'tasks'
   | 'executions'
   | 'code'
   | 'lineage'
-  | 'quality'
   | 'activity'
-  | 'customProperties';
+  | 'customProperties'
+  | 'contract';
 
-const SHARED_TAIL: AssetTabKey[] = ['lineage', 'quality', 'activity', 'customProperties'];
+const SHARED_TAIL: AssetTabKey[] = ['lineage', 'activity', 'customProperties'];
 
 export function assetTabKeys(entityType: string): AssetTabKey[] {
-  const keys: AssetTabKey[] = ['overview'];
+  // Official TabsIds with no OVERVIEW: Pipeline, Directory, Spreadsheet,
+  // Worksheet (t418u). Chart keeps overview because it aliases official DETAILS.
+  // File keeps official OVERVIEW. Official QueryPage (QueryClassBase has no
+  // TabsIds) is /query-view/:fqn/:queryId and has no overview or entity tabs.
+  if (entityType === 'query') {
+    return [];
+  }
+  const noOverviewFallback = new Set(['pipeline', 'directory', 'spreadsheet', 'worksheet']);
+  const keys: AssetTabKey[] = noOverviewFallback.has(entityType) ? [] : ['overview'];
   switch (entityType) {
     case 'table':
     case 'topic':
@@ -43,6 +53,15 @@ export function assetTabKeys(entityType: string): AssetTabKey[] {
     case 'pipeline':
       keys.push('tasks', 'executions');
       break;
+    case 'directory':
+      keys.push('children');
+      break;
+    case 'spreadsheet':
+      keys.push('worksheets');
+      break;
+    case 'worksheet':
+      keys.push('schema');
+      break;
     case 'storedProcedure':
     case 'metric':
       keys.push('code');
@@ -51,5 +70,13 @@ export function assetTabKeys(entityType: string): AssetTabKey[] {
       break;
   }
   keys.push(...SHARED_TAIL);
+  if (entityType === 'pipeline') {
+    const customIdx = keys.indexOf('customProperties');
+    if (customIdx >= 0) {
+      keys.splice(customIdx, 0, 'contract');
+    } else {
+      keys.push('contract');
+    }
+  }
   return keys;
 }

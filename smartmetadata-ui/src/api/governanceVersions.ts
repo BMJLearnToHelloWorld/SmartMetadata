@@ -27,6 +27,17 @@ import { apiRequest } from './client';
  * fields plus the changeDescription diff, the same two surfaces the
  * official version pages render, without inventing a per-kind mapper.
  */
+function historyVersionRecord(item: unknown): Record<string, unknown> | null {
+  if (typeof item === 'string') {
+    try {
+      return asRecord(JSON.parse(item));
+    } catch {
+      return null;
+    }
+  }
+  return asRecord(item);
+}
+
 export const GOVERNANCE_VERSION_COLLECTIONS: Record<GovernanceVersionKind, string> = {
   domain: 'domains',
   glossary: 'glossaries',
@@ -46,7 +57,10 @@ export async function listGovernanceVersions(kind: GovernanceVersionKind, id: st
     return [];
   }
   return versions.flatMap((item) => {
-    const rec = asRecord(item);
+    // Official EntityHistory.versions are JSON strings of the full entity
+    // (EntityVersionTimeLine renderVersionButton does JSON.parse(version)).
+    // Keep object items so existing callers stay intact.
+    const rec = historyVersionRecord(item);
     if (!rec) {
       return [];
     }

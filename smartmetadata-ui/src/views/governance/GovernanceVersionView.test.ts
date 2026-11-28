@@ -60,11 +60,11 @@ describe('GovernanceVersionView', () => {
             ? new Response('not found', { status: 404 })
             : jsonResponse({ id: 'd1', name: 'Finance', fullyQualifiedName: 'Finance' });
         }
-        if (url.includes('/api/v1/glossaries/g1/versions/')) {
-          return jsonResponse({ id: 'g1', name: 'Glossary', description: 'g desc', version: 1.0 });
+        if (url.includes('/api/v1/tags/t1/versions/')) {
+          return jsonResponse({ id: 't1', name: 'PII', description: 'tag desc', version: 0.2 });
         }
-        if (url.includes('/api/v1/glossaries/g1/versions')) {
-          return jsonResponse({ versions: [{ version: 1.0, updatedAt: 10 }] });
+        if (url.includes('/api/v1/tags/t1/versions')) {
+          return jsonResponse({ versions: [{ version: 0.2, updatedAt: 10 }] });
         }
         return new Response('not found', { status: 404 });
       }),
@@ -89,10 +89,10 @@ describe('GovernanceVersionView', () => {
           component: GovernanceVersionView,
           props: true,
         },
-        { path: '/governance/glossaries/:id', name: 'governance-glossary', component: { template: '<div>glossary</div>' } },
+        { path: '/governance/tags/:id', name: 'governance-tag', component: { template: '<div>tag</div>' } },
         {
-          path: '/governance/glossaries/:id/versions/:version',
-          name: 'governance-glossary-version',
+          path: '/governance/tags/:id/versions/:version',
+          name: 'governance-tag-version',
           component: GovernanceVersionView,
           props: true,
         },
@@ -102,7 +102,7 @@ describe('GovernanceVersionView', () => {
 
   async function mountVersionPage(
     path: string,
-    props: { kind: 'domain' | 'glossary'; id: string; version: string },
+    props: { kind: 'domain' | 'tag'; id: string; version: string },
   ) {
     const pinia = createPinia();
     setActivePinia(pinia);
@@ -183,16 +183,16 @@ describe('GovernanceVersionView', () => {
   });
 
   it('keeps the id back link for non-domain kinds and never fetches a domain (B-9 #3)', async () => {
-    const { wrapper, router } = await mountVersionPage('/governance/glossaries/g1/versions/1.0', {
-      kind: 'glossary',
-      id: 'g1',
-      version: '1.0',
+    const { wrapper, router } = await mountVersionPage('/governance/tags/t1/versions/0.2', {
+      kind: 'tag',
+      id: 't1',
+      version: '0.2',
     });
-    expect(wrapper.text()).toContain('Glossary');
+    expect(wrapper.text()).toContain('PII');
     expect(requestedUrls.some((url) => url.includes('/api/v1/domains/'))).toBe(false);
     await wrapper.find('[data-testid="governance-version-back"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/governance/glossaries/g1');
+    expect(router.currentRoute.value.path).toBe('/governance/tags/t1');
     wrapper.unmount();
   });
 });

@@ -42,6 +42,14 @@ export type TextDiffResult =
   | { type: 'plain'; text: string }
   | { type: 'diff'; parts: DiffPart[] };
 
+export function isTextDiffResult(value: unknown): value is TextDiffResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const result = value as { type?: unknown };
+  return result.type === 'plain' || result.type === 'diff';
+}
+
 export interface EntityDiffProps {
   added?: ChangeField;
   deleted?: ChangeField;
@@ -210,6 +218,32 @@ export const getChangedEntityOldValue = (diffObject?: EntityDiffProps): unknown 
 
 export const getChangedEntityNewValue = (diffObject?: EntityDiffProps): unknown =>
   diffObject?.added?.newValue ?? diffObject?.deleted?.newValue ?? diffObject?.updated?.newValue;
+
+/**
+ * Official `getUpdatedExtensionDiffFields` (EntityDiffUtils.tsx):
+ * for an updated extension field `extension.{name}`, replace that
+ * field with the word-level text diff of old vs new values. Product
+ * `ChangeField` stores the official `name` in `field`, and
+ * `getTextDiff` returns segments instead of an HTML string.
+ */
+export function getUpdatedExtensionDiffFields(
+  entityDetails: { extension?: Record<string, unknown> },
+  extensionDiff: EntityDiffProps,
+): { extensionObject?: Record<string, unknown> } {
+  const extensionObj = entityDetails.extension;
+  const newValues = getChangedEntityNewValue(extensionDiff);
+  const oldValues = getChangedEntityOldValue(extensionDiff);
+  const changedFieldName = extensionDiff.updated?.field?.split('.')[1];
+
+  return extensionObj && changedFieldName
+    ? {
+        extensionObject: {
+          ...extensionObj,
+          [changedFieldName]: getTextDiff(toStringValue(oldValues), toStringValue(newValues)),
+        },
+      }
+    : { extensionObject: {} };
+}
 
 export const getChangeColumnNameFromDiffValue = (name?: string): string | undefined => {
   const nameWithoutInternalQuotes = name?.replaceAll(/"/g, '');
@@ -781,4 +815,309 @@ export function partitionVersionTimeline<T>(
     return { visible: versions.slice(0, maxAllowed), hidden: versions.slice(maxAllowed) };
   }
   return { visible: [...versions], hidden: [] };
+}
+
+
+/** Official `constants/Feeds.constants.ts` EntityField values used by version column diffs. */
+export const EntityField = {
+  COLUMNS: 'columns',
+  DESCRIPTION: 'description',
+  TAGS: 'tags',
+  DISPLAYNAME: 'displayName',
+  DATA_TYPE_DISPLAY: 'dataTypeDisplay',
+  CONSTRAINT: 'constraint',
+  TABLE_CONSTRAINTS: 'tableConstraints',
+} as const;
+
+export type EntityFieldName = (typeof EntityField)[keyof typeof EntityField];
+
+/** Official `FQN_SEPARATOR_CHAR`. */
+export const FQN_SEPARATOR_CHAR = '.';
+
+/**
+ * Column/field row after official `getColumnsDataWithVersionChanges`.
+ * Official assigns `getTextDiff` HTML into name/description/dataTypeDisplay;
+ * the product keeps the raw string for matching/search and stores the
+ * existing `TextDiffResult` alongside so `VersionDiffText` can render it
+ * without `v-html`.
+ */
+export interface VersionColumn {
+  name: string;
+  displayName?: string;
+  dataType?: string;
+  dataTypeDisplay?: string;
+  description?: string;
+  constraint?: string;
+  tags?: TagLabelWithStatus[];
+  children?: VersionColumn[];
+  fullyQualifiedName?: string;
+  key?: string;
+  nameDiff?: TextDiffResult;
+  displayNameDiff?: TextDiffResult;
+  dataTypeDisplayDiff?: TextDiffResult;
+  descriptionDiff?: TextDiffResult;
+}
+
+function cloneVersionColumns<A extends VersionColumn>(columns: A[] = []): A[] {
+  return columns.map((column) => ({
+    ...column,
+    tags: column.tags?.map((tag) => ({ ...tag })),
+    children: column.children ? cloneVersionColumns(column.children as A[]) : undefined,
+  })) as A[];
+}
+
+function attachTextDiff<A extends VersionColumn>(
+  row: A,
+  key: 'name' | 'displayName' | 'dataTypeDisplay' | 'description',
+  oldText: string,
+  newText: string,
+): void {
+  const fallback = (row[key] as string | undefined) ?? newText ?? oldText ?? '';
+  const diff = getTextDiff(oldText, newText, fallback);
+  if (key === 'name') {
+    row.nameDiff = diff;
+  } else if (key === 'displayName') {
+    row.displayNameDiff = diff;
+  } else if (key === 'dataTypeDisplay') {
+    row.dataTypeDisplayDiff = diff;
+  } else {
+    row.descriptionDiff = diff;
+  }
+}
+
+function parseJsonArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+  const text = toStringValue(value);
+  if (!text) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getEntityDescriptionDiff<A extends VersionColumn>(
+  entityDiff: EntityDiffProps,
+  changedEntityName?: string,
+  entityList: A[] = [],
+): A[] {
+  const oldDescription = toStringValue(getChangedEntityOldValue(entityDiff));
+  const newDescription = toStringValue(getChangedEntityNewValue(entityDiff));
+
+  const formatEntityData = (arr: A[]) => {
+    arr?.forEach((item) => {
+      if (item.name === changedEntityName) {
+        attachTextDiff(item, 'description', oldDescription, newDescription);
+      } else if (item.children?.length) {
+        formatEntityData(item.children as A[]);
+      }
+    });
+  };
+
+  formatEntityData(entityList);
+  return entityList;
+}
+
+export function getStringEntityDiff<A extends VersionColumn>(
+  entityDiff: EntityDiffProps,
+  key: 'displayName' | 'dataTypeDisplay',
+  changedEntityName?: string,
+  entityList: A[] = [],
+): A[] {
+  const oldValue = toStringValue(getChangedEntityOldValue(entityDiff));
+  const newValue = toStringValue(getChangedEntityNewValue(entityDiff));
+
+  const formatEntityData = (arr: A[]) => {
+    arr?.forEach((item) => {
+      if (item.name === changedEntityName) {
+        attachTextDiff(item, key, oldValue, newValue);
+        if (newValue) {
+          item[key] = newValue;
+        }
+      } else if (item.children?.length) {
+        formatEntityData(item.children as A[]);
+      }
+    });
+  };
+
+  formatEntityData(entityList);
+  return entityList;
+}
+
+export function getEntityTagDiff<A extends VersionColumn>(
+  entityDiff: EntityDiffProps,
+  changedEntityName?: string,
+  entityList: A[] = [],
+): A[] {
+  const oldTags = parseJsonArray<ServiceTagLabel>(getChangedEntityOldValue(entityDiff));
+  const newTags = parseJsonArray<ServiceTagLabel>(getChangedEntityNewValue(entityDiff));
+
+  const formatColumnData = (arr: A[]) => {
+    arr?.forEach((item) => {
+      if (item.name === changedEntityName) {
+        const flag: Record<string, boolean> = {};
+        const uniqueTags: TagLabelWithStatus[] = [];
+        const tagsDiff = getTagsDiff(oldTags, newTags);
+        [...tagsDiff, ...((item.tags ?? []) as TagLabelWithStatus[])].forEach((elem) => {
+          const tagFQN = elem.tagFQN ?? '';
+          if (!flag[tagFQN]) {
+            flag[tagFQN] = true;
+            uniqueTags.push(elem);
+          }
+        });
+        item.tags = uniqueTags;
+      } else if (item.children?.length) {
+        formatColumnData(item.children as A[]);
+      }
+    });
+  };
+
+  formatColumnData(entityList);
+  return entityList;
+}
+
+export function getNewColumnFromColDiff<A extends VersionColumn>(newCol: A[]): A[] {
+  return newCol.map((col) => {
+    const copy: A = {
+      ...col,
+      tags: col.tags?.map((tag) => ({ ...tag, removed: true })),
+      children: !col.children?.length ? undefined : getNewColumnFromColDiff(col.children as A[]),
+    };
+    attachTextDiff(copy, 'description', copy.description ?? '', '');
+    attachTextDiff(copy, 'dataTypeDisplay', copy.dataTypeDisplay ?? '', '');
+    attachTextDiff(copy, 'name', copy.name, '');
+    return copy;
+  });
+}
+
+function formatAddedColumnData<A extends VersionColumn>(arr: A[], col: A, updateAll?: boolean): void {
+  arr?.forEach((item) => {
+    if (item.name === col.name || updateAll) {
+      item.tags = item.tags?.map((tag) => ({ ...tag, added: true }));
+      attachTextDiff(item, 'description', '', item.description ?? '');
+      attachTextDiff(item, 'dataTypeDisplay', '', item.dataTypeDisplay ?? '');
+      attachTextDiff(item, 'name', '', item.name);
+      if (item.children?.length) {
+        formatAddedColumnData(item.children as A[], col, true);
+      }
+    } else if (item.children?.length) {
+      formatAddedColumnData(item.children as A[], col);
+    }
+  });
+}
+
+function createAddedColumnsDiff<A extends VersionColumn>(columnsDiff: EntityDiffProps, colList: A[] = []): void {
+  const newCol = parseJsonArray<A>(columnsDiff.added?.newValue);
+  newCol.forEach((col) => {
+    formatAddedColumnData(colList, col);
+  });
+}
+
+export function addDeletedColumnsDiff<A extends VersionColumn>(
+  columnsDiff: EntityDiffProps,
+  colList: A[] = [],
+  changedEntity = '',
+): void {
+  const newCol = parseJsonArray<A>(columnsDiff.deleted?.oldValue);
+  const newColumns = getNewColumnFromColDiff(newCol);
+
+  const insertNewColumn = (changedEntityField: string, colArray: VersionColumn[]) => {
+    const fieldsArray = changedEntityField.split(FQN_SEPARATOR_CHAR);
+    if (!changedEntityField) {
+      const nonExistingColumns = newColumns.filter((newColumn) =>
+        !colArray.find((existing) => existing.name === newColumn.name),
+      );
+      colArray.unshift(...nonExistingColumns);
+    } else {
+      const parentField = fieldsArray.shift();
+      const children = colArray.find((existing) => existing.name === parentField)?.children;
+      insertNewColumn(fieldsArray.join(FQN_SEPARATOR_CHAR), children ?? []);
+    }
+  };
+
+  insertNewColumn(changedEntity, colList);
+}
+
+function uniqByName<A extends VersionColumn>(colList: A[]): A[] {
+  const seen = new Set<string>();
+  return colList.filter((column) => {
+    if (seen.has(column.name)) {
+      return false;
+    }
+    seen.add(column.name);
+    return true;
+  });
+}
+
+export function getColumnsDiff<A extends VersionColumn>(
+  columnsDiff: EntityDiffProps,
+  colList: A[] = [],
+  changedEntity = '',
+): A[] {
+  if (columnsDiff.added) {
+    createAddedColumnsDiff(columnsDiff, colList);
+  }
+  if (columnsDiff.deleted) {
+    addDeletedColumnsDiff(columnsDiff, colList, changedEntity);
+  }
+  return uniqByName(colList);
+}
+
+export function getColumnsDataWithVersionChanges<A extends VersionColumn>(
+  changeDescription: ChangeDescription | undefined,
+  colList?: A[],
+  isContainerEntity?: boolean,
+): A[] {
+  const columnsDiff = getAllDiffByFieldName(EntityField.COLUMNS, changeDescription);
+  const changedFields = getAllChangedEntityNames(columnsDiff);
+  let newColumnsList = cloneVersionColumns(colList ?? []);
+
+  changedFields?.forEach((changedField) => {
+    const columnDiff = getDiffByFieldName(changedField, changeDescription);
+    const changedEntityName = getChangedEntityName(columnDiff);
+    const changedColName = getChangeColumnNameFromDiffValue(changedEntityName);
+
+    if (isEndsWithField(EntityField.DESCRIPTION, changedEntityName)) {
+      newColumnsList = getEntityDescriptionDiff(columnDiff, changedColName, newColumnsList);
+    } else if (isEndsWithField(EntityField.TAGS, changedEntityName)) {
+      newColumnsList = getEntityTagDiff(columnDiff, changedColName, newColumnsList);
+    } else if (isEndsWithField(EntityField.DISPLAYNAME, changedEntityName)) {
+      newColumnsList = getStringEntityDiff(
+        columnDiff,
+        EntityField.DISPLAYNAME,
+        changedColName,
+        newColumnsList,
+      );
+    } else if (isEndsWithField(EntityField.DATA_TYPE_DISPLAY, changedEntityName)) {
+      newColumnsList = getStringEntityDiff(
+        columnDiff,
+        EntityField.DATA_TYPE_DISPLAY,
+        changedColName,
+        newColumnsList,
+      );
+    } else if (!isEndsWithField(EntityField.CONSTRAINT, changedEntityName)) {
+      const changedEntity = changedEntityName
+        ?.split(FQN_SEPARATOR_CHAR)
+        .slice(isContainerEntity ? 2 : 1)
+        .join(FQN_SEPARATOR_CHAR);
+      newColumnsList = getColumnsDiff(columnDiff, newColumnsList, changedEntity);
+    }
+  });
+
+  return newColumnsList;
+}
+
+export function getConstraintChanges(
+  changeDescription: ChangeDescription | undefined,
+  fieldName: string,
+): { addedConstraintDiffs: ChangeField[]; deletedConstraintDiffs: ChangeField[] } {
+  const all = getAllDiffByFieldName(fieldName, changeDescription);
+  const addedConstraintDiffs: ChangeField[] = [...(all.added ?? []), ...(all.updated ?? [])];
+  const deletedConstraintDiffs: ChangeField[] = [...(all.deleted ?? []), ...(all.updated ?? [])];
+  return { addedConstraintDiffs, deletedConstraintDiffs };
 }

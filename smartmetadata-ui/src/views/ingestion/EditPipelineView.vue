@@ -6,6 +6,14 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { getServiceByFqn } from '@/api/serviceLookup';
+import { serviceKindFromCategory } from '@/api/serviceVersions';
+import {
+  getServiceDetailsPath,
+  getSettingsPathFromPipelineType,
+  SERVICE_AGENT_SUB_TAB_METADATA,
+  SERVICE_TAB_AGENTS,
+} from '@/utils/fqnPaths';
 import {
   Button,
   Card,
@@ -25,7 +33,7 @@ import { EditOutlined, PlusOutlined } from '@ant-design/icons-vue';
 import { compare } from 'fast-json-patch';
 import {
   deployIngestionPipeline,
-  getIngestionPipeline,
+  getIngestionPipelineByFqn,
   getOrchestratorStatus,
   isPipelineDeployed,
   updateIngestionPipeline,
@@ -43,7 +51,6 @@ import SmState from '@/components/shared/SmState.vue';
 import ToggleField from '@/components/shared/ToggleField.vue';
 import { SERVICE_KIND_BY_ENTITY_TYPE } from '@/ingestion/connections';
 import { getDocPanelServiceType, useFieldFocus } from '@/ingestion/fieldFocus';
-import { SERVICE_GET_API } from '@/ingestion/serviceApis';
 import { buildSourceConfig } from '@/ingestion/sourceConfig';
 import {
   SERVICE_CATEGORY_BY_KIND,
@@ -73,9 +80,15 @@ import type { EntityRef } from '@/types/api';
  * panel, the schedule step, and the post-save success screen with the
  * deploy-progress modal. Save semantics stay the fork's: JSON Patch,
  * then deploy-if-Airflow-available; a deploy failure is an error toast
- * and the update stands.
+ * and the update stands. Routed at official EDIT_INGESTION
+ * /service/:serviceCategory/:fqn/edit-ingestion/:ingestionFQN/:ingestionType.
  */
-const props = defineProps<{ id: string }>();
+const props = defineProps<{
+  serviceCategory: string;
+  fqn: string;
+  ingestionFQN: string;
+  ingestionType: string;
+}>();
 const { t, te } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
@@ -153,18 +166,23 @@ const categoryLabel = computed(() => {
 /** Pin `getBreadCrumbsArray`: category / service / heading (settings pipelines: type / heading). */
 const breadcrumbs = computed(() => {
   if (settingsPipeline.value) {
-    return [{ label: startCase(form.pipelineType) }, { label: heading.value }];
+    return [
+      { label: startCase(form.pipelineType), to: getSettingsPathFromPipelineType(form.pipelineType) },
+      { label: heading.value },
+    ];
   }
-  const items: { label: string; routeName?: string; routeParams?: Record<string, string> }[] = [
+  const items: { label: string; routeName?: string; routeParams?: Record<string, string>; to?: string }[] = [
     { label: categoryLabel.value, routeName: 'connections' },
   ];
-  if (service.value) {
-    items.push({
-      label: service.value.name,
-      routeName: 'ingestion-service',
-      routeParams: { kind: form.serviceKind, id: form.serviceId },
-    });
-  }
+  items.push({
+    label: service.value?.name || props.fqn,
+    to: getServiceDetailsPath(
+      props.fqn,
+      props.serviceCategory,
+      SERVICE_TAB_AGENTS,
+      SERVICE_AGENT_SUB_TAB_METADATA,
+    ),
+  });
   items.push({ label: heading.value });
   return items;
 });
@@ -214,21 +232,20 @@ function serviceKindFromRef(type: string | undefined): ServiceKind {
   return (type && SERVICE_KIND_BY_ENTITY_TYPE[type]) || 'database';
 }
 
-function backToDetail(): void {
-  void router.push({ name: 'ingestion-pipeline', params: { id: props.id } });
-}
-
-/** Step-1 Back / View Service: the service's Agents tab in pin; the fork
- * has no Agents-tab deep link, so this lands on the service page. */
+/** Official EditIngestionPage goToService / goToSettingsPage. */
 function goToService(): void {
-  if (settingsPipeline.value || !form.serviceId) {
-    backToDetail();
+  if (settingsPipeline.value) {
+    void router.push(getSettingsPathFromPipelineType(props.ingestionType || form.pipelineType));
     return;
   }
-  void router.push({
-    name: 'ingestion-service',
-    params: { kind: form.serviceKind, id: form.serviceId },
-  });
+  void router.push(
+    getServiceDetailsPath(
+      props.fqn,
+      props.serviceCategory,
+      SERVICE_TAB_AGENTS,
+      SERVICE_AGENT_SUB_TAB_METADATA,
+    ),
+  );
 }
 
 async function load(): Promise<void> {
@@ -236,9 +253,9 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   schemaFormReady.value = false;
   try {
-    const current = await getIngestionPipeline(props.id);
+    const current = await getIngestionPipelineByFqn(props.ingestionFQN);
     pipeline.value = current;
-    const kind = serviceKindFromRef(current.service?.type);
+    const kind = serviceKindFromCategory(props.serviceCategory) || serviceKindFromRef(current.service?.type);
     form.name = current.name;
     form.displayName = current.displayName || '';
     form.pipelineType = current.pipelineType || 'metadata';
@@ -258,9 +275,8 @@ async function load(): Promise<void> {
     // connection flags gate workflow fields, and the breadcrumb shows
     // the service name. A failed service fetch leaves the saved owners
     // (then the current user) as the fallback.
-    if (current.service?.id) {
-      const getter = SERVICE_GET_API[kind];
-      const fetched = await getter(current.service.id).catch(() => null);
+    if (props.fqn) {
+      const fetched = await getServiceByFqn(kind, props.fqn, { fields: 'owners' }).catch(() => null);
       service.value = fetched;
       serviceOwners.value = fetched?.owners ?? [];
     }
@@ -322,7 +338,11 @@ async function attemptDeploy(): Promise<boolean> {
     return false;
   }
   try {
-    const result = await deployIngestionPipeline(props.id);
+    const pipelineId = pipeline.value?.id;
+    if (!pipelineId) {
+      return false;
+    }
+    const result = await deployIngestionPipeline(pipelineId);
     if (!isPipelineDeployed(result)) {
       message.error(t('ingestion.pipelines.deployEntityError'));
       deployAction.value = IngestionActionMessage.DeployingError;
@@ -381,7 +401,7 @@ async function onSave(): Promise<void> {
       }),
     };
     const ops = compare(pipeline.value, updated);
-    await updateIngestionPipeline(props.id, ops);
+    await updateIngestionPipeline(pipeline.value.id, ops);
     deployProgress.value = DEPLOY_PROGRESS_END;
     deployAction.value = IngestionActionMessage.Deploying;
     if (await attemptDeploy()) {

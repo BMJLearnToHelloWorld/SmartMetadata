@@ -56,6 +56,7 @@ import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit, preservedTabKeys } from '@/catalog/entityDetailTabs';
 import { assetLocation, isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
+import { getEntityDetailsPath } from '@/utils/fqnPaths';
 import {
   findCustomizedTabEntry,
   getDetailsTabWithNewLabel,
@@ -80,9 +81,10 @@ import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetOverviewFields from '@/features/crud/AssetOverviewFields.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
-import AssetProfilerPanel from '@/features/crud/AssetProfilerPanel.vue';
+import AssetDataObservabilityTab from '@/components/quality/AssetDataObservabilityTab.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import AssetContractTab from '@/components/contract/AssetContractTab.vue';
 import { requiredField } from '@/features/crud/formRules';
 import TableQueries from '@/features/queries/TableQueries.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
@@ -495,7 +497,6 @@ const TAB_TEST_IDS: Record<AssetTabKey, string> = {
   executions: 'asset-tab-executions',
   code: 'asset-tab-code',
   lineage: 'asset-tab-lineage',
-  quality: 'asset-tab-quality',
   activity: 'asset-tab-activity',
   customProperties: 'asset-tab-custom',
 };
@@ -742,11 +743,13 @@ const usagePercentileText = computed(() =>
 
 function onTabChange(key: string): void {
   activeTab.value = key;
+  const next = { ...route.query };
+  delete next.tab;
+  delete next.subTab;
   void router
     .replace({
-      name: 'asset',
-      params: { entityType: props.entityType, fqn: props.fqn },
-      query: { ...route.query, tab: key },
+      path: getEntityDetailsPath(props.entityType, props.fqn, key),
+      query: next,
     })
     .catch(() => undefined);
 }
@@ -1005,7 +1008,7 @@ async function load(): Promise<void> {
         schemaTagAccess.value = { canEditTags: false, canEditGlossaryTerms: false, readOnly: deleted };
       }
     }
-    const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : '';
+    const requestedTab = typeof route.params.tab === 'string' ? route.params.tab : '';
     activeTab.value = getRenderedActiveTab(tabs.value, requestedTab || undefined);
     // Pin tableQueryCountFn runs on the table page: the count resolves
     // independently of the tab mount, and a failure leaves the tab
@@ -1945,6 +1948,17 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => route.params.tab,
+  (tab) => {
+    if (!tabs.value.length) {
+      return;
+    }
+    const requestedTab = typeof tab === 'string' ? tab : '';
+    activeTab.value = getRenderedActiveTab(tabs.value, requestedTab || undefined);
+  },
+);
+
 onMounted(() => {
   void loadGovernanceCatalog()
     .then((loaded) => {
@@ -2288,37 +2302,6 @@ onMounted(() => {
             <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" :has-edit-access="lineageHasEditAccess" />
           </template>
       </template>
-      <template v-if="asset" #quality>
-          <GenericTab
-            v-if="widgetLayoutFor('quality') !== null"
-            :layout="widgetLayoutFor('quality') ?? []"
-            :page-type="pageType ?? ''"
-          >
-            <template #widget="{ contentKey, widget }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
-            </template>
-          </GenericTab>
-          <template v-else>
-            <AssetProfilerPanel
-              :tests="tests"
-              :tests-error="testsError"
-              :test-status-series="testStatusSeries"
-              :table-profile="tableProfile"
-              :row-count-series="rowCountSeries"
-              :usage-series="usageSeries"
-              :column-null-series="columnNullSeries"
-              :entity-type="entityType"
-              :table-id="asset.id"
-              :columns="asset.schemaRows"
-            />
-            <AssetSamplePanel
-              :table-sample="tableSample"
-              :topic-sample="topicSample"
-              :observability-error="observabilityError"
-              :entity-type="entityType"
-            />
-          </template>
-      </template>
       <template v-if="asset" #activity>
           <GenericTab
             v-if="widgetLayoutFor('activity') !== null"
@@ -2483,7 +2466,11 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetProfilerPanel
+            <AssetDataObservabilityTab
+              :entity-fqn="asset.fullyQualifiedName"
+              :test-suite-fqn="asset.testSuite?.fullyQualifiedName"
+              :test-suite-id="asset.testSuite?.id"
+              :deleted="Boolean(asset.deleted)"
               :tests="tests"
               :tests-error="testsError"
               :test-status-series="testStatusSeries"
@@ -2558,7 +2545,14 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('contract')" />
+            <AssetContractTab
+              :entity-id="asset.id"
+              :entity-type="entityType"
+              :entity-name="asset.name"
+              :entity-fqn="asset.fullyQualifiedName"
+              :entity-columns="asset.schemaRows"
+              :tab-active="activeTab === 'contract'"
+            />
           </template>
       </template>
       <template v-if="asset" #config>

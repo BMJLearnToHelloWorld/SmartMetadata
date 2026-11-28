@@ -123,7 +123,7 @@ describe('ServiceDetailView', () => {
     await wrapper.find('[data-testid="edit-service"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service-connection');
-    expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's1' });
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'databaseServices', fqn: 'pg.warehouse' });
   });
 
   it('offers test connection on the connection tab', async () => {
@@ -147,23 +147,25 @@ describe('ServiceDetailView', () => {
     expect(wrapper.find('[data-testid="service-connection-json"]').exists()).toBe(false);
   });
 
-  it('falls back to the first visible tab for an invalid ?tab= value', async () => {
+  it('falls back to the first visible tab for an invalid path tab', async () => {
     const { wrapper, router } = await mountView({ tab: 'nope' });
-    expect(router.currentRoute.value.query.tab).toBe('nope');
+    expect(router.currentRoute.value.params.tab).toBe('nope');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     const activeTab = wrapper.find('.ant-tabs-tab-active');
     expect(activeTab.text()).toContain('Insights');
   });
 
-  it('switching tabs clears the other query params', async () => {
+  it('switching tabs uses the official path tab and clears other query params', async () => {
     const { wrapper, router } = await mountView({ tab: 'agents' });
-    await router.replace({ query: { tab: 'agents', schema: 'foo', currentPage: '2' } });
+    await router.replace({ query: { schema: 'foo', currentPage: '2' } });
     await flushPromises();
     const tabs = wrapper.findAll('.ant-tabs-tab');
     const insights = tabs.find((tab) => tab.text().includes('Insights'));
     expect(insights).toBeDefined();
     await insights!.trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.query).toEqual({ tab: 'insights' });
+    expect(router.currentRoute.value.params.tab).toBe('insights');
+    expect(router.currentRoute.value.query).toEqual({});
   });
 
   it('hides the Agents tab from a non-owner non-admin user', async () => {
@@ -174,17 +176,17 @@ describe('ServiceDetailView', () => {
       history: createMemoryHistory(),
       routes: [
         {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
+          path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
           component: ServiceDetailView,
           props: true,
         },
       ],
     });
-    await router.push('/ingestion/services/database/s1');
+    await router.push('/service/databaseServices/pg.warehouse');
     await router.isReady();
     const wrapper = mount(ServiceDetailView, {
-      props: { kind: 'database', id: 's1' },
+      props: { serviceCategory: 'databaseServices', fqn: 'pg.warehouse' },
       attachTo: document.body,
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
@@ -345,7 +347,7 @@ describe('ServiceDetailView', () => {
         if (url.includes('/progress/service/')) {
           return new Response('no tracking', { status: 503 });
         }
-        if (url.includes('/api/v1/services/databaseServices/s1')) {
+        if (url.includes('/api/v1/services/databaseServices/s1') || url.includes('/api/v1/services/databaseServices/name/pg.warehouse')) {
           return jsonResponse({
             id: 's1',
             name: 'mydb',
@@ -397,7 +399,7 @@ describe('ServiceDetailView', () => {
         if (url.includes('/progress/service/')) {
           return new Response('no tracking', { status: 503 });
         }
-        if (url.includes('/api/v1/services/databaseServices/s1')) {
+        if (url.includes('/api/v1/services/databaseServices/s1') || url.includes('/api/v1/services/databaseServices/name/pg.warehouse')) {
           return jsonResponse({
             id: 's1',
             name: 'mydb',
@@ -506,8 +508,8 @@ describe('ServiceDetailView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service-version');
     expect(router.currentRoute.value.params).toMatchObject({
-      kind: 'database',
-      id: 's1',
+      serviceCategory: 'databaseServices',
+      fqn: 'pg.warehouse',
       version: '0.3',
     });
   });
@@ -533,7 +535,7 @@ describe('ServiceDetailView', () => {
     ok!.click();
     await flushPromises();
     const patch = calls.find(
-      (call) => call.method === 'PATCH' && call.url.includes('/api/v1/services/databaseServices/s1'),
+      (call) => call.method === 'PATCH' && (call.url.includes('/api/v1/services/databaseServices/s1') || call.url.includes('/api/v1/services/databaseServices/name/pg.warehouse')),
     );
     expect(patch).toBeDefined();
     expect(JSON.parse(patch!.body ?? '[]')).toEqual([
@@ -578,7 +580,7 @@ describe('ServiceDetailView', () => {
     ok!.click();
     await flushPromises();
     const patch = calls.find(
-      (call) => call.method === 'PATCH' && call.url.includes('/api/v1/services/databaseServices/s1'),
+      (call) => call.method === 'PATCH' && (call.url.includes('/api/v1/services/databaseServices/s1') || call.url.includes('/api/v1/services/databaseServices/name/pg.warehouse')),
     );
     expect(patch).toBeDefined();
     expect(JSON.parse(patch!.body ?? '[]')).toEqual([
@@ -701,7 +703,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
           fixture.deleted = false;
           return jsonResponse(serviceBody(fixture));
         }
-        if (url.includes('/api/v1/services/databaseServices/s1')) {
+        if (url.includes('/api/v1/services/databaseServices/s1') || url.includes('/api/v1/services/databaseServices/name/pg.warehouse')) {
           if (fixture.gone) {
             return new Response('not found', { status: 404 });
           }
@@ -763,7 +765,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
     expect(
       fixture.calls.some(
         (call) =>
-          call.url.includes('/api/v1/services/databaseServices/s1') &&
+          (call.url.includes('/api/v1/services/databaseServices/s1') || call.url.includes('/api/v1/services/databaseServices/name/pg.warehouse')) &&
           call.url.includes('include=all'),
       ),
     ).toBe(true);
@@ -800,7 +802,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
     expect(deletes[0].url).toContain('recursive=true');
     // The server's job message is toasted on submit (pin AsyncDeleteProvider).
     expect(document.body.textContent).toContain('Delete job started');
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
     expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="restore-service"]').exists()).toBe(true);
   });
@@ -915,7 +917,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
       expect(document.body.textContent).toContain(
         'The deletion may not have finished yet; refresh to confirm.',
       );
-      expect(router.currentRoute.value.name).toBe('ingestion-service');
+      expect(router.currentRoute.value.name).toBe('service-detail');
       expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(false);
       expect(wrapper.find('[data-testid="delete-service"]').classes()).not.toContain(
         'ant-btn-loading',
@@ -962,7 +964,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
     const deletes = fixture.calls.filter((call) => call.method === 'DELETE');
     expect(deletes).toHaveLength(1);
     expect(document.body.textContent).toContain('delete exploded');
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
     expect(wrapper.findComponent(DeleteEntityModal).props('open')).toBe(false);
     expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(false);
   });

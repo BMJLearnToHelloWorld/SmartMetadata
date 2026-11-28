@@ -77,6 +77,8 @@ export interface ListIngestionPipelinesQuery {
    * group and are filtered out of the Agents tab list.
    */
   agentType?: 'metadata' | 'application';
+  /** Official getIngestionPipelines testSuite (QualityTab workflows). */
+  testSuite?: string;
 }
 
 function mapSourceConfig(value: unknown): PipelineSourceConfig | undefined {
@@ -269,6 +271,7 @@ export function listIngestionPipelines(
       pipelineType: query.pipelineType,
       serviceType: query.serviceType,
       agentType: query.agentType,
+      testSuite: query.testSuite,
       // Official toSortOrder guard: only the two legal values are
       // forwarded; anything else is dropped, never sent.
       sortField: query.sortField === 'displayName' ? 'displayName' : undefined,
@@ -387,6 +390,22 @@ function mapPipelineServiceClientResponse(raw: unknown): PipelineServiceClientRe
  * with the DEPLOY operation. Returns the client response verbatim — a
  * 200 with reason "Pipeline Client Disabled" is not a deploy.
  */
+
+/**
+ * Official runIngestionPipelineForEntity (rest/ingestionPipelineAPI.ts):
+ * POST /v1/services/ingestionPipelines/run with entityLink + pipelineType.
+ */
+export async function runIngestionPipelineForEntity(body: {
+  entityLink: string;
+  pipelineType: string;
+}): Promise<PipelineServiceClientResponse> {
+  const raw = await apiRequest<unknown>('/v1/services/ingestionPipelines/run', {
+    method: 'POST',
+    json: body,
+  });
+  return mapPipelineServiceClientResponse(raw);
+}
+
 export async function deployIngestionPipeline(id: string): Promise<PipelineServiceClientResponse> {
   const raw = await apiRequest<unknown>(
     `/v1/services/ingestionPipelines/deploy/${encodeURIComponent(id)}`,

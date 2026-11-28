@@ -3,137 +3,69 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, provide, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Dropdown,
-  Empty,
-  Menu,
-  Row,
-  Select,
-  Space,
-  Spin,
-  Tabs,
-  Typography,
-} from 'ant-design-vue';
-import { listGlossaryTerms } from '@/api/glossaryTerms';
-import { searchAssets } from '@/api/search';
-import { isTestCaseSearchListAvailable, listTestCases } from '@/api/testCases';
-import { isTestSuiteSearchListAvailable, listTestSuites } from '@/api/testSuites';
-import type { SearchFacet } from '@/catalog/searchFacets';
-import SmChart from '@/features/charts/SmChart.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { Button, Dropdown, Menu, Spin, Tabs } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
-import { namedSeries } from '@/features/charts/series';
-import { seriesWindow } from '@/features/charts/types';
+import { observabilityChildBreadcrumb } from '@/utils/observabilityBreadcrumbs';
+import DqDashboardExportModal from '@/components/quality/DqDashboardExportModal.vue';
+import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
+import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
+import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
 import {
-  coverageFrom,
-  dimensionCards,
-  facetOptions,
-  governanceFiltersActive,
-  healthFromCases,
-  healthFromTableSuites,
-  parseDqTab,
-  statusCountsFromCases,
-  tableCountFromFacets,
-  uniqueCoveredAssets,
-  type CoverageCounts,
-  type DimensionCard,
-  type DqGovernanceFilters,
-  type DqLandingTab,
-  type HealthCounts,
-  type StatusCounts,
-} from '@/quality/landing';
-import {
-  buildDqTestCaseListQuery,
-  DQ_HEALTH_PIE_SEGMENT_ORDER,
-  DQ_TEST_CASE_PIE_SEGMENT_ORDER,
-  fetchDqDashboardAggregations,
-  type DqDashboardChartFilters,
-  type DqTestCaseListDrill,
-} from '@/quality/dashboard';
-import type { TestCase, TestSuite } from '@/types/quality';
+  dataQualityContextKey,
+  type DataQualityCreateActions,
+} from '@/quality/dataQualityContext';
+import { getCurrentIsoDateLabel, routeQueryToSearch, searchStringToQuery } from '@/quality/dqRouteSearch';
+import { parseDqTab, type DqLandingTab } from '@/quality/landing';
+import { useTabSearchMemory } from '@/quality/useTabSearchMemory';
+import { useDataQualityTestCaseSummary } from '@/quality/useDataQualityTestCaseSummary';
+import { getDerivedPermissionFlags } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
 
-const { t, te } = useI18n();
+/**
+ * Official DataQualityPage: page header, tab-specific add chrome, and
+ * independent tab bodies. The Summary tab mounts the shared official
+ * DataQualityDashboard (filter bar, pies, status/incident area charts).
+ * Official does not share a page-level filter bar with the list tabs;
+ * list drills arrive only through the official test-case query.
+ */
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 
-const loading = ref(false);
-const activeTab = ref<DqLandingTab>(parseDqTab(route.query.tab));
-const rangeDays = ref(30);
-const range = ref(seriesWindow(30));
-const filters = reactive<DqGovernanceFilters>({});
-const facets = ref<SearchFacet[]>([]);
-const glossaryOptions = ref<Array<{ value: string; label: string }>>([]);
-const preferCaseSearch = ref(false);
-const preferSuiteSearch = ref(false);
-const residualNotes = ref<string[]>([]);
-const casesError = ref('');
-const coverage = ref<CoverageCounts | null>(null);
-const health = ref<HealthCounts | null>(null);
-const results = ref<StatusCounts | null>(null);
-const dimensions = ref<DimensionCard[]>([]);
-const casesView = ref<{ openCreate: () => void } | null>(null);
-const suitesView = ref<{ openCreate: () => void } | null>(null);
-// Last listed rows, reused only as the aggregation fallback when a filter
-// change re-runs the batch and the batch itself fails.
-const lastCases = ref<TestCase[]>([]);
-const lastSuites = ref<{ data: TestSuite[]; total?: number }>({ data: [] });
+const activeTab = ref<DqLandingTab>(parseDqTab(route.params.tab ?? route.query.tab));
+const isTestCaseModalOpen = ref(false);
+const isBundleSuiteModalOpen = ref(false);
+const isExportModalOpen = ref(false);
+const exportDefaultFileName = ref('');
+const canCreateTestSuite = ref(false);
+const canCreateTestCase = ref(true);
+const canViewTestCaseBasic = ref(true);
 
-const ownerOptions = computed(() => facetOptions(facets.value, 'owner'));
-const tierOptions = computed(() => facetOptions(facets.value, 'tier'));
-const certOptions = computed(() => facetOptions(facets.value, 'certification'));
-const tagOptions = computed(() => facetOptions(facets.value, 'tagFqn'));
-const productOptions = computed(() => facetOptions(facets.value, 'dataProduct'));
+const dqBreadcrumbs = computed(() => observabilityChildBreadcrumb(t, 'label.data-quality'));
 
-const coverageSeries = computed(() =>
-  coverage.value && coverage.value.total
-    ? namedSeries(t('quality.landing.coverage'), [
-        { label: t('quality.landing.covered'), value: coverage.value.covered },
-        { label: t('quality.landing.notCovered'), value: coverage.value.notCovered },
-      ])
-    : [],
-);
-const healthSeries = computed(() =>
-  health.value && health.value.total
-    ? namedSeries(t('quality.landing.healthyAssets'), [
-        { label: t('quality.landing.healthy'), value: health.value.healthy },
-        { label: t('quality.landing.unhealthy'), value: health.value.unhealthy },
-      ])
-    : [],
-);
-const resultsSeries = computed(() =>
-  results.value && results.value.total
-    ? namedSeries(t('quality.landing.testResults'), [
-        { label: t('quality.landing.success'), value: results.value.success },
-        { label: t('quality.landing.failed'), value: results.value.failed },
-        { label: t('quality.landing.aborted'), value: results.value.aborted },
-      ])
-    : [],
-);
+const ownsTheUrl = computed(() => route.path.startsWith('/data-quality'));
+const routeSearch = computed(() => routeQueryToSearch(route));
+const getTabSearch = useTabSearchMemory(activeTab, routeSearch, ownsTheUrl);
 
-const governanceActive = computed(() => governanceFiltersActive(filters));
-const searchListResidual = computed(
-  () => governanceActive.value && !(preferCaseSearch.value || preferSuiteSearch.value),
-);
+const { isTestCaseSummaryLoading, testCaseSummary, providerAggregations } =
+  useDataQualityTestCaseSummary({
+    activeTab,
+    ownsTheUrl,
+    route,
+    canViewTestCaseBasic,
+  });
 
-const caseSearchTags = computed(() =>
-  [filters.tag, filters.glossaryTerm, filters.certification].filter((item): item is string => Boolean(item)).join(','),
-);
-
-// Dashboard drill-down query (pin getTestCaseListPath): the dashboard
-// navigates here with testCaseStatus / dataQualityDimension / tags /
-// tier / dataProductFqn / tableFqn / startTs / endTs, and the list tab
-// applies them. A key present in the query wins over this view's own
-// filter state; absent keys keep the local filters and range.
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
@@ -177,11 +109,6 @@ const listDrill = computed(() => ({
   endTs: queryNumber(route.query.endTs),
 }));
 
-function dimensionLabel(id: string): string {
-  const key = id === 'No Dimension' ? 'quality.landing.dimensions.none' : `quality.landing.dimensions.${id.toLowerCase()}`;
-  return te(key) ? t(key) : id;
-}
-
 function onAddMenu({ key }: { key: string | number }): void {
   if (key === 'case') {
     void openCreateCase();
@@ -190,585 +117,228 @@ function onAddMenu({ key }: { key: string | number }): void {
   }
 }
 
-async function settle<T>(promise: Promise<T>, fallback: T, residualKey?: string): Promise<T> {
-  try {
-    return await promise;
-  } catch (error) {
-    if (residualKey) {
-      residualNotes.value.push(residualKey);
-    }
-    if (!casesError.value && residualKey === 'quality.landing.residualCases') {
-      casesError.value = error instanceof Error ? error.message : t('crud.loadFailed');
-    }
-    return fallback;
+function dataQualityPagePath(tab: DqLandingTab, subTab?: string): string {
+  if (tab === 'test-suites' && subTab) {
+    return '/data-quality/' + tab + '/' + subTab;
   }
-}
-
-/**
- * Aggregation cards only. Split out of loadSummary so a governance-filter
- * or range change re-runs exactly the official dashboard batch — status,
- * dimensions and coverage — with the filter-built `q` payloads (landing.ts)
- * plus the official time-range clause on the testCase-index items, instead
- * of only re-rendering the search-list path. Health deliberately stays
- * out of this path: it is still list-derived under residualHealthCap
- * (live ES casing check owed), so a filter change must not silently
- * re-derive it from an aggregation it does not read.
- */
-async function loadAggregations(
-  cases: TestCase[],
-  suites: { data: TestSuite[]; total?: number },
-): Promise<void> {
-  residualNotes.value = residualNotes.value.filter(
-    (note) => note !== 'quality.landing.residualAggregationFallback',
-  );
-  // Status, dimensions and coverage come from the shared dashboard
-  // batch (quality/dashboard.ts: fetchDqDashboardAggregations — the
-  // official mechanism, one dataQualityReport batch), not from the
-  // capped lists. If the batch fails, the cards fall back to the
-  // listed rows and say so — never silently. The shared batch also
-  // carries an unhealthy-covered item for the dashboard's health pie;
-  // the landing view ignores it and keeps its list-derived health
-  // plus the residualHealthCap note. The glossaryTerm filter is
-  // deliberately NOT carried into the shared chart filters: this
-  // view's documented contract keeps it on the search-list path only
-  // (quality.landing.residualSearchList), while the shared dashboard
-  // merges glossaryTerms into tags per the pin hook.
-  try {
-    const chartFilters: DqDashboardChartFilters = {
-      ownerFqn: filters.owner,
-      tags: filters.tag ? [filters.tag] : undefined,
-      tier: filters.tier ? [filters.tier] : undefined,
-      certification: filters.certification ? [filters.certification] : undefined,
-      dataProductFqns: filters.dataProduct ? [filters.dataProduct] : undefined,
-    };
-    const agg = await fetchDqDashboardAggregations(chartFilters, range.value, {
-      totalTablesFallback: tableCountFromFacets(facets.value),
-    });
-    results.value = agg.results;
-    dimensions.value = agg.dimensions;
-    coverage.value = agg.coverage;
-  } catch {
-    residualNotes.value.push('quality.landing.residualAggregationFallback');
-    const status = statusCountsFromCases(cases);
-    results.value = status.total ? status : null;
-    const tableCount = tableCountFromFacets(facets.value);
-    const coveredFromSuites = suites.total ?? (suites.data.length || undefined);
-    const coveredFromCases = uniqueCoveredAssets(cases) || undefined;
-    coverage.value = coverageFrom(coveredFromSuites ?? coveredFromCases, tableCount);
-    dimensions.value = dimensionCards(cases, []);
-  }
-}
-
-async function loadSummary(): Promise<void> {
-  loading.value = true;
-  residualNotes.value = [];
-  casesError.value = '';
-  try {
-    const [casesPage, suitesPage, searchPage, caseSearch, suiteSearch, glossaryPage] = await Promise.all([
-      settle(listTestCases({ limit: 100, includeAllTests: true }), { data: [] as TestCase[], total: undefined }, 'quality.landing.residualCases'),
-      settle(listTestSuites({ limit: 100, includeEmptyTestSuites: true, testSuiteType: 'basic' }), { data: [] as TestSuite[], total: undefined }, 'quality.landing.residualSuites'),
-      settle(searchAssets('*', 0, 1), { total: 0, hits: [], facets: [] as SearchFacet[] }, 'quality.landing.residualSearch'),
-      settle(isTestCaseSearchListAvailable(), false, undefined),
-      settle(isTestSuiteSearchListAvailable(), false, undefined),
-      settle(listGlossaryTerms({ limit: 50 }), { data: [] }, undefined),
-    ]);
-    preferCaseSearch.value = caseSearch;
-    preferSuiteSearch.value = suiteSearch;
-    facets.value = searchPage.facets ?? [];
-    glossaryOptions.value = glossaryPage.data.map((term) => ({
-      value: term.fullyQualifiedName || term.name,
-      label: term.displayName || term.name,
-    }));
-    // Health is still list-derived: per-asset healthy/unhealthy needs the
-    // official unhealthy must-filter (terms on testCaseResult.testCaseStatus
-    // with capitalized Failed/Aborted), whose casing against the live index
-    // is unverified — the aggregation rows the official dashboard transform
-    // reads are lowercase. Until the live ES check lands, health keeps the
-    // listed-suites/cases computation and says so (residualHealthCap).
-    const suiteHealth = healthFromTableSuites(suitesPage.data);
-    const caseHealth = healthFromCases(casesPage.data);
-    health.value = suiteHealth.total ? suiteHealth : caseHealth.total ? caseHealth : null;
-    residualNotes.value.push('quality.landing.residualHealthCap');
-    lastCases.value = casesPage.data;
-    lastSuites.value = suitesPage;
-    await loadAggregations(casesPage.data, suitesPage);
-    if (!caseSearch) {
-      residualNotes.value.push('quality.landing.residualSearchList');
-    }
-  } finally {
-    loading.value = false;
-  }
+  return '/data-quality/' + tab;
 }
 
 function onTabChange(key: string | number): void {
   const tab = parseDqTab(key);
+  if (tab === activeTab.value) {
+    return;
+  }
   activeTab.value = tab;
-  void router.replace({ query: { ...route.query, tab } });
-}
-
-function setFilter(id: keyof DqGovernanceFilters, value: unknown): void {
-  filters[id] = typeof value === 'string' && value ? value : undefined;
-}
-
-function openCases(): void {
-  onTabChange('test-cases');
-}
-
-function openSuites(): void {
-  onTabChange('test-suites');
-}
-
-/**
- * Dashboard-tab donut drill-down (pin DqDashboardSectionContent + the
- * three pie widgets): the landing view's own governance filters + range
- * as the chart slice — owner is absent (pin carries no owner) and
- * certification is not carried (buildDqTestCaseListQuery parity with
- * the shared dashboard). The query is rebuilt from scratch so a
- * previous drill's keys (e.g. a dimension) do not leak into the new
- * slice; the list tab applies the drill through its props, which
- * arrive after mount (TestCasesListView prop watcher).
- */
-const donutChartFilters = computed<DqDashboardChartFilters>(() => ({
-  tags: [filters.tag, filters.glossaryTerm].filter(
-    (item): item is string => typeof item === 'string' && Boolean(item),
-  ),
-  tier: filters.tier ? [filters.tier] : undefined,
-  dataProductFqns: filters.dataProduct ? [filters.dataProduct] : undefined,
-  startTs: range.value.startTs,
-  endTs: range.value.endTs,
-}));
-
-function openDonutCases(drill?: DqTestCaseListDrill): void {
-  activeTab.value = 'test-cases';
+  const storedSearch = getTabSearch(tab);
   void router.replace({
-    query: { tab: 'test-cases', ...buildDqTestCaseListQuery(donutChartFilters.value, drill) },
+    path: dataQualityPagePath(tab),
+    query: searchStringToQuery(storedSearch),
   });
 }
 
-function openCoverageSegment(index: number): void {
-  if (index === 0) {
-    openSuites();
-  } else if (index === 1) {
-    void router.push({ name: 'search' });
-  }
+/** Pin DataQualityPage: page-level TestCaseFormDrawer, no tab switch. */
+function openCreateCase(): void {
+  isTestCaseModalOpen.value = true;
 }
 
-function openHealthSegment(index: number): void {
-  const statuses = DQ_HEALTH_PIE_SEGMENT_ORDER[index];
-  if (statuses) {
-    openDonutCases({ testCaseStatus: [...statuses] });
-  }
+/** Pin BundleSuiteFormDrawer on the current tab. */
+function openCreateSuite(): void {
+  isBundleSuiteModalOpen.value = true;
 }
 
-function openResultsSegment(index: number): void {
-  const status = DQ_TEST_CASE_PIE_SEGMENT_ORDER[index];
-  if (status) {
-    openDonutCases({ testCaseStatus: status });
-  }
+function openExportDashboardModal(): void {
+  exportDefaultFileName.value = `Dashboard-Chart_${getCurrentIsoDateLabel()}`;
+  isExportModalOpen.value = true;
 }
 
-async function openCreateCase(): Promise<void> {
-  onTabChange('test-cases');
-  await nextTick();
-  casesView.value?.openCreate();
+/**
+ * Pin showModal + runNonCsvExport(PDF): official ExportUtilClassBase has no
+ * PDF capture implementation (returns null) — close the modal after submit.
+ */
+function onDashboardExport(_fileName: string): void {
+  isExportModalOpen.value = false;
 }
 
-async function openCreateSuite(): Promise<void> {
-  onTabChange('test-suites');
-  await nextTick();
-  suitesView.value?.openCreate();
-}
+const createActions = computed<DataQualityCreateActions>(() => ({
+  onAddTestCase: openCreateCase,
+  onAddBundleSuite: openCreateSuite,
+  canCreateTestCase: canCreateTestCase.value,
+  canCreateBundleSuite: canCreateTestSuite.value,
+}));
 
-watch(rangeDays, (days) => {
-  range.value = seriesWindow(days);
-  void loadAggregations(lastCases.value, lastSuites.value);
-});
-
-// Governance-filter change re-runs the aggregation batch with the new
-// filter-built queries; the list tabs already react to the same filters
-// through their props, so the cards and the lists can no longer drift.
-watch(
-  filters,
-  () => {
-    void loadAggregations(lastCases.value, lastSuites.value);
-  },
-  { deep: true },
+const dataQualityContext = computed(() => ({
+  createActions: createActions.value,
+  isActive: ownsTheUrl.value,
+  activeTab: activeTab.value,
+  testCaseSummary: testCaseSummary.value,
+  isTestCaseSummaryLoading: isTestCaseSummaryLoading.value,
+}));
+const listTabSummaryLoading = computed(
+  () =>
+    activeTab.value !== 'dashboard' &&
+    isTestCaseSummaryLoading.value,
 );
+provide(dataQualityContextKey, dataQualityContext);
 
-watch(
-  () => route.query.tab,
-  (value) => {
-    activeTab.value = parseDqTab(value);
-  },
-);
+async function loadResourcePermissions(): Promise<void> {
+  try {
+    const [testSuiteOps, testCaseOps] = await Promise.all([
+      permissionStore.getResourcePermission('testSuite'),
+      permissionStore.getResourcePermission('testCase'),
+    ]);
+    canCreateTestSuite.value = Boolean(testSuiteOps.Create);
+    canCreateTestCase.value = Boolean(testCaseOps.Create);
+    canViewTestCaseBasic.value = getDerivedPermissionFlags(testCaseOps).canViewBasic;
+  } catch {
+    canCreateTestSuite.value = false;
+    canCreateTestCase.value = false;
+    canViewTestCaseBasic.value = false;
+  }
+}
 
 onMounted(() => {
-  void loadSummary();
+  void loadResourcePermissions();
 });
+
+watch(
+  () => [route.params.tab, route.query.tab],
+  () => {
+    activeTab.value = parseDqTab(route.params.tab ?? route.query.tab);
+  },
+);
 </script>
 
 <template>
   <PageLayout test-id="dq-landing-layout">
-  <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
-    <div class="dq-landing__head">
-      <div data-testid="dq-landing-title">
-        <PageHeader :header="t('quality.landing.title')" :sub-header="t('quality.landing.lead')" />
-      </div>
-      <Dropdown :trigger="['click']">
-        <Button type="primary" data-testid="dq-landing-add">
-          {{ t('quality.landing.add') }}
-          <SmIcon icon-key="action-chevron-down" />
-        </Button>
-        <template #overlay>
-          <Menu @click="onAddMenu">
-            <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('quality.landing.addCase') }}</Menu.Item>
-            <Menu.Item key="suite" data-testid="dq-landing-add-suite">{{ t('quality.landing.addSuite') }}</Menu.Item>
-          </Menu>
+  <ObservabilityPageShell
+    :page-title="t('label.data-quality')"
+    shell-test-id="data-quality-page"
+  >
+    <template #header>
+      <ObservabilityGradientPageHeader>
+        <template #breadcrumb>
+          <SmBreadcrumb :items="dqBreadcrumbs" />
         </template>
-      </Dropdown>
-    </div>
-
-    <Tabs :active-key="activeTab" data-testid="dq-landing-tabs" @change="onTabChange">
-      <Tabs.TabPane key="dashboard" :tab="t('quality.landing.tabs.dashboard')" />
-      <Tabs.TabPane key="test-cases" :tab="t('quality.landing.tabs.testCases')" />
-      <Tabs.TabPane key="test-suites" :tab="t('quality.landing.tabs.testSuites')" />
-    </Tabs>
-
-    <div class="dq-landing__filters" data-testid="dq-landing-filters">
-      <Select
-        :value="filters.owner"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.owner')"
-        :options="ownerOptions"
-        data-testid="dq-filter-owner"
-        class="dq-landing__filter"
-        @change="(value) => setFilter('owner', value)"
-      />
-      <Select
-        :value="filters.tier"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.tier')"
-        :options="tierOptions"
-        data-testid="dq-filter-tier"
-        class="dq-landing__filter"
-        @change="(value) => setFilter('tier', value)"
-      />
-      <Select
-        :value="filters.certification"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.certification')"
-        :options="certOptions"
-        data-testid="dq-filter-certification"
-        class="dq-landing__filter"
-        @change="(value) => setFilter('certification', value)"
-      />
-      <Select
-        :value="filters.tag"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.tag')"
-        :options="tagOptions"
-        data-testid="dq-filter-tag"
-        class="dq-landing__filter"
-        @change="(value) => setFilter('tag', value)"
-      />
-      <Select
-        :value="filters.glossaryTerm"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.glossaryTerm')"
-        :options="glossaryOptions"
-        data-testid="dq-filter-glossary"
-        class="dq-landing__filter"
-        @change="(value) => setFilter('glossaryTerm', value)"
-      />
-      <Select
-        :value="filters.dataProduct"
-        allow-clear
-        show-search
-        :placeholder="t('quality.landing.filters.dataProduct')"
-        :options="productOptions"
-        data-testid="dq-filter-data-product"
-        class="dq-landing__filter"
-        @change="(value) => setFilter('dataProduct', value)"
-      />
-      <Select
-        v-model:value="rangeDays"
-        data-testid="dq-filter-range"
-        class="dq-landing__filter dq-landing__filter--range"
-        :aria-label="t('quality.landing.filters.range')"
-      >
-        <Select.Option :value="7">{{ t('quality.landing.range7') }}</Select.Option>
-        <Select.Option :value="30">{{ t('quality.landing.range30') }}</Select.Option>
-      </Select>
-    </div>
-
-    <Alert
-      v-if="searchListResidual"
-      type="info"
-      show-icon
-      class="dq-landing__alert"
-      data-testid="dq-landing-filter-residual"
-      :message="t('quality.landing.residualFilterApply')"
-    />
-
-    <div v-if="activeTab === 'dashboard'">
-      <Spin :spinning="loading">
-        <Space direction="vertical" size="middle" style="width: 100%">
-          <Alert
-            v-for="note in residualNotes"
-            :key="note"
-            type="info"
-            show-icon
-            class="dq-landing__alert"
-            :data-testid="`dq-residual-${note.split('.').pop()}`"
-            :message="t(note)"
-          />
-          <Alert v-if="casesError" type="error" show-icon :message="casesError" data-testid="dq-landing-cases-error" />
-
-          <Card data-testid="dq-health" :title="t('quality.landing.healthTitle')">
-            <Typography.Paragraph type="secondary">{{ t('quality.landing.healthLead') }}</Typography.Paragraph>
-            <Empty
-              v-if="!loading && !coverage?.total && !health?.total && !results?.total"
-              data-testid="dq-health-empty"
-              :description="t('quality.landing.healthEmpty')"
-            >
-              <Button type="primary" data-testid="dq-health-empty-cta" @click="openCreateCase">
-                {{ t('quality.testCases.create') }}
+        <PageHeader
+          :header="t('label.data-quality')"
+          :sub-header="t('message.page-sub-header-for-data-quality')"
+          learning-page-id="dataQuality"
+          test-id="dq-landing-title"
+        />
+        <Tabs
+          class="dq-landing__header-tabs"
+          data-testid="dq-landing-tabs"
+          :active-key="activeTab"
+          @change="onTabChange"
+        >
+          <Tabs.TabPane key="dashboard" :tab="t('label.summary')" />
+          <Tabs.TabPane key="test-cases" :tab="t('label.test-case-plural')" />
+          <Tabs.TabPane key="test-suites" :tab="t('label.test-suite-plural')" />
+        </Tabs>
+        <template #actions>
+          <template v-if="activeTab === 'dashboard'">
+            <Button data-testid="export-pdf-button" @click="openExportDashboardModal">
+              {{ t('label.export-pdf') }}
+            </Button>
+            <Dropdown :trigger="['click']">
+              <Button type="primary" data-testid="data-quality-add-button-menu">
+                {{ t('label.add') }}
+                <SmIcon icon-key="action-chevron-down" />
               </Button>
-            </Empty>
-            <Row v-else :gutter="[16, 16]">
-              <Col :xs="24" :lg="8">
-                <div class="dq-donut" data-testid="dq-coverage-card">
-                  <div class="dq-donut__title">{{ t('quality.landing.coverage') }}</div>
-                  <div class="dq-donut__center">{{ t('quality.landing.tables', { count: coverage?.total ?? 0 }) }}</div>
-                  <SmChart
-                    kind="donut"
-                    test-id="dq-coverage-chart"
-                    :series="coverageSeries"
-                    :empty="t('quality.landing.chartEmpty')"
-                    :height="200"
-                    segment-clickable
-                    @segment-click="openCoverageSegment"
-                  />
-                  <div class="dq-donut__legend">
-                    {{ t('quality.landing.covered') }} {{ coverage?.covered ?? 0 }} ·
-                    {{ t('quality.landing.notCovered') }} {{ coverage?.notCovered ?? 0 }}
-                  </div>
-                </div>
-              </Col>
-              <Col :xs="24" :lg="8">
-                <div class="dq-donut" data-testid="dq-healthy-card">
-                  <div class="dq-donut__title">{{ t('quality.landing.healthyAssets') }}</div>
-                  <div class="dq-donut__center">{{ t('quality.landing.entities', { count: health?.total ?? 0 }) }}</div>
-                  <SmChart
-                    kind="donut"
-                    test-id="dq-healthy-chart"
-                    :series="healthSeries"
-                    :empty="t('quality.landing.chartEmpty')"
-                    :height="200"
-                    segment-clickable
-                    @segment-click="openHealthSegment"
-                  />
-                  <div class="dq-donut__legend">
-                    {{ t('quality.landing.healthy') }} {{ health?.healthy ?? 0 }} ·
-                    {{ t('quality.landing.unhealthy') }} {{ health?.unhealthy ?? 0 }}
-                  </div>
-                </div>
-              </Col>
-              <Col :xs="24" :lg="8">
-                <div class="dq-donut" data-testid="dq-results-card">
-                  <div class="dq-donut__title">{{ t('quality.landing.testResults') }}</div>
-                  <div class="dq-donut__center">{{ t('quality.landing.tests', { count: results?.total ?? 0 }) }}</div>
-                  <SmChart
-                    kind="donut"
-                    test-id="dq-results-chart"
-                    :series="resultsSeries"
-                    :empty="t('quality.landing.chartEmpty')"
-                    :height="200"
-                    segment-clickable
-                    @segment-click="openResultsSegment"
-                  />
-                  <div class="dq-donut__legend">
-                    {{ t('quality.landing.success') }} {{ results?.success ?? 0 }} ·
-                    {{ t('quality.landing.failed') }} {{ results?.failed ?? 0 }} ·
-                    {{ t('quality.landing.aborted') }} {{ results?.aborted ?? 0 }}
-                  </div>
-                </div>
-              </Col>
-            </Row>
-          </Card>
+              <template #overlay>
+                <Menu @click="onAddMenu">
+                  <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('label.add-a-entity', { entity: t('label.test-case') }) }}</Menu.Item>
+                  <Menu.Item
+                    v-if="canCreateTestSuite"
+                    key="suite"
+                    data-testid="dq-landing-add-suite"
+                  >{{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}</Menu.Item>
+                </Menu>
+              </template>
+            </Dropdown>
+          </template>
+          <Button
+            v-else-if="activeTab === 'test-cases'"
+            type="primary"
+            data-testid="add-test-case-btn"
+            @click="openCreateCase"
+          >
+            {{ t('label.add-a-entity', { entity: t('label.test-case') }) }}
+          </Button>
+          <Button
+            v-else-if="canCreateTestSuite"
+            type="primary"
+            data-testid="add-test-suite-btn"
+            @click="openCreateSuite"
+          >
+            {{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}
+          </Button>
+        </template>
+      </ObservabilityGradientPageHeader>
+    </template>
+    <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
+    <DataQualityDashboard v-if="activeTab === 'dashboard'" />
 
-          <Card data-testid="dq-dimensions" :title="t('quality.landing.dimensionsTitle')">
-            <Typography.Paragraph type="secondary">{{ t('quality.landing.dimensionsLead') }}</Typography.Paragraph>
-            <div class="dq-dims">
-              <button
-                v-for="card in dimensions"
-                :key="card.id"
-                class="dq-dim"
-                type="button"
-                :data-testid="`dq-dimension-${card.id}`"
-                @click="openCases"
-              >
-                <div class="dq-dim__name">{{ dimensionLabel(card.id) }}</div>
-                <div class="dq-dim__total">{{ card.total }}</div>
-                <div class="dq-dim__pills">
-                  <span class="dq-dim__pill dq-dim__pill--success">{{ card.success }}</span>
-                  <span class="dq-dim__pill dq-dim__pill--failed">{{ card.failed }}</span>
-                  <span class="dq-dim__pill dq-dim__pill--aborted">{{ card.aborted }}</span>
-                </div>
-              </button>
-            </div>
-          </Card>
-
-          <Card data-testid="dq-status" :title="t('quality.landing.statusTitle')">
-            <Typography.Paragraph type="secondary">{{ t('quality.landing.statusLead') }}</Typography.Paragraph>
-            <Row :gutter="[16, 16]">
-              <Col :xs="24" :md="8">
-                <button class="dq-status" type="button" data-testid="dq-status-success" @click="openCases">
-                  <div class="dq-status__label">{{ t('quality.landing.success') }}</div>
-                  <div class="dq-status__value">{{ results?.success ?? 0 }}</div>
-                </button>
-              </Col>
-              <Col :xs="24" :md="8">
-                <button class="dq-status" type="button" data-testid="dq-status-aborted" @click="openCases">
-                  <div class="dq-status__label">{{ t('quality.landing.aborted') }}</div>
-                  <div class="dq-status__value">{{ results?.aborted ?? 0 }}</div>
-                </button>
-              </Col>
-              <Col :xs="24" :md="8">
-                <button class="dq-status" type="button" data-testid="dq-status-failed" @click="openCases">
-                  <div class="dq-status__label">{{ t('quality.landing.failed') }}</div>
-                  <div class="dq-status__value">{{ results?.failed ?? 0 }}</div>
-                </button>
-              </Col>
-            </Row>
-          </Card>
-        </Space>
-      </Spin>
-    </div>
+    <Spin v-else-if="listTabSummaryLoading" class="dq-landing__tab-loader" size="large" />
 
     <TestCasesListView
-      v-if="activeTab === 'test-cases'"
-      ref="casesView"
+      v-else-if="activeTab === 'test-cases'"
       embedded
-      :prefer-search="preferCaseSearch"
-      :owner-fqn="filters.owner"
-      :tier="listDrill.tier ?? filters.tier"
-      :tags="listDrill.tags ?? caseSearchTags"
-      :data-product-fqn="listDrill.dataProductFqn ?? filters.dataProduct"
-      :start-ts="listDrill.startTs ?? range.startTs"
-      :end-ts="listDrill.endTs ?? range.endTs"
+      :prefer-search="true"
+      :results="providerAggregations?.results ?? null"
+      :health="providerAggregations?.health ?? null"
+      :coverage="providerAggregations?.coverage ?? null"
+      :tier="listDrill.tier"
+      :tags="listDrill.tags"
+      :data-product-fqn="listDrill.dataProductFqn"
+      :start-ts="listDrill.startTs"
+      :end-ts="listDrill.endTs"
       :status="listDrill.testCaseStatus"
       :data-quality-dimension="listDrill.dataQualityDimension"
       :entity-fqn="listDrill.tableFqn"
     />
 
     <TestSuitesListView
-      v-if="activeTab === 'test-suites'"
-      ref="suitesView"
+      v-else-if="activeTab === 'test-suites'"
       embedded
-      :prefer-search="preferSuiteSearch"
-      :owner-fqn="filters.owner"
+      :prefer-search="true"
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
     />
-  </div>
+    </div>
+  </ObservabilityPageShell>
+  <DqDashboardExportModal
+    :open="isExportModalOpen"
+    :default-file-name="exportDefaultFileName"
+    @cancel="isExportModalOpen = false"
+    @export="onDashboardExport"
+  />
+  <TestCaseFormDrawer
+    :open="isTestCaseModalOpen"
+    @cancel="isTestCaseModalOpen = false"
+    @submitted="isTestCaseModalOpen = false"
+  />
+  <LogicalTestSuiteDrawer
+    :open="isBundleSuiteModalOpen"
+    @cancel="isBundleSuiteModalOpen = false"
+    @submitted="isBundleSuiteModalOpen = false"
+  />
   </PageLayout>
 </template>
 
 <style scoped>
-.dq-landing__head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
+.dq-landing__header-tabs :deep(.ant-tabs-content) {
+  display: none;
 }
-.dq-landing__filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.dq-landing__filter {
-  min-width: 160px;
-}
-.dq-landing__filter--range {
-  margin-left: auto;
-}
-.dq-landing__alert {
-  margin-bottom: 12px;
-}
-.dq-donut {
-  display: block;
-  width: 100%;
-  padding: 8px;
-  border: 0;
-  background: transparent;
-  text-align: center;
-  color: inherit;
-}
-.dq-donut__title {
-  font-weight: 600;
-}
-.dq-donut__center,
-.dq-donut__legend {
-  color: var(--sm-text-secondary);
-  font-size: 12px;
-}
-.dq-dims {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
-}
-.dq-dim,
-.dq-status {
-  display: block;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--sm-border-color);
-  border-radius: var(--sm-radius-card);
-  background: var(--sm-bg-container);
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
-}
-.dq-dim__name {
-  font-size: 12px;
-  color: var(--sm-text-secondary);
-}
-.dq-dim__total,
-.dq-status__value {
-  font-size: 22px;
-  font-weight: 600;
-}
-.dq-dim__pills {
-  display: flex;
-  gap: 6px;
+
+.dq-landing__header-tabs {
   margin-top: 8px;
 }
-.dq-dim__pill {
-  min-width: 24px;
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  text-align: center;
-}
-.dq-dim__pill--success {
-  background: var(--sm-color-success-bg);
-  color: var(--sm-color-success-text);
-}
-.dq-dim__pill--failed {
-  background: var(--sm-color-error-bg);
-  color: var(--sm-color-error-text);
-}
-.dq-dim__pill--aborted {
-  background: var(--sm-color-warning-bg);
-  color: var(--sm-color-warning-text);
-}
-.dq-status__label {
-  color: var(--sm-text-secondary);
+
+.dq-landing__tab-loader {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+  width: 100%;
 }
 </style>

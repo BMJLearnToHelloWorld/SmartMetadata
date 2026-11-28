@@ -44,7 +44,7 @@ describe('EditPipelineView', () => {
       displayName: 'Warehouse Metadata',
       description: 'keep me',
       pipelineType: 'metadata',
-      service: { id: 's1', type: 'databaseService', name: 'warehouse' },
+      service: { id: 's1', type: 'databaseService', name: 'warehouse', fullyQualifiedName: 'warehouse' },
       owners: [{ id: 'o1', type: 'user', name: 'owner1' }],
       loggerLevel: 'INFO',
       raiseOnError: true,
@@ -81,10 +81,10 @@ describe('EditPipelineView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.includes('/api/v1/services/ingestionPipelines/p1') && init?.method === 'GET') {
+        if (url.includes('/api/v1/services/ingestionPipelines/name/') && init?.method !== 'PATCH') {
           return jsonResponse(pipelineResponse);
         }
-        if (url.includes('/api/v1/services/databaseServices/s1') && init?.method === 'GET') {
+        if (url.includes('/api/v1/services/databaseServices/name/') && init?.method !== 'PATCH') {
           if (serviceFetchGate) {
             await serviceFetchGate;
           }
@@ -144,8 +144,8 @@ describe('EditPipelineView', () => {
       history: createMemoryHistory(),
       routes: [
         {
-          path: '/ingestion/pipelines/:id/edit',
-          name: 'ingestion-pipeline-edit',
+          path: '/service/:serviceCategory/:fqn/edit-ingestion/:ingestionFQN/:ingestionType',
+          name: 'ingestion-service-edit-ingestion',
           component: EditPipelineView,
           props: true,
         },
@@ -161,17 +161,28 @@ describe('EditPipelineView', () => {
           component: { template: '<div>connections</div>' },
         },
         {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
+          path: '/service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
           component: { template: '<div>service</div>' },
+          props: true,
+        },
+        {
+          path: '/settings/apps/:fqn',
+          name: 'settings-app',
+          component: { template: '<div>app</div>' },
           props: true,
         },
       ],
     });
-    await router.push('/ingestion/pipelines/p1/edit');
+    await router.push('/service/databaseServices/warehouse/edit-ingestion/warehouse.warehouse-metadata/metadata');
     await router.isReady();
     const wrapper = mount(EditPipelineView, {
-      props: { id: 'p1' },
+      props: {
+        serviceCategory: 'databaseServices',
+        fqn: 'warehouse',
+        ingestionFQN: 'warehouse.warehouse-metadata',
+        ingestionType: 'metadata',
+      },
       attachTo: document.body,
       global: { plugins: [pinia, router, Antd, createTestI18n(locale)] },
     });
@@ -197,6 +208,10 @@ describe('EditPipelineView', () => {
 
   async function saveThrough(wrapper: Mounted['wrapper']) {
     await wrapper.find('[data-testid="edit-pipeline-next"]').trigger('click');
+    // The schedule/submit step is rendered after the official Next
+    // transition; flush before Submit so this matches a real user flow
+    // and does not click while the configure step is still on screen.
+    await flushPromises();
     await wrapper.find('[data-testid="edit-pipeline-submit"]').trigger('click');
     await flushPromises();
     await flushPromises();
@@ -267,8 +282,13 @@ describe('EditPipelineView', () => {
     );
     await wrapper.find('[data-testid="view-service-button"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 's1' });
+    expect(router.currentRoute.value.name).toBe('service-detail');
+    expect(router.currentRoute.value.params).toEqual({
+      serviceCategory: 'databaseServices',
+      fqn: 'warehouse',
+      tab: 'agents',
+      subTab: 'metadata',
+    });
   });
 
   it('keeps saved excludes and includeTables: false on a displayName-only edit', async () => {
@@ -319,10 +339,10 @@ describe('EditPipelineView', () => {
     expect(document.body.querySelector('[data-testid="body-text"]')?.textContent).toContain(
       'Error while deploying',
     );
-    expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
+    expect(router.currentRoute.value.name).toBe('ingestion-service-edit-ingestion');
     await wrapper.find('[data-testid="view-service-button"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
   });
 
   it('removes the schedule interval when switched to on-demand', async () => {
@@ -342,14 +362,14 @@ describe('EditPipelineView', () => {
     await wrapper.find('[data-testid="edit-pipeline-next"]').trigger('click');
     await wrapper.find('[data-testid="edit-pipeline-back"]').trigger('click');
     expect(wrapper.find('[data-testid="edit-pipeline-step-configure"]').exists()).toBe(true);
-    expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
+    expect(router.currentRoute.value.name).toBe('ingestion-service-edit-ingestion');
   });
 
   it('goes back to the service page from step 1', async () => {
     const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="edit-pipeline-back"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.name).toBe('service-detail');
   });
 
   it('renders the per-type heading and the category / service / heading breadcrumb', async () => {
@@ -362,10 +382,10 @@ describe('EditPipelineView', () => {
     const links = breadcrumb.findAll('a');
     expect(links).toHaveLength(2);
     expect(links[0]!.attributes('href')).toBe('/connections');
-    expect(links[1]!.attributes('href')).toBe('/ingestion/services/database/s1');
+    expect(links[1]!.attributes('href')).toBe('/service/databaseServices/warehouse/agents/metadata');
   });
 
-  it('renders the settings-pipeline breadcrumb without links', async () => {
+  it('renders the settings-pipeline breadcrumb linking to the official app details path', async () => {
     pipelineResponse = { ...pipelineResponse, pipelineType: 'dataInsight' };
     const { wrapper } = await mountView({ wait: false });
     await vi.waitFor(() =>
@@ -375,7 +395,9 @@ describe('EditPipelineView', () => {
     );
     const breadcrumb = wrapper.find('[data-testid="sm-breadcrumb"]');
     expect(breadcrumb.text()).toContain('Data Insight');
-    expect(breadcrumb.findAll('a')).toHaveLength(0);
+    const links = breadcrumb.findAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0]!.attributes('href')).toBe('/settings/apps/DataInsightsApplication');
   });
 
   it('carries the pin workflow labels for every pipeline type in both locales', () => {

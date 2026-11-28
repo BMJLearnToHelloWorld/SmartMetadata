@@ -9,7 +9,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTestSuite, getTestCaseExecutionSummary, isTestSuiteSearchListAvailable, listTestSuites, listTestSuitesBySearch, updateTestSuite } from './testSuites';
+import {
+  createTestSuite,
+  getTestCaseExecutionSummary,
+  getTestSuiteByRouteParam,
+  isTestSuiteSearchListAvailable,
+  listTestSuites,
+  listTestSuitesBySearch,
+  updateTestSuite,
+} from './testSuites';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -100,6 +108,40 @@ describe('testSuites API', () => {
   it('treats suite search/list 404 as residual', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
     await expect(isTestSuiteSearchListAvailable()).resolves.toBe(false);
+  });
+
+  it('getTestSuiteByRouteParam calls by-name for FQN route params', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        expect(url).toContain('/api/v1/dataQuality/testSuites/name/suite.fqn');
+        return new Response(JSON.stringify({ id: 'ts-fqn', name: 'suite.fqn', basic: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    const suite = await getTestSuiteByRouteParam('suite.fqn');
+    expect(suite.id).toBe('ts-fqn');
+  });
+
+  it('getTestSuiteByRouteParam calls by-id for UUID route params', async () => {
+    const uuid = '123e4567-e89b-12d3-a456-426614174000';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        expect(url).toContain(`/api/v1/dataQuality/testSuites/${uuid}`);
+        expect(url).not.toContain('/name/');
+        return new Response(JSON.stringify({ id: uuid, name: 'suite', basic: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    const suite = await getTestSuiteByRouteParam(uuid);
+    expect(suite.id).toBe(uuid);
   });
 
   it('reads the execution summary from GET /v1/dataQuality/testSuites/executionSummary', async () => {

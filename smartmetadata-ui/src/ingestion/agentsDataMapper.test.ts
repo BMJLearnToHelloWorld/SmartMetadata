@@ -330,15 +330,16 @@ describe('mapPipelineToAgent', () => {
 });
 
 describe('run-history mapping (official mapPipelineStatusToRun)', () => {
-  it('maps capitalized pipeline states and falls back to skipped', () => {
-    expect(toRunStatus('Success')).toBe('success');
-    expect(toRunStatus('PartialSuccess')).toBe('partial');
-    expect(toRunStatus('Failed')).toBe('failed');
-    expect(toRunStatus('Running')).toBe('running');
-    expect(toRunStatus('Queued')).toBe('skipped');
-    expect(toRunStatus('Stopped')).toBe('skipped');
-    expect(toRunStatus('success')).toBe('skipped');
+  it('maps official lowercase PipelineState values and falls back to skipped', () => {
+    expect(toRunStatus('success')).toBe('success');
+    expect(toRunStatus('partialSuccess')).toBe('partial');
+    expect(toRunStatus('failed')).toBe('failed');
+    expect(toRunStatus('running')).toBe('running');
+    expect(toRunStatus('queued')).toBe('skipped');
+    expect(toRunStatus('stopped')).toBe('skipped');
+    expect(toRunStatus('Success')).toBe('skipped');
     expect(toRunStatus(undefined)).toBe('skipped');
+    expect(toRunStatus('bogus')).toBe('skipped');
   });
 
   it('formats the run start in pin customFormatDateTime shape', () => {
@@ -386,7 +387,7 @@ describe('run-history mapping (official mapPipelineStatusToRun)', () => {
   it('maps a full status to a run with duration, totals, and steps', () => {
     const run = mapPipelineStatusToRun(
       status({
-        pipelineState: 'Success',
+        pipelineState: 'success',
         startDate: NOW - 90_000,
         endDate: NOW,
         status: [
