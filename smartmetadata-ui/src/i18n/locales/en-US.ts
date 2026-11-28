@@ -954,6 +954,7 @@ const enUS = {
     yes: 'Yes',
     yesterday: 'Yesterday',
     'application-by-developer': '{app} by {dev}',
+    'install-airflow-api': 'Install Airflow Managed APIs',
     'install-entity': 'Install {entity}',
     'you-are-here': 'You are here',
   
@@ -1194,6 +1195,8 @@ const enUS = {
     'import-mode-replace-description': 'Overwrite all contract fields with the imported ODCS. Contract ID and execution history will be preserved.',
     'incident-metrics-sub-header': 'Track the volume, responsiveness, and resolution efficiency of data-related incidents to improve operational reliability.',
     'ingestion-bot-cant-be-deleted': 'You cannot delete the ingestion bot.',
+    'airflow-guide-message':
+      '{brandName} uses Airflow to run Ingestion Connectors. We developed Managed APIs to deploy ingestion connectors. Please use {brandName} Airflow instance or refer to the guide below to install the managed APIs in your Airflow installation.',
     'invalid-odcs-contract-format': 'Invalid ODCS contract format. Required fields: apiVersion, kind, status.',
     'invalid-odcs-contract-format-required-fields': 'The following fields are required: APIVersion, Kind, Status',
     'invalid-openmetadata-contract-format': 'Invalid {brandName} contract format. Required field: name.',
@@ -1209,6 +1212,7 @@ const enUS = {
     'failed-to-load-learning-resources': 'Unable to load learning resources. Please try again later.',
     'no-learning-resources-available': 'No learning resources available for this context.',
     'unsupported-resource-type': 'Unsupported resource type',
+    'manage-airflow-api-failed': 'Failed to find {brandName} - Managed Airflow APIs',
     'marketplace-verify-msg': '{brandName} has verified that the publisher controls the domain and meets other requirements.',
     'max-latency-contract-description': 'Maximum acceptable latency between data generation & availability',
     'maximum-count-allowed': 'Maximum {count} {label} are allowed',
@@ -1290,6 +1294,8 @@ const enUS = {
     'personal-access-token': 'Personal Access Token',
     'pipeline-entity-description': "Setup a pipeline to configure how this {entity} should run.",
     'pipeline-not-deployed': "Pipeline is not deployed",
+    'pipeline-scheduler-message':
+      'The Ingestion Scheduler is unable to respond. Please reach out to {brandName} support. Thank you.',
     'pipelines-could-not-be-loaded': "Pipelines couldn't be loaded",
     'please-contact-us': "Please contact us at support{'@'}getcollate.io for further details.",
     'please-select-action-below': 'Please select any one action below.',

@@ -14,6 +14,7 @@ import { PAGE_SIZE_BASE } from '@/utils/pagination';
 
 const listIngestionPipelines = vi.fn();
 const getOrchestratorStatus = vi.fn();
+const getEntityPermissionByFqn = vi.fn();
 
 vi.mock('@/api/ingestionPipelines', () => ({
   INGESTION_PIPELINE_FIELDS: 'owners,pipelineStatuses',
@@ -25,6 +26,7 @@ vi.mock('@/stores/permissions', () => ({
   usePermissionStore: () => ({
     isAdminUser: true,
     getResourcePermission: vi.fn(async () => ({ Create: true })),
+    getEntityPermissionByFqn: (...args: unknown[]) => getEntityPermissionByFqn(...args),
   }),
 }));
 
@@ -46,6 +48,7 @@ const mockPipelines = [
   {
     id: 'p1',
     name: 'pipeline1',
+    fullyQualifiedName: 'suite.fqn.pipeline1',
     displayName: 'pipeline1',
     pipelineType: 'TestSuite',
     enabled: true,
@@ -55,6 +58,7 @@ const mockPipelines = [
   {
     id: 'p2',
     name: 'pipeline2',
+    fullyQualifiedName: 'suite.fqn.pipeline2',
     displayName: 'pipeline2',
     pipelineType: 'TestSuite',
     enabled: true,
@@ -99,7 +103,9 @@ describe('TestSuitePipelineTab', () => {
   beforeEach(() => {
     listIngestionPipelines.mockReset();
     getOrchestratorStatus.mockReset();
+    getEntityPermissionByFqn.mockReset();
     getOrchestratorStatus.mockResolvedValue({ platform: 'active', code: 200 });
+    getEntityPermissionByFqn.mockResolvedValue({ EditAll: true, Delete: true });
     listIngestionPipelines.mockResolvedValue({
       data: mockPipelines,
       total: 30,
@@ -155,5 +161,24 @@ describe('TestSuitePipelineTab', () => {
     const wrapper = await mountTab();
     expect(wrapper.find('[data-testid="test-case-count-pipeline1"]').text()).toBe('3');
     expect(wrapper.find('[data-testid="test-case-count-pipeline2"]').text()).toBe('1');
+  });
+
+  it('fetches per-pipeline ingestion permissions by FQN', async () => {
+    await mountTab();
+    expect(getEntityPermissionByFqn).toHaveBeenCalledWith(
+      'ingestionPipeline',
+      'suite.fqn.pipeline1',
+    );
+    expect(getEntityPermissionByFqn).toHaveBeenCalledWith(
+      'ingestionPipeline',
+      'suite.fqn.pipeline2',
+    );
+  });
+
+  it('shows Airflow setup guide when orchestrator is unavailable', async () => {
+    getOrchestratorStatus.mockResolvedValue({ platform: 'Airflow', code: 503 });
+    const wrapper = await mountTab();
+    expect(wrapper.find('[data-testid="error-placeholder-ingestion"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-suite-pipeline-tab"]').exists()).toBe(false);
   });
 });

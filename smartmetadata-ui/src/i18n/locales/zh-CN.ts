@@ -951,6 +951,7 @@ const zhCN = {
     yes: '是',
     yesterday: '昨天',
     'application-by-developer': '{app}（来自 {dev}）',
+    'install-airflow-api': '安装 Airflow 托管 APIs',
     'install-entity': '安装{entity}',
     'you-are-here': '当前位置',
   
@@ -1180,6 +1181,8 @@ const zhCN = {
     'import-mode-replace-description': '删除现有合同并从导入的 ODCS 合同创建新合同。这将替换所有当前合同设置。',
     'incident-metrics-sub-header': '跟踪数据相关事件的数量、响应能力和解决效率，以提高操作可靠性。',
     'ingestion-bot-cant-be-deleted': '您无法删除提取机器人',
+    'airflow-guide-message':
+      '{brandName} 使用 Airflow 运行提取连接器, 我们开发了专门的托管 API 来部署提取连接器。请使用 {brandName} 专属的 Airflow 实例, 或参考下面的指南：在您的 Airflow 实例中安装我们开发的托管 API 程序。',
     'invalid-odcs-contract-format': '无效的 ODCS 合同格式。必填字段：apiVersion、kind、status。',
     'invalid-odcs-contract-format-required-fields': '必填字段：APIVersion, Kind, Status',
     'invalid-openmetadata-contract-format': 'Invalid {brandName} contract format. Required fields: entity.',
@@ -1195,6 +1198,7 @@ const zhCN = {
     'failed-to-load-learning-resources': '无法加载学习资源。请稍后重试。',
     'no-learning-resources-available': '此上下文没有可用的学习资源。',
     'unsupported-resource-type': '不支持的资源类型',
+    'manage-airflow-api-failed': '未找到 {brandName} 管理的 Airflow APIs',
     'marketplace-verify-msg': '{brandName} 已核实发布者控制该域并符合其他要求',
     'max-latency-contract-description': '数据生成与可用性之间的最大可接受延迟',
     'maximum-count-allowed': '最多允许{count}个{label}',
@@ -1274,6 +1278,8 @@ const zhCN = {
     'personal-access-token': '个人访问令牌',
     'pipeline-entity-description': "设置管道来配置这个 {entity} 应该如何运行。",
     'pipeline-not-deployed': "管道未部署",
+    'pipeline-scheduler-message':
+      '提取调度器无响应。请联系 {brandName} 支持。谢谢。',
     'pipelines-could-not-be-loaded': "无法加载管道",
     'please-contact-us': "如需了解更多详情, 请通过 support{'@'}getcollate.io 与我们联系",
     'please-select-action-below': '请选择下面的一项操作。',

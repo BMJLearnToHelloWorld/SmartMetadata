@@ -9,7 +9,9 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Dropdown, Menu, Table, Tag, Tooltip, Typography } from 'ant-design-vue';
 import { QuestionCircleOutlined } from '@ant-design/icons-vue';
+import type { OperationPermissions } from '@/api/permissions';
 import { INGESTION_PIPELINE_FIELDS, getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
+import AirflowSetupGuide from '@/components/ingestion/AirflowSetupGuide.vue';
 import IngestionRecentRuns from '@/components/ingestion/IngestionRecentRuns.vue';
 import IngestionStatusCount from '@/components/ingestion/IngestionStatusCount.vue';
 import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
@@ -22,7 +24,7 @@ import IngestionLogsModal from '@/views/ingestion/IngestionLogsModal.vue';
 import KillPipelineModal from '@/views/ingestion/KillPipelineModal.vue';
 import PipelineRowActions from '@/views/ingestion/PipelineRowActions.vue';
 import PipelineScheduleCell from '@/views/ingestion/PipelineScheduleCell.vue';
-import type { IngestionPipeline } from '@/types/ingestion';
+import type { IngestionPipeline, OrchestratorStatus } from '@/types/ingestion';
 import type { TestSuite } from '@/types/quality';
 import { entityLabel } from '@/features/crud/paging';
 
@@ -42,8 +44,26 @@ const isAdminUser = computed(() => permissionStore.isAdminUser);
 const pipelineError = ref('');
 const pipelineDrawerOpen = ref(false);
 const editingPipeline = ref<IngestionPipeline | null>(null);
-const orchestratorUnavailable = ref(false);
+const orchestratorStatus = ref<OrchestratorStatus | null>(null);
+const orchestratorChecked = ref(false);
+const isFetchingOrchestrator = ref(true);
 const canCreatePipeline = ref(false);
+const pipelinePermissions = ref(new Map<string, OperationPermissions>());
+let permissionFetchId = 0;
+
+const isAirflowAvailable = computed(() => orchestratorStatus.value?.code === 200);
+
+const orchestratorUnavailable = computed(
+  () =>
+    orchestratorChecked.value &&
+    (orchestratorStatus.value == null ||
+      orchestratorStatus.value.platform === 'disabled' ||
+      orchestratorStatus.value.code !== 200),
+);
+
+const showAirflowSetupGuide = computed(
+  () => !isAirflowAvailable.value && !(isLoading.value || isFetchingOrchestrator.value),
+);
 
 const suiteForDrawer = computed<TestSuite | null>(() =>
   props.testSuiteFqn
@@ -132,7 +152,7 @@ function latestStatus(pipeline: IngestionPipeline) {
 
 const rowActions = usePipelineRowActions({
   isAdminUser: () => isAdminUser.value,
-  getOps: () => undefined,
+  getOps: (pipeline) => pipelinePermissions.value.get(pipeline.id),
   refresh: () => onPageChange(page.value),
 });
 const logsPipeline = rowActions.logsPipeline;
@@ -153,12 +173,46 @@ function onViewPipeline(pipeline: IngestionPipeline): void {
 }
 
 async function loadOrchestrator(): Promise<void> {
+  isFetchingOrchestrator.value = true;
   try {
-    const status = await getOrchestratorStatus();
-    orchestratorUnavailable.value = status.platform === 'disabled' || status.code !== 200;
+    orchestratorStatus.value = await getOrchestratorStatus();
   } catch {
-    orchestratorUnavailable.value = true;
+    orchestratorStatus.value = null;
+  } finally {
+    orchestratorChecked.value = true;
+    isFetchingOrchestrator.value = false;
   }
+}
+
+async function fetchPipelinePermissions(): Promise<void> {
+  const pipelines = items.value;
+  if (!pipelines.length) {
+    pipelinePermissions.value = new Map();
+    return;
+  }
+  permissionFetchId += 1;
+  const fetchId = permissionFetchId;
+  const results = await Promise.allSettled(
+    pipelines
+      .filter((pipeline) => Boolean(pipeline.fullyQualifiedName))
+      .map(async (pipeline) => ({
+        id: pipeline.id,
+        ops: await permissionStore.getEntityPermissionByFqn(
+          'ingestionPipeline',
+          pipeline.fullyQualifiedName as string,
+        ),
+      })),
+  );
+  if (fetchId !== permissionFetchId) {
+    return;
+  }
+  const next = new Map<string, OperationPermissions>();
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      next.set(result.value.id, result.value.ops);
+    }
+  }
+  pipelinePermissions.value = next;
 }
 
 async function loadCreatePermission(): Promise<void> {
@@ -178,6 +232,10 @@ watch(
   { immediate: true },
 );
 
+watch(items, () => {
+  void fetchPipelinePermissions();
+});
+
 onMounted(() => {
   void loadOrchestrator();
   void loadCreatePermission();
@@ -185,7 +243,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <div data-testid="test-suite-pipeline-tab">
+  <AirflowSetupGuide
+    v-if="showAirflowSetupGuide"
+    :status="orchestratorStatus"
+    :checked="orchestratorChecked"
+    :is-fetching-status="isFetchingOrchestrator"
+  />
+  <div v-else data-testid="test-suite-pipeline-tab">
     <Button
       v-if="testSuiteFqn && !deleted && sortedPipelines.length > 0"
       data-testid="add-pipeline-button"
@@ -273,6 +337,7 @@ onMounted(() => {
               <Menu>
                 <PipelineRowActions
                   :pipeline="record as IngestionPipeline"
+                  :ops="pipelinePermissions.get((record as IngestionPipeline).id)"
                   :is-admin-user="isAdminUser"
                   :orchestrator-unavailable="orchestratorUnavailable"
                   show-view
