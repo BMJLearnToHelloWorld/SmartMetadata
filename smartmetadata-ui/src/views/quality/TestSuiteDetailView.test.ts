@@ -38,7 +38,10 @@ vi.mock('@/composables/useEntityPermissions', async (importOriginal) => {
 });
 
 vi.mock('@/stores/permissions', () => ({
-  usePermissionStore: () => ({ isAdminUser: true }),
+  usePermissionStore: () => ({
+    isAdminUser: true,
+    getResourcePermission: vi.fn(async () => ({ Create: true })),
+  }),
 }));
 
 vi.mock('@/governance/catalogOptions', () => ({
@@ -148,6 +151,10 @@ describe('TestSuiteDetailView official parity', () => {
 
   it('renders pipeline tab with drawer add entry (not legacy residual)', async () => {
     const wrapper = await mountView();
+    const pipelineTab = wrapper.find('[data-testid="test-suite-tab-pipeline"]');
+    expect(pipelineTab.exists()).toBe(true);
+    await pipelineTab.trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-testid="test-suite-pipeline-residual"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="add-test-suite-ingestion"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-suite-pipeline-tab"]').exists()).toBe(true);

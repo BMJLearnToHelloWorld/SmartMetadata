@@ -7,12 +7,14 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Dropdown, Menu, Table, Tag, Tooltip, Typography, message } from 'ant-design-vue';
+import { Button, Dropdown, Menu, Table, Tag, Tooltip, Typography } from 'ant-design-vue';
 import { QuestionCircleOutlined } from '@ant-design/icons-vue';
 import { INGESTION_PIPELINE_FIELDS, getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
 import IngestionRecentRuns from '@/components/ingestion/IngestionRecentRuns.vue';
 import IngestionStatusCount from '@/components/ingestion/IngestionStatusCount.vue';
 import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
+import NextPrevious from '@/components/shared/NextPrevious.vue';
+import { useCursorPagedList } from '@/composables/useCursorPagedList';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { usePermissionStore } from '@/stores/permissions';
@@ -37,13 +39,11 @@ const router = useRouter();
 const permissionStore = usePermissionStore();
 const isAdminUser = computed(() => permissionStore.isAdminUser);
 
-const pipelines = ref<IngestionPipeline[]>([]);
-const pipelineTotal = ref(0);
 const pipelineError = ref('');
-const pipelineLoading = ref(false);
 const pipelineDrawerOpen = ref(false);
 const editingPipeline = ref<IngestionPipeline | null>(null);
 const orchestratorUnavailable = ref(false);
+const canCreatePipeline = ref(false);
 
 const suiteForDrawer = computed<TestSuite | null>(() =>
   props.testSuiteFqn
@@ -61,6 +61,61 @@ const workflowColumns = computed(() => [
   { title: t('label.action-plural'), key: 'actions', width: 80 },
 ]);
 
+const {
+  items,
+  paging,
+  isLoading,
+  page,
+  pageSize,
+  showPagination,
+  onPageChange,
+  onPageSizeChange,
+} = useCursorPagedList<IngestionPipeline>(
+  async ({ after, before, limit }) => {
+    if (!props.testSuiteFqn) {
+      return { data: [], paging: { total: 0 } };
+    }
+    pipelineError.value = '';
+    const pageResult = await listIngestionPipelines({
+      testSuite: props.testSuiteFqn,
+      pipelineType: 'TestSuite',
+      limit,
+      after,
+      before,
+      fields: INGESTION_PIPELINE_FIELDS,
+    });
+    return {
+      data: pageResult.data,
+      paging: {
+        after: pageResult.after,
+        before: pageResult.before,
+        total: pageResult.total ?? pageResult.data.length,
+      },
+    };
+  },
+  {
+    resetKey: () => [props.testSuiteFqn, props.deleted] as const,
+    onError: (error) => {
+      pipelineError.value = getErrorText(error, t('server.unexpected-error'));
+    },
+  },
+);
+
+/** Official sortBy test-case count ascending (all pipelines last). */
+const sortedPipelines = computed(() =>
+  [...items.value].sort((a, b) => {
+    const lenA = (a.sourceConfig as { config?: { testCases?: string[] } } | undefined)?.config
+      ?.testCases?.length;
+    const lenB = (b.sourceConfig as { config?: { testCases?: string[] } } | undefined)?.config
+      ?.testCases?.length;
+    const scoreA = lenA ? lenA : Number.NEGATIVE_INFINITY;
+    const scoreB = lenB ? lenB : Number.NEGATIVE_INFINITY;
+    return scoreA - scoreB;
+  }),
+);
+
+const showPager = computed(() => showPagination.value && (paging.value.total ?? 0) > 0);
+
 function pipelineTestCases(pipeline: IngestionPipeline): string {
   const config = (pipeline.sourceConfig as { config?: { testCases?: string[] } } | undefined)?.config;
   const names = config?.testCases;
@@ -75,39 +130,10 @@ function latestStatus(pipeline: IngestionPipeline) {
   return pipeline.pipelineStatuses?.[0];
 }
 
-async function loadPipelines(): Promise<void> {
-  pipelineError.value = '';
-  if (!props.testSuiteFqn) {
-    pipelines.value = [];
-    pipelineTotal.value = 0;
-    emit('update:total', 0);
-    return;
-  }
-  pipelineLoading.value = true;
-  try {
-    const page = await listIngestionPipelines({
-      testSuite: props.testSuiteFqn,
-      pipelineType: 'TestSuite',
-      limit: 50,
-      fields: INGESTION_PIPELINE_FIELDS,
-    });
-    pipelines.value = page.data;
-    pipelineTotal.value = page.total ?? page.data.length;
-    emit('update:total', pipelineTotal.value);
-  } catch (error) {
-    pipelines.value = [];
-    pipelineTotal.value = 0;
-    emit('update:total', 0);
-    pipelineError.value = getErrorText(error, t('server.unexpected-error'));
-  } finally {
-    pipelineLoading.value = false;
-  }
-}
-
 const rowActions = usePipelineRowActions({
   isAdminUser: () => isAdminUser.value,
   getOps: () => undefined,
-  refresh: () => loadPipelines(),
+  refresh: () => onPageChange(page.value),
 });
 const logsPipeline = rowActions.logsPipeline;
 const killPipeline = rowActions.killPipeline;
@@ -135,24 +161,34 @@ async function loadOrchestrator(): Promise<void> {
   }
 }
 
+async function loadCreatePermission(): Promise<void> {
+  try {
+    const ops = await permissionStore.getResourcePermission('ingestionPipeline');
+    canCreatePipeline.value = ops.Create === true;
+  } catch {
+    canCreatePipeline.value = false;
+  }
+}
+
 watch(
-  () => [props.testSuiteFqn, props.testSuiteId, props.deleted] as const,
-  () => {
-    void loadPipelines();
+  () => paging.value.total,
+  (total) => {
+    emit('update:total', total ?? 0);
   },
+  { immediate: true },
 );
 
 onMounted(() => {
-  void loadPipelines();
   void loadOrchestrator();
+  void loadCreatePermission();
 });
 </script>
 
 <template>
   <div data-testid="test-suite-pipeline-tab">
     <Button
-      v-if="testSuiteFqn && !deleted"
-      data-testid="add-test-suite-ingestion"
+      v-if="testSuiteFqn && !deleted && sortedPipelines.length > 0"
+      data-testid="add-pipeline-button"
       style="margin-bottom: 16px"
       @click="openAddPipeline"
     >
@@ -162,21 +198,26 @@ onMounted(() => {
       {{ pipelineError }}
     </Typography.Text>
     <div
-      v-if="!pipelineLoading && pipelines.length === 0 && !pipelineError"
+      v-if="!isLoading && sortedPipelines.length === 0 && !pipelineError"
       class="suite-pipeline__empty"
       data-testid="test-suite-pipelines-empty"
     >
       <div>{{ t('message.no-pipelines-yet') }}</div>
       <div class="suite-pipeline__empty-help">{{ t('message.no-table-pipeline') }}</div>
-      <Button type="primary" data-testid="add-pipeline-button" @click="openAddPipeline">
+      <Button
+        v-if="canCreatePipeline"
+        type="primary"
+        data-testid="add-test-suite-ingestion"
+        @click="openAddPipeline"
+      >
         {{ t('label.add-entity', { entity: t('label.pipeline') }) }}
       </Button>
     </div>
     <Table
-      v-else-if="pipelines.length > 0 || pipelineLoading"
+      v-else-if="sortedPipelines.length > 0 || isLoading"
       :columns="workflowColumns"
-      :data-source="pipelines"
-      :loading="pipelineLoading"
+      :data-source="sortedPipelines"
+      :loading="isLoading"
       :pagination="false"
       row-key="id"
       data-testid="test-suite-pipelines-table"
@@ -251,6 +292,17 @@ onMounted(() => {
       </template>
     </Table>
 
+    <NextPrevious
+      v-if="showPager"
+      data-testid="test-suite-pipeline-pager"
+      :paging="paging"
+      :paging-handler="({ currentPage }) => onPageChange(currentPage)"
+      :page-size="pageSize"
+      :current-page="page"
+      :is-loading="isLoading"
+      :on-show-size-change="onPageSizeChange"
+    />
+
     <TestSuitePipelineFormDrawer
       :open="pipelineDrawerOpen"
       :suite="suiteForDrawer"
@@ -258,7 +310,7 @@ onMounted(() => {
       @close="pipelineDrawerOpen = false"
       @success="
         pipelineDrawerOpen = false;
-        void loadPipelines();
+        onPageChange(page);
       "
     />
     <IngestionLogsModal
