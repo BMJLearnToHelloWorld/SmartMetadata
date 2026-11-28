@@ -6,10 +6,14 @@
 import { computed, onMounted, provide, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { Button, Dropdown, Menu, Spin, Tabs } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import { observabilityChildBreadcrumb } from '@/utils/observabilityBreadcrumbs';
 import DqDashboardExportModal from '@/components/quality/DqDashboardExportModal.vue';
 import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
@@ -47,6 +51,8 @@ const exportDefaultFileName = ref('');
 const canCreateTestSuite = ref(false);
 const canCreateTestCase = ref(true);
 const canViewTestCaseBasic = ref(true);
+
+const dqBreadcrumbs = computed(() => observabilityChildBreadcrumb(t, 'label.data-quality'));
 
 const ownsTheUrl = computed(() => route.path.startsWith('/data-quality'));
 const routeSearch = computed(() => routeQueryToSearch(route));
@@ -205,62 +211,73 @@ watch(
 
 <template>
   <PageLayout test-id="dq-landing-layout">
-  <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
-    <div class="dq-landing__head">
-      <div data-testid="dq-landing-title">
+  <ObservabilityPageShell
+    :page-title="t('label.data-quality')"
+    shell-test-id="data-quality-page"
+  >
+    <template #header>
+      <ObservabilityGradientPageHeader>
+        <template #breadcrumb>
+          <SmBreadcrumb :items="dqBreadcrumbs" />
+        </template>
         <PageHeader
           :header="t('label.data-quality')"
           :sub-header="t('message.page-sub-header-for-data-quality')"
           learning-page-id="dataQuality"
+          test-id="dq-landing-title"
         />
-      </div>
-      <div class="dq-landing__actions">
-        <template v-if="activeTab === 'dashboard'">
-          <Button data-testid="export-pdf-button" @click="openExportDashboardModal">
-            {{ t('label.export-pdf') }}
-          </Button>
-          <Dropdown :trigger="['click']">
-            <Button type="primary" data-testid="data-quality-add-button-menu">
-              {{ t('label.add') }}
-              <SmIcon icon-key="action-chevron-down" />
+        <Tabs
+          class="dq-landing__header-tabs"
+          data-testid="dq-landing-tabs"
+          :active-key="activeTab"
+          @change="onTabChange"
+        >
+          <Tabs.TabPane key="dashboard" :tab="t('label.summary')" />
+          <Tabs.TabPane key="test-cases" :tab="t('label.test-case-plural')" />
+          <Tabs.TabPane key="test-suites" :tab="t('label.test-suite-plural')" />
+        </Tabs>
+        <template #actions>
+          <template v-if="activeTab === 'dashboard'">
+            <Button data-testid="export-pdf-button" @click="openExportDashboardModal">
+              {{ t('label.export-pdf') }}
             </Button>
-            <template #overlay>
-              <Menu @click="onAddMenu">
-                <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('label.add-a-entity', { entity: t('label.test-case') }) }}</Menu.Item>
-                <Menu.Item
-                  v-if="canCreateTestSuite"
-                  key="suite"
-                  data-testid="dq-landing-add-suite"
-                >{{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}</Menu.Item>
-              </Menu>
-            </template>
-          </Dropdown>
+            <Dropdown :trigger="['click']">
+              <Button type="primary" data-testid="data-quality-add-button-menu">
+                {{ t('label.add') }}
+                <SmIcon icon-key="action-chevron-down" />
+              </Button>
+              <template #overlay>
+                <Menu @click="onAddMenu">
+                  <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('label.add-a-entity', { entity: t('label.test-case') }) }}</Menu.Item>
+                  <Menu.Item
+                    v-if="canCreateTestSuite"
+                    key="suite"
+                    data-testid="dq-landing-add-suite"
+                  >{{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}</Menu.Item>
+                </Menu>
+              </template>
+            </Dropdown>
+          </template>
+          <Button
+            v-else-if="activeTab === 'test-cases'"
+            type="primary"
+            data-testid="add-test-case-btn"
+            @click="openCreateCase"
+          >
+            {{ t('label.add-a-entity', { entity: t('label.test-case') }) }}
+          </Button>
+          <Button
+            v-else-if="canCreateTestSuite"
+            type="primary"
+            data-testid="add-test-suite-btn"
+            @click="openCreateSuite"
+          >
+            {{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}
+          </Button>
         </template>
-        <Button
-          v-else-if="activeTab === 'test-cases'"
-          type="primary"
-          data-testid="add-test-case-btn"
-          @click="openCreateCase"
-        >
-          {{ t('label.add-a-entity', { entity: t('label.test-case') }) }}
-        </Button>
-        <Button
-          v-else-if="canCreateTestSuite"
-          type="primary"
-          data-testid="add-test-suite-btn"
-          @click="openCreateSuite"
-        >
-          {{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}
-        </Button>
-      </div>
-    </div>
-
-    <Tabs :active-key="activeTab" data-testid="dq-landing-tabs" @change="onTabChange">
-      <Tabs.TabPane key="dashboard" :tab="t('label.summary')" />
-      <Tabs.TabPane key="test-cases" :tab="t('label.test-case-plural')" />
-      <Tabs.TabPane key="test-suites" :tab="t('label.test-suite-plural')" />
-    </Tabs>
-
+      </ObservabilityGradientPageHeader>
+    </template>
+    <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
     <DataQualityDashboard v-if="activeTab === 'dashboard'" />
 
     <Spin v-else-if="listTabSummaryLoading" class="dq-landing__tab-loader" size="large" />
@@ -288,7 +305,8 @@ watch(
       :prefer-search="true"
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
     />
-  </div>
+    </div>
+  </ObservabilityPageShell>
   <DqDashboardExportModal
     :open="isExportModalOpen"
     :default-file-name="exportDefaultFileName"
@@ -309,18 +327,12 @@ watch(
 </template>
 
 <style scoped>
-.dq-landing__head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
+.dq-landing__header-tabs :deep(.ant-tabs-content) {
+  display: none;
 }
 
-.dq-landing__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+.dq-landing__header-tabs {
+  margin-top: 8px;
 }
 
 .dq-landing__tab-loader {

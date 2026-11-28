@@ -379,6 +379,7 @@ const zhCN = {
     'data-model': '数据模型',
     'data-observability': '数据观测',
     'incident-plural': '事件',
+    'incident-manager': '事件管理',
     'data-product': '数据产品',
     'data-product-plural': '数据产品',
     'data-volume': '数据量',

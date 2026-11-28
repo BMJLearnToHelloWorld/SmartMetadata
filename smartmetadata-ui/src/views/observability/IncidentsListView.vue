@@ -28,6 +28,12 @@ import IncidentAssigneeFilterPicker from '@/components/observability/IncidentAss
 import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
 import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
 import CompactDateTimeDisplay from '@/components/shared/CompactDateTimeDisplay.vue';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { observabilityChildBreadcrumb } from '@/utils/observabilityBreadcrumbs';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import { incidentStatusLabel } from '@/features/crud/incidentStatus';
@@ -55,6 +61,10 @@ const route = useRoute();
 const router = useRouter();
 const permissionStore = usePermissionStore();
 const domainStore = useDomainStore();
+
+const incidentBreadcrumbs = computed(() =>
+  observabilityChildBreadcrumb(t, 'label.incident-manager'),
+);
 
 
 
@@ -561,6 +571,34 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
 </script>
 
 <template>
+  <component
+    :is="embedded ? 'div' : PageLayout"
+    v-bind="embedded ? {} : { documentTitle: t('label.incident-manager') }"
+  >
+    <component
+      :is="embedded ? 'div' : ObservabilityPageShell"
+      v-bind="
+        embedded
+          ? {}
+          : {
+              pageTitle: t('label.incident-manager'),
+              shellTestId: 'incident-manager-page',
+            }
+      "
+    >
+      <template v-if="!embedded" #header>
+        <ObservabilityGradientPageHeader>
+          <template #breadcrumb>
+            <SmBreadcrumb :items="incidentBreadcrumbs" />
+          </template>
+          <PageHeader
+            :header="t('label.incident-manager')"
+            :sub-header="t('message.incident-metrics-sub-header')"
+            learning-page-id="incidentManager"
+            test-id="incidents-list-title"
+          />
+        </ObservabilityGradientPageHeader>
+      </template>
   <div data-testid="incidents-list-view">
     <div
       v-if="permState === 'loading'"
@@ -591,7 +629,7 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
       v-else
       :title="t('observability.incidents.title')"
       :lead="t('observability.incidents.lead')"
-      :hide-heading="embedded"
+      :hide-heading="true"
       :loading="loading"
       :error="errorMessage"
       :columns="columns"
@@ -798,6 +836,8 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
       </template>
     </EntityListShell>
   </div>
+    </component>
+  </component>
 </template>
 
 <style scoped>

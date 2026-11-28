@@ -382,6 +382,7 @@ const enUS = {
     'data-model': 'Data Model',
     'data-observability': 'Data Observability',
     'incident-plural': 'Incidents',
+    'incident-manager': 'Incident Manager',
     'data-product': 'Data Product',
     'data-product-plural': 'Data Products',
     'data-volume': 'Data Volume',

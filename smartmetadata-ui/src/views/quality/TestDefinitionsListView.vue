@@ -16,8 +16,14 @@ import {
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import type { TableProps } from 'ant-design-vue';
 import { Button, Modal, Skeleton, Switch, Table, Tooltip, Typography, message } from 'ant-design-vue';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
 import DescriptionCell from '@/components/shared/DescriptionCell.vue';
 import LearningIcon from '@/components/shared/LearningIcon.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { observabilityChildBreadcrumb } from '@/utils/observabilityBreadcrumbs';
 import { createEmptyPaging } from '@/catalog/servicePaging';
 import { useCursorPaging } from '@/ingestion/useCursorPaging';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
@@ -66,6 +72,9 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const permissionStore = usePermissionStore();
+const testLibraryBreadcrumbs = computed(() =>
+  observabilityChildBreadcrumb(t, 'label.test-library'),
+);
 type PermState = 'loading' | 'denied' | 'error' | 'ready';
 const permState = ref<PermState>('loading');
 const createPermission = ref(false);
@@ -533,33 +542,37 @@ onMounted(async () => {
     data-testid="permission-error-placeholder"
     :permission-value="t('label.view-entity', { entity: t('label.test-definition') })"
   />
-  <div v-else-if="permState === 'ready'" class="test-library-page" data-testid="test-library-page">
-    <div class="test-library-page__header">
-      <div>
-        <div class="test-library-page__title-row">
-          <Typography.Title :level="4" class="test-library-page__title">
-            {{ t('label.test-library') }}
-          </Typography.Title>
-          <LearningIcon
-            page-id="testLibrary"
-            :title="t('label.test-library')"
-            data-testid="test-library-learning-icon"
+  <PageLayout
+    v-else-if="permState === 'ready'"
+    :document-title="t('label.test-library')"
+  >
+    <ObservabilityPageShell
+      :page-title="t('label.test-library')"
+      shell-test-id="test-library-page"
+    >
+      <template #header>
+        <ObservabilityGradientPageHeader>
+          <template #breadcrumb>
+            <SmBreadcrumb :items="testLibraryBreadcrumbs" />
+          </template>
+          <PageHeader
+            :header="t('label.test-library')"
+            :sub-header="t('message.page-sub-header-for-test-definitions')"
+            learning-page-id="testLibrary"
           />
-        </div>
-        <Typography.Paragraph type="secondary" class="test-library-page__lead">
-          {{ t('message.page-sub-header-for-test-definitions') }}
-        </Typography.Paragraph>
-      </div>
-      <Button
-        v-if="createPermission"
-        type="primary"
-        data-testid="create-test-definition"
-        @click="openCreate"
-      >
-        {{ t('label.add-entity', { entity: t('label.test-definition') }) }}
-      </Button>
-    </div>
-
+          <template #actions>
+            <Button
+              v-if="createPermission"
+              type="primary"
+              data-testid="create-test-definition"
+              @click="openCreate"
+            >
+              {{ t('label.add-entity', { entity: t('label.test-definition') }) }}
+            </Button>
+          </template>
+        </ObservabilityGradientPageHeader>
+      </template>
+      <div class="test-library-page" data-testid="test-library-page">
     <TestDefinitionFilterBar
       :search-input="searchInput"
       :entity-type="entityType"
@@ -689,6 +702,8 @@ onMounted(async () => {
       </select>
     </div>
 
+      </div>
+    </ObservabilityPageShell>
     <TestDefinitionFormDrawer
       :open="drawerOpen"
       :definition="editing"
@@ -698,7 +713,7 @@ onMounted(async () => {
       @dismiss-error="formErrorMessage = ''"
       @save="onSave"
     />
-  </div>
+  </PageLayout>
 </template>
 
 <style scoped>
