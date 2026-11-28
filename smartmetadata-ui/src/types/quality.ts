@@ -71,11 +71,27 @@ export interface TestResultValue {
   predictedValue?: string;
 }
 
+export interface TestCaseErrorDetails {
+  message?: string;
+  errorType?: string;
+  stackTrace?: string;
+}
+
 export interface TestCaseResult {
   timestamp?: number;
   testCaseStatus?: string;
   result?: string;
   testCaseFQN?: string;
+  incidentId?: string;
+  duration?: number;
+  minBound?: number;
+  maxBound?: number;
+  passedRows?: number;
+  failedRows?: number;
+  passedRowsPercentage?: number;
+  failedRowsPercentage?: number;
+  errorDetails?: TestCaseErrorDetails;
+  evaluationScope?: string;
   /**
    * Named measured values (official TestCaseResult.testResultValue), e.g. a
    * tableDiff run's removedRows / addedRows / diffCount. Only entries the

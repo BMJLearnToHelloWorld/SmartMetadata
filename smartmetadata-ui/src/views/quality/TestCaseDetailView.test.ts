@@ -329,6 +329,7 @@ describe('TestCaseDetailView results tab TestSummary', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="test-case-result-tab-graph"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-summary-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-summary-date-range"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="graph-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="run-summary-tiles"]').exists()).toBe(true);
     wrapper.unmount();

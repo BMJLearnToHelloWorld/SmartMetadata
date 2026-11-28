@@ -8,18 +8,20 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Spin, Typography } from 'ant-design-vue';
 import { listTestCaseResults } from '@/api/testCaseResults';
+import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import type { TestCase, TestCaseResult } from '@/types/quality';
+import { useTestCaseSelectedRun } from '@/composables/useTestCaseSelectedRun';
 import {
   getMeasuredResult,
   getResultHistoryCaptionText,
   hasTestCaseNeverRun,
 } from '@/quality/testSummary.utils';
-import { getPastDaysRange, TEST_SUMMARY_DEFAULT_DAYS, type TestSummaryDateRange } from '@/quality/testSummaryDateRange';
+import { getPastDaysRange, TEST_SUMMARY_DEFAULT_DAYS } from '@/quality/testSummaryDateRange';
 import { getSelectedRun } from '@/quality/runDetailsCard.utils';
+import type { IncidentDateRange } from '@/quality/incidentDatePresets';
 import TestSummaryGraph from '@/components/quality/TestSummaryGraph.vue';
 import RunSummaryTiles from '@/components/quality/RunSummaryTiles.vue';
 import TestCaseRunDetailsCard from '@/components/quality/TestCaseRunDetailsCard.vue';
-import { formatContractDateTime } from '@/utils/dataContract';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 
 const props = defineProps<{
@@ -27,14 +29,16 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const { selectedRunTimestamp, setSelectedRunTimestamp } = useTestCaseSelectedRun();
 
-const dateRange = ref<TestSummaryDateRange>(getPastDaysRange(TEST_SUMMARY_DEFAULT_DAYS));
+const initialRange = getPastDaysRange(TEST_SUMMARY_DEFAULT_DAYS);
+const dateRange = ref({ startTs: initialRange.startTs, endTs: initialRange.endTs });
+const rangeKey = ref('last30days');
 const results = ref<TestCaseResult[]>([]);
 const loading = ref(true);
 const loadError = ref('');
 const retryCount = ref(0);
-const selectedTimestamp = ref<number | undefined>(props.testCase.testCaseResult?.timestamp);
-const selectedTimeRange = ref(t('label.last-n-days', { n: TEST_SUMMARY_DEFAULT_DAYS }));
+const selectedTimeRange = ref(t('label.last-number-of-days', { numberOfDays: TEST_SUMMARY_DEFAULT_DAYS }));
 
 const caption = computed(() => getResultHistoryCaptionText(props.testCase, t));
 
@@ -42,9 +46,7 @@ const measuredResults = computed(() =>
   results.value.map((result) => getMeasuredResult(props.testCase, result)),
 );
 
-const selectedRun = computed(() =>
-  getSelectedRun(measuredResults.value, selectedTimestamp.value),
-);
+const selectedRun = computed(() => getSelectedRun(measuredResults.value, selectedRunTimestamp.value));
 
 const neverRun = computed(() => hasTestCaseNeverRun(props.testCase, results.value));
 
@@ -63,8 +65,8 @@ async function fetchResults(): Promise<void> {
       endTs: dateRange.value.endTs,
     });
     results.value = page.data;
-    if (selectedTimestamp.value === undefined && props.testCase.testCaseResult?.timestamp) {
-      selectedTimestamp.value = props.testCase.testCaseResult.timestamp;
+    if (selectedRunTimestamp.value === undefined && props.testCase.testCaseResult?.timestamp) {
+      setSelectedRunTimestamp(props.testCase.testCaseResult.timestamp);
     }
   } catch (error) {
     loadError.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case-result') }));
@@ -88,8 +90,14 @@ watch(
   { immediate: true },
 );
 
+function onDateRangeApply(range: IncidentDateRange): void {
+  dateRange.value = { startTs: range.startTs, endTs: range.endTs };
+  rangeKey.value = range.key;
+  selectedTimeRange.value = range.title;
+}
+
 function onSelectRun(timestamp: number): void {
-  selectedTimestamp.value = timestamp;
+  setSelectedRunTimestamp(timestamp);
 }
 </script>
 
@@ -102,9 +110,17 @@ function onSelectRun(timestamp: number): void {
         </Typography.Title>
         <p class="test-case-test-summary__caption" data-testid="result-history-caption">{{ caption }}</p>
       </div>
-      <span class="test-case-test-summary__range-label" data-testid="test-summary-date-range">
-        {{ formatContractDateTime(dateRange.startTs) }} – {{ formatContractDateTime(dateRange.endTs) }}
-      </span>
+      <IncidentDateRangeFilter
+        :start-ts="dateRange.startTs"
+        :end-ts="dateRange.endTs"
+        :range-key="rangeKey"
+        :range-title="selectedTimeRange"
+        official-labels
+        show-selected-custom-range
+        use-calendar-day-bounds
+        test-id="test-summary-date-range"
+        @apply="onDateRangeApply"
+      />
     </header>
 
     <Spin v-if="loading" />
@@ -126,13 +142,18 @@ function onSelectRun(timestamp: number): void {
           :test-case-parameter-value="testCase.parameterValues"
           :test-case-results="measuredResults"
           :test-definition-name="testCase.testDefinition?.name"
-          :selected-timestamp="selectedTimestamp"
+          :selected-timestamp="selectedRunTimestamp"
           :selected-time-range="selectedTimeRange"
           @select-run="onSelectRun"
         />
       </div>
       <RunSummaryTiles :results="results" />
-      <TestCaseRunDetailsCard :test-case="testCase" :selected-run="selectedRun" />
+      <TestCaseRunDetailsCard
+        :test-case="testCase"
+        :results="measuredResults"
+        :selected-run="selectedRun"
+        :on-back-to-latest="() => setSelectedRunTimestamp(undefined)"
+      />
     </template>
   </section>
 </template>
@@ -156,11 +177,6 @@ function onSelectRun(timestamp: number): void {
   margin: 4px 0 0;
   font-size: 14px;
   color: var(--sm-text-secondary);
-}
-.test-case-test-summary__range-label {
-  font-size: 12px;
-  color: var(--sm-text-secondary);
-  white-space: nowrap;
 }
 .test-case-test-summary__error,
 .test-case-test-summary__never-run {

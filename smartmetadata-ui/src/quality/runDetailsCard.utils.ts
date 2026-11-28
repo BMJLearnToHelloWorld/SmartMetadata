@@ -111,13 +111,51 @@ export function formatRunDuration(milliseconds: number): string {
   return rem > 0 ? `${minutes}m ${rem}s` : `${minutes}m`;
 }
 
+const withSign = (value: string, number: number) => (number >= 0 ? `+${value}` : value);
+
+export function formatDifference(found: number, expected: number): string {
+  const difference = found - expected;
+  const absolute = withSign(formatNumber(difference), difference);
+  if (expected === 0) {
+    return absolute;
+  }
+  const percent = (difference / Math.abs(expected)) * 100;
+  return `${absolute} (${withSign(percent.toFixed(1), percent)}%)`;
+}
+
+export interface ComparisonBar {
+  kind: 'found' | 'expected';
+  value: number;
+  width: number;
+}
+
+export function getComparisonBars(found: number, expected: number): ComparisonBar[] {
+  const scale = Math.max(found, expected);
+  if (found < 0 || expected < 0 || scale === 0) {
+    return [];
+  }
+  return [
+    { kind: 'found', value: found, width: (found * 100) / scale },
+    { kind: 'expected', value: expected, width: (expected * 100) / scale },
+  ];
+}
+
 export function getRunDetails(testCase: TestCase, result: TestCaseResult) {
   const expectation = getRunExpectation(testCase, result);
   const details = {
     expectedText: formatExpectation(expectation),
     foundText: NO_VALUE,
+    differenceText: NO_VALUE,
+    bars: [] as ComparisonBar[],
     status: result.testCaseStatus,
     timestamp: result.timestamp,
+    duration: result.duration,
+    errorDetails: result.errorDetails,
+    resultMessage: result.result,
+    evaluationScope: result.evaluationScope,
+    passedRows: result.passedRows,
+    failedRows: result.failedRows,
+    failedRowsPercentage: result.failedRowsPercentage,
   };
 
   if (!COMPLETED_STATUSES.has(result.testCaseStatus ?? '')) {
@@ -125,6 +163,14 @@ export function getRunDetails(testCase: TestCase, result: TestCaseResult) {
   }
 
   details.foundText = formatFound(result);
+  const found = getFoundValue(result);
+  const { expected } = expectation;
+
+  if (found !== undefined && expected !== undefined) {
+    details.differenceText = formatDifference(found, expected);
+    details.bars = getComparisonBars(found, expected);
+  }
+
   return details;
 }
 

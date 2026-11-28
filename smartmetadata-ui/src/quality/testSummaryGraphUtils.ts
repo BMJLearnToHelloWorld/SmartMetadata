@@ -113,12 +113,20 @@ export function getThresholdReference(
 
 const CHART_PALETTE = ['#1570ef', '#6938ef', '#dd2590', '#e31b54', '#039855'];
 
+export interface TestSummaryIncidentTask {
+  id?: string;
+  taskId?: { id?: string };
+  displayName?: string;
+}
+
 export function prepareChartData({
   testCaseParameterValue,
   testCaseResults,
+  tasks = [],
 }: {
   testCaseParameterValue: TestCaseParameterValue[];
   testCaseResults: TestCaseResult[];
+  tasks?: TestSummaryIncidentTask[];
 }): PrepareChartDataResult {
   const { min: minParameter, max: maxParameter } = getParameterBounds(testCaseParameterValue);
   const dataPoints: TestSummaryChartPoint[] = [];
@@ -142,12 +150,24 @@ export function prepareChartData({
       showAILearningBanner = true;
     }
 
+    const metric = {
+      passedRows: result.passedRows,
+      failedRows: result.failedRows,
+      passedRowsPercentage:
+        result.passedRowsPercentage === undefined ? undefined : `${Math.round(result.passedRowsPercentage * 100) / 100}%`,
+      failedRowsPercentage:
+        result.failedRowsPercentage === undefined ? undefined : `${Math.round(result.failedRowsPercentage * 100) / 100}%`,
+    };
+
     dataPoints.push({
       name: result.timestamp ?? 0,
       status: result.testCaseStatus,
       ...values,
+      ...(metric.passedRows === undefined ? {} : { passedRows: metric.passedRows }),
+      ...(metric.failedRows === undefined ? {} : { failedRows: metric.failedRows }),
       boundArea,
       incidentId: result.incidentId,
+      task: tasks.find((task) => task.id === result.incidentId),
     });
   }
 
@@ -225,3 +245,25 @@ export function formatTestSummaryYAxis(value: number, useFreshnessFormat: boolea
   }
   return value.toLocaleString();
 }
+
+export type StatusChartStatus = 'success' | 'failed' | 'warning' | 'info';
+
+export function getStatusChartStatus(status?: string): StatusChartStatus {
+  if (status === 'Success') {
+    return 'success';
+  }
+  if (status === 'Failed') {
+    return 'failed';
+  }
+  if (status === 'Queued') {
+    return 'info';
+  }
+  return 'warning';
+}
+
+export const STATUS_CHART_COLORS: Record<StatusChartStatus, string> = {
+  success: '#17b26a',
+  failed: '#f04438',
+  warning: '#f79009',
+  info: '#2e90fa',
+};

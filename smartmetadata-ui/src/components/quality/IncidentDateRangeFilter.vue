@@ -15,6 +15,7 @@ import {
   rangeForPreset,
   type IncidentDateRange,
 } from '@/quality/incidentDatePresets';
+import { getPastDaysRange as getCalendarPastDaysRange } from '@/quality/testSummaryDateRange';
 
 const props = withDefaults(
   defineProps<{
@@ -31,6 +32,8 @@ const props = withDefaults(
     officialLabels?: boolean;
     /** Official TabFilters DatePickerMenu showSelectedCustomRange. */
     showSelectedCustomRange?: boolean;
+    /** Official TestSummary getPastDaysRange calendar midnights for presets. */
+    useCalendarDayBounds?: boolean;
   }>(),
   {
     startTs: undefined,
@@ -40,8 +43,13 @@ const props = withDefaults(
     testId: 'incident-date-range',
     officialLabels: false,
     showSelectedCustomRange: false,
+    useCalendarDayBounds: false,
   },
 );
+
+function boundsForPresetDays(days: number): { startTs: number; endTs: number } {
+  return props.useCalendarDayBounds ? getCalendarPastDaysRange(days) : rangeForPreset(days);
+}
 const emit = defineEmits<{
   apply: [range: IncidentDateRange];
   clear: [];
@@ -127,7 +135,7 @@ function onPreset(key: string): void {
   if (!preset) {
     return;
   }
-  const range = rangeForPreset(preset.days);
+  const range = boundsForPresetDays(preset.days);
   emit('apply', { ...range, key: preset.key, title: presetTitle(preset.days) });
 }
 

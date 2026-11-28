@@ -112,12 +112,29 @@ export function mapTestCaseResult(value: unknown): TestCaseResult | undefined {
         return [{ name: valueName, value: valueRec ? asString(valueRec.value) : '' }];
       })
     : undefined;
+  const errorRec = asRecord(rec.errorDetails);
   return {
     timestamp,
     testCaseStatus: status || undefined,
     result: result || undefined,
     testCaseFQN: fqn || undefined,
     testResultValue: testResultValue && testResultValue.length > 0 ? testResultValue : undefined,
+    incidentId: asString(rec.incidentId) || undefined,
+    duration: asNumber(rec.duration),
+    minBound: asNumber(rec.minBound),
+    maxBound: asNumber(rec.maxBound),
+    passedRows: asNumber(rec.passedRows),
+    failedRows: asNumber(rec.failedRows),
+    passedRowsPercentage: asNumber(rec.passedRowsPercentage),
+    failedRowsPercentage: asNumber(rec.failedRowsPercentage),
+    evaluationScope: asString(rec.evaluationScope) || undefined,
+    errorDetails: errorRec
+      ? {
+          message: asString(errorRec.message) || undefined,
+          errorType: asString(errorRec.errorType) || undefined,
+          stackTrace: asString(errorRec.stackTrace) || undefined,
+        }
+      : undefined,
   };
 }
 
