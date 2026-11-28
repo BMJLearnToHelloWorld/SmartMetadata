@@ -26,6 +26,7 @@ import IncidentAssigneePicker from '@/components/observability/IncidentAssigneeP
 import { INCIDENT_SEVERITY_OPTIONS, officialSeverityLabel } from '@/quality/incidentSeverity';
 import IncidentAssigneeFilterPicker from '@/components/observability/IncidentAssigneeFilterPicker.vue';
 import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
+import CompactDateTimeDisplay from '@/components/shared/CompactDateTimeDisplay.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
@@ -213,10 +214,6 @@ function clearFilters(): void {
 
 function onPageChange(page: number): void {
   void router.replace({ query: filtersToQuery(filters.value, page) });
-}
-
-function formatTs(value?: number): string {
-  return value ? new Date(value).toISOString() : '—';
 }
 
 function testCaseFqnOf(record: TestIncident): string | undefined {
@@ -785,7 +782,7 @@ function severityLabel(severity: string | undefined): string {
           <span v-else>—</span>
         </template>
         <template v-else-if="column.key === 'timestamp'">
-          {{ formatTs(record.timestamp) }}
+          <CompactDateTimeDisplay :timestamp="record.timestamp" />
         </template>
         <template v-else-if="column.key === 'status'">
           <Skeleton

@@ -18,6 +18,31 @@
  * chart axis label); an ISO label is parsed as a UTC day so the date
  * never shifts across timezones.
  */
+import dayjs from 'dayjs';
+
+/**
+ * Official DateTimeDisplay compact stamp (IncidentManagerTable timestamp column).
+ * Three lines: long date, local time, UTC offset — not a bare ISO string.
+ */
+export function formatCompactDateTimeDisplay(timestamp?: number): {
+  dateLine: string;
+  timeLine: string;
+  utcLine: string;
+} | null {
+  if (timestamp === undefined || !Number.isFinite(timestamp)) {
+    return null;
+  }
+  const when = dayjs(timestamp);
+  if (!when.isValid()) {
+    return null;
+  }
+  return {
+    dateLine: when.format('MMMM D, YYYY,'),
+    timeLine: when.format('h:mm A'),
+    utcLine: `(UTC${when.format('Z')})`,
+  };
+}
+
 export function formatMediumDate(value: number | string, locale?: string): string {
   let date: Date;
   if (typeof value === 'string') {
