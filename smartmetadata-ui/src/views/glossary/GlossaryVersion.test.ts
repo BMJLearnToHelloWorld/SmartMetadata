@@ -13,6 +13,11 @@ import GlossaryVersion from './GlossaryVersion.vue';
 
 const listGovernanceVersions = vi.fn();
 const getGovernanceVersion = vi.fn();
+const listLearningResources = vi.fn();
+
+vi.mock('@/api/learningResources', () => ({
+  listLearningResources: (...args: unknown[]) => listLearningResources(...args),
+}));
 
 vi.mock('@/api/limits', () => ({
   getLimitByResource: vi.fn(async () => ({ featureLimitStatuses: [{ configuredLimit: { maxVersions: -1 } }] })),
@@ -102,6 +107,7 @@ async function mountPage(path: string, props: { isGlossary?: boolean; id: string
 describe('official GlossaryVersion', () => {
   beforeEach(() => {
     listGovernanceVersions.mockReset().mockResolvedValue(versionsList);
+    listLearningResources.mockReset().mockResolvedValue({ data: [{}], total: 2 });
     getGovernanceVersion.mockReset().mockResolvedValue({
       id: 'g1',
       name: 'Business_Glossary',
@@ -128,6 +134,14 @@ describe('official GlossaryVersion', () => {
       'Versions History',
     );
     expect(wrapper.find('[data-testid="version-button"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="version-button"]').text()).toContain('1');
+    expect(wrapper.get('[data-testid="version-button"]').attributes('data-active')).toBe('true');
+    expect(wrapper.get('[data-testid="entity-header-display-name"]').text()).toBe('Business Glossary');
+    expect(wrapper.get('[data-testid="entity-header-name"]').text()).toBe('Business_Glossary');
+    expect(wrapper.find('[data-testid="entity-header-copy-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-status-badge"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="learning-icon"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="deleted-badge"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="exit-version-history"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="add-new-tag-button-header"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="glossary-term-add-button-menu"]').exists()).toBe(false);
@@ -158,6 +172,34 @@ describe('official GlossaryVersion', () => {
     expect(wrapper.find('[data-testid="glossary-tab-overview"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="glossary-tab-terms"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="generic-tab"]').text()).toBe('GlossaryTerm');
+    expect(wrapper.get('[data-testid="entity-header-display-name"]').text()).toBe('Customer');
+    expect(wrapper.get('[data-testid="entity-header-name"]').text()).toBe('Customer');
+    expect(wrapper.find('[data-testid="learning-icon"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-status-badge"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('shows the official deleted badge, term style icon, and hides Unprocessed', async () => {
+    getGovernanceVersion.mockResolvedValue({
+      id: 't1',
+      name: 'Customer',
+      displayName: 'Customer',
+      version: 0.3,
+      deleted: true,
+      entityStatus: 'Unprocessed',
+      style: { iconURL: 'https://example.test/term.svg' },
+    });
+    const { wrapper } = await mountPage('/glossary-term/t1/versions/0.3', {
+      isGlossary: false,
+      id: 't1',
+      version: '0.3',
+    });
+    expect(wrapper.find('[data-testid="deleted-badge"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-status-badge"]').exists()).toBe(false);
+    expect(wrapper.find('.glossary-version__style-icon').attributes('src')).toBe(
+      'https://example.test/term.svg',
+    );
+    expect(wrapper.find('[data-testid="learning-icon"]').exists()).toBe(true);
     wrapper.unmount();
   });
 

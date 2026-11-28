@@ -8,16 +8,22 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Tabs, Tooltip, Typography, message } from 'ant-design-vue';
+import { SyncOutlined } from '@ant-design/icons-vue';
+import { Tabs, message } from 'ant-design-vue';
 import { mapChangeDescription, type ChangeDescription } from '@/api/entities';
 import { getGovernanceVersion, listGovernanceVersions } from '@/api/governanceVersions';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import { entityIconFor } from '@/catalog/entityIcons';
 import { getGovernanceDetailPath, getGlossaryTermVersionPath, getGlossaryVersionPath } from '@/catalog/versionPaths';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import ServiceVersionTimeline from '@/components/ingestion/ServiceVersionTimeline.vue';
 import VersionDiffText from '@/components/ingestion/VersionDiffText.vue';
 import GlossaryTermsWidget from '@/components/lists/GlossaryTermsWidget.vue';
+import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
+import EntityStatusBadge from '@/components/shared/EntityStatusBadge.vue';
+import LearningIcon from '@/components/shared/LearningIcon.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import StatItem from '@/components/shared/StatItem.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
 import WidgetCertificationTagCell from '@/components/shared/widgets/WidgetCertificationTagCell.vue';
@@ -85,18 +91,6 @@ const pageTitle = computed(() =>
   }),
 );
 
-const termNameDiff = computed(() => {
-  const raw = snapshot.value ?? {};
-  const fallback = typeof raw.name === 'string' ? raw.name : props.id;
-  return getEntityVersionByField(changeDescription.value, 'name', fallback);
-});
-
-const termDisplayNameDiff = computed(() => {
-  const raw = snapshot.value ?? {};
-  const fallback = typeof raw.displayName === 'string' ? raw.displayName : '';
-  return getEntityVersionByField(changeDescription.value, 'displayName', fallback);
-});
-
 const descriptionText = computed(() => {
   const raw = snapshot.value ?? {};
   return typeof raw.description === 'string' ? raw.description : '';
@@ -120,9 +114,38 @@ const termFqn = computed(() => {
   return typeof value === 'string' ? value : undefined;
 });
 const entityStatus = computed(() => {
-  const value = snapshot.value?.status;
+  const raw = snapshot.value ?? {};
+  const value = raw.entityStatus ?? raw.status;
   return typeof value === 'string' ? value : undefined;
 });
+
+const headerName = computed(() => {
+  const raw = snapshot.value ?? {};
+  return typeof raw.name === 'string' && raw.name ? raw.name : props.id;
+});
+
+const headerDisplayName = computed(() => {
+  const raw = snapshot.value ?? {};
+  return typeof raw.displayName === 'string' ? raw.displayName : undefined;
+});
+
+const isDeleted = computed(() => snapshot.value?.deleted === true);
+
+const headerStatus = computed(() => entityStatus.value ?? 'Approved');
+
+const termIconUrl = computed(() => {
+  if (props.isGlossary) {
+    return undefined;
+  }
+  const style = snapshot.value?.style;
+  if (!style || typeof style !== 'object') {
+    return undefined;
+  }
+  const iconURL = (style as Record<string, unknown>).iconURL;
+  return typeof iconURL === 'string' && iconURL ? iconURL : undefined;
+});
+
+const headerIcon = computed(() => entityIconFor(props.isGlossary ? 'glossary' : 'glossaryTerm'));
 
 const emptyDomains: Domain[] = [];
 const emptyOwners: OwnerOption[] = [];
@@ -200,21 +223,43 @@ watch(
         />
         <template v-else>
           <div data-testid="glossary-header" class="glossary-version__header">
-            <Typography.Title :level="3">
-              <template v-if="isGlossary">{{ entityName }}</template>
-              <template v-else>
-                <VersionDiffText :diff="termDisplayNameDiff" />
-                <span class="glossary-version__name">
-                  <VersionDiffText :diff="termNameDiff" />
-                </span>
+            <EntityHeaderTitle
+              :name="headerName"
+              :display-name="headerDisplayName"
+              :deleted="isDeleted"
+              service-name=""
+            >
+              <template #icon>
+                <img
+                  v-if="termIconUrl"
+                  :src="termIconUrl"
+                  alt=""
+                  width="36"
+                  height="36"
+                  class="glossary-version__style-icon"
+                />
+                <component
+                  :is="headerIcon"
+                  v-else
+                  class="glossary-version__fallback-icon"
+                />
               </template>
-            </Typography.Title>
+              <template #badge>
+                <EntityStatusBadge :status="headerStatus" />
+              </template>
+              <template v-if="!isGlossary" #suffix>
+                <LearningIcon page-id="glossaryTerm" />
+              </template>
+            </EntityHeaderTitle>
             <div class="glossary-version__header-actions">
-              <Tooltip :title="t('label.exit-version-history')">
-                <Button data-testid="version-button" @click="onBack">
-                  {{ displayVersion }}
-                </Button>
-              </Tooltip>
+              <StatItem
+                :icon="SyncOutlined"
+                :count="displayVersion"
+                :is-active="Boolean(version)"
+                test-id="version-button"
+                :tooltip="t('label.exit-version-history')"
+                @click="onBack"
+              />
             </div>
           </div>
           <Tabs :active-key="versionTab" data-testid="glossary-version-tabs">
@@ -342,11 +387,26 @@ watch(
 }
 
 .glossary-version__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sm-spacing-md, 16px);
   margin: var(--sm-spacing-md, 16px) 0;
 }
 
-.glossary-version__name {
-  display: block;
-  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+.glossary-version__header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.glossary-version__style-icon {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.glossary-version__fallback-icon {
+  font-size: 36px;
 }
 </style>
