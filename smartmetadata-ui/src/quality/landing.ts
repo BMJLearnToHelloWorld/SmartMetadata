@@ -455,6 +455,53 @@ function nonEmpty(values?: string[]): string[] | undefined {
  * official casing (pin EntityHealthStatusPieChartWidget via
  * fetchEntityCoveredWithDQ(unhealthy=true)).
  */
+/** Pin buildDataQualityDimensionFilter (DataQualityPureUtils.ts). */
+export function dqMustForDataQualityDimension(dimension: string): DqEsClause {
+  if (dimension === NO_DIMENSION) {
+    return { bool: { must_not: [{ exists: { field: DQ_DIMENSION_FIELD } }] } };
+  }
+  return { term: { [DQ_DIMENSION_FIELD]: dimension } };
+}
+
+/**
+ * Pin buildEntityAndServiceFilters + buildStatusTypeAndTimeFilters for the
+ * testCase index (dashboard + provider summary batch).
+ */
+export function dqTestCaseListFilterClauses(filters: {
+  serviceName?: string;
+  testPlatforms?: string[];
+  dataQualityDimension?: string;
+  testCaseStatus?: string | string[];
+  testCaseType?: string;
+}): DqEsClause[] {
+  const clauses: DqEsClause[] = [];
+  if (filters.serviceName?.trim()) {
+    clauses.push({ term: { 'service.name.keyword': filters.serviceName.trim() } });
+  }
+  if (filters.testPlatforms?.length) {
+    clauses.push({ terms: { testPlatforms: filters.testPlatforms } });
+  }
+  if (filters.dataQualityDimension?.trim()) {
+    clauses.push(dqMustForDataQualityDimension(filters.dataQualityDimension.trim()));
+  }
+  if (filters.testCaseStatus) {
+    const status = filters.testCaseStatus;
+    if (Array.isArray(status)) {
+      if (status.length) {
+        clauses.push({ terms: { 'testCaseResult.testCaseStatus': status } });
+      }
+    } else {
+      clauses.push({ term: { 'testCaseResult.testCaseStatus': status } });
+    }
+  }
+  if (filters.testCaseType === 'table') {
+    clauses.push({ bool: { must_not: [{ regexp: { entityLink: '.*::columns::.*' } }] } });
+  } else if (filters.testCaseType === 'column') {
+    clauses.push({ regexp: { entityLink: '.*::columns::.*' } });
+  }
+  return clauses;
+}
+
 export function dqChartMustForValues(
   values: DqMultiFilters,
   range?: DqTimeRange,

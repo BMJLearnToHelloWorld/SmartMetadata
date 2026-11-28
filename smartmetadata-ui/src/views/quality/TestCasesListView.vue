@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Button, Dropdown, Menu, Select, Switch, message } from 'ant-design-vue';
 import { deleteTestCase, exportTestCasesInCSV, listTestCases, listTestCasesBySearch } from '@/api/testCases';
 import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
@@ -54,6 +54,11 @@ import {
 import type { EntityListColumn } from '@/features/crud/types';
 import { filterCasesForSearch } from '@/quality/landing';
 import { useDataQualityContext } from '@/quality/dataQualityContext';
+import {
+  mergeTestCaseListFiltersToQuery,
+  parseTestCaseListRouteQuery,
+  type TestCaseListRouteParams,
+} from '@/quality/testCaseListRouteParams';
 import { TEST_CASE_STATUSES, type TestCase } from '@/types/quality';
 
 const props = withDefaults(
@@ -84,6 +89,7 @@ const props = withDefaults(
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const cases = ref<TestCase[]>([]);
@@ -325,14 +331,103 @@ function onPrev(): void {
   void load();
 }
 
+function snapshotRouteFilters(): TestCaseListRouteParams {
+  return {
+    searchValue: searchValue.value.trim() || undefined,
+    tableFqn: tableFilter.value.trim() || undefined,
+    testPlatforms: platformFilter.value.length ? platformFilter.value : undefined,
+    testCaseStatus: statusFilter.value,
+    testCaseType: typeFilter.value,
+    tier: tierFilter.value || undefined,
+    tags: tagFilter.value || undefined,
+    serviceName: serviceFilter.value || undefined,
+    dataQualityDimension: dimensionFilter.value || undefined,
+    dataProductFqn: dataProductFilter.value || undefined,
+    lastRunStartTs: lastRunStartTs.value,
+    lastRunEndTs: lastRunEndTs.value,
+  };
+}
+
+function applyRouteParams(params: TestCaseListRouteParams, seedFromProps: boolean): void {
+  if (params.searchValue !== undefined) {
+    searchValue.value = params.searchValue;
+  }
+  if (params.tableFqn !== undefined) {
+    tableFilter.value = params.tableFqn;
+  } else if (seedFromProps && props.entityFqn) {
+    tableFilter.value = props.entityFqn;
+  }
+  if (params.testPlatforms !== undefined) {
+    platformFilter.value = params.testPlatforms;
+  }
+  if (params.testCaseStatus !== undefined) {
+    statusFilter.value = params.testCaseStatus;
+  } else if (seedFromProps && props.status !== undefined) {
+    statusFilter.value = props.status;
+  }
+  if (params.testCaseType !== undefined) {
+    typeFilter.value = params.testCaseType;
+  }
+  if (params.tier !== undefined) {
+    tierFilter.value = params.tier;
+  } else if (seedFromProps && props.tier) {
+    tierFilter.value = props.tier;
+  }
+  if (params.tags !== undefined) {
+    tagFilter.value = params.tags;
+  } else if (seedFromProps && props.tags) {
+    tagFilter.value = props.tags;
+  }
+  if (params.serviceName !== undefined) {
+    serviceFilter.value = params.serviceName;
+  }
+  if (params.dataQualityDimension !== undefined) {
+    dimensionFilter.value = params.dataQualityDimension;
+  } else if (seedFromProps && props.dataQualityDimension) {
+    dimensionFilter.value = props.dataQualityDimension;
+  }
+  if (params.dataProductFqn !== undefined) {
+    dataProductFilter.value = params.dataProductFqn;
+  } else if (seedFromProps && props.dataProductFqn) {
+    dataProductFilter.value = props.dataProductFqn;
+  }
+  if (params.lastRunStartTs !== undefined) {
+    lastRunStartTs.value = params.lastRunStartTs;
+  } else if (seedFromProps && props.startTs !== undefined) {
+    lastRunStartTs.value = props.startTs;
+  }
+  if (params.lastRunEndTs !== undefined) {
+    lastRunEndTs.value = params.lastRunEndTs;
+  } else if (seedFromProps && props.endTs !== undefined) {
+    lastRunEndTs.value = props.endTs;
+  }
+}
+
+function pushFiltersToRoute(): void {
+  if (!props.embedded) {
+    return;
+  }
+  const query = mergeTestCaseListFiltersToQuery(route.query, snapshotRouteFilters());
+  void router.replace({ path: route.path, query });
+}
+
+function hydrateFromRoute(seedFromProps: boolean): void {
+  if (!props.embedded) {
+    return;
+  }
+  applyRouteParams(parseTestCaseListRouteQuery(route.query), seedFromProps);
+}
+
 function onFilterChange(): void {
   resetPager();
+  pushFiltersToRoute();
   void load();
 }
 
 function onSearch(): void {
   if (usingSearch.value || props.preferSearch) {
     resetPager();
+    pushFiltersToRoute();
     void load();
   }
 }
@@ -408,18 +503,33 @@ watch(
       props.endTs,
     ].join('|'),
   () => {
+    if (props.embedded) {
+      return;
+    }
     resetPager();
     void load();
   },
 );
 
-// Dashboard drill-down props (status / dimension / entity) arrive after
-// mount when the landing view forwards a new route query: seed the
-// status filter from the prop and reload on any of them changing.
 watch(
   () => [props.status, props.dataQualityDimension, props.entityFqn].join('|'),
   () => {
+    if (props.embedded) {
+      return;
+    }
     statusFilter.value = props.status;
+    resetPager();
+    void load();
+  },
+);
+
+watch(
+  () => route.query,
+  () => {
+    if (!props.embedded) {
+      return;
+    }
+    hydrateFromRoute(false);
     resetPager();
     void load();
   },
@@ -449,6 +559,9 @@ watch(total, (value) => {
 }, { immediate: true });
 
 onMounted(() => {
+  if (props.embedded) {
+    hydrateFromRoute(true);
+  }
   void load();
 });
 

@@ -20,6 +20,11 @@ describe('dataQualityProvider', () => {
         owner: JSON.stringify({ name: 'alice' }),
         startTs: '1000',
         endTs: '2000',
+        serviceName: 'mysql',
+        testPlatforms: ['dbt'],
+        testCaseStatus: 'Failed',
+        testCaseType: 'table',
+        dataQualityDimension: 'Completeness',
       },
     } as never);
     expect(filters).toEqual({
@@ -30,6 +35,11 @@ describe('dataQualityProvider', () => {
       ownerFqn: 'alice',
       startTs: 1000,
       endTs: 2000,
+      serviceName: 'mysql',
+      testPlatforms: ['dbt'],
+      testCaseStatus: 'Failed',
+      testCaseType: 'table',
+      dataQualityDimension: 'Completeness',
     });
   });
 

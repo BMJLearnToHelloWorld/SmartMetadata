@@ -56,7 +56,11 @@ export function useDataQualityTestCaseSummary(options: {
       isTestCaseSummaryLoading.value = true;
       try {
         const filters = dqProviderFiltersFromRoute(unref(options.route));
-        const agg = await fetchDqDashboardAggregations(filters);
+        const range =
+          filters.startTs !== undefined && filters.endTs !== undefined
+            ? { startTs: filters.startTs, endTs: filters.endTs }
+            : undefined;
+        const agg = await fetchDqDashboardAggregations(filters, range);
         if (!ignore) {
           providerAggregations.value = agg;
           testCaseSummary.value = testSummaryFromStatusCounts(agg.results);

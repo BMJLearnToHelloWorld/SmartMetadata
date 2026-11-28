@@ -26,6 +26,7 @@ import {
   dimensionCardsFromReportRows,
   dqChartMustForValues,
   dqMustForOwner,
+  dqTestCaseListFilterClauses,
   dqMustForTags,
   dqShouldTerm,
   dqTableMustForValues,
@@ -99,6 +100,12 @@ export interface DqDashboardChartFilters {
   endTs?: number;
   entityFQN?: string;
   domainFqn?: string;
+  /** Pin DataQualityDashboardChartFilters list-tab fields. */
+  serviceName?: string;
+  testPlatforms?: string[];
+  dataQualityDimension?: string;
+  testCaseStatus?: string | string[];
+  testCaseType?: string;
 }
 
 /** Test case statuses of the three test-case-status area charts. */
@@ -162,6 +169,27 @@ export function dqDashboardMultiFilters(filters: DqDashboardChartFilters): DqMul
   };
 }
 
+export function dqFullChartMustClauses(
+  filters: DqDashboardChartFilters,
+  range?: DqTimeRange,
+  options?: { unhealthy?: boolean },
+): import('@/quality/landing').DqEsClause[] {
+  const timeRange =
+    range ??
+    (filters.startTs !== undefined && filters.endTs !== undefined
+      ? { startTs: filters.startTs, endTs: filters.endTs }
+      : undefined);
+  const must = dqChartMustForValues(dqDashboardMultiFilters(filters), timeRange, {
+    unhealthy: options?.unhealthy,
+    entityFQN: filters.entityFQN,
+  });
+  const listClauses = dqTestCaseListFilterClauses(filters);
+  if (listClauses.length) {
+    must.splice(Math.max(0, must.length - 1), 0, ...listClauses);
+  }
+  return must;
+}
+
 export function buildDqDashboardChartQuery(
   filters: DqDashboardChartFilters,
   range?: DqTimeRange,
@@ -170,10 +198,7 @@ export function buildDqDashboardChartQuery(
   return JSON.stringify({
     query: {
       bool: {
-        must: dqChartMustForValues(dqDashboardMultiFilters(filters), range, {
-          unhealthy: options?.unhealthy,
-          entityFQN: filters.entityFQN,
-        }),
+        must: dqFullChartMustClauses(filters, range, options),
       },
     },
   });
@@ -198,9 +223,7 @@ export function buildDqDashboardNoDimensionQuery(
   return JSON.stringify({
     query: {
       bool: {
-        must: dqChartMustForValues(dqDashboardMultiFilters(filters), range, {
-          entityFQN: filters.entityFQN,
-        }),
+        must: dqFullChartMustClauses(filters, range),
         must_not: [{ exists: { field: DQ_DIMENSION_FIELD } }],
       },
     },
