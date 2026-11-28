@@ -7,6 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import type { ChangeDescription } from '@/api/entities';
 import type { EntityRef, TagRef } from './api';
 import type { EntityReferenceInput } from './admin';
 
@@ -183,6 +184,8 @@ export interface TestCase {
   dimensionColumns?: string[];
   /** Official testCase.inspectionQuery; gates the SQL query tab. */
   inspectionQuery?: string;
+  /** Version snapshot diff (entity history responses). */
+  changeDescription?: ChangeDescription;
 }
 
 /**

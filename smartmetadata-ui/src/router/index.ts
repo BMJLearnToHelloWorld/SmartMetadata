@@ -945,9 +945,8 @@ export const router = createRouter({
         {
           path: 'quality/test-cases/:id/versions/:version',
           name: 'quality-test-case-version',
-          component: GovernanceVersionView,
+          component: TestCaseDetailView,
           props: (route) => ({
-            kind: 'testCase',
             id: route.params.id as string,
             version: route.params.version as string,
           }),
@@ -955,9 +954,8 @@ export const router = createRouter({
         {
           path: 'quality/test-cases/:id/versions/:version/:tab',
           name: 'quality-test-case-version-tab',
-          component: GovernanceVersionView,
+          component: TestCaseDetailView,
           props: (route) => ({
-            kind: 'testCase',
             id: route.params.id as string,
             version: route.params.version as string,
             tab: route.params.tab as string,

@@ -15,7 +15,14 @@ import TestCaseTestSummary from '@/components/quality/TestCaseTestSummary.vue';
 import TestCaseIncidentTab from '@/components/quality/TestCaseIncidentTab.vue';
 import { useEntityRules } from '@/composables/useEntityRules';
 import FormModal from '@/components/shared/FormModal.vue';
-import { deleteTestCase, getTestCase, getTestCaseByName, patchTestCase } from '@/api/testCases';
+import {
+  deleteTestCase,
+  getTestCase,
+  getTestCaseByName,
+  getTestCaseVersion,
+  patchTestCase,
+  restoreTestCase,
+} from '@/api/testCases';
 import { getTestDefinition } from '@/api/testDefinitions';
 import { listIngestionPipelines, runIngestionPipelineForEntity } from '@/api/ingestionPipelines';
 import type { IngestionPipeline } from '@/types/ingestion';
@@ -43,9 +50,13 @@ import {
   type TagLabelInput,
 } from '@/governance/assetPatch';
 import { compare } from 'fast-json-patch';
-import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { latestGovernanceVersionPath, listGovernanceVersions } from '@/api/governanceVersions';
+import type { EntityVersion } from '@/api/entities';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
+import ServiceVersionTimeline from '@/components/ingestion/ServiceVersionTimeline.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
+import RestoreEntityModal from '@/features/crud/RestoreEntityModal.vue';
+import { getEntityVersionByField } from '@/ingestion/versionDiff';
 import { listTestIncidents } from '@/api/testIncidents';
 import { getTask, getTaskCounts } from '@/api/tasks';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
@@ -84,7 +95,7 @@ import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 import type { EntityRef } from '@/types/api';
 import type { IncidentStatus, TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
 
-const props = defineProps<{ id: string; tab?: string }>();
+const props = defineProps<{ id: string; tab?: string; version?: string }>();
 const router = useRouter();
 const { t } = useI18n();
 const loading = ref(false);
@@ -126,9 +137,17 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(testCase.value) || t('label.entity-detail-plural', { entity: t('label.test-case') }) },
 ]);
 
+const isVersionPage = computed(() => props.version !== undefined && props.version !== '');
+const versionList = ref<EntityVersion[]>([]);
+const restoreOpen = ref(false);
+const restoring = ref(false);
+
 const tabs = computed<EntityDetailTab[]>(() =>
   QUALITY_PAGE_TABS.testCase
     .filter((tab) => {
+      if (isVersionPage.value && tab.key === 'issues') {
+        return false;
+      }
       if (tab.key === 'sql-query') {
         return Boolean(testCase.value?.inspectionQuery);
       }
@@ -159,13 +178,19 @@ const incidentTaskLoaded = ref(false);
 const testSuiteFqns = computed(() => getTestSuiteFqns(testCase.value ?? undefined));
 
 const hasEditStatusPermission = computed(
-  () => !testCaseDeleted.value && testCasePerms.canEditStatus.value,
+  () => !isVersionPage.value && !testCaseDeleted.value && testCasePerms.canEditStatus.value,
 );
 const canEditTestCaseOwners = computed(
-  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditOwners')),
+  () =>
+    !isVersionPage.value &&
+    !testCaseDeleted.value &&
+    (permissionStore.isAdminUser || testCasePerms.can('EditOwners')),
 );
 const canEditTestCaseDomains = computed(
-  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditDomains')),
+  () =>
+    !isVersionPage.value &&
+    !testCaseDeleted.value &&
+    (permissionStore.isAdminUser || testCasePerms.can('EditDomains')),
 );
 
 const incidentHeaderWriting = ref<'status' | 'severity' | 'assignee' | undefined>();
@@ -384,21 +409,37 @@ const testCasePerms = useEntityPermissions('testCase', testCaseFqn, {
   deleted: testCaseDeleted,
   enabled: computed(() => Boolean(testCaseFqn.value)),
 });
-const hasDeletePermission = computed(() => !testCaseDeleted.value && testCasePerms.canDelete.value);
-const editDisplayNamePermission = computed(() => !testCaseDeleted.value && testCasePerms.canEditDisplayName.value);
-const canEditRailAll = computed(() => !testCaseDeleted.value && testCasePerms.canEditAll.value);
+const hasDeletePermission = computed(
+  () => !isVersionPage.value && !testCaseDeleted.value && testCasePerms.canDelete.value,
+);
+const editDisplayNamePermission = computed(
+  () => !isVersionPage.value && !testCaseDeleted.value && testCasePerms.canEditDisplayName.value,
+);
+const canRestorePermission = computed(
+  () => !isVersionPage.value && testCaseDeleted.value && testCasePerms.canEditAll.value,
+);
+const canEditRailAll = computed(
+  () => !isVersionPage.value && !testCaseDeleted.value && testCasePerms.canEditAll.value,
+);
 const canEditRailDescription = computed(
-  () => !testCaseDeleted.value && testCasePerms.canEditDescription.value,
+  () => !isVersionPage.value && !testCaseDeleted.value && testCasePerms.canEditDescription.value,
 );
 const canEditRailTags = computed(
-  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditTags')),
+  () =>
+    !isVersionPage.value &&
+    !testCaseDeleted.value &&
+    (permissionStore.isAdminUser || testCasePerms.can('EditTags')),
 );
 const canEditRailGlossary = computed(
-  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditGlossaryTerms')),
+  () =>
+    !isVersionPage.value &&
+    !testCaseDeleted.value &&
+    (permissionStore.isAdminUser || testCasePerms.can('EditGlossaryTerms')),
 );
 const isColumnTest = computed(() => (testCase.value?.entityLink ?? '').includes('::columns::'));
 const canEditDimensions = computed(
-  () => isColumnTest.value && !testCaseDeleted.value && testCasePerms.canEditAll.value,
+  () =>
+    !isVersionPage.value && isColumnTest.value && !testCaseDeleted.value && testCasePerms.canEditAll.value,
 );
 const manageExtraItems = computed(() =>
   canEditDimensions.value
@@ -442,6 +483,7 @@ const runDisabledReasonKey = computed(() =>
 const canRun = computed(
   () =>
     Boolean(testCase.value) &&
+    !isVersionPage.value &&
     !testCaseDeleted.value &&
     !pipelinesLoading.value &&
     !pipelinePerms.isLoading.value &&
@@ -453,7 +495,19 @@ const showVersionControl = computed(
   () => Boolean(testCase.value) && activeTab.value !== 'dimensionality',
 );
 
-const headerDisplayName = computed(() => testCase.value?.displayName?.trim() || '');
+const headerDisplayName = computed(() => {
+  if (!testCase.value) {
+    return '';
+  }
+  if (isVersionPage.value) {
+    return getEntityVersionByField(
+      testCase.value.changeDescription,
+      'displayName',
+      testCase.value.displayName,
+    );
+  }
+  return testCase.value.displayName?.trim() || '';
+});
 
 async function loadResourceTriggerPermissions(): Promise<void> {
   resourcePermsLoading.value = true;
@@ -538,23 +592,35 @@ async function load(): Promise<void> {
     // ADR:2026-11-08-incident-detail-redirects-to-test-case
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(props.id);
     const loaded = isUuid ? await getTestCase(props.id) : await getTestCaseByName(props.id);
-    testCase.value = loaded;
-    await loadTestDefinition(loaded.testDefinition?.id);
-    if (loaded.fullyQualifiedName) {
-      try {
-        const incidentPage = await listTestIncidents({ testCaseFQN: loaded.fullyQualifiedName });
-        issues.value = incidentPage.data;
-      } catch {
+    if (isVersionPage.value && props.version && loaded.id) {
+      versionList.value = await listGovernanceVersions('testCase', loaded.id);
+      testCase.value = await getTestCaseVersion(loaded.id, props.version);
+    } else {
+      testCase.value = loaded;
+    }
+    const current = testCase.value;
+    await loadTestDefinition(current?.testDefinition?.id);
+    if (current?.fullyQualifiedName) {
+      if (!isVersionPage.value) {
+        try {
+          const incidentPage = await listTestIncidents({ testCaseFQN: current.fullyQualifiedName });
+          issues.value = incidentPage.data;
+        } catch {
+          issues.value = [];
+        }
+      } else {
         issues.value = [];
       }
       try {
-        const counts = await getTaskCounts({ aboutEntity: loaded.fullyQualifiedName });
+        const counts = await getTaskCounts({ aboutEntity: current.fullyQualifiedName });
         openTaskCount.value = counts.open ?? 0;
       } catch {
         openTaskCount.value = 0;
       }
-      await loadSuitePipelines(loaded.testSuite?.fullyQualifiedName);
-      await Promise.all([loadNextRunTimestamp(), loadIncidentTask()]);
+      await loadSuitePipelines(current.testSuite?.fullyQualifiedName);
+      if (!isVersionPage.value) {
+        await Promise.all([loadNextRunTimestamp(), loadIncidentTask()]);
+      }
     } else {
       issues.value = [];
       await loadSuitePipelines(undefined);
@@ -630,12 +696,20 @@ async function onDeleteTestCase(): Promise<void> {
 }
 
 async function onOpenVersions(): Promise<void> {
-  const targetId = testCase.value?.id ?? props.id;
-  if (!targetId) {
+  if (isVersionPage.value) {
+    const fqn = testCase.value?.fullyQualifiedName ?? props.id;
+    await router.push({ name: 'quality-test-case', params: { id: fqn, tab: activeTab.value } });
+    return;
+  }
+  const entityId = testCase.value?.id;
+  const pathId = testCase.value?.fullyQualifiedName ?? props.id;
+  if (!entityId) {
     return;
   }
   try {
-    const path = await latestGovernanceVersionPath('testCase', targetId, (version) => getTestCaseVersionPath(targetId, version));
+    const path = await latestGovernanceVersionPath('testCase', entityId, (version) =>
+      getTestCaseVersionPath(pathId, version, activeTab.value),
+    );
     if (!path) {
       message.info(t('asset.versionsEmpty'));
       return;
@@ -643,6 +717,37 @@ async function onOpenVersions(): Promise<void> {
     await router.push(path);
   } catch {
     message.error(t('asset.versionsFailed'));
+  }
+}
+
+function versionHandler(newVersion: string): void {
+  const pathId = testCase.value?.fullyQualifiedName ?? props.id;
+  void router.push(getTestCaseVersionPath(pathId, newVersion, activeTab.value));
+}
+
+function openRestoreModal(): void {
+  restoreOpen.value = true;
+}
+
+async function onConfirmRestore(): Promise<void> {
+  if (!testCase.value?.id) {
+    return;
+  }
+  restoring.value = true;
+  try {
+    const restored = await restoreTestCase(testCase.value.id);
+    testCase.value = restored;
+    restoreOpen.value = false;
+    message.success(
+      t('server.restore-entity-success', {
+        entity: restored.displayName ?? restored.name,
+      }),
+    );
+    await load();
+  } catch (error) {
+    message.error(getErrorText(error, t('message.entity-restored-error', { entity: t('label.test-case') })));
+  } finally {
+    restoring.value = false;
   }
 }
 
@@ -684,7 +789,7 @@ async function onDimensionsSubmitted(): Promise<void> {
 }
 
 watch(
-  () => props.id,
+  () => [props.id, props.version] as const,
   () => {
     void load();
   },
@@ -696,6 +801,22 @@ watch(
     activeTab.value = tab !== undefined && tabKeys.has(tab) ? tab : DEFAULT_TEST_CASE_TAB;
   },
 );
+
+watch(activeTab, (tab) => {
+  if (!isVersionPage.value || !props.version) {
+    return;
+  }
+  const normalizedTab = tab === DEFAULT_TEST_CASE_TAB ? undefined : tab;
+  if (normalizedTab === props.tab || (normalizedTab === undefined && (props.tab === undefined || props.tab === ''))) {
+    return;
+  }
+  const pathId = testCase.value?.fullyQualifiedName ?? props.id;
+  const routeName = normalizedTab ? 'quality-test-case-version-tab' : 'quality-test-case-version';
+  const params = normalizedTab
+    ? { id: pathId, version: props.version, tab: normalizedTab }
+    : { id: pathId, version: props.version };
+  void router.replace({ name: routeName, params });
+});
 
 watch([activeTab, testSuiteFqns], () => {
   void loadNextRunTimestamp();
@@ -725,7 +846,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div data-testid="test-case-detail-page" class="test-case-detail-page">
+  <div
+    data-testid="test-case-detail-page"
+    class="test-case-detail-page"
+    :class="{ 'test-case-detail-page--version version-data': isVersionPage }"
+  >
+  <div class="test-case-detail-page__layout">
   <EntityDetailShell
     :title="entityLabel(testCase) || t('label.entity-detail-plural', { entity: t('label.test-case') })"
     :loading="loading"
@@ -756,6 +882,14 @@ onMounted(() => {
       />
     </template>
     <template #actions>
+      <Button
+        v-if="canRestorePermission"
+        data-testid="restore-test-case-button"
+        :loading="restoring"
+        @click="openRestoreModal"
+      >
+        {{ t('label.restore-entity', { entity: t('label.test-case') }) }}
+      </Button>
       <template v-if="canRun">
         <Tooltip
           v-if="runDisabledReasonKey && !runInProgress"
@@ -792,6 +926,7 @@ onMounted(() => {
         </Button>
       </template>
       <EntityManageButton
+        v-if="!isVersionPage"
         :entity-label="t('label.test-case')"
         :can-rename="editDisplayNamePermission"
         :can-delete="hasDeletePermission"
@@ -983,9 +1118,22 @@ onMounted(() => {
       />
     </template>
     <template #sql-query>
-      <TestCaseSqlQueryTab :test-case="testCase" />
+      <TestCaseSqlQueryTab
+        :test-case="testCase"
+        :is-version-page="isVersionPage"
+        :change-description="testCase?.changeDescription"
+      />
     </template>
   </EntityDetailShell>
+  <ServiceVersionTimeline
+    v-if="isVersionPage"
+    :versions="versionList"
+    :current-version="props.version ?? ''"
+    entity-type="testCase"
+    @select="versionHandler"
+    @close="onOpenVersions"
+  />
+  </div>
   </div>
   <FormModal
     :open="editOpen"
@@ -1015,6 +1163,14 @@ onMounted(() => {
     @cancel="parameterEditOpen = false"
     @submitted="onParameterSubmitted"
   />
+  <RestoreEntityModal
+    :open="restoreOpen"
+    :entity-name="entityLabel(testCase) || testCase?.name || ''"
+    :entity-type-label="t('label.test-case')"
+    :loading="restoring"
+    @cancel="restoreOpen = false"
+    @confirm="onConfirmRestore"
+  />
 </template>
 
 <style scoped>
@@ -1033,6 +1189,18 @@ onMounted(() => {
   grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
   gap: 16px;
   align-items: start;
+}
+.test-case-detail-page__layout {
+  display: flex;
+  gap: var(--sm-spacing-md, 16px);
+  align-items: flex-start;
+}
+.test-case-detail-page__layout > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.test-case-detail-page--version .test-case-detail-page__layout {
+  width: 100%;
 }
 .test-case-results-layout__main {
   min-width: 0;

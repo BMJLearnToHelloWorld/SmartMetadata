@@ -7,16 +7,17 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
-import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import { Button, Descriptions, Form, Input, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { deleteTestSuite, getTestSuite, updateTestSuite } from '@/api/testSuites';
 import { listIngestionPipelines } from '@/api/ingestionPipelines';
 import type { IngestionPipeline } from '@/types/ingestion';
 import {
-  addTestCasesToLogicalTestSuite,
-  listTestCases,
+  addTestCasesToLogicalTestSuiteBulk,
   removeTestCaseFromTestSuite,
+  type AddTestCaseListSubmitPayload,
 } from '@/api/testCases';
+import AddTestCaseList from '@/components/quality/AddTestCaseList.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { getDataQualityPagePath, getTestSuiteIngestionPath } from '@/utils/fqnPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -189,31 +190,25 @@ function openEditPipeline(ingestionFqn: string): void {
 
 const addOpen = ref(false);
 const adding = ref(false);
-const availableCases = ref<{ id: string; name: string }[]>([]);
-const selectedCaseIds = ref<string[]>([]);
 const isLogical = computed(() => suite.value !== null && suite.value.basic !== true);
 
-async function openAddTests(): Promise<void> {
+function openAddTests(): void {
   addOpen.value = true;
-  selectedCaseIds.value = [];
-  try {
-    const page = await listTestCases({ limit: 100 });
-    const existing = new Set((suite.value?.tests ?? []).map((item) => item.id));
-    availableCases.value = page.data
-      .filter((item) => item.id && !existing.has(item.id))
-      .map((item) => ({ id: item.id as string, name: item.name }));
-  } catch {
-    availableCases.value = [];
-  }
 }
 
-async function onAddTests(): Promise<void> {
-  if (!suite.value || !selectedCaseIds.value.length) {
+async function onAddTestsSubmit(payload: AddTestCaseListSubmitPayload): Promise<void> {
+  if (!suite.value) {
+    return;
+  }
+  const hasSelection = payload.selectAll
+    ? true
+    : payload.includeIds.length > 0;
+  if (!hasSelection) {
     return;
   }
   adding.value = true;
   try {
-    await addTestCasesToLogicalTestSuite(suite.value.id, selectedCaseIds.value);
+    await addTestCasesToLogicalTestSuiteBulk(suite.value.id, payload);
     addOpen.value = false;
     message.success(t('server.update-entity-success', { entity: t('label.test-suite') }));
     await load();
@@ -395,23 +390,15 @@ onMounted(() => {
   </FormModal>
   <FormModal
     :open="addOpen"
-    :title="t('label.add-test-cases-to-bundle-suite')"
-    :ok-text="t('label.add')"
-    :cancel-text="t('label.cancel')"
-    :confirm-loading="adding"
-    @ok="onAddTests"
+    :title="t('label.add-entity', { entity: t('label.test-case-plural') })"
+    :footer="null"
+    width="640"
     @cancel="addOpen = false"
   >
-    <Form layout="vertical">
-      <Form.Item :label="t('label.test-case-plural')">
-        <Select
-          v-model:value="selectedCaseIds"
-          mode="multiple"
-          data-testid="add-tests-select"
-          style="width: 100%"
-          :options="availableCases.map((item) => ({ value: item.id, label: item.name }))"
-        />
-      </Form.Item>
-    </Form>
+    <AddTestCaseList
+      :existing-test="suite?.tests ?? []"
+      @cancel="addOpen = false"
+      @submit="onAddTestsSubmit"
+    />
   </FormModal>
 </template>

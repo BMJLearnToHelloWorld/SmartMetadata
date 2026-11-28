@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { mapChangeDescription } from '@/api/entities';
 import { mapTestIncident } from '@/api/testIncidents';
 import type { ResourcePermission } from '@/api/permissions';
 import type { Paged } from '@/types/admin';
@@ -284,6 +285,7 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
       ? raw.dimensionColumns.filter((item): item is string => typeof item === 'string')
       : undefined,
     inspectionQuery: asString(raw.inspectionQuery) || undefined,
+    changeDescription: mapChangeDescription(raw.changeDescription),
     tags: Array.isArray(raw.tags)
       ? raw.tags.flatMap((item) => {
           const rec = asRecord(item);
@@ -505,6 +507,72 @@ export function addTestCasesToLogicalTestSuite(testSuiteId: string, testCaseIds:
     method: 'PUT',
     json: { testSuiteId, testCaseIds },
   });
+}
+
+/** Pin rest/testAPI.ts AddTestCaseListFilter — filters carried with select-all bulk add. */
+export type AddTestCaseListFilter = Omit<SearchTestCasesQuery, 'limit' | 'offset' | 'fields' | 'includePermissions'>;
+
+/** Pin rest/testAPI.ts AddTestCaseListSubmitPayload. */
+export type AddTestCaseListSubmitPayload = {
+  selectAll: boolean;
+  includeIds: string[];
+  excludeIds: string[];
+  filter?: AddTestCaseListFilter;
+};
+
+/** Official addTestCasesToLogicalTestSuiteBulk (rest/testAPI.ts): PUT logicalTestCases/bulk. */
+function bulkAddFilter(filter?: AddTestCaseListFilter): AddTestCaseListFilter | undefined {
+  if (!filter) {
+    return undefined;
+  }
+  const { tableFqn: _tableFqn, ...rest } = filter;
+  return rest;
+}
+
+export async function addTestCasesToLogicalTestSuiteBulk(
+  testSuiteId: string,
+  payload: AddTestCaseListSubmitPayload,
+): Promise<unknown> {
+  const request = payload.selectAll
+    ? {
+        testSuiteId,
+        mode: 'all',
+        selection: { filter: { excludeIds: payload.excludeIds, ...bulkAddFilter(payload.filter) } },
+      }
+    : {
+        testSuiteId,
+        mode: 'ids',
+        selection: { ids: payload.includeIds },
+      };
+  return apiRequest('/v1/dataQuality/testCases/logicalTestCases/bulk', {
+    method: 'PUT',
+    json: request,
+  });
+}
+
+/** Official getTestCaseVersionDetails (rest/testAPI.ts): GET …/versions/{version}. */
+export async function getTestCaseVersion(id: string, version: string): Promise<TestCase> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testCases/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`,
+  );
+  const mapped = mapTestCase(raw);
+  if (!mapped) {
+    throw new Error('Test case version response was missing id and name');
+  }
+  return mapped;
+}
+
+/** Official restoreTestCase (rest/testAPI.ts): PUT /dataQuality/testCases/restore. */
+export async function restoreTestCase(id: string): Promise<TestCase> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/dataQuality/testCases/restore', {
+    method: 'PUT',
+    json: { id },
+  });
+  const mapped = mapTestCase(raw);
+  if (!mapped) {
+    throw new Error('Restore test case succeeded but the response had no test case');
+  }
+  return mapped;
 }
 
 /** Official removeTestCaseFromTestSuite (rest/testAPI.ts): DELETE logicalTestCases/{suiteId}/{caseId}. */

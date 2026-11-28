@@ -12,12 +12,15 @@ import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
 import {
   createTestCase,
+  addTestCasesToLogicalTestSuiteBulk,
   deleteTestCaseFailedSampleData,
   getTestCaseFailedSampleData,
+  getTestCaseVersion,
   isTestCaseSearchListAvailable,
   listTestCaseDimensionResults,
   listTestCases,
   listTestCasesBySearch,
+  restoreTestCase,
   updateTestCase,
 } from './testCases';
 
@@ -235,6 +238,59 @@ describe('testCases API', () => {
     await deleteTestCaseFailedSampleData('tc-id-2');
     expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc-id-2/failedRowsSample');
     expect(lastFetch().init?.method).toBe('DELETE');
+  });
+
+  it('loads a version snapshot via GET …/versions/{version}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'tc1', name: 'n', version: 0.2 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const tc = await getTestCaseVersion('tc1', '0.2');
+    expect(tc.id).toBe('tc1');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/tc1/versions/0.2');
+  });
+
+  it('restores via PUT /v1/dataQuality/testCases/restore', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'tc1', name: 'n' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const tc = await restoreTestCase('tc1');
+    expect(tc.id).toBe('tc1');
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/dataQuality/testCases/restore');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({ id: 'tc1' });
+  });
+
+  it('bulk-adds test cases via PUT logicalTestCases/bulk (ids mode)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await addTestCasesToLogicalTestSuiteBulk('suite1', {
+      selectAll: false,
+      includeIds: ['a', 'b'],
+      excludeIds: [],
+    });
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/dataQuality/testCases/logicalTestCases/bulk');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      testSuiteId: 'suite1',
+      mode: 'ids',
+      selection: { ids: ['a', 'b'] },
+    });
   });
 
   it('treats search/list 404 as residual, not as a thrown list failure', async () => {
