@@ -64,6 +64,20 @@ export function getFoundValue(result: TestCaseResult): number | undefined {
 
 const COMPLETED_STATUSES = new Set(['Failed', 'Success']);
 
+const TIMEOUT_ERROR = /time(d)?[\s_-]?out/i;
+const TIMEOUT_MESSAGE =
+  /(?<![\w'"`])(?:timed[\s_-]?out|time[_-]?out|time\s+out(?!\s+of\b))(?![\w'"`])/i;
+const TIMEOUT_ERROR_TYPES = new Set(['QueryCanceled']);
+const CATCH_ALL_ERROR_TYPES = new Set(['OperationalError', 'ProgrammingError']);
+
+export function isTimeoutError(errorType?: string, message?: string): boolean {
+  return (
+    TIMEOUT_ERROR_TYPES.has(errorType ?? '') ||
+    TIMEOUT_ERROR.test(errorType ?? '') ||
+    (CATCH_ALL_ERROR_TYPES.has(errorType ?? '') && TIMEOUT_MESSAGE.test(message ?? ''))
+  );
+}
+
 export function getSelectedRun(
   results: TestCaseResult[],
   selectedTimestamp?: number,

@@ -14,6 +14,7 @@ import type {
   CreateTestCaseRequest,
   TestCase,
   TestCaseDimensionResult,
+  TestCaseEvaluationScope,
   TestCaseResult,
   TestParameterValue,
 } from '@/types/quality';
@@ -90,6 +91,24 @@ function mapParameterValues(value: unknown): TestParameterValue[] {
   });
 }
 
+function mapEvaluationScope(value: unknown): TestCaseEvaluationScope | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const profileSampleType = asString(rec.profileSampleType);
+  return {
+    sampled: rec.sampled === true,
+    profileSample: asNumber(rec.profileSample),
+    profileSampleType:
+      profileSampleType === 'ROWS' || profileSampleType === 'PERCENTAGE'
+        ? profileSampleType
+        : undefined,
+    partitioned: rec.partitioned === true,
+    partitionColumnName: asString(rec.partitionColumnName) || undefined,
+  };
+}
+
 export function mapTestCaseResult(value: unknown): TestCaseResult | undefined {
   const rec = asRecord(value);
   if (!rec) {
@@ -127,7 +146,7 @@ export function mapTestCaseResult(value: unknown): TestCaseResult | undefined {
     failedRows: asNumber(rec.failedRows),
     passedRowsPercentage: asNumber(rec.passedRowsPercentage),
     failedRowsPercentage: asNumber(rec.failedRowsPercentage),
-    evaluationScope: asString(rec.evaluationScope) || undefined,
+    evaluationScope: mapEvaluationScope(rec.evaluationScope),
     errorDetails: errorRec
       ? {
           message: asString(errorRec.message) || undefined,

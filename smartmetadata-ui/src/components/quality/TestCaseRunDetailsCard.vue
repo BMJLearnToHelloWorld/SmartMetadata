@@ -1,7 +1,7 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official RunDetailsCard (Vue subset with comparison bars, threshold rows, errors).
+  Official RunDetailsCard (Vue) with RunThreshold, scope badges, sample note.
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
@@ -9,7 +9,10 @@ import { useI18n } from 'vue-i18n';
 import { Button, Tag } from 'ant-design-vue';
 import type { TestCase, TestCaseResult } from '@/types/quality';
 import RunExecutionError from '@/components/quality/RunExecutionError.vue';
-import { formatRunDuration, getRunDetails } from '@/quality/runDetailsCard.utils';
+import { formatRunDuration, getRunDetails, isTimeoutError } from '@/quality/runDetailsCard.utils';
+import { getRunScopeBadges, ThresholdSamplingKind } from '@/quality/testCaseThreshold.utils';
+import { getRunThresholdSectionCells } from '@/quality/runDetailsThresholdDisplay.utils';
+import { formatNumber } from '@/quality/runDetailsCard.utils';
 import { formatContractDateTime } from '@/utils/dataContract';
 
 const props = defineProps<{
@@ -31,7 +34,7 @@ const latestTimestamp = computed(() =>
 
 const isOlderRunSelected = computed(
   () =>
-  props.selectedRun?.timestamp !== undefined &&
+    props.selectedRun?.timestamp !== undefined &&
     latestTimestamp.value !== undefined &&
     props.selectedRun.timestamp !== latestTimestamp.value,
 );
@@ -39,6 +42,27 @@ const isOlderRunSelected = computed(
 const details = computed(() =>
   props.selectedRun ? getRunDetails(props.testCase, props.selectedRun) : undefined,
 );
+
+const thresholdCells = computed(() =>
+  props.selectedRun ? getRunThresholdSectionCells(props.testCase, props.selectedRun, t) : undefined,
+);
+
+const scopeBadges = computed(() =>
+  props.selectedRun ? getRunScopeBadges(props.selectedRun.evaluationScope) : undefined,
+);
+
+const durationLabel = computed(() => {
+  if (details.value?.duration === undefined) {
+    return undefined;
+  }
+  const text = formatRunDuration(details.value.duration);
+  const errorDetails = details.value.errorDetails;
+  return isTimeoutError(errorDetails?.errorType, errorDetails?.message)
+    ? t('label.duration-with-timeout', { duration: text })
+    : text;
+});
+
+const sampleNoteVisible = computed(() => Boolean(props.selectedRun?.evaluationScope?.sampled));
 
 const status = computed(() => props.selectedRun?.testCaseStatus);
 const statusTagColor = computed(() => {
@@ -53,6 +77,19 @@ const statusTagColor = computed(() => {
       return 'warning';
   }
 });
+
+function sampleBadgeLabel(): string {
+  const badges = scopeBadges.value;
+  if (!badges?.sample) {
+    return t('label.sampled');
+  }
+  if (badges.sample.value === undefined) {
+    return t('label.sampled');
+  }
+  return badges.sample.kind === ThresholdSamplingKind.StaticRows
+    ? t('label.row-sample-of', { value: formatNumber(badges.sample.value) })
+    : t('label.percentage-sample-of', { value: badges.sample.value });
+}
 </script>
 
 <template>
@@ -75,12 +112,20 @@ const statusTagColor = computed(() => {
           {{ t('label.back-to-latest') }}
         </Button>
       </div>
-      <span
-        v-if="details.duration !== undefined"
-        class="run-details-card__duration"
-        data-testid="run-details-duration"
-      >
-        {{ formatRunDuration(details.duration) }}
+      <template v-if="scopeBadges">
+        <Tag v-if="scopeBadges.sample" color="blue" data-testid="run-details-sampled-badge">
+          {{ sampleBadgeLabel() }}
+        </Tag>
+        <Tag v-if="scopeBadges.isPartitioned" color="blue" data-testid="run-details-partitioned-badge">
+          {{
+            scopeBadges.partitionColumn
+              ? t('label.partitioned-on', { column: scopeBadges.partitionColumn })
+              : t('label.partitioned')
+          }}
+        </Tag>
+      </template>
+      <span v-if="durationLabel !== undefined" class="run-details-card__duration" data-testid="run-details-duration">
+        {{ durationLabel }}
       </span>
     </header>
 
@@ -101,18 +146,22 @@ const statusTagColor = computed(() => {
         <dt>{{ t('label.difference') }}</dt>
         <dd data-testid="run-details-difference">{{ details.differenceText }}</dd>
       </div>
-      <div v-if="details.failedRows !== undefined">
-        <dt>{{ t('label.failed') }}</dt>
-        <dd data-testid="run-details-failed">
-          {{ details.failedRows }}
-          <span v-if="details.failedRowsPercentage !== undefined">({{ details.failedRowsPercentage }}%)</span>
-        </dd>
-      </div>
-      <div v-if="details.passedRows !== undefined">
-        <dt>{{ t('label.evaluated') }}</dt>
-        <dd data-testid="run-details-evaluated">{{ details.passedRows + (details.failedRows ?? 0) }}</dd>
+    </dl>
+
+    <dl
+      v-if="thresholdCells?.length"
+      class="run-details-card__threshold"
+      data-testid="run-details-threshold-section"
+    >
+      <div v-for="cell in thresholdCells" :key="cell.testId">
+        <dt>{{ t(cell.labelKey) }}</dt>
+        <dd :data-testid="cell.testId">{{ cell.value }}</dd>
       </div>
     </dl>
+
+    <p v-if="sampleNoteVisible" class="run-details-card__sample-note" data-testid="run-details-sample-note">
+      {{ t('message.run-evaluated-on-sample') }}
+    </p>
 
     <div v-if="details.bars.length > 0" class="run-details-card__comparison" data-testid="run-details-comparison">
       <div v-for="bar in details.bars" :key="bar.kind" class="run-details-card__bar-row">
@@ -120,7 +169,7 @@ const statusTagColor = computed(() => {
         <div class="run-details-card__bar-track">
           <span class="run-details-card__bar-fill" :style="{ width: `${bar.width}%` }" />
         </div>
-        <span>{{ bar.value.toLocaleString() }}</span>
+        <span :data-testid="`run-details-${bar.kind}-value`">{{ bar.value.toLocaleString() }}</span>
       </div>
     </div>
 
@@ -165,25 +214,38 @@ const statusTagColor = computed(() => {
   align-items: center;
   gap: 4px;
 }
-.run-details-card__grid {
+.run-details-card__grid,
+.run-details-card__threshold {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
   margin: 0;
   padding: 16px;
 }
+.run-details-card__threshold {
+  border-top: 1px solid var(--sm-border-color, #e8e8e8);
+}
 @media (min-width: 900px) {
-  .run-details-card__grid {
+  .run-details-card__grid,
+  .run-details-card__threshold {
     grid-template-columns: minmax(max-content, 1fr) repeat(3, minmax(0, 1fr));
   }
 }
-.run-details-card__grid dt {
+.run-details-card__grid dt,
+.run-details-card__threshold dt {
   font-size: 12px;
   color: var(--sm-text-secondary);
 }
-.run-details-card__grid dd {
+.run-details-card__grid dd,
+.run-details-card__threshold dd {
   margin: 4px 0 0;
   font-weight: 600;
+}
+.run-details-card__sample-note {
+  margin: 0;
+  padding: 0 16px 8px;
+  font-size: 12px;
+  color: var(--sm-text-secondary);
 }
 .run-details-card__comparison {
   border-top: 1px solid var(--sm-border-color, #e8e8e8);

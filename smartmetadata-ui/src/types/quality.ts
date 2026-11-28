@@ -77,6 +77,15 @@ export interface TestCaseErrorDetails {
   stackTrace?: string;
 }
 
+/** Official testCaseEvaluationScope (openmetadata-spec tests/basic.json). */
+export interface TestCaseEvaluationScope {
+  sampled?: boolean;
+  profileSample?: number;
+  profileSampleType?: 'PERCENTAGE' | 'ROWS';
+  partitioned?: boolean;
+  partitionColumnName?: string;
+}
+
 export interface TestCaseResult {
   timestamp?: number;
   testCaseStatus?: string;
@@ -91,7 +100,7 @@ export interface TestCaseResult {
   passedRowsPercentage?: number;
   failedRowsPercentage?: number;
   errorDetails?: TestCaseErrorDetails;
-  evaluationScope?: string;
+  evaluationScope?: TestCaseEvaluationScope;
   /**
    * Named measured values (official TestCaseResult.testResultValue), e.g. a
    * tableDiff run's removedRows / addedRows / diffCount. Only entries the
@@ -99,8 +108,6 @@ export interface TestCaseResult {
    * ADR:2026-11-08-data-diff-p2-5-p2-6-bindings-and-form
    */
   testResultValue?: TestResultValue[];
-  minBound?: number;
-  maxBound?: number;
 }
 
 export interface TestSummary {
