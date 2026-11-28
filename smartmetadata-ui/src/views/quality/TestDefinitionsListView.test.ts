@@ -197,6 +197,44 @@ describe('TestDefinitionsListView', () => {
     expect(router.currentRoute.value.query.entityType).toBeUndefined();
   });
 
+  it('shows NoFilteredResultsPlaceholder when filters match nothing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/dataQuality/dimensions')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/permissions/testDefinition')) {
+          return jsonResponse({
+            resource: 'testDefinition',
+            permissions: [{ operation: 'ViewAll', access: 'allow' }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/quality/test-definitions', component: TestDefinitionsListView }],
+    });
+    await router.push({ path: '/quality/test-definitions', query: { entityType: 'TABLE' } });
+    await router.isReady();
+    const wrapper = mount(TestDefinitionsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    });
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-library-filtered-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('hydrates filters from the URL like official useTableFilters', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

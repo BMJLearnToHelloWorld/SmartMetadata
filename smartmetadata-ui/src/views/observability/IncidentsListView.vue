@@ -13,6 +13,7 @@ import {
   Select,
   Skeleton,
   Space,
+  Tooltip,
   Typography,
 } from 'ant-design-vue';
 import { computed, onMounted, ref, watch } from 'vue';
@@ -773,12 +774,19 @@ function severityLabel(severity: string | undefined): string {
           </a>
         </template>
         <template v-else-if="column.key === 'table'">
-          <a
+          <Tooltip
             v-if="tableFqnOf(record as TestIncident) !== undefined"
-            @click.prevent="openTable(tableFqnOf(record as TestIncident) as string)"
+            :title="tableFqnOf(record as TestIncident)"
+            placement="top"
           >
-            {{ entityNameFromFqn(tableFqnOf(record as TestIncident)) }}
-          </a>
+            <a
+              class="incidents-table-link"
+              data-testid="incident-row-table-link"
+              @click.prevent="openTable(tableFqnOf(record as TestIncident) as string)"
+            >
+              {{ entityNameFromFqn(tableFqnOf(record as TestIncident)) }}
+            </a>
+          </Tooltip>
           <span v-else>—</span>
         </template>
         <template v-else-if="column.key === 'timestamp'">
@@ -954,3 +962,14 @@ function severityLabel(severity: string | undefined): string {
     </FormModal>
   </div>
 </template>
+
+<style scoped>
+.incidents-table-link {
+  display: inline-block;
+  max-width: 13rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+</style>

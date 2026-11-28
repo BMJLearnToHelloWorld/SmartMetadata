@@ -28,6 +28,7 @@ import {
 } from '@/api/testDefinitions';
 import TestDefinitionFormDrawer from '@/components/quality/TestDefinitionFormDrawer.vue';
 import TestDefinitionFilterBar from '@/components/quality/TestDefinitionFilterBar.vue';
+import NoFilteredResultsPlaceholder from '@/components/shared/NoFilteredResultsPlaceholder.vue';
 import {
   TEST_LIBRARY_ENTITY_TYPES,
   TEST_LIBRARY_PAGE_SIZE,
@@ -74,6 +75,12 @@ const listQuery = computed(() =>
 );
 const entityType = computed(() => listQuery.value.entityType);
 const testPlatform = computed(() => listQuery.value.testPlatform);
+const hasActiveFilters = computed(
+  () =>
+    listQuery.value.q.trim().length > 0 ||
+    listQuery.value.entityType !== undefined ||
+    listQuery.value.testPlatform !== undefined,
+);
 /** Official useListSearchInput SEARCH_DEBOUNCE_MS. */
 const SEARCH_DEBOUNCE_MS = 300;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -415,7 +422,14 @@ onMounted(async () => {
 
     <p v-if="errorMessage" data-testid="test-library-error">{{ errorMessage }}</p>
 
+    <NoFilteredResultsPlaceholder
+      v-if="!loading && !errorMessage && definitions.length === 0 && hasActiveFilters"
+      data-testid="test-library-filtered-empty"
+      :on-clear-filters="clearAllFilters"
+    />
+
     <Table
+      v-else
       :columns="columns"
       :data-source="definitions"
       :loading="loading"
