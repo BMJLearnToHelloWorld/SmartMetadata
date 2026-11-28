@@ -13,6 +13,7 @@ import {
   getAlertDetailsBreadcrumbs,
   getAlertFormBreadcrumbs,
   getAnnouncementFormBreadcrumbs,
+  getObservabilityAlertsListBreadcrumbs,
 } from './notificationBreadcrumbs';
 
 const t = ((key: string, params?: Record<string, unknown>) =>
@@ -39,6 +40,13 @@ describe('notification breadcrumbs', () => {
       { label: 'label.observability' },
       { label: 'label.alert-plural', routeName: 'observability-alerts' },
       { label: 'dq-alert' },
+    ]);
+  });
+
+  it('builds the two-level observability alerts list trail (AlertsPage.tsx)', () => {
+    expect(getObservabilityAlertsListBreadcrumbs(t)).toEqual([
+      { label: 'label.observability' },
+      { label: 'label.alert-plural' },
     ]);
   });
 

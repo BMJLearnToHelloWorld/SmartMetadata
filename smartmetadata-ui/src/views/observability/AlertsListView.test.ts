@@ -15,6 +15,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import { ApiError } from '@/api/client';
 import type { LimitConfig } from '@/api/limits';
 import AlertDeleteModal from '@/components/notifications/AlertDeleteModal.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { createTestI18n } from '@/test/i18n';
 import type { EventSubscription } from '@/types/quality';
 import AlertsListView from './AlertsListView.vue';
@@ -172,6 +173,47 @@ afterEach(() => {
 });
 
 describe('observability face (C chain)', () => {
+  it('renders observability list breadcrumbs (AlertsPage.tsx HeaderBreadcrumb)', async () => {
+    const { wrapper } = await mountView('/observability/alerts');
+    const crumbs = wrapper.findComponent(SmBreadcrumb);
+    expect(crumbs.props('items')).toEqual([
+      { label: 'Observability' },
+      { label: 'Alerts' },
+    ]);
+  });
+
+  it('shows a full-page spinner until observability resource permission resolves', async () => {
+    let resolvePerm!: (value: ReturnType<typeof resourcePermission>) => void;
+    getResourcePermission.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePerm = resolve;
+        }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/observability/alerts', name: 'observability-alerts', component: AlertsListView },
+        { path: '/observability/alerts/add', name: 'observability-alerts-add', component: stub },
+      ],
+    });
+    await router.push('/observability/alerts');
+    await router.isReady();
+    const wrapper = mount(AlertsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.alerts-list-view__initial-loader').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-alert-button"]').exists()).toBe(false);
+    resolvePerm(resourcePermission(['Create']));
+    await settle(wrapper);
+    expect(wrapper.find('.alerts-list-view__initial-loader').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-alert-button"]').exists()).toBe(true);
+  });
+
   it('renders rows, filters provider-System rows, and never fetches the system alert', async () => {
     getAllAlerts.mockResolvedValue({
       data: [alertFixture(), systemAlert],
@@ -321,7 +363,7 @@ describe('observability face (C chain)', () => {
 
   it('navigates to the observability add path from the header CTA', async () => {
     const { wrapper, router } = await mountView('/observability/alerts');
-    await wrapper.get('[data-testid="create-observability"]').trigger('click');
+    await wrapper.get('[data-testid="add-alert-button"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/observability/alerts/add');
   });

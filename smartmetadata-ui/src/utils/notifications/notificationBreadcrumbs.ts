@@ -40,6 +40,17 @@ export const OBSERVABILITY_ALERTS_ROUTE_NAME = 'observability-alerts';
 export const SETTINGS_NOTIFICATION_ALERTS_ROUTE_NAME = 'settings-notification-alerts';
 
 /**
+ * Observability alerts list (AlertsPage.tsx breadcrumb: observability root +
+ * alert-plural, no entity name).
+ */
+export function getObservabilityAlertsListBreadcrumbs(t: TranslateFn): SmBreadcrumbItem[] {
+  return [
+    { label: t('label.observability') },
+    { label: t('label.alert-plural') },
+  ];
+}
+
+/**
  * Alert detail breadcrumbs (useAlertDetailsData.ts:152-191). Notification:
  * Settings (linked) › Notifications (linked) › Alerts (linked) ›
  * name-or-fqn (unlinked). Observability: Observability (UNLINKED) ›
