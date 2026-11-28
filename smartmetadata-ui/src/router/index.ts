@@ -18,7 +18,7 @@ import { officialEntityDetailGuard, OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN } from '
  * component, so this conversion changes no route behaviour.
  */
 const AssetDetailView = () => import('@/views/AssetDetailView.vue');
-const AssetVersionView = () => import('@/views/shell/AssetVersionView.vue');
+const EntityVersionPage = () => import('@/views/entityVersion/EntityVersionPage.vue');
 const InsightsView = () => import('@/views/insights/InsightsView.vue');
 const DataAssetsView = () => import('@/views/insights/DataAssetsView.vue');
 const AppAnalyticsView = () => import('@/views/insights/AppAnalyticsView.vue');
@@ -1194,21 +1194,14 @@ export const router = createRouter({
         {
           path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions/:version/:tab`,
           name: 'asset-version-tab',
-          component: AssetVersionView,
+          component: EntityVersionPage,
           props: true,
           beforeEnter: officialEntityDetailGuard,
         },
         {
           path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions/:version`,
           name: 'asset-version-detail',
-          component: AssetVersionView,
-          props: true,
-          beforeEnter: officialEntityDetailGuard,
-        },
-        {
-          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions`,
-          name: 'asset-version',
-          component: AssetVersionView,
+          component: EntityVersionPage,
           props: true,
           beforeEnter: officialEntityDetailGuard,
         },

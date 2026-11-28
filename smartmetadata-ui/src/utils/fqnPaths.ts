@@ -223,6 +223,17 @@ export const TEST_CASE_TAB_RESULTS = 'test-case-results';
  * ACTIVITY_FEED without a subTab defaults to `all`. PROFILER only
  * adds a sub-tab segment when one is provided.
  */
+
+/**
+ * Official `getVersionPath` (RouterUtils.ts):
+ *   /{entityType}/{fqn}/versions/{version}
+ *   /{entityType}/{fqn}/versions/{version}/{tab}
+ */
+export function getVersionPath(entityType: string, fqn: string, version: string, tab?: string): string {
+  const base = `/${entityType}/${getEncodedFqn(fqn)}/versions/${version}`;
+  return tab ? `${base}/${tab}` : base;
+}
+
 export function getEntityDetailsPath(
   entityType: string,
   fqn: string,

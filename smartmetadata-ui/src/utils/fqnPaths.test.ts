@@ -28,6 +28,7 @@ import {
   getTeamsWithFqnPath,
   getUserPath,
   getEntityDetailsPath,
+  getVersionPath,
   getTestCaseDetailPagePath,
   getQueryPath,
   getDataQualityPagePath,
@@ -229,4 +230,18 @@ describe('official service path builders', () => {
     );
   });
 });
+});
+
+describe('getVersionPath', () => {
+  it('builds the official entity version path and optional tab segment', () => {
+    expect(getVersionPath('table', 'svc.db.schema.orders', '0.2')).toBe(
+      '/table/svc.db.schema.orders/versions/0.2',
+    );
+    expect(getVersionPath('table', 'svc.db.schema.orders', '0.2', 'schema')).toBe(
+      '/table/svc.db.schema.orders/versions/0.2/schema',
+    );
+    expect(getVersionPath('table', 'svc/prod.orders', '1.0')).toBe(
+      '/table/svc%2Fprod.orders/versions/1.0',
+    );
+  });
 });
