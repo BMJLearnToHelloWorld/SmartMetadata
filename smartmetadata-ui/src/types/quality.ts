@@ -167,8 +167,8 @@ export interface TestCase {
   testCaseResult?: TestCaseResult;
   testCaseStatus?: string;
   incidentId?: string;
-  /** Incident workflow state riding on the row (official fields list). */
-  incidentStatus?: string;
+  /** Inlined latest incident status from list/search (testCase.json incidentStatus). */
+  incidentStatus?: TestIncident;
   owners?: EntityRef[];
   domains?: EntityRef[];
   dataProducts?: EntityRef[];

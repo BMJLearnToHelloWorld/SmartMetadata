@@ -67,7 +67,7 @@ function mapResolutionDetails(value: unknown): TestIncidentResolutionDetails | u
   };
 }
 
-function mapIncident(raw: Record<string, unknown>): TestIncident | null {
+export function mapTestIncident(raw: Record<string, unknown>): TestIncident | null {
   const id = asString(raw.id);
   if (!id) {
     return null;
@@ -111,7 +111,7 @@ export function listTestIncidents(query: ListTestIncidentsQuery = {}): Promise<P
       originEntityFQN: query.originEntityFQN,
       testCaseResolutionStatusType: query.testCaseResolutionStatusType,
     },
-  }).then((payload) => parsePaged(payload, mapIncident));
+  }).then((payload) => parsePaged(payload, mapTestIncident));
 }
 
 /** ADR:2026-11-08-incident-list-source-is-search-list */
@@ -135,7 +135,7 @@ export function listTestCaseIncidentsFromSearch(
       sortType: query.sortType,
       dateField: query.dateField,
     },
-  }).then((payload) => parsePaged(payload, mapIncident));
+  }).then((payload) => parsePaged(payload, mapTestIncident));
 }
 
 /**
@@ -151,7 +151,7 @@ export async function getTestCaseIncidentByStateId(
   const page = await apiRequest<unknown>(
     `${TEST_CASE_INCIDENT_STATUS_BASE}/stateId/${encodeURIComponent(stateId)}`,
     { query: { limit } },
-  ).then((payload) => parsePaged(payload, mapIncident));
+  ).then((payload) => parsePaged(payload, mapTestIncident));
   return page.data[0];
 }
 
@@ -169,7 +169,7 @@ export async function patchTestIncident(id: string, patch: JsonPatchOp[]): Promi
     `${TEST_CASE_INCIDENT_STATUS_BASE}/${encodeURIComponent(id)}`,
     { method: 'PATCH', json: patch, contentType: 'application/json-patch+json' },
   );
-  const mapped = mapIncident(raw);
+  const mapped = mapTestIncident(raw);
   if (!mapped) {
     throw new Error('Patch incident status succeeded but the response had no record');
   }
@@ -193,7 +193,7 @@ export async function getTestIncident(id: string): Promise<TestIncident> {
   const raw = await apiRequest<Record<string, unknown>>(
     `/v1/dataQuality/testCases/testCaseIncidentStatus/${encodeURIComponent(id)}`,
   );
-  const mapped = mapIncident(raw);
+  const mapped = mapTestIncident(raw);
   if (!mapped) {
     throw new Error('Incident response was missing id');
   }
@@ -205,7 +205,7 @@ export async function createTestIncident(body: CreateTestIncidentRequest): Promi
     method: 'POST',
     json: body,
   });
-  const mapped = mapIncident(raw);
+  const mapped = mapTestIncident(raw);
   if (!mapped) {
     throw new Error('Create incident status succeeded but the response had no record');
   }

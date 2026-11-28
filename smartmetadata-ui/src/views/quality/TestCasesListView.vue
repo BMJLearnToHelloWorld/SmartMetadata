@@ -62,7 +62,12 @@ import {
 } from '@/quality/testCaseListRouteParams';
 import { toEntityLink } from '@/quality/entityLink';
 import { getTestCaseExportFilters } from '@/quality/testCaseExport.utils';
-import { TEST_CASE_STATUSES, type TestCase } from '@/types/quality';
+import {
+  canEditTestCaseListIncident,
+  inlineIncidentFromTestCase,
+} from '@/quality/testCaseListIncident.utils';
+import type { ResourcePermission } from '@/api/permissions';
+import { TEST_CASE_STATUSES, type TestCase, type TestIncident } from '@/types/quality';
 
 const props = withDefaults(
   defineProps<{
@@ -96,6 +101,7 @@ const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const cases = ref<TestCase[]>([]);
+const listEntityPermissions = ref<Record<string, ResourcePermission>>({});
 const total = ref<number | undefined>();
 const emit = defineEmits<{ 'update:total': [total: number] }>();
 const pageAfter = ref<string | undefined>();
@@ -222,10 +228,17 @@ function includeMode(): 'non-deleted' | 'deleted' {
   return showDeleted.value ? 'deleted' : 'non-deleted';
 }
 
-function onListIncidentUpdated(testCaseId: string, status?: string): void {
+function canEditListIncident(testCase: TestCase): boolean {
+  return canEditTestCaseListIncident(testCase, listEntityPermissions.value, false);
+}
+
+function onListIncidentUpdated(testCaseId: string, latest: TestIncident): void {
   const row = cases.value.find((item) => item.id === testCaseId);
-  if (row && status) {
-    row.incidentStatus = status;
+  if (row) {
+    row.incidentStatus = latest;
+    if (latest.testCaseResolutionStatusType) {
+      row.incidentId = latest.stateId ?? row.incidentId;
+    }
   }
 }
 
@@ -269,6 +282,7 @@ async function load(): Promise<void> {
           limit: DEFAULT_PAGE_SIZE,
           offset: offset.value,
           includeAllTests: true,
+          includePermissions: true,
           testCaseStatus: statusFilter.value,
           testCaseType: typeFilter.value,
           owner: props.ownerFqn,
@@ -288,6 +302,7 @@ async function load(): Promise<void> {
         });
         cases.value = page.data;
         total.value = page.total;
+        listEntityPermissions.value = page.entityPermissions ?? {};
         usingSearch.value = true;
         return;
       } catch (error) {
@@ -301,6 +316,7 @@ async function load(): Promise<void> {
       limit: DEFAULT_PAGE_SIZE,
       after: cursor.value.after,
       includeAllTests: true,
+      includePermissions: true,
       testCaseStatus: statusFilter.value,
       testCaseType: typeFilter.value,
       include: includeMode(),
@@ -311,6 +327,7 @@ async function load(): Promise<void> {
     cases.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
+    listEntityPermissions.value = page.entityPermissions ?? {};
   } catch (error) {
     cases.value = [];
     errorMessage.value = getErrorText(error, t('server.unexpected-error'));
@@ -809,6 +826,9 @@ defineExpose({ openCreate, total });
       <template v-else-if="column.key === 'incident'">
         <TestCaseListIncidentCell
           :test-case="record as TestCase"
+          :incident="inlineIncidentFromTestCase(record as TestCase)"
+          :editable="canEditListIncident(record as TestCase)"
+          :incidents-loading="loading && cases.length === 0"
           @incident-updated="onListIncidentUpdated"
         />
       </template>

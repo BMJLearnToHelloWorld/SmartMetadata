@@ -74,6 +74,40 @@ describe('testCases API', () => {
     expect(lastFetch().url).toContain('dimensionName=country');
   });
 
+  it('maps inlined incidentStatus objects and parses entityPermissions from list responses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'tc1',
+                name: 'row_count',
+                incidentStatus: {
+                  id: 'inc1',
+                  testCaseResolutionStatusType: 'Ack',
+                },
+              },
+            ],
+            paging: { total: 1 },
+            entityPermissions: {
+              tc1: {
+                resource: 'testCase',
+                permissions: [{ operation: 'EditStatus', access: 'allow' }],
+              },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTestCases({ includePermissions: true });
+    expect(page.data[0]?.incidentStatus?.testCaseResolutionStatusType).toBe('Ack');
+    expect(page.entityPermissions?.tc1?.permissions[0]?.operation).toBe('EditStatus');
+    expect(lastFetch().url).toContain('includePermissions=true');
+  });
+
   it('lists cases from GET /v1/dataQuality/testCases and can filter by entityFQN', async () => {
     vi.stubGlobal(
       'fetch',

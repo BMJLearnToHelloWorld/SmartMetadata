@@ -8,6 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { mapTestIncident } from '@/api/testIncidents';
+import type { ResourcePermission } from '@/api/permissions';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type {
@@ -34,6 +36,7 @@ export interface ListTestCasesQuery {
   testCaseStatus?: string | string[];
   include?: 'non-deleted' | 'deleted' | 'all';
   testCaseType?: string;
+  includePermissions?: boolean;
 }
 
 export interface SearchTestCasesQuery {
@@ -68,6 +71,11 @@ export interface SearchTestCasesQuery {
   /** Official ListTestCaseParamsBySearch.serviceName. */
   serviceName?: string;
   include?: 'non-deleted' | 'deleted' | 'all';
+  includePermissions?: boolean;
+}
+
+export interface TestCaseListPage extends Paged<TestCase> {
+  entityPermissions?: Record<string, ResourcePermission>;
 }
 
 function mapEntityRef(value: unknown): EntityRef | undefined {
@@ -157,18 +165,101 @@ export function mapTestCaseResult(value: unknown): TestCaseResult | undefined {
   };
 }
 
+function mapInlineIncidentStatus(
+  raw: unknown,
+  testCaseId: string,
+  testCaseName: string,
+  fqn?: string,
+): TestCase['incidentStatus'] {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  const rec = asRecord(raw);
+  if (rec) {
+  const mapped = mapTestIncident(rec);
+    if (mapped) {
+      return {
+        ...mapped,
+        testCaseReference: mapped.testCaseReference ?? {
+          id: testCaseId,
+          name: testCaseName,
+          fullyQualifiedName: fqn,
+          type: 'testCase',
+        },
+      };
+    }
+  }
+  const status = asString(raw);
+  if (!status) {
+    return undefined;
+  }
+  return {
+    id: testCaseId,
+    testCaseResolutionStatusType: status,
+    testCaseReference: {
+      id: testCaseId,
+      name: testCaseName,
+      fullyQualifiedName: fqn,
+      type: 'testCase',
+    },
+  };
+}
+
+function mapEntityPermissionsMap(raw: unknown): Record<string, ResourcePermission> | undefined {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return undefined;
+  }
+  const next: Record<string, ResourcePermission> = {};
+  for (const [entityId, value] of Object.entries(rec)) {
+    const permissionRec = asRecord(value);
+    if (!permissionRec) {
+      continue;
+    }
+    const resource = asString(permissionRec.resource);
+    const permissions = Array.isArray(permissionRec.permissions)
+      ? permissionRec.permissions.flatMap((entry) => {
+          const row = asRecord(entry);
+          if (!row) {
+            return [];
+          }
+          const operation = asString(row.operation);
+          const access = asString(row.access);
+          if (!operation || !access) {
+            return [];
+          }
+          return [{ operation, access: access as ResourcePermission['permissions'][number]['access'] }];
+        })
+      : [];
+    if (resource) {
+      next[entityId] = { resource, permissions };
+    }
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+function parseTestCaseListPayload(payload: unknown): TestCaseListPage {
+  const root = asRecord(payload);
+  const page = parsePaged(payload, mapTestCase);
+  return {
+    ...page,
+    entityPermissions: mapEntityPermissionsMap(root?.entityPermissions),
+  };
+}
+
 function mapTestCase(raw: Record<string, unknown>): TestCase | null {
   const id = asString(raw.id);
   const name = asString(raw.name);
   if (!id && !name) {
     return null;
   }
+  const fullyQualifiedName = asString(raw.fullyQualifiedName) || name;
   return {
     id,
     name,
     displayName: asString(raw.displayName) || undefined,
     description: asString(raw.description) || undefined,
-    fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
+    fullyQualifiedName,
     entityLink: asString(raw.entityLink) || undefined,
     entityFQN: asString(raw.entityFQN) || undefined,
     testDefinition: mapEntityRef(raw.testDefinition),
@@ -178,7 +269,7 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     testCaseResult: mapTestCaseResult(raw.testCaseResult),
     testCaseStatus: asString(raw.testCaseStatus) || undefined,
     incidentId: asString(raw.incidentId) || undefined,
-    incidentStatus: asString(raw.incidentStatus) || undefined,
+    incidentStatus: mapInlineIncidentStatus(raw.incidentStatus, id, name, fullyQualifiedName),
     owners: mapEntityRefs(raw.owners),
     domains: mapEntityRefs(raw.domains),
     dataProducts: mapEntityRefs(raw.dataProducts),
@@ -258,7 +349,7 @@ export function listTestCaseDimensionResults(
   }).then((payload) => parsePaged(payload, mapDimensionResult));
 }
 
-export function listTestCases(query: ListTestCasesQuery = {}): Promise<Paged<TestCase>> {
+export function listTestCases(query: ListTestCasesQuery = {}): Promise<TestCaseListPage> {
   return apiRequest<unknown>('/v1/dataQuality/testCases', {
     query: {
       fields: TEST_CASE_FIELDS,
@@ -271,8 +362,9 @@ export function listTestCases(query: ListTestCasesQuery = {}): Promise<Paged<Tes
       testCaseStatus: query.testCaseStatus,
       include: query.include,
       testCaseType: query.testCaseType,
+      includePermissions: query.includePermissions === true ? true : undefined,
     },
-  }).then((payload) => parsePaged(payload, mapTestCase));
+  }).then((payload) => parseTestCaseListPayload(payload));
 }
 
 export async function getTestCase(id: string): Promise<TestCase> {
@@ -346,7 +438,7 @@ export async function updateTestCase(body: CreateTestCaseRequest): Promise<TestC
   return mapped;
 }
 
-export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise<Paged<TestCase>> {
+export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise<TestCaseListPage> {
   return apiRequest<unknown>('/v1/dataQuality/testCases/search/list', {
     query: {
       fields: query.fields ?? TEST_CASE_FIELDS,
@@ -373,8 +465,9 @@ export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise
       include: query.include,
       sortField: query.sortField,
       sortType: query.sortType,
+      includePermissions: query.includePermissions === false ? undefined : true,
     },
-  }).then((payload) => parsePaged(payload, mapTestCase));
+  }).then((payload) => parseTestCaseListPayload(payload));
 }
 
 export async function isTestCaseSearchListAvailable(): Promise<boolean> {

@@ -126,19 +126,6 @@ describe('TestCasesListView official list chrome', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('testCaseIncidentStatus')) {
-          return jsonResponse({
-            data: [
-              {
-                id: 'inc1',
-                testCaseResolutionStatusType: 'New',
-                testCaseFqn: 'svc.db.schema.orders.row_count',
-                stateId: 'state-1',
-              },
-            ],
-            paging: { total: 1 },
-          });
-        }
         if (url.includes('/api/v1/dataQuality/testCases')) {
           return jsonResponse({
             data: [
@@ -149,10 +136,20 @@ describe('TestCasesListView official list chrome', () => {
                 entityFQN: 'svc.db.schema.orders',
                 entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
                 testCaseResult: { testCaseStatus: 'Failed', result: 'expected 10 got 12', timestamp: 1 },
-                incidentStatus: 'New',
+                incidentStatus: {
+                  id: 'inc1',
+                  testCaseResolutionStatusType: 'New',
+                  stateId: 'state-1',
+                },
               },
             ],
             paging: { total: 1 },
+            entityPermissions: {
+              tc1: {
+                resource: 'testCase',
+                permissions: [{ operation: 'EditStatus', access: 'allow' }],
+              },
+            },
           });
         }
         return new Response('not found', { status: 404 });

@@ -1,13 +1,12 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official TestCaseIncidentManagerStatus isInline + InlineTestCaseIncidentStatus.
+  Official DataQualityTab renderIncidentCell + TestCaseIncidentManagerStatus isInline.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Spin } from 'ant-design-vue';
-import { listTestIncidents } from '@/api/testIncidents';
+import { Skeleton, message } from 'ant-design-vue';
 import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
 import {
   incidentStatusMenuOptions,
@@ -15,60 +14,42 @@ import {
   submitIncidentStatusChange,
   type StatusChangeAdditionalData,
 } from '@/features/quality/incidentManager';
-import { usePermissionStore } from '@/stores/permissions';
 import type { TestCase, TestIncident, IncidentStatus } from '@/types/quality';
-import { message } from 'ant-design-vue';
 
 const props = defineProps<{
   testCase: TestCase;
+  incident?: TestIncident;
+  editable: boolean;
+  incidentsLoading?: boolean;
 }>();
 
 const emit = defineEmits<{
-  incidentUpdated: [testCaseId: string, status?: string];
+  incidentUpdated: [testCaseId: string, latest: TestIncident];
 }>();
 
 const { t } = useI18n();
-const permissionStore = usePermissionStore();
-const incident = ref<TestIncident | undefined>();
-const loading = ref(false);
 const writing = ref(false);
-
-const editable = computed(() => permissionStore.isAdminUser && !props.testCase.deleted);
+const incidentRecord = ref<TestIncident | undefined>(props.incident);
 
 const menuOptions = computed(() =>
-  incidentStatusMenuOptions(incident.value?.testCaseResolutionStatusType),
+  incidentStatusMenuOptions(incidentRecord.value?.testCaseResolutionStatusType),
 );
 
-const showInline = computed(
-  () => incident.value?.testCaseResolutionStatusType || props.testCase.incidentStatus,
-);
+const showInline = computed(() => Boolean(incidentRecord.value?.testCaseResolutionStatusType));
 
-async function loadIncident(): Promise<void> {
-  if (!props.testCase.fullyQualifiedName) {
-    incident.value = undefined;
-    return;
-  }
-  if (!props.testCase.incidentStatus && !props.testCase.incidentId) {
-    incident.value = undefined;
-    return;
-  }
-  loading.value = true;
-  try {
-    const page = await listTestIncidents({
-      testCaseFQN: props.testCase.fullyQualifiedName,
-      latest: true,
-      limit: 1,
-    });
-    incident.value = page.data[0];
-  } catch {
-    incident.value = undefined;
-  } finally {
-    loading.value = false;
-  }
+function syncIncident(next?: TestIncident): void {
+  incidentRecord.value = next;
 }
 
+watch(
+  () => props.incident,
+  (next) => {
+    syncIncident(next);
+  },
+);
+
 async function onTransition(status: IncidentStatus, additional?: StatusChangeAdditionalData): Promise<void> {
-  const record = incident.value;
+  const record = incidentRecord.value;
   if (!record || writing.value) {
     return;
   }
@@ -89,8 +70,8 @@ async function onTransition(status: IncidentStatus, additional?: StatusChangeAdd
       latest = await submitIncidentStatusChange(record, status, additional);
     }
     if (latest) {
-      incident.value = latest;
-      emit('incidentUpdated', props.testCase.id, latest.testCaseResolutionStatusType);
+      syncIncident(latest);
+      emit('incidentUpdated', props.testCase.id, latest);
     }
   } catch {
     message.error(t('observability.incidents.updateFailed'));
@@ -98,24 +79,19 @@ async function onTransition(status: IncidentStatus, additional?: StatusChangeAdd
     writing.value = false;
   }
 }
-
-watch(
-  () => [props.testCase.fullyQualifiedName, props.testCase.incidentStatus, props.testCase.incidentId],
-  () => {
-    void loadIncident();
-  },
-);
-
-onMounted(() => {
-  void loadIncident();
-});
 </script>
 
 <template>
-  <Spin v-if="loading" size="small" />
+  <Skeleton
+    v-if="incidentsLoading"
+    :title="false"
+    active
+    :paragraph="{ rows: 1, width: 60 }"
+    data-testid="test-case-list-incident-loading"
+  />
   <IncidentInlineStatus
-    v-else-if="incident && showInline"
-    :record="incident"
+    v-else-if="incidentRecord && showInline"
+    :record="incidentRecord"
     :editable="editable"
     :loading="writing"
     :menu-options="menuOptions"
