@@ -10,13 +10,12 @@ import type { DqDashboardFilterState, DqHiddenFilter } from './dashboard';
 import {
   fetchDqDashboardCertificationOptions,
   fetchDqDashboardDataProductOptions,
-  fetchDqDashboardGlossaryTermOptions,
   fetchDqDashboardTagOptions,
   fetchDqDashboardTierOptions,
   type DqDashboardFilterOption,
 } from './dqDashboardFilterOptions';
 
-export type DqDashboardSearchFilterId = 'tier' | 'certification' | 'tag' | 'glossaryTerm' | 'dataProduct';
+export type DqDashboardSearchFilterId = 'tier' | 'certification' | 'tag' | 'dataProduct';
 
 interface FilterSlot {
   defaultOptions: DqDashboardFilterOption[];
@@ -28,7 +27,6 @@ const VISIBLE_KEY_TO_ID: Partial<Record<DqHiddenFilter, DqDashboardSearchFilterI
   tier: 'tier',
   certification: 'certification',
   tags: 'tag',
-  glossaryTerms: 'glossaryTerm',
   dataProducts: 'dataProduct',
 };
 
@@ -36,7 +34,6 @@ const FETCHERS = {
   tier: fetchDqDashboardTierOptions,
   certification: fetchDqDashboardCertificationOptions,
   tag: fetchDqDashboardTagOptions,
-  glossaryTerm: fetchDqDashboardGlossaryTermOptions,
   dataProduct: fetchDqDashboardDataProductOptions,
 } as const;
 
@@ -82,7 +79,6 @@ export function useDqDashboardFilterSelects(
     tier: { defaultOptions: [], options: [], loading: false },
     certification: { defaultOptions: [], options: [], loading: false },
     tag: { defaultOptions: [], options: [], loading: false },
-    glossaryTerm: { defaultOptions: [], options: [], loading: false },
     dataProduct: { defaultOptions: [], options: [], loading: false },
   });
 
@@ -96,12 +92,6 @@ export function useDqDashboardFilterSelects(
       slot.options = mergeTierOrCertDefaults(filterState.certification, slot.defaultOptions, slot.options);
       return;
     }
-    if (id === 'glossaryTerm') {
-      slot.options = slot.defaultOptions.length
-        ? mergeTagLikeDefaults(filterState.glossaryTerm, slot.defaultOptions)
-        : [...slot.defaultOptions];
-      return;
-    }
     slot.options = [...slot.defaultOptions];
   }
 
@@ -110,8 +100,6 @@ export function useDqDashboardFilterSelects(
     if (slot.defaultOptions.length) {
       if (id === 'tag') {
         slot.options = mergeTagLikeDefaults(filterState.tag, slot.defaultOptions);
-      } else if (id === 'glossaryTerm') {
-        slot.options = mergeTagLikeDefaults(filterState.glossaryTerm, slot.defaultOptions);
       } else if (id === 'dataProduct') {
         slot.options = mergeTagLikeDefaults(filterState.dataProduct, slot.defaultOptions);
       } else {

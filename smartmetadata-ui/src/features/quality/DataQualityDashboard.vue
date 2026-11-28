@@ -36,6 +36,8 @@ import {
   useDqDashboardFilterSelects,
   type DqDashboardSearchFilterId,
 } from '@/quality/useDqDashboardFilterSelects';
+import DqDashboardOwnerFilter from '@/features/quality/DqDashboardOwnerFilter.vue';
+import GlossaryTermFilterPicker from '@/components/governance/GlossaryTermFilterPicker.vue';
 
 /**
  * Shared DataQualityDashboard (pin
@@ -358,25 +360,11 @@ onMounted(() => {
     :class="['dq-dashboard', props.className, { 'dq-dashboard--governance': props.isGovernanceView }]"
   >
     <div v-if="showFilterBar" class="dq-dashboard__filters" data-testid="dq-dashboard-filters">
-      <Select
+      <DqDashboardOwnerFilter
         v-if="visibleFilters.includes('owner')"
-        :value="filters.owner"
-        mode="multiple"
-        allow-clear
-        show-search
-        :placeholder="t('label.owner')"
-        :options="[]"
-        data-testid="dq-dashboard-filter-owner"
-        class="dq-dashboard__filter"
-        @change="(value) => setFilter('owner', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('owner')">{{ t('label.select-all') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
+        :model-value="filters.owner"
+        @update:model-value="(value) => setFilter('owner', value)"
+      />
       <Select
         v-if="visibleFilters.includes('tier')"
         :value="filters.tier"
@@ -446,29 +434,11 @@ onMounted(() => {
           <component :is="menuNode" />
         </template>
       </Select>
-      <Select
+      <GlossaryTermFilterPicker
         v-if="visibleFilters.includes('glossaryTerms')"
-        :value="filters.glossaryTerm"
-        mode="multiple"
-        allow-clear
-        show-search
-        :filter-option="false"
-        :loading="dqFilterLoadingFor('glossaryTerm')"
-        :placeholder="t('label.glossary-term')"
-        :options="dqFilterOptionsFor('glossaryTerm')"
-        data-testid="dq-dashboard-filter-glossary"
-        class="dq-dashboard__filter"
-        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('glossaryTerm', open)"
-        @search="(q) => dqFilterOnSearch('glossaryTerm', q)"
-        @change="(value) => setFilter('glossaryTerm', value)"
-      >
-        <template #dropdownRender="{ menuNode }">
-          <div class="dq-dashboard__select-all">
-            <Button type="link" size="small" @click="selectAll('glossaryTerm')">{{ t('label.select-all') }}</Button>
-          </div>
-          <component :is="menuNode" />
-        </template>
-      </Select>
+        :model-value="filters.glossaryTerm"
+        @update:model-value="(value) => setFilter('glossaryTerm', value)"
+      />
       <Select
         v-if="visibleFilters.includes('dataProducts')"
         :value="filters.dataProduct"

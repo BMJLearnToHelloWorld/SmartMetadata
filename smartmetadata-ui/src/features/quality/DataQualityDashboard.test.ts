@@ -228,6 +228,13 @@ describe('DataQualityDashboard', () => {
     expect(wrapper.get('[data-testid="dq-dashboard-incidents-response-chart"]').attributes('data-points')).toBe('1');
   });
 
+  it('uses UserTeam and glossary tree pickers for owner and glossary facets (pin filter types)', async () => {
+    const { wrapper } = await mountDashboard();
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-owner"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-dashboard-filter-glossary"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-dashboard-owner-user-team"]').exists()).toBe(false);
+  });
+
   it('hides hidden filters but still applies the initial filter to the queries', async () => {
     const { wrapper } = await mountDashboard({
       initialFilters: { tags: ['PII.Sensitive'] },
@@ -383,8 +390,8 @@ describe('DataQualityDashboard', () => {
   it('applies two tier picks to the queries (multi-select)', async () => {
     const { wrapper } = await mountDashboard();
     const selects = wrapper.findAllComponents({ name: 'ASelect' });
-    // Filter-bar order: owner, tier, certification, tag, glossary, data product.
-    const tierSelect = selects[1];
+  // Filter-bar order: owner (UserTeam), tier, certification, tag, glossary (tree), data product.
+    const tierSelect = selects[0];
     expect(tierSelect.exists()).toBe(true);
     await tierSelect.vm.$emit('change', ['Tier.Gold', 'Tier.Silver']);
     await flushPromises();
@@ -410,7 +417,7 @@ describe('DataQualityDashboard', () => {
     await flushPromises();
     await flushPromises();
     const selects = wrapper.findAllComponents({ name: 'ASelect' });
-    expect(selects[1].props('value')).toEqual(['Tier.Gold']);
+    expect(selects[0].props('value')).toEqual(['Tier.Gold']);
     expect(lastBatchItem('status')?.q ?? '').toContain('Tier.Gold');
   });
 
@@ -433,8 +440,8 @@ describe('DataQualityDashboard', () => {
     const q = batchItem('status')?.q ?? '';
     expect(q).toContain('PII.A');
     expect(q).toContain('PII.B');
-    // Filter-bar order: owner, tier, certification, tag, glossary, data product.
-    const tagSelect = wrapper.findAllComponents({ name: 'ASelect' })[3];
+    // Filter-bar order: owner (UserTeam), tier, certification, tag, glossary (tree), data product.
+    const tagSelect = wrapper.findAllComponents({ name: 'ASelect' })[2];
     expect(tagSelect.props('value')).toEqual(['PII.A', 'PII.B']);
   });
 });
