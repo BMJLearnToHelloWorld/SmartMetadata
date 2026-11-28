@@ -182,6 +182,13 @@ describe('observability face (C chain)', () => {
     ]);
   });
 
+  it('uses ObservabilityPageShell and gradient header instead of a plain Card (AlertsPage.tsx)', async () => {
+    const { wrapper } = await mountView('/observability/alerts');
+    expect(wrapper.find('[data-testid="observability-page-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-gradient-page-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="observability-page-content"]').exists()).toBe(true);
+  });
+
   it('shows a full-page spinner until observability resource permission resolves', async () => {
     let resolvePerm!: (value: ReturnType<typeof resourcePermission>) => void;
     getResourcePermission.mockImplementation(
