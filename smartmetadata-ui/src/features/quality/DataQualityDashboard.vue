@@ -17,14 +17,12 @@ import {
   DQ_HEALTH_PIE_SEGMENT_ORDER,
   DQ_TEST_CASE_PIE_SEGMENT_ORDER,
   fetchDqDashboardAggregations,
-  fetchDqDashboardFilterOptions,
   fetchDqDashboardTimeSeries,
   filterStateToChartFilters,
   initialDqFilterState,
   visibleDqFilters,
   type DqDashboardAggregations,
   type DqDashboardChartFilters,
-  type DqDashboardFilterOptions,
   type DqDashboardFilterState,
   type DqDashboardTimeSeries,
   type DqHiddenFilter,
@@ -34,6 +32,10 @@ import {
 } from '@/quality/dashboard';
 import type { ChartPoint } from '@/features/charts/types';
 import { convertMillisecondsToHumanReadableFormat } from '@/utils/workflowDateTime';
+import {
+  useDqDashboardFilterSelects,
+  type DqDashboardSearchFilterId,
+} from '@/quality/useDqDashboardFilterSelects';
 
 /**
  * Shared DataQualityDashboard (pin
@@ -84,11 +86,16 @@ const aggregationsError = ref('');
 const timeSeriesError = ref('');
 const range = ref(seriesWindow(30));
 const filters = reactive<DqDashboardFilterState>(initialDqFilterState(props.initialFilters));
-const options = ref<DqDashboardFilterOptions | null>(null);
 const aggregations = ref<DqDashboardAggregations | null>(null);
 const timeSeries = ref<DqDashboardTimeSeries | null>(null);
 
 const visibleFilters = computed(() => visibleDqFilters(props.hiddenFilters));
+const {
+  optionsFor: dqFilterOptionsFor,
+  loadingFor: dqFilterLoadingFor,
+  onSearch: dqFilterOnSearch,
+  onDropdownOpen: dqFilterOnDropdownOpen,
+} = useDqDashboardFilterSelects(visibleFilters, filters);
 const showFilterBar = computed(() => !props.hideFilterBar);
 
 const chartFilters = computed<DqDashboardChartFilters>(() =>
@@ -187,8 +194,8 @@ function setFilter(id: keyof DqDashboardFilterState, value: unknown): void {
 }
 
 /** Pin FilterSelectDropdown showSelectAll parity: pick every loaded option. */
-function selectAll(id: keyof DqDashboardFilterState): void {
-  filters[id] = (options.value?.[id] ?? []).map((option) => option.value);
+function selectAll(id: DqDashboardSearchFilterId): void {
+  filters[id] = dqFilterOptionsFor(id).map((option) => option.value);
 }
 
 /**
@@ -340,14 +347,7 @@ watch(
   { deep: true },
 );
 
-onMounted(async () => {
-  try {
-    options.value = await fetchDqDashboardFilterOptions(
-      visibleFilters.value.includes('glossaryTerms'),
-    );
-  } catch {
-    options.value = null;
-  }
+onMounted(() => {
   reload();
 });
 </script>
@@ -365,7 +365,7 @@ onMounted(async () => {
         allow-clear
         show-search
         :placeholder="t('label.owner')"
-        :options="options?.owner ?? []"
+        :options="[]"
         data-testid="dq-dashboard-filter-owner"
         class="dq-dashboard__filter"
         @change="(value) => setFilter('owner', value)"
@@ -383,10 +383,14 @@ onMounted(async () => {
         mode="multiple"
         allow-clear
         show-search
+        :filter-option="false"
+        :loading="dqFilterLoadingFor('tier')"
         :placeholder="t('label.tier')"
-        :options="options?.tier ?? []"
+        :options="dqFilterOptionsFor('tier')"
         data-testid="dq-dashboard-filter-tier"
         class="dq-dashboard__filter"
+        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('tier', open)"
+        @search="(q) => dqFilterOnSearch('tier', q)"
         @change="(value) => setFilter('tier', value)"
       >
         <template #dropdownRender="{ menuNode }">
@@ -402,10 +406,14 @@ onMounted(async () => {
         mode="multiple"
         allow-clear
         show-search
+        :filter-option="false"
+        :loading="dqFilterLoadingFor('certification')"
         :placeholder="t('label.certification')"
-        :options="options?.certification ?? []"
+        :options="dqFilterOptionsFor('certification')"
         data-testid="dq-dashboard-filter-certification"
         class="dq-dashboard__filter"
+        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('certification', open)"
+        @search="(q) => dqFilterOnSearch('certification', q)"
         @change="(value) => setFilter('certification', value)"
       >
         <template #dropdownRender="{ menuNode }">
@@ -421,10 +429,14 @@ onMounted(async () => {
         mode="multiple"
         allow-clear
         show-search
+        :filter-option="false"
+        :loading="dqFilterLoadingFor('tag')"
         :placeholder="t('label.tag')"
-        :options="options?.tag ?? []"
+        :options="dqFilterOptionsFor('tag')"
         data-testid="dq-dashboard-filter-tag"
         class="dq-dashboard__filter"
+        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('tag', open)"
+        @search="(q) => dqFilterOnSearch('tag', q)"
         @change="(value) => setFilter('tag', value)"
       >
         <template #dropdownRender="{ menuNode }">
@@ -440,10 +452,14 @@ onMounted(async () => {
         mode="multiple"
         allow-clear
         show-search
+        :filter-option="false"
+        :loading="dqFilterLoadingFor('glossaryTerm')"
         :placeholder="t('label.glossary-term')"
-        :options="options?.glossaryTerm ?? []"
+        :options="dqFilterOptionsFor('glossaryTerm')"
         data-testid="dq-dashboard-filter-glossary"
         class="dq-dashboard__filter"
+        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('glossaryTerm', open)"
+        @search="(q) => dqFilterOnSearch('glossaryTerm', q)"
         @change="(value) => setFilter('glossaryTerm', value)"
       >
         <template #dropdownRender="{ menuNode }">
@@ -459,10 +475,14 @@ onMounted(async () => {
         mode="multiple"
         allow-clear
         show-search
+        :filter-option="false"
+        :loading="dqFilterLoadingFor('dataProduct')"
         :placeholder="t('label.data-product')"
-        :options="options?.dataProduct ?? []"
+        :options="dqFilterOptionsFor('dataProduct')"
         data-testid="dq-dashboard-filter-data-product"
         class="dq-dashboard__filter"
+        @dropdown-visible-change="(open) => dqFilterOnDropdownOpen('dataProduct', open)"
+        @search="(q) => dqFilterOnSearch('dataProduct', q)"
         @change="(value) => setFilter('dataProduct', value)"
       >
         <template #dropdownRender="{ menuNode }">

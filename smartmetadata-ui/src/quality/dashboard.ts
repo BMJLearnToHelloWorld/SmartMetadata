@@ -7,7 +7,6 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { listGlossaryTerms } from '@/api/glossaryTerms';
 import {
   DQ_COVERED_ASSETS_AGGREGATION,
   DQ_DIMENSION_STATUS_AGGREGATION,
@@ -18,7 +17,6 @@ import {
   getDataQualityReportBatch,
   type DataQualityReportRow,
 } from '@/api/dataQualityReports';
-import { searchAssets } from '@/api/search';
 import { formatChartTs } from '@/features/charts/series';
 import type { ChartPoint } from '@/features/charts/types';
 import {
@@ -578,39 +576,3 @@ export function filterStateToChartFilters(
   };
 }
 
-export interface DqDashboardFilterOptions {
-  owner: Array<{ value: string; label: string }>;
-  tier: Array<{ value: string; label: string }>;
-  certification: Array<{ value: string; label: string }>;
-  tag: Array<{ value: string; label: string }>;
-  glossaryTerm: Array<{ value: string; label: string }>;
-  dataProduct: Array<{ value: string; label: string }>;
-}
-
-/**
- * Filter-bar options, landing-view precedent: one search for the
- * facet buckets plus the glossary-term list (only when the glossary
- * filter is visible — hidden facets never trigger their loads).
- */
-export async function fetchDqDashboardFilterOptions(
-  includeGlossaryTerms: boolean,
-): Promise<DqDashboardFilterOptions> {
-  const [searchPage, glossaryPage] = await Promise.all([
-    searchAssets('*', 0, 1),
-    includeGlossaryTerms
-      ? listGlossaryTerms({ limit: 50 })
-      : Promise.resolve({ data: [] as Array<{ fullyQualifiedName?: string; name: string; displayName?: string }> }),
-  ]);
-  const facets = searchPage.facets ?? [];
-  return {
-    owner: facetOptions(facets, 'owner'),
-    tier: facetOptions(facets, 'tier'),
-    certification: facetOptions(facets, 'certification'),
-    tag: facetOptions(facets, 'tagFqn'),
-    glossaryTerm: (glossaryPage.data ?? []).map((term) => ({
-      value: term.fullyQualifiedName || term.name,
-      label: term.displayName || term.name,
-    })),
-    dataProduct: facetOptions(facets, 'dataProduct'),
-  };
-}

@@ -86,17 +86,28 @@ function stubFetch(): void {
         });
       }
       if (url.includes('/api/v1/search/query')) {
+        const index = new URL(url, 'http://local.test').searchParams.get('index') ?? '';
+        const q = new URL(url, 'http://local.test').searchParams.get('q') ?? '';
+        if (index === 'tag' && q.includes('classification.name:Tier')) {
+          return jsonResponse({
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _source: {
+                    name: 'Gold',
+                    displayName: 'Gold',
+                    fullyQualifiedName: 'Tier.Gold',
+                    classification: { name: 'Tier' },
+                  },
+                },
+              ],
+            },
+          });
+        }
         return jsonResponse({
-          hits: { total: { value: 20 }, hits: [] },
-          aggregations: {
-            'sterms#entityType': { buckets: [{ key: 'table', doc_count: 20 }] },
-            'sterms#ownerDisplayName': { buckets: [{ key: 'alice', doc_count: 3 }] },
-            'sterms#tier.tagFQN': { buckets: [{ key: 'Tier.Gold', doc_count: 1 }] },
-          },
+          hits: { total: { value: 0 }, hits: [] },
         });
-      }
-      if (url.includes('/api/v1/glossaryTerms')) {
-        return jsonResponse({ data: [] });
       }
       return new Response('not found', { status: 404 });
     }),
