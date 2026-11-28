@@ -449,7 +449,7 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(wrapper.text()).toContain('New');
   });
 
-  it('degrades the assignee candidates to page rows when the aggregate fails', async () => {
+  it('offers no assignee filter options when the aggregate fails (pin NO_ASSIGNEES)', async () => {
     postAggregate.mockRejectedValueOnce(new Error('es down'));
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="incidents-table"]').exists()).toBe(true);
@@ -457,8 +457,18 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     const options = Array.from(document.body.querySelectorAll('.ant-select-item-option')).map((el) =>
       el.textContent?.trim(),
     );
+    expect(options).toEqual([]);
+    expect(searchUsersMock).not.toHaveBeenCalled();
+  });
+
+  it('limits the assignee filter to aggregate names only', async () => {
+    const { wrapper } = await mountView();
+    await openSelectIn(wrapper as never, 'incident-filter-assignee');
+    const options = Array.from(document.body.querySelectorAll('.ant-select-item-option')).map((el) =>
+      el.textContent?.trim(),
+    );
     expect(options).toContain('Alice');
-    expect(options).toContain('Bob');
+    expect(searchUsersMock).not.toHaveBeenCalled();
   });
 
   it('sends the active domain to the list and the aggregate', async () => {

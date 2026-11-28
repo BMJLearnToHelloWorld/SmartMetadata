@@ -24,6 +24,7 @@ import { listTestCaseIncidentsFromSearch } from '@/api/testIncidents';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
 import { INCIDENT_SEVERITY_OPTIONS, officialSeverityLabel } from '@/quality/incidentSeverity';
+import IncidentAssigneeFilterPicker from '@/components/observability/IncidentAssigneeFilterPicker.vue';
 import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -695,10 +696,9 @@ function severityLabel(severity: string | undefined): string {
             size="small"
           >
             <span>{{ t('observability.incidents.assignee') }}</span>
-            <UserTeamPicker
+            <IncidentAssigneeFilterPicker
               :model-value="selectedAssignee"
-              single
-              :candidates="assigneeCandidates"
+              :options="aggregateAssignees"
               data-testid="incident-filter-assignee"
               style="width: 240px"
               @update:model-value="(refs) => updateFilters({ assignee: refs[0]?.name })"
