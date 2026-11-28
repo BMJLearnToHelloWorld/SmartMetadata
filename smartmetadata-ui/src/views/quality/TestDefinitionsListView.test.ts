@@ -190,6 +190,87 @@ describe('TestDefinitionsListView', () => {
     }
   });
 
+  it('dims the table and disables row actions while refetching (TestDefinitionTable isRefetching)', async () => {
+    let resolveSecond!: (value: Response) => void;
+    const secondList = new Promise<Response>((resolve) => {
+      resolveSecond = resolve;
+    });
+    let listCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
+          listCalls += 1;
+          if (listCalls === 1) {
+            return jsonResponse({
+              data: [
+                {
+                  id: 'td1',
+                  name: 'customRule',
+                  fullyQualifiedName: 'customRule',
+                  entityType: 'TABLE',
+                  testPlatforms: ['OpenMetadata'],
+                  enabled: true,
+                  provider: 'user',
+                },
+              ],
+              paging: { total: 1 },
+            });
+          }
+          return secondList;
+        }
+        if (url.includes('/api/v1/permissions/testDefinition')) {
+          return jsonResponse({
+            resource: 'testDefinition',
+            permissions: [{ operation: 'EditAll', access: 'allow' }],
+          });
+        }
+        if (url.includes('/api/v1/dataQuality/dimensions')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/learningResources')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper, router } = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-definition-table-container"]').exists()).toBe(true);
+
+    const bar = wrapper.findComponent({ name: 'TestDefinitionFilterBar' });
+    await bar.vm.$emit('update:entity-type', 'TABLE');
+    await router.isReady();
+    await flushPromises();
+
+    const container = wrapper.get('[data-testid="test-definition-table-container"]');
+    expect(container.classes()).toContain('test-library-table-container--refetching');
+    expect(container.attributes('aria-busy')).toBe('true');
+    const editBtn = wrapper.get('[data-testid="edit-test-definition-customRule"]');
+    expect((editBtn.element as HTMLButtonElement).disabled).toBe(true);
+
+    resolveSecond(
+      jsonResponse({
+        data: [
+          {
+            id: 'td1',
+            name: 'customRule',
+            fullyQualifiedName: 'customRule',
+            entityType: 'TABLE',
+            testPlatforms: ['OpenMetadata'],
+            enabled: true,
+            provider: 'user',
+          },
+        ],
+        paging: { total: 1 },
+      }),
+    );
+    await flushPromises();
+    expect(container.classes()).not.toContain('test-library-table-container--refetching');
+    wrapper.unmount();
+  });
+
   it('applies entity-type filter immediately and clears all filters (pin TestDefinitionFilterBar)', async () => {
     const { wrapper, router } = await mountView();
     vi.mocked(fetch).mockClear();

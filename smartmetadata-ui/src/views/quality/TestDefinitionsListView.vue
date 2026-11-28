@@ -101,7 +101,10 @@ const hasFetchedRowPermissions = ref(false);
 const permissionLoading = computed(
   () => !hasFetchedRowPermissions.value || permissionLoadingCount.value > 0,
 );
-const rowControlsDisabled = computed(() => loading.value);
+/** Pin TestDefinitionTable isRefetching: dim rows in place, do not swap for overlay. */
+const isInitialLoading = computed(() => loading.value && definitions.value.length === 0);
+const isRefetching = computed(() => loading.value && definitions.value.length > 0);
+const rowControlsDisabled = computed(() => isRefetching.value);
 
 const entityTypeOptions = computed(() =>
   TEST_LIBRARY_ENTITY_TYPES.map((key) => ({
@@ -575,16 +578,22 @@ onMounted(async () => {
       :on-clear-filters="clearAllFilters"
     />
 
-    <Table
+    <div
       v-else
-      :columns="columns"
-      :data-source="definitions"
-      :loading="loading"
-      :pagination="false"
-      row-key="id"
-      data-testid="test-definitions-table"
-      @change="onTableChange"
+      class="test-library-table-container"
+      :class="{ 'test-library-table-container--refetching': isRefetching }"
+      :aria-busy="loading"
+      data-testid="test-definition-table-container"
     >
+      <Table
+        :columns="columns"
+        :data-source="definitions"
+        :loading="isInitialLoading"
+        :pagination="false"
+        row-key="id"
+        data-testid="test-definitions-table"
+        @change="onTableChange"
+      >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
           <span :data-testid="`test-definition-row-${(record as TestDefinition).id}`">
@@ -651,7 +660,8 @@ onMounted(async () => {
           </div>
         </template>
       </template>
-    </Table>
+      </Table>
+    </div>
 
     <div class="test-library-page__pager" data-testid="test-library-pagination">
       <Button type="link" :disabled="!hasPrev" data-testid="test-library-prev" @click="onPrev">
@@ -707,6 +717,12 @@ onMounted(async () => {
 }
 .test-library-page__lead {
   margin-bottom: 0 !important;
+}
+.test-library-table-container {
+  transition: opacity 150ms;
+}
+.test-library-table-container--refetching {
+  opacity: 0.6;
 }
 .test-library-page__filters {
   display: flex;
