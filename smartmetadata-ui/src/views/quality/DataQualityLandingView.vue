@@ -3,17 +3,25 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, provide, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import { Button, Dropdown, Menu, Tabs } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import DqDashboardExportModal from '@/components/quality/DqDashboardExportModal.vue';
 import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
 import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
+import {
+  dataQualityContextKey,
+  type DataQualityCreateActions,
+} from '@/quality/dataQualityContext';
+import { getCurrentIsoDateLabel, routeQueryToSearch, searchStringToQuery } from '@/quality/dqRouteSearch';
 import { parseDqTab, type DqLandingTab } from '@/quality/landing';
+import { useTabSearchMemory } from '@/quality/useTabSearchMemory';
+import { usePermissionStore } from '@/stores/permissions';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
 
@@ -27,10 +35,19 @@ import TestSuitesListView from './TestSuitesListView.vue';
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 
 const activeTab = ref<DqLandingTab>(parseDqTab(route.params.tab ?? route.query.tab));
 const isTestCaseModalOpen = ref(false);
 const isBundleSuiteModalOpen = ref(false);
+const isExportModalOpen = ref(false);
+const exportDefaultFileName = ref('');
+const canCreateTestSuite = ref(false);
+const canCreateTestCase = ref(true);
+
+const ownsTheUrl = computed(() => route.path.startsWith('/data-quality'));
+const routeSearch = computed(() => routeQueryToSearch(route));
+const getTabSearch = useTabSearchMemory(activeTab, routeSearch, ownsTheUrl);
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
@@ -83,12 +100,6 @@ function onAddMenu({ key }: { key: string | number }): void {
   }
 }
 
-function dqQueryWithoutTab() {
-  const query = { ...route.query };
-  delete query.tab;
-  return query;
-}
-
 function dataQualityPagePath(tab: DqLandingTab, subTab?: string): string {
   if (tab === 'test-suites' && subTab) {
     return '/data-quality/' + tab + '/' + subTab;
@@ -98,8 +109,15 @@ function dataQualityPagePath(tab: DqLandingTab, subTab?: string): string {
 
 function onTabChange(key: string | number): void {
   const tab = parseDqTab(key);
+  if (tab === activeTab.value) {
+    return;
+  }
   activeTab.value = tab;
-  void router.replace({ path: dataQualityPagePath(tab), query: dqQueryWithoutTab() });
+  const storedSearch = getTabSearch(tab);
+  void router.replace({
+    path: dataQualityPagePath(tab),
+    query: searchStringToQuery(storedSearch),
+  });
 }
 
 /** Pin DataQualityPage: page-level TestCaseFormDrawer, no tab switch. */
@@ -111,6 +129,50 @@ function openCreateCase(): void {
 function openCreateSuite(): void {
   isBundleSuiteModalOpen.value = true;
 }
+
+function openExportDashboardModal(): void {
+  exportDefaultFileName.value = `Dashboard-Chart_${getCurrentIsoDateLabel()}`;
+  isExportModalOpen.value = true;
+}
+
+/**
+ * Pin showModal + runNonCsvExport(PDF): official ExportUtilClassBase has no
+ * PDF capture implementation (returns null) — close the modal after submit.
+ */
+function onDashboardExport(_fileName: string): void {
+  isExportModalOpen.value = false;
+}
+
+const createActions = computed<DataQualityCreateActions>(() => ({
+  onAddTestCase: openCreateCase,
+  onAddBundleSuite: openCreateSuite,
+  canCreateTestCase: canCreateTestCase.value,
+  canCreateBundleSuite: canCreateTestSuite.value,
+}));
+
+const dataQualityContext = computed(() => ({
+  createActions: createActions.value,
+  isActive: ownsTheUrl.value,
+}));
+provide(dataQualityContextKey, dataQualityContext);
+
+async function loadResourcePermissions(): Promise<void> {
+  try {
+    const [testSuiteOps, testCaseOps] = await Promise.all([
+      permissionStore.getResourcePermission('testSuite'),
+      permissionStore.getResourcePermission('testCase'),
+    ]);
+    canCreateTestSuite.value = Boolean(testSuiteOps.Create);
+    canCreateTestCase.value = Boolean(testCaseOps.Create);
+  } catch {
+    canCreateTestSuite.value = false;
+    canCreateTestCase.value = false;
+  }
+}
+
+onMounted(() => {
+  void loadResourcePermissions();
+});
 
 watch(
   () => [route.params.tab, route.query.tab],
@@ -131,34 +193,45 @@ watch(
           learning-page-id="dataQuality"
         />
       </div>
-      <Dropdown v-if="activeTab === 'dashboard'" :trigger="['click']">
-        <Button type="primary" data-testid="data-quality-add-button-menu">
-          {{ t('label.add') }}
-          <SmIcon icon-key="action-chevron-down" />
-        </Button>
-        <template #overlay>
-          <Menu @click="onAddMenu">
-            <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('label.add-a-entity', { entity: t('label.test-case') }) }}</Menu.Item>
-            <Menu.Item key="suite" data-testid="dq-landing-add-suite">{{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}</Menu.Item>
-          </Menu>
+      <div class="dq-landing__actions">
+        <template v-if="activeTab === 'dashboard'">
+          <Button data-testid="export-pdf-button" @click="openExportDashboardModal">
+            {{ t('label.export-pdf') }}
+          </Button>
+          <Dropdown :trigger="['click']">
+            <Button type="primary" data-testid="data-quality-add-button-menu">
+              {{ t('label.add') }}
+              <SmIcon icon-key="action-chevron-down" />
+            </Button>
+            <template #overlay>
+              <Menu @click="onAddMenu">
+                <Menu.Item key="case" data-testid="dq-landing-add-case">{{ t('label.add-a-entity', { entity: t('label.test-case') }) }}</Menu.Item>
+                <Menu.Item
+                  v-if="canCreateTestSuite"
+                  key="suite"
+                  data-testid="dq-landing-add-suite"
+                >{{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}</Menu.Item>
+              </Menu>
+            </template>
+          </Dropdown>
         </template>
-      </Dropdown>
-      <Button
-        v-else-if="activeTab === 'test-cases'"
-        type="primary"
-        data-testid="add-test-case-btn"
-        @click="openCreateCase"
-      >
-        {{ t('label.add-a-entity', { entity: t('label.test-case') }) }}
-      </Button>
-      <Button
-        v-else
-        type="primary"
-        data-testid="add-test-suite-btn"
-        @click="openCreateSuite"
-      >
-        {{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}
-      </Button>
+        <Button
+          v-else-if="activeTab === 'test-cases'"
+          type="primary"
+          data-testid="add-test-case-btn"
+          @click="openCreateCase"
+        >
+          {{ t('label.add-a-entity', { entity: t('label.test-case') }) }}
+        </Button>
+        <Button
+          v-else-if="canCreateTestSuite"
+          type="primary"
+          data-testid="add-test-suite-btn"
+          @click="openCreateSuite"
+        >
+          {{ t('label.add-a-entity', { entity: t('label.bundle-suite') }) }}
+        </Button>
+      </div>
     </div>
 
     <Tabs :active-key="activeTab" data-testid="dq-landing-tabs" @change="onTabChange">
@@ -190,6 +263,12 @@ watch(
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
     />
   </div>
+  <DqDashboardExportModal
+    :open="isExportModalOpen"
+    :default-file-name="exportDefaultFileName"
+    @cancel="isExportModalOpen = false"
+    @export="onDashboardExport"
+  />
   <TestCaseFormDrawer
     :open="isTestCaseModalOpen"
     @cancel="isTestCaseModalOpen = false"
@@ -209,5 +288,12 @@ watch(
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+}
+
+.dq-landing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 </style>

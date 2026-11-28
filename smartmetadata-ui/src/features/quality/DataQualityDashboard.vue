@@ -476,7 +476,7 @@ onMounted(() => {
       <Space direction="vertical" size="middle" style="width: 100%">
         <Card
           data-testid="dq-dashboard-health"
-          class="dq-dashboard__card"
+          class="dq-dashboard__card export-pdf-container"
           :title="t('label.data-health')"
         >
           <Typography.Paragraph type="secondary">{{ t('message.data-health-sub-header') }}</Typography.Paragraph>
@@ -549,7 +549,7 @@ onMounted(() => {
 
         <Card
           data-testid="dq-dashboard-dimensions"
-          class="dq-dashboard__card"
+          class="dq-dashboard__card export-pdf-container"
           :title="t('label.data-dimensions')"
         >
           <Typography.Paragraph type="secondary">{{ t('message.data-dimensions-sub-header') }}</Typography.Paragraph>
@@ -576,7 +576,7 @@ onMounted(() => {
 
         <Card
           data-testid="dq-dashboard-status"
-          class="dq-dashboard__card"
+          class="dq-dashboard__card export-pdf-container"
           :title="t('label.test-case-status')"
         >
           <Typography.Paragraph type="secondary">{{ t('message.test-case-status-sub-header') }}</Typography.Paragraph>
@@ -626,7 +626,7 @@ onMounted(() => {
 
         <Card
           data-testid="dq-dashboard-incidents"
-          class="dq-dashboard__card"
+          class="dq-dashboard__card export-pdf-container"
           :title="t('label.incident-metrics')"
         >
           <Typography.Paragraph type="secondary">{{ t('message.incident-metrics-sub-header') }}</Typography.Paragraph>

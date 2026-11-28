@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import SmChart from '@/features/charts/SmChart.vue';
+import DqDashboardExportModal from '@/components/quality/DqDashboardExportModal.vue';
+import DqDashboardOwnerFilter from '@/features/quality/DqDashboardOwnerFilter.vue';
 import DataQualityLandingView from './DataQualityLandingView.vue';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
@@ -27,6 +29,26 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 const batchRequests: unknown[] = [];
+
+const permState = vi.hoisted(() => ({
+  testSuiteCreate: true,
+  testCaseCreate: true,
+}));
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    isAdminUser: true,
+    getResourcePermission: vi.fn(async (resource: string) => {
+      if (resource === 'testSuite') {
+        return { Create: permState.testSuiteCreate };
+      }
+      if (resource === 'testCase') {
+        return { Create: permState.testCaseCreate };
+      }
+      return {};
+    }),
+  }),
+}));
 
 function stubFetch(mode: 'ok' | 'quality-404' = 'ok'): void {
   batchRequests.length = 0;
@@ -247,6 +269,8 @@ async function mountLanding(path = '/quality/test-cases', locale?: 'zh-CN' | 'en
 describe('DataQualityLandingView', () => {
   beforeEach(() => {
     localStorage.clear();
+    permState.testSuiteCreate = true;
+    permState.testCaseCreate = true;
     stubFetch('ok');
   });
 
@@ -277,6 +301,8 @@ describe('DataQualityLandingView', () => {
     expect(wrapper.find('[data-testid="dq-dashboard-incidents"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="dq-incident-metrics"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="data-quality-add-button-menu"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="export-pdf-button"]').exists()).toBe(true);
+    expect(wrapper.findAll('.export-pdf-container').length).toBeGreaterThanOrEqual(4);
   });
 
   it('opens Test Cases from the tab bar and rows navigate to the existing detail route', async () => {
@@ -331,8 +357,8 @@ describe('DataQualityLandingView', () => {
       | undefined;
     expect(firstBatch?.requests.find((item) => item.key === 'status')?.q).toContain('deleted');
     batchRequests.length = 0;
-    const ownerSelect = wrapper.findAllComponents({ name: 'ASelect' })[0];
-    ownerSelect.vm.$emit('change', ['alice']);
+    const ownerFilter = wrapper.findComponent(DqDashboardOwnerFilter);
+    ownerFilter.vm.$emit('update:modelValue', ['alice']);
     await flushPromises();
     await flushPromises();
     expect(batchRequests.length).toBeGreaterThanOrEqual(1);
@@ -479,6 +505,43 @@ describe('DataQualityLandingView', () => {
     await flushPromises();
     expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
     expect(wrapper.findComponent(TestCasesListView).props('status')).toBe('Failed');
+  });
+
+  it('restores each tab query string when switching between tabs', async () => {
+    const initialSearch =
+      '?testCaseStatus=Failed&startTs=100&endTs=200';
+    const { wrapper, router } = await mountLanding(`/data-quality/test-cases${initialSearch}`);
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    await tabs[2].trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-suites');
+    expect(router.currentRoute.value.query.testCaseStatus).toBeUndefined();
+
+    await tabs[1].trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
+    expect(router.currentRoute.value.query.startTs).toBe('100');
+    expect(router.currentRoute.value.query.endTs).toBe('200');
+  });
+
+  it('hides bundle-suite chrome when testSuite Create is denied', async () => {
+    permState.testSuiteCreate = false;
+    const { wrapper } = await mountLanding();
+    await wrapper.get('[data-testid="data-quality-add-button-menu"]').trigger('click');
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="dq-landing-add-suite"]')).toBeNull();
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    await tabs[2].trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="add-test-suite-btn"]').exists()).toBe(false);
+  });
+
+  it('opens the dashboard export modal from export-pdf-button', async () => {
+    const { wrapper } = await mountLanding();
+    await wrapper.get('[data-testid="export-pdf-button"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.findComponent(DqDashboardExportModal).props('open')).toBe(true);
   });
 
   it('does not apply the dashboard date range as a last-run filter when the Test Cases tab is opened from the tab bar', async () => {
