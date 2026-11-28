@@ -9,6 +9,7 @@
  */
 import { loadSession } from '@/auth/token';
 import AppShell from '@/layouts/AppShell.vue';
+import { officialEntityDetailGuard, OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN } from './entityDetailGuard';
 /**
  * Route views are lazy-loaded (R8 code-splitting): the shell stays in the
  * entry chunk, each view becomes its own chunk, so the initial download
@@ -252,18 +253,6 @@ export const router = createRouter({
         // ConnectionsPage, RoutePosition.APP) — the retired
         // `ingestion/services` aggregate list lives here now.
         { path: 'connections', name: 'connections', component: ConnectionsView },
-        {
-          path: 'assets/:entityType/:fqn',
-          name: 'asset',
-          component: AssetDetailView,
-          props: true,
-        },
-        {
-          path: 'assets/:entityType/:fqn/versions',
-          name: 'asset-version',
-          component: AssetVersionView,
-          props: true,
-        },
         { path: 'insights', name: 'insights', component: InsightsView },
         // G-10 (visual comparison): official DATA_INSIGHT_WITH_TAB
         // '/data-insights/:tab' with tab 'data-assets'
@@ -1193,6 +1182,54 @@ export const router = createRouter({
           name: 'announcement-duplicate',
           component: AnnouncementsListView,
           meta: { guard: 'admin-only' },
+        },
+        // Official EntityRouter (AuthenticatedAppRouter mounts
+        // `/:entityType/*`, then ENTITY_DETAILS / WITH_TAB /
+        // WITH_SUB_TAB, with version routes registered first so
+        // `versions` is never read as a tab). Official has no
+        // `?tab=`/`?subTab=` compatibility redirect and no
+        // `/assets/` prefix — constructors emit these paths only.
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions/:version/:tab`,
+          name: 'asset-version-tab',
+          component: AssetVersionView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions/:version`,
+          name: 'asset-version-detail',
+          component: AssetVersionView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/versions`,
+          name: 'asset-version',
+          component: AssetVersionView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/:tab/:subTab`,
+          name: 'asset-subtab',
+          component: AssetDetailView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn/:tab`,
+          name: 'asset-tab',
+          component: AssetDetailView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
+        },
+        {
+          path: `:entityType(${OFFICIAL_ENTITY_DETAIL_TYPE_PATTERN})/:fqn`,
+          name: 'asset',
+          component: AssetDetailView,
+          props: true,
+          beforeEnter: officialEntityDetailGuard,
         },
         { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },
       ],

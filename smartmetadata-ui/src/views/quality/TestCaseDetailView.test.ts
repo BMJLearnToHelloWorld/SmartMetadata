@@ -11,8 +11,26 @@ import { flushPromises, mount } from '@vue/test-utils';
 import Antd, { Tabs } from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createPinia, setActivePinia } from 'pinia';
+import { computed } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import TestCaseDetailView from './TestCaseDetailView.vue';
+
+vi.mock('@/composables/useEntityPermissions', () => ({
+  useEntityPermissions: () => ({
+    permissions: computed(() => ({ Trigger: true, Delete: true, EditDisplayName: true, EditAll: true })),
+    isLoading: computed(() => false),
+    canDelete: computed(() => true),
+    canEditDisplayName: computed(() => true),
+    canEditAll: computed(() => true),
+  }),
+}));
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    getResourcePermission: vi.fn(async () => ({ Trigger: true, Delete: true, EditDisplayName: true, EditAll: true })),
+  }),
+}));
 
 const getTestCase = vi.fn();
 const getTestCaseByName = vi.fn();
@@ -38,19 +56,21 @@ vi.mock('@/api/testIncidents', () => ({
 }));
 
 async function mountView(props: { id: string; tab?: string } = { id: 'tc1' }) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: TestCaseDetailView, props: true },
       { path: '/test-case/:fqn/:tab?', name: 'test-case-alias', component: { template: '<div />' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div />' } },
+      { path: '/:entityType/:fqn/:tab?/:subTab?', name: 'asset', component: { template: '<div />' } },
     ],
   });
   await router.push({ name: 'quality-test-case', params: { id: props.id } });
   await router.isReady();
   const wrapper = mount(TestCaseDetailView, {
     props,
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -340,7 +360,15 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
       ],
     });
     const { wrapper } = await mountView();
-    await wrapper.get('[data-testid="edit-test-case"]').trigger('click');
+    await wrapper.get('[data-testid="manage-button"]').trigger('click');
+    await flushPromises();
+    const rename = wrapper.find('[data-testid="edit-test-case"]');
+    if (rename.exists()) {
+      await rename.trigger('click');
+    } else {
+      const bodyRename = document.body.querySelector('[data-testid="edit-test-case"]') as HTMLElement | null;
+      bodyRename?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
     await flushPromises();
     expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).not.toBeNull();
     expect(document.body.querySelector('[data-testid="table-diff-param-keyColumns"]')).not.toBeNull();

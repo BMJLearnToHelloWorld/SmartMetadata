@@ -27,7 +27,7 @@ export interface RouteDomainGroup {
 export const ROUTE_DOMAIN_GROUPS: RouteDomainGroup[] = [
   { key: 'auth', prefixes: ['/login'] },
   { key: 'home', prefixes: ['/my-data'] },
-  { key: 'discover', prefixes: ['/explore', '/search', '/assets'] },
+  { key: 'discover', prefixes: ['/explore', '/search', '/table', '/topic', '/dashboard', '/pipeline', '/mlmodel', '/container', '/searchIndex', '/storedProcedure', '/chart', '/metric', '/dashboardDataModel', '/database', '/databaseSchema', '/apiCollection', '/apiEndpoint', '/directory', '/file', '/spreadsheet', '/worksheet', '/query'] },
   { key: 'insights', prefixes: ['/insights'] },
   { key: 'lineage', prefixes: ['/lineage'] },
   { key: 'admin', prefixes: ['/admin'] },

@@ -46,6 +46,7 @@ import { useDomainStore } from '@/stores/domain';
 import { usePermissionStore } from '@/stores/permissions';
 import type { EntityRef } from '@/types/api';
 import type { IncidentStatus, TestIncident } from '@/types/quality';
+import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -390,13 +391,11 @@ function openTestCase(record: TestIncident): void {
 }
 
 function openTable(tableFqn: string): void {
-  void router.push({
-    name: 'asset',
-    params: { entityType: 'table', fqn: tableFqn },
-    // Official IncidentManagerTable table-link: EntityTabs.PROFILER +
-    // ProfilerTabPath.DATA_QUALITY. Product asset routes use query tab/subTab.
-    query: { tab: 'profiler', subTab: 'data-quality' },
-  });
+  // Official IncidentManagerTable table-link:
+  // getEntityDetailsPath(TABLE, fqn, EntityTabs.PROFILER, ProfilerTabPath.DATA_QUALITY)
+  void router.push(
+    getEntityDetailsPath('table', tableFqn, ENTITY_TAB_PROFILER, 'data-quality'),
+  );
 }
 
 /**

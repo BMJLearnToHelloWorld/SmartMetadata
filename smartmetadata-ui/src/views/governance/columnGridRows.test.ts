@@ -205,9 +205,7 @@ describe('column links', () => {
   it('builds the asset location with tab and column hash', () => {
     const occurrence = MULTI_ITEM.groups[0].occurrences[0];
     expect(columnEntityLocation(occurrence)).toEqual({
-      name: 'asset',
-      params: { entityType: 'table', fqn: 'svc.db.schema.users' },
-      query: { tab: 'schema' },
+      path: '/table/svc.db.schema.users/schema',
       hash: '#email',
     });
   });

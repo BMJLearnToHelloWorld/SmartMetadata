@@ -27,6 +27,7 @@ import type { TestIncident, TestSummary } from '@/types/quality';
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { RouteLocationRaw } from 'vue-router';
+import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 
 /**
  * Official AssetHealth widget
@@ -118,9 +119,11 @@ function ctaTarget(type: AssetHealthCtaType): RouteLocationRaw | undefined {
       : undefined;
   }
   if (type === 'add-tests' || type === 'enable-observability') {
-    return { query: { tab: 'profiler' } };
+    // Official AssetHealthWidget: getEntityDetailsPath(TABLE, tableFqn, EntityTabs.PROFILER)
+    return { path: getEntityDetailsPath('table', props.tableFqn, ENTITY_TAB_PROFILER) };
   }
-  return { query: { tab: 'contract' } };
+  // Official AssetHealthWidget: getEntityDetailsPath(TABLE, tableFqn, EntityTabs.CONTRACT)
+  return { path: getEntityDetailsPath('table', props.tableFqn, 'contract') };
 }
 
 onMounted(load);

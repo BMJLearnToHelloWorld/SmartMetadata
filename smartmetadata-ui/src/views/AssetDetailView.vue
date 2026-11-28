@@ -56,6 +56,7 @@ import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit, preservedTabKeys } from '@/catalog/entityDetailTabs';
 import { assetLocation, isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
+import { getEntityDetailsPath } from '@/utils/fqnPaths';
 import {
   findCustomizedTabEntry,
   getDetailsTabWithNewLabel,
@@ -742,11 +743,13 @@ const usagePercentileText = computed(() =>
 
 function onTabChange(key: string): void {
   activeTab.value = key;
+  const next = { ...route.query };
+  delete next.tab;
+  delete next.subTab;
   void router
     .replace({
-      name: 'asset',
-      params: { entityType: props.entityType, fqn: props.fqn },
-      query: { ...route.query, tab: key },
+      path: getEntityDetailsPath(props.entityType, props.fqn, key),
+      query: next,
     })
     .catch(() => undefined);
 }
@@ -1005,7 +1008,7 @@ async function load(): Promise<void> {
         schemaTagAccess.value = { canEditTags: false, canEditGlossaryTerms: false, readOnly: deleted };
       }
     }
-    const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : '';
+    const requestedTab = typeof route.params.tab === 'string' ? route.params.tab : '';
     activeTab.value = getRenderedActiveTab(tabs.value, requestedTab || undefined);
     // Pin tableQueryCountFn runs on the table page: the count resolves
     // independently of the tab mount, and a failure leaves the tab
@@ -1943,6 +1946,17 @@ watch(
     void load();
   },
   { immediate: true },
+);
+
+watch(
+  () => route.params.tab,
+  (tab) => {
+    if (!tabs.value.length) {
+      return;
+    }
+    const requestedTab = typeof tab === 'string' ? tab : '';
+    activeTab.value = getRenderedActiveTab(tabs.value, requestedTab || undefined);
+  },
 );
 
 onMounted(() => {

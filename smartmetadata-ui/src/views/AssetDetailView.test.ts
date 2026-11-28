@@ -59,7 +59,9 @@ async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders', que
     history: createMemoryHistory(),
     routes: [
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
       {
@@ -69,7 +71,17 @@ async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders', que
       },
     ],
   });
-  await router.push({ path: `/assets/${entityType}/${fqn}`, query });
+  const tab = query.tab;
+  const subTab = query.subTab;
+  const restQuery = { ...query };
+  delete restQuery.tab;
+  delete restQuery.subTab;
+  const detailPath = subTab && tab
+    ? `/${entityType}/${fqn}/${tab}/${subTab}`
+    : tab
+      ? `/${entityType}/${fqn}/${tab}`
+      : `/${entityType}/${fqn}`;
+  await router.push({ path: detailPath, query: restQuery });
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
     props: { entityType, fqn },
@@ -472,11 +484,13 @@ async function mountTypedView(entityType: string, fqn: string) {
     history: createMemoryHistory(),
     routes: [
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: AssetDetailView, props: true },
+      { path: '/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
     ],
   });
-  await router.push(`/assets/${entityType}/${fqn}`);
+  await router.push(`/${entityType}/${fqn}`);
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
     props: { entityType, fqn },

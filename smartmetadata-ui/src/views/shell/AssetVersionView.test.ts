@@ -31,11 +31,11 @@ async function mountView(versionsBody: unknown) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/assets/:entityType/:fqn/versions', name: 'asset-version', component: AssetVersionView, props: true },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/versions', name: 'asset-version', component: AssetVersionView, props: true },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
     ],
   });
-  await router.push('/assets/table/svc.db.schema.orders/versions');
+  await router.push('/table/svc.db.schema.orders/versions');
   await router.isReady();
   const wrapper = mount(AssetVersionView, {
     props: { entityType: 'table', fqn: 'svc.db.schema.orders' },

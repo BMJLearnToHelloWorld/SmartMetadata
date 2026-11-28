@@ -27,6 +27,8 @@ import {
   getTeamAndUserDetailsPath,
   getTeamsWithFqnPath,
   getUserPath,
+  getEntityDetailsPath,
+  getTestCaseDetailPagePath,
 } from './fqnPaths';
 
 describe('getEncodedFqn', () => {
@@ -134,5 +136,40 @@ describe('entity constructors', () => {
   it('resolves through the constructor table', () => {
     expect(getFqnPath('team', 't')).toBe('/settings/members/teams/t');
     expect(getFqnPath('user', 'u')).toBe('/users/u');
+  });
+});
+
+describe('getEntityDetailsPath', () => {
+  it('builds official entity detail, tab, and profiler/activity sub-tab paths', () => {
+    expect(getEntityDetailsPath('table', 'svc.db.schema.orders')).toBe(
+      '/table/svc.db.schema.orders',
+    );
+    expect(getEntityDetailsPath('table', 'svc.db.schema.orders', 'schema')).toBe(
+      '/table/svc.db.schema.orders/schema',
+    );
+    expect(getEntityDetailsPath('table', 'svc.db.schema.orders', 'profiler', 'data-quality')).toBe(
+      '/table/svc.db.schema.orders/profiler/data-quality',
+    );
+    expect(getEntityDetailsPath('table', 'svc.db.schema.orders', 'profiler')).toBe(
+      '/table/svc.db.schema.orders/profiler',
+    );
+    expect(getEntityDetailsPath('table', 'svc.db.schema.orders', 'activity_feed')).toBe(
+      '/table/svc.db.schema.orders/activity_feed/all',
+    );
+    expect(getEntityDetailsPath('table', 'svc.db.schema.orders', 'activity_feed', 'mentions')).toBe(
+      '/table/svc.db.schema.orders/activity_feed/mentions',
+    );
+    expect(getEntityDetailsPath('table', 'svc/db orders', 'lineage')).toBe(
+      '/table/svc%2Fdb%20orders/lineage',
+    );
+  });
+
+  it('builds official test-case detail paths with the default results tab', () => {
+    expect(getTestCaseDetailPagePath('suite.case')).toBe(
+      '/test-case/suite.case/test-case-results',
+    );
+    expect(getTestCaseDetailPagePath('suite.case', 'sql-query')).toBe(
+      '/test-case/suite.case/sql-query',
+    );
   });
 });

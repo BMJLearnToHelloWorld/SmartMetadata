@@ -87,7 +87,9 @@ async function mountView(query: Record<string, string> = {}, params: Record<stri
     history: createMemoryHistory(),
     routes: [
       { path: '/search/:tab?', name: 'search', component: SearchView },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
       { path: '/governance/terms/:id', name: 'governance-term', component: { template: '<div>term</div>' } },
       { path: '/governance/tags/:id', name: 'governance-tag', component: { template: '<div>tag</div>' } },
@@ -1063,12 +1065,13 @@ describe('SearchView empty results', () => {
     await flushPromises();
     await wrapper.get('[data-testid="explore-preview-lineage"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('asset');
+    expect(router.currentRoute.value.name).toBe('asset-tab');
     expect(router.currentRoute.value.params).toMatchObject({
       entityType: 'table',
       fqn: 'svc.db.schema.orders',
+      tab: 'lineage',
     });
-    expect(router.currentRoute.value.query).toMatchObject({ tab: 'lineage' });
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
   });
 });
 
@@ -1430,8 +1433,8 @@ describe('SearchView result cards (B2-E6, D18–D24)', () => {
     const links = crumbs.findAll('a');
     expect(links.map((link) => link.text())).toEqual(['analytics', 'marts']);
     expect(links.map((link) => link.attributes('href'))).toEqual([
-      '/assets/database/bigquery.analytics',
-      '/assets/databaseSchema/bigquery.analytics.marts',
+      '/database/bigquery.analytics',
+      '/databaseSchema/bigquery.analytics.marts',
     ]);
     expect(crumbs.text()).toContain('BigQuery Prod');
   });
@@ -1952,7 +1955,9 @@ describe('SearchView export (D10)', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/search', name: 'search', component: SearchView },
-        { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+        { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
         { path: '/context-center', name: 'context-center-overview', component: { template: '<div>context</div>' } },
         { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>domains</div>' } },
         {

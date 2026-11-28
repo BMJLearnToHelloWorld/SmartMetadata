@@ -84,9 +84,18 @@ const baseProps = {
 async function mountTab(locale: 'en-US' | 'zh-CN' = 'en-US', query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: { template: '<div />' } }],
+    routes: [
+      { path: '/:entityType/:fqn/:tab/:subTab?', component: { template: '<div />' } },
+    ],
   });
-  await router.push({ path: '/', query });
+  const subTab = query.subTab;
+  const restQuery = { ...query };
+  delete restQuery.subTab;
+  delete restQuery.tab;
+  const path = subTab
+    ? '/table/svc.db.schema.orders/profiler/' + subTab
+    : '/table/svc.db.schema.orders/profiler';
+  await router.push({ path, query: restQuery });
   await router.isReady();
   const wrapper = mount(AssetDataObservabilityTab, {
     props: baseProps,
@@ -131,4 +140,12 @@ describe('AssetDataObservabilityTab official profiler children', () => {
     expect(badge.text()).toBe('3');
     wrapper.unmount();
   });
+
+  it('initializes the Data Quality sub-tab from the official path segment', async () => {
+    const { wrapper, router } = await mountTab('en-US', { subTab: 'data-quality' });
+    expect(router.currentRoute.value.params.subTab).toBe('data-quality');
+    expect(wrapper.get('[data-testid="asset-data-quality-tab"]').isVisible()).toBe(true);
+    wrapper.unmount();
+  });
+
 });

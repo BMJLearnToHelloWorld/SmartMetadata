@@ -29,8 +29,11 @@ const SHARED_TAIL: AssetTabKey[] = ['lineage', 'activity', 'customProperties'];
 export function assetTabKeys(entityType: string): AssetTabKey[] {
   // Official TabsIds with no OVERVIEW: Pipeline, Directory, Spreadsheet,
   // Worksheet (t418u). Chart keeps overview because it aliases official DETAILS.
-  // File keeps official OVERVIEW. Query stays on overview until official TabsIds
-  // are evidenced (QueryClassBase has none).
+  // File keeps official OVERVIEW. Official QueryPage (QueryClassBase has no
+  // TabsIds) is /query-view/:fqn/:queryId and has no overview or entity tabs.
+  if (entityType === 'query') {
+    return [];
+  }
   const noOverviewFallback = new Set(['pipeline', 'directory', 'spreadsheet', 'worksheet']);
   const keys: AssetTabKey[] = noOverviewFallback.has(entityType) ? [] : ['overview'];
   switch (entityType) {

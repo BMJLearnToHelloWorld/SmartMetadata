@@ -6,8 +6,20 @@ import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createPinia, setActivePinia } from 'pinia';
+import { computed } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import TestSuiteDetailView from './TestSuiteDetailView.vue';
+
+vi.mock('@/composables/useEntityPermissions', () => ({
+  useEntityPermissions: () => ({
+    permissions: computed(() => ({ Delete: true, EditDisplayName: true, EditAll: true })),
+    isLoading: computed(() => false),
+    canDelete: computed(() => true),
+    canEditDisplayName: computed(() => true),
+    canEditAll: computed(() => true),
+  }),
+}));
 
 const getTestSuite = vi.fn();
 
@@ -17,6 +29,8 @@ vi.mock('@/api/testSuites', () => ({
 }));
 
 async function mountView() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -28,7 +42,7 @@ async function mountView() {
   await router.isReady();
   const wrapper = mount(TestSuiteDetailView, {
     props: { id: 'ts1' },
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return wrapper;
@@ -89,9 +103,11 @@ describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', ()
     });
     await router.push({ name: 'quality-test-suite', params: { id: 'ts1' }, query: { tab: 'pipeline' } });
     await router.isReady();
+    const pinia = createPinia();
+    setActivePinia(pinia);
     const wrapper = mount(TestSuiteDetailView, {
       props: { id: 'ts1' },
-      global: { plugins: [router, Antd, createTestI18n()] },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     await flushPromises();
     await wrapper.find('[data-testid="add-test-suite-ingestion"]').trigger('click');

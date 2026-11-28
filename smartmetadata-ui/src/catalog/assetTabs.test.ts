@@ -46,7 +46,7 @@ describe('assetTabKeys', () => {
     // Official asset-detail TabsIds have no top-level Quality tab; table
     // quality lives under Data Observability / Profiler.
     expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
-    expect(assetTabKeys('query')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('query')).toEqual([]);
     expect(assetTabKeys('directory')).toEqual(['children', 'lineage', 'activity', 'customProperties']);
     expect(assetTabKeys('spreadsheet')).toEqual(['worksheets', 'lineage', 'activity', 'customProperties']);
     expect(assetTabKeys('worksheet')).toEqual(['schema', 'lineage', 'activity', 'customProperties']);

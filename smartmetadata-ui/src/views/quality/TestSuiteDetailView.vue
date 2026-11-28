@@ -20,6 +20,8 @@ import {
 import FormModal from '@/components/shared/FormModal.vue';
 import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import EntityManageButton from '@/components/quality/EntityManageButton.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import SmState from '@/components/shared/SmState.vue';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
@@ -39,6 +41,15 @@ const suite = ref<TestSuite | null>(null);
 // plain landing stays on the overview.
 // Official TestSuiteDetailsPage tabs: TEST_CASES, PIPELINE — no OVERVIEW (t418u).
 const activeTab = ref(route.query.tab === 'pipeline' ? 'pipeline' : 'test-cases');
+const suiteFqn = computed(() => suite.value?.fullyQualifiedName ?? '');
+const suiteDeleted = computed(() => suite.value?.deleted === true);
+const suitePerms = useEntityPermissions('testSuite', suiteFqn, {
+  deleted: suiteDeleted,
+  enabled: computed(() => Boolean(suiteFqn.value)),
+});
+const hasDeletePermission = computed(() => !suiteDeleted.value && suitePerms.canDelete.value);
+const editDisplayNamePermission = computed(() => !suiteDeleted.value && suitePerms.canEditDisplayName.value);
+
 const editOpen = ref(false);
 const saving = ref(false);
 // The add/edit pipeline drawer (P-22): mounted once, reset on every
@@ -281,8 +292,16 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button data-testid="edit-test-suite" :disabled="!suite" @click="openEdit">{{ t('label.edit') }}</Button>
-      <Button danger data-testid="delete-test-suite" :disabled="!suite" @click="onDeleteTestSuite">{{ t('label.delete') }}</Button>
+      <EntityManageButton
+        :entity-label="t('label.test-suite')"
+        :can-rename="editDisplayNamePermission"
+        :can-delete="hasDeletePermission"
+        :deleted="suiteDeleted"
+        rename-test-id="edit-test-suite"
+        delete-test-id="delete-test-suite"
+        @rename="openEdit"
+        @delete="onDeleteTestSuite"
+      />
       <Button v-if="isLogical" data-testid="add-tests-to-suite" :disabled="!suite" @click="openAddTests">
         {{ t('label.add-entity', { entity: t('label.test-case-plural') }) }}
       </Button>

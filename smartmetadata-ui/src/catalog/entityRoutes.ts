@@ -21,6 +21,8 @@
  * the permission is known; `joins` is in the VIEW_BASIC group and is
  * requested unconditionally for tables.
  */
+import { getEntityDetailsPath } from '@/utils/fqnPaths';
+
 export const TABLE_USAGE_SUMMARY_FIELD = 'usageSummary';
 
 /**
@@ -158,19 +160,18 @@ export function lineageLocation(entityType: string, fqn: string): { name: string
  * (`EntitySummaryPanel.component.tsx:866-874`) navigates to the entity
  * detail page's Lineage tab
  * (`getEntityDetailsPath(type, fqn, EntityTabs.LINEAGE)`). The product
- * detail page addresses its tabs through the `?tab=` query param
- * (`AssetDetailView.onTabChange` / `getRenderedActiveTab`), so the
- * product analogue is the `asset` route with `query: { tab }`.
+ * detail page addresses its tabs through official path segments
+ * (`getEntityDetailsPath(type, fqn, tab, subTab)` /
+ * `AssetDetailView.onTabChange`).
  */
 export function assetTabLocation(
   entityType: string,
   fqn: string,
   tab: string,
-): { name: string; params: { entityType: string; fqn: string }; query: { tab: string } } {
+  subTab?: string,
+): { path: string } {
   return {
-    name: 'asset',
-    params: { entityType, fqn },
-    query: { tab },
+    path: getEntityDetailsPath(entityType, fqn, tab, subTab),
   };
 }
 
@@ -228,10 +229,11 @@ export function governanceDetailLocation(
 
 /** A router location a search hit can navigate to: asset/lineage
  * locations carry entityType + fqn, governance detail locations carry
- * the entity id. An asset location may also carry a `?tab=` query
- * (E-3d: pin's detail-page tab links, e.g. the Lineage tab). */
+ * the entity id. An asset location may also be a path string when a
+ * detail tab/sub-tab is selected (official getEntityDetailsPath). */
 export type SearchHitLocation =
   | { name: string; params: { entityType: string; fqn: string }; query?: { tab: string } }
+  | { path: string }
   | { name: string; params: { id: string } };
 
 /**

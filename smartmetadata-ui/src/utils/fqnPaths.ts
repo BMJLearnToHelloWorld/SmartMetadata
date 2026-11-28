@@ -208,6 +208,42 @@ export function getObservabilityAlertDetailsPath(fqn: string, tab?: string): str
   return `/observability/alert/${getEncodedFqn(fqn)}/${tab ?? 'configuration'}`;
 }
 
+/** Official EntityTabs values that carry a sub-tab path segment. */
+export const ENTITY_TAB_ACTIVITY_FEED = 'activity_feed';
+export const ENTITY_TAB_PROFILER = 'profiler';
+
+/** Official TestCasePageTabs default on the test-case detail path. */
+export const TEST_CASE_TAB_RESULTS = 'test-case-results';
+
+/**
+ * Official `getEntityDetailsPath` (`RouterUtils.ts`):
+ *   /{entityType}/{fqn}
+ *   /{entityType}/{fqn}/{tab}
+ *   /{entityType}/{fqn}/{tab}/{subTab} for ACTIVITY_FEED and PROFILER.
+ * ACTIVITY_FEED without a subTab defaults to `all`. PROFILER only
+ * adds a sub-tab segment when one is provided.
+ */
+export function getEntityDetailsPath(
+  entityType: string,
+  fqn: string,
+  tab?: string,
+  subTab?: string,
+): string {
+  let path = tab ? `/${entityType}/${getEncodedFqn(fqn)}/${tab}` : `/${entityType}/${getEncodedFqn(fqn)}`;
+  if (tab === ENTITY_TAB_ACTIVITY_FEED || tab === ENTITY_TAB_PROFILER) {
+    const resolvedSubTab =
+      subTab || (tab === ENTITY_TAB_ACTIVITY_FEED ? 'all' : undefined);
+    if (resolvedSubTab) {
+      path = `/${entityType}/${getEncodedFqn(fqn)}/${tab}/${resolvedSubTab}`;
+    }
+  }
+  return path;
+}
+
+/** Official `getTestCaseDetailPagePath`: /test-case/{fqn}/{tab}, default test-case-results. */
+export function getTestCaseDetailPagePath(fqn: string, tab = TEST_CASE_TAB_RESULTS): string {
+  return `/test-case/${getEncodedFqn(fqn)}/${tab}`;
+}
 /**
  * Entity → constructor table (FQN-2). Views, list cells, breadcrumbs and
  * post-create navigation call this table; no path strings are handwritten

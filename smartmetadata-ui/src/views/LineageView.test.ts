@@ -69,7 +69,9 @@ async function mountLineage() {
     history: createMemoryHistory(),
     routes: [
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: LineageView, props: true },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
     ],
   });
   await router.push({ name: 'lineage', params: { entityType: 'table', fqn: 'svc.db.schema.orders' } });
@@ -184,7 +186,7 @@ describe('LineageView', () => {
     const link = document.body.querySelector(
       '[data-testid="entity-link"]',
     ) as HTMLElement | null;
-    expect(link?.getAttribute('href')).toContain('/assets/table/svc.db.schema.raw_orders');
+    expect(link?.getAttribute('href')).toContain('/table/svc.db.schema.raw_orders');
     link?.click();
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset');

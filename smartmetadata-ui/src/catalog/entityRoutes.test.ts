@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assetLocation,
+  assetTabLocation,
   detailLocationForHit,
   encodeFqnForApi,
   governanceDetailLocation,
@@ -92,6 +93,19 @@ describe('entityRoutes', () => {
     expect(resolveDetailEndpoint('databaseSchema', 'svc.analytics.marts')).toEqual({
       path: `/v1/databaseSchemas/name/${encodeURIComponent('svc.analytics.marts')}`,
       fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers,votes,dataProducts,certification',
+    });
+  });
+
+  
+  it('builds official path-segment tab locations', () => {
+    expect(assetTabLocation('table', 'svc.db.schema.orders', 'lineage')).toEqual({
+      path: '/table/svc.db.schema.orders/lineage',
+    });
+    expect(assetTabLocation('table', 'svc.db.schema.orders', 'profiler', 'data-quality')).toEqual({
+      path: '/table/svc.db.schema.orders/profiler/data-quality',
+    });
+    expect(assetTabLocation('table', 'svc.db.schema.orders', 'activity_feed')).toEqual({
+      path: '/table/svc.db.schema.orders/activity_feed/all',
     });
   });
 

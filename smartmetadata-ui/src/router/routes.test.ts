@@ -793,3 +793,18 @@ describe('marketplace routes (AP-D3 hard cut)', () => {
     expect(router.resolve('/data-marketplace').name).toBe('marketplace-overview');
   });
 });
+
+describe('official entity-detail path segments', () => {
+  it('resolves entity, tab, profiler sub-tab, and test-case paths', () => {
+    expect(router.resolve('/table/svc.db.schema.orders').name).toBe('asset');
+    expect(router.resolve('/table/svc.db.schema.orders/schema').name).toBe('asset-tab');
+    expect(router.resolve('/table/svc.db.schema.orders/profiler/data-quality').name).toBe('asset-subtab');
+    expect(router.resolve('/table/svc.db.schema.orders/activity_feed/all').name).toBe('asset-subtab');
+    expect(router.resolve('/test-case/suite.case/test-case-results').name).toBe('quality-test-case');
+  });
+
+  it('does not invent a compatibility redirect from /assets or query tabs', () => {
+    expect(router.resolve('/assets/table/foo').name).toBe('not-found');
+    expect(router.resolve('/query/some.query').name).toBe('not-found');
+  });
+});

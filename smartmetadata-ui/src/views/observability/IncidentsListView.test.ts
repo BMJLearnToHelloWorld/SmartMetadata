@@ -129,7 +129,9 @@ async function mountView(query: Record<string, string> = {}) {
     routes: [
       { path: '/observability/incidents', name: 'observability-incidents', component: IncidentsListView },
       { path: '/test-case/:fqn/:tab?', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
-      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab/:subTab', name: 'asset-subtab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn/:tab', name: 'asset-tab', component: { template: '<div>asset</div>' } },
+      { path: '/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
     ],
   });
   await router.push({ path: '/observability/incidents', query });
@@ -462,9 +464,15 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(tableLink).toBeDefined();
     await tableLink?.trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('asset');
-    expect(router.currentRoute.value.params).toMatchObject({ entityType: 'table', fqn: 'svc.db.schema.orders' });
-    expect(router.currentRoute.value.query.tab).toBe('profiler');
-    expect(router.currentRoute.value.query.subTab).toBe('data-quality');
+    expect(router.currentRoute.value.name).toBe('asset-subtab');
+    expect(router.currentRoute.value.path).toBe('/table/svc.db.schema.orders/profiler/data-quality');
+    expect(router.currentRoute.value.params).toMatchObject({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+      tab: 'profiler',
+      subTab: 'data-quality',
+    });
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
+    expect(router.currentRoute.value.query.subTab).toBeUndefined();
   });
 });

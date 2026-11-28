@@ -13,6 +13,17 @@ import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, getTestCaseByName, updateTestCase } from '@/api/testCases';
 import { listIngestionPipelines, runIngestionPipelineForEntity } from '@/api/ingestionPipelines';
 import type { IngestionPipeline } from '@/types/ingestion';
+import { getDerivedPermissionFlags } from '@/api/permissions';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { usePermissionStore } from '@/stores/permissions';
+import EntityManageButton from '@/components/quality/EntityManageButton.vue';
+import {
+  getActiveRunState,
+  getRunButtonLabelKey,
+  getRunDisabledReasonKey,
+  getRunnablePipeline,
+  getTriggerPermissions,
+} from '@/quality/runTestCaseButton';
 import { getTestDefinition } from '@/api/testDefinitions';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
@@ -97,73 +108,83 @@ const suitePipelines = ref<IngestionPipeline[]>([]);
 const pipelinesLoadError = ref(false);
 const isTriggeringRun = ref(false);
 
-function getRunnablePipeline(pipelines: IngestionPipeline[]): IngestionPipeline | undefined {
-  return [...pipelines]
-    .filter((pipeline) => pipeline.enabled && pipeline.deployed)
-    .sort((left, right) => String(left.id).localeCompare(String(right.id)))[0];
-}
+const permissionStore = usePermissionStore();
+const testCaseFqn = computed(() => testCase.value?.fullyQualifiedName ?? '');
+const testCaseDeleted = computed(() => testCase.value?.deleted === true);
+const testCasePerms = useEntityPermissions('testCase', testCaseFqn, {
+  deleted: testCaseDeleted,
+  enabled: computed(() => Boolean(testCaseFqn.value)),
+});
+const hasDeletePermission = computed(() => !testCaseDeleted.value && testCasePerms.canDelete.value);
+const editDisplayNamePermission = computed(() => !testCaseDeleted.value && testCasePerms.canEditDisplayName.value);
 
-function getActiveRunState(pipeline: IngestionPipeline | undefined): string | undefined {
-  if (!pipeline) {
-    return undefined;
-  }
-  const runningTimeoutMs = pipeline.airflowConfig?.workflowTimeout
-    ? pipeline.airflowConfig.workflowTimeout * 1000
-    : 60 * 60 * 1000;
-  const statuses = pipeline.pipelineStatuses ?? [];
-  const now = Date.now();
-  const isRunning = statuses.some((status) => {
-    const timestamp = status.timestamp;
-    return (
-      status.pipelineState === 'Running' &&
-      timestamp !== undefined &&
-      (timestamp < 1e12 ? timestamp * 1000 : timestamp) >= now - runningTimeoutMs
-    );
-  });
-  if (isRunning) {
-    return 'Running';
-  }
-  return statuses.some((status) => status.pipelineState === 'Queued') ? 'Queued' : undefined;
-}
+const pipelinesLoading = ref(false);
+const resourceIngestionPerms = ref(testCasePerms.permissions.value);
+const resourcePermsLoading = ref(true);
 
 const runnablePipeline = computed(() => getRunnablePipeline(suitePipelines.value));
+const pipelineFqn = computed(() => runnablePipeline.value?.fullyQualifiedName ?? '');
+const pipelinePerms = useEntityPermissions('ingestionPipeline', pipelineFqn, {
+  enabled: computed(() => Boolean(pipelineFqn.value)),
+});
+const canTrigger = computed(() =>
+  getDerivedPermissionFlags(
+    getTriggerPermissions(
+      runnablePipeline.value,
+      pipelinePerms.permissions.value,
+      resourceIngestionPerms.value,
+    ),
+  ).can('Trigger'),
+);
 const activeRunState = computed(() => getActiveRunState(runnablePipeline.value));
 const runInProgress = computed(() => Boolean(activeRunState.value));
-const runButtonLabelKey = computed(() =>
-  activeRunState.value === 'Queued'
-    ? 'label.queued'
-    : activeRunState.value === 'Running'
-      ? 'label.running'
-      : 'label.run-now',
+const runButtonLabelKey = computed(() => getRunButtonLabelKey(activeRunState.value));
+const runDisabledReasonKey = computed(() =>
+  getRunDisabledReasonKey(suitePipelines.value, pipelinesLoadError.value),
 );
-const runDisabledReasonKey = computed(() => {
-  if (pipelinesLoadError.value) {
-    return 'message.pipelines-could-not-be-loaded';
+const canRun = computed(
+  () =>
+    Boolean(testCase.value) &&
+    !testCaseDeleted.value &&
+    !pipelinesLoading.value &&
+    !pipelinePerms.isLoading.value &&
+    !resourcePermsLoading.value &&
+    canTrigger.value,
+);
+
+async function loadResourceTriggerPermissions(): Promise<void> {
+  resourcePermsLoading.value = true;
+  try {
+    resourceIngestionPerms.value = await permissionStore.getResourcePermission('ingestionPipeline');
+  } catch {
+    resourceIngestionPerms.value = testCasePerms.permissions.value;
+  } finally {
+    resourcePermsLoading.value = false;
   }
-  if (suitePipelines.value.length === 0) {
-    return 'message.no-pipeline-linked';
-  }
-  return runnablePipeline.value ? undefined : 'message.pipeline-not-deployed';
-});
-const canRun = computed(() => Boolean(testCase.value) && !testCase.value?.deleted && !isTriggeringRun.value);
+}
 
 async function loadSuitePipelines(testSuiteFqn?: string): Promise<void> {
   if (!testSuiteFqn) {
     suitePipelines.value = [];
     pipelinesLoadError.value = false;
+    pipelinesLoading.value = false;
     return;
   }
+  pipelinesLoading.value = true;
   try {
     const page = await listIngestionPipelines({
       testSuite: testSuiteFqn,
       pipelineType: 'TestSuite',
       fields: 'pipelineStatuses',
+      limit: 100,
     });
     suitePipelines.value = page.data;
     pipelinesLoadError.value = false;
   } catch {
     suitePipelines.value = [];
     pipelinesLoadError.value = true;
+  } finally {
+    pipelinesLoading.value = false;
   }
 }
 
@@ -371,6 +392,7 @@ watch(
 );
 
 onMounted(() => {
+  void loadResourceTriggerPermissions();
   void load();
 });
 </script>
@@ -389,44 +411,52 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Tooltip
-        v-if="runDisabledReasonKey && !runInProgress"
-        :title="t(runDisabledReasonKey)"
-      >
+      <template v-if="canRun">
+        <Tooltip
+          v-if="runDisabledReasonKey && !runInProgress"
+          :title="t(runDisabledReasonKey)"
+        >
+          <Button
+            data-testid="run-test-case-button"
+            :disabled="Boolean(runDisabledReasonKey)"
+            :loading="isTriggeringRun"
+            @click="runTestCase"
+          >
+            {{ t(runButtonLabelKey) }}
+          </Button>
+        </Tooltip>
+        <Tooltip
+          v-else-if="runInProgress"
+          :title="t('message.test-case-run-already-in-progress')"
+        >
+          <Button
+            data-testid="run-test-case-button"
+            :loading="isTriggeringRun"
+            @click="runTestCase"
+          >
+            {{ t(runButtonLabelKey) }}
+          </Button>
+        </Tooltip>
         <Button
+          v-else
           data-testid="run-test-case-button"
-          :disabled="!canRun || Boolean(runDisabledReasonKey)"
           :loading="isTriggeringRun"
           @click="runTestCase"
         >
           {{ t(runButtonLabelKey) }}
         </Button>
-      </Tooltip>
-      <Tooltip
-        v-else-if="runInProgress"
-        :title="t('message.test-case-run-already-in-progress')"
-      >
-        <Button
-          data-testid="run-test-case-button"
-          :disabled="!canRun"
-          :loading="isTriggeringRun"
-          @click="runTestCase"
-        >
-          {{ t(runButtonLabelKey) }}
-        </Button>
-      </Tooltip>
-      <Button
-        v-else
-        data-testid="run-test-case-button"
-        :disabled="!canRun"
-        :loading="isTriggeringRun"
-        @click="runTestCase"
-      >
-        {{ t(runButtonLabelKey) }}
-      </Button>
-      <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('label.edit') }}</Button>
+      </template>
       <Button data-testid="test-case-versions" :disabled="!testCase" @click="onOpenVersions">{{ t('label.version-plural-history') }}</Button>
-      <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('label.delete') }}</Button>
+      <EntityManageButton
+        :entity-label="t('label.test-case')"
+        :can-rename="editDisplayNamePermission"
+        :can-delete="hasDeletePermission"
+        :deleted="testCaseDeleted"
+        rename-test-id="edit-test-case"
+        delete-test-id="delete-test-case"
+        @rename="openEdit"
+        @delete="onDeleteTestCase"
+      />
     </template>
     <template #meta>
       <Descriptions v-if="testCase" bordered :column="3" size="small" data-testid="test-case-header-meta">

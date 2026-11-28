@@ -124,13 +124,13 @@ describe('WidgetAssetHealthCell', () => {
     expect(ctas).toHaveLength(4);
     const targets = wrapper
       .findAllComponents({ name: 'RouterLink' })
-      .map((link) => link.props('to') as { name?: string; query?: Record<string, string> });
+      .map((link) => link.props('to') as { name?: string; path?: string; query?: Record<string, string> });
     expect(targets).toHaveLength(4);
     expect(targets[0].name).toBe('ingestion-service');
     expect(targets[0].query?.tab).toBe('agents');
-    expect(targets[1].query?.tab).toBe('profiler');
-    expect(targets[2].query?.tab).toBe('profiler');
-    expect(targets[3].query?.tab).toBe('contract');
+    expect(targets[1].path).toBe('/table/svc.db.schema.table/profiler');
+    expect(targets[2].path).toBe('/table/svc.db.schema.table/profiler');
+    expect(targets[3].path).toBe('/table/svc.db.schema.table/contract');
     wrapper.unmount();
   });
 

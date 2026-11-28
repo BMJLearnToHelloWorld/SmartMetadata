@@ -29,6 +29,7 @@ import type { TableProfile, TestCase } from '@/types/quality';
 import { TEST_LEVEL, type TestLevel } from '@/quality/testCaseForm';
 import type { IncidentDateRange } from '@/quality/incidentDatePresets';
 import { defaultProfilerRange } from '@/quality/tableProfilerChart';
+import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 
 /** Official ProfilerTabPath keys used as sub-tab ids. */
 const TABLE_PROFILE = 'table-profile';
@@ -86,7 +87,7 @@ const router = useRouter();
 const permissionStore = usePermissionStore();
 
 /** Official profilerClassBase.getDefaultTabKey: TABLE_PROFILE, unless the route carries ProfilerTabPath (incident table-link uses DATA_QUALITY). */
-const activeSubTab = ref(officialProfilerSubTab(route.query.subTab) ?? TABLE_PROFILE);
+const activeSubTab = ref(officialProfilerSubTab(route.params.subTab) ?? TABLE_PROFILE);
 
 const settingsOpen = ref(false);
 const testCaseOpen = ref(false);
@@ -124,13 +125,25 @@ const createTestCasePermission = computed(
   () => Boolean(props.permissions?.CreateTests || testCaseCreatePermission.value),
 );
 
-async function replaceQuery(patch: Record<string, string | number | undefined>): Promise<void> {
+function currentSearchQuery(): Record<string, string | number> {
   const query: Record<string, string | number> = {};
   for (const [key, value] of Object.entries(route.query)) {
+    if (key === 'tab' || key === 'subTab') {
+      continue;
+    }
     if (typeof value === 'string' || typeof value === 'number') {
       query[key] = value;
     }
   }
+  return query;
+}
+
+function profilerPath(subTab: ProfilerSubTab): string {
+  return getEntityDetailsPath(props.entityType, props.entityFqn, ENTITY_TAB_PROFILER, subTab);
+}
+
+async function replaceQuery(patch: Record<string, string | number | undefined>): Promise<void> {
+  const query = currentSearchQuery();
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined || value === '') {
       delete query[key];
@@ -138,7 +151,15 @@ async function replaceQuery(patch: Record<string, string | number | undefined>):
       query[key] = value;
     }
   }
-  await router.replace({ query });
+  await router.replace({ path: profilerPath(activeSubTab.value), query });
+}
+
+async function onSubTabChange(key: string): Promise<void> {
+  const next = officialProfilerSubTab(key) ?? TABLE_PROFILE;
+  activeSubTab.value = next;
+  // Official DataObservabilityTab drops the search string on Incidents.
+  const query = next === INCIDENTS ? {} : currentSearchQuery();
+  await router.replace({ path: profilerPath(next), query });
 }
 
 async function onDateChange(range: IncidentDateRange): Promise<void> {
@@ -235,6 +256,16 @@ async function onSelectColumn(fqn: string): Promise<void> {
 }
 
 watch(
+  () => route.params.subTab,
+  (subTab) => {
+    const next = officialProfilerSubTab(subTab) ?? TABLE_PROFILE;
+    if (next !== activeSubTab.value) {
+      activeSubTab.value = next;
+    }
+  },
+);
+
+watch(
   () => props.tableId,
   () => {
     void loadCustomMetrics();
@@ -260,7 +291,7 @@ onMounted(() => {
       >
         {{ t('label.column-entity', { entity: t('label.profile') }) }}
       </a>
-      <Tabs v-else v-model:activeKey="activeSubTab" data-testid="asset-data-observability-tabs">
+      <Tabs v-else v-model:activeKey="activeSubTab" data-testid="asset-data-observability-tabs" @change="onSubTabChange">
         <Tabs.TabPane :key="TABLE_PROFILE" :tab="t('label.table-entity-text', { entityText: t('label.profile') })" />
         <Tabs.TabPane :key="COLUMN_PROFILE" :tab="t('label.column-entity', { entity: t('label.profile') })" />
         <Tabs.TabPane :key="DATA_QUALITY" :tab="dataQualityTabLabel" />
@@ -316,7 +347,7 @@ onMounted(() => {
         :permissions-loaded="permissionsLoaded"
         :view-data-profile="viewDataProfile"
         :permissions="permissions ?? undefined"
-        @open-data-quality="activeSubTab = DATA_QUALITY"
+        @open-data-quality="onSubTabChange(DATA_QUALITY)"
         @edit-metric="onEditMetric"
         @metric-deleted="loadCustomMetrics"
       />
