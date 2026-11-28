@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   filterInheritedContract,
+  hasOwnerRuleViolation,
   mergeQualityExpectations,
   parseAvailabilityTime,
   semanticRuleValidator,
@@ -75,5 +76,47 @@ describe('dataContractForm official helpers', () => {
       policies: [{ accessPolicy: 'p', identities: ['g1'], rowFilters: [{ columnName: '', values: [] }, { columnName: 'country', values: ['US'] }] }],
     });
     expect(security?.policies?.[0].rowFilters).toEqual([{ columnName: 'country', values: ['US'] }]);
+  });
+});
+
+describe('hasOwnerRuleViolation', () => {
+  const singleTeamRule = {
+    canAddMultipleUserOwners: true,
+    canAddMultipleTeamOwner: false,
+  };
+
+  it('allows any combination when no rule restricts owners', () => {
+    expect(
+      hasOwnerRuleViolation([
+        { type: 'team' },
+        { type: 'team' },
+        { type: 'user' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('allows several users or exactly one team under the single-team rule', () => {
+    expect(
+      hasOwnerRuleViolation([{ type: 'user' }, { type: 'user' }], singleTeamRule),
+    ).toBe(false);
+    expect(hasOwnerRuleViolation([{ type: 'team' }], singleTeamRule)).toBe(false);
+  });
+
+  it('rejects a team combined with other owners under the single-team rule', () => {
+    expect(
+      hasOwnerRuleViolation([{ type: 'team' }, { type: 'user' }], singleTeamRule),
+    ).toBe(true);
+    expect(
+      hasOwnerRuleViolation([{ type: 'team' }, { type: 'team' }], singleTeamRule),
+    ).toBe(true);
+  });
+
+  it('rejects several users when multiple user owners are disallowed', () => {
+    expect(
+      hasOwnerRuleViolation(
+        [{ type: 'user' }, { type: 'user' }],
+        { canAddMultipleUserOwners: false, canAddMultipleTeamOwner: true },
+      ),
+    ).toBe(true);
   });
 });

@@ -26,6 +26,16 @@ vi.mock('@/components/shared/SmCodeEditor.vue', () => ({
 
 const getContractByEntityId = vi.fn();
 
+const getEntityRules = vi.fn().mockResolvedValue([]);
+
+vi.mock('@/api/system', async () => {
+  const actual = await vi.importActual<typeof import('@/api/system')>('@/api/system');
+  return {
+    ...actual,
+    getEntityRules: (...args: unknown[]) => getEntityRules(...args),
+  };
+});
+
 vi.mock('@/api/dataContracts', async () => {
   const actual = await vi.importActual<typeof import('@/api/dataContracts')>('@/api/dataContracts');
   return {
@@ -68,6 +78,7 @@ describe('AssetContractTab official wizard wiring', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     getContractByEntityId.mockReset();
+    getEntityRules.mockReset().mockResolvedValue([]);
   });
 
   it('opens ADD without passing an inherited parent contract', async () => {

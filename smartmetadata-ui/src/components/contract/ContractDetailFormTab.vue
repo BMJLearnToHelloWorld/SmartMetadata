@@ -9,11 +9,13 @@ import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Form, Input, Select } from 'ant-design-vue';
 import type { DataContract, EntityRefLike } from '@/api/dataContracts';
-import { DATA_CONTRACT_STATUS_OPTIONS } from '@/catalog/dataContractTabs';
 import { hasOwnerRuleViolation } from '@/catalog/dataContractForm';
+import { DATA_CONTRACT_STATUS_OPTIONS } from '@/catalog/dataContractTabs';
+import { ENTITY_TYPE_TABLE } from '@/catalog/entityRules';
 import ContractFormStep from '@/components/contract/ContractFormStep.vue';
 import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
+import { useEntityRules } from '@/composables/useEntityRules';
 import type { EntityRef } from '@/types/api';
 
 const props = defineProps<{
@@ -28,11 +30,18 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const { entityRules } = useEntityRules(ENTITY_TYPE_TABLE);
 const name = ref('');
 const entityStatus = ref('Draft');
 const owners = ref<EntityRef[]>([]);
 const description = ref('');
 const ownerError = ref('');
+
+function applyOwnerError(value: EntityRef[]): void {
+  ownerError.value = hasOwnerRuleViolation(value, entityRules.value)
+    ? t('message.owner-multiple-users-or-single-team')
+    : '';
+}
 
 function entityName(contract?: Partial<DataContract>): string {
   return contract?.displayName || contract?.name || '';
@@ -43,7 +52,7 @@ function seed(contract?: Partial<DataContract>): void {
   entityStatus.value = contract?.entityStatus ?? 'Draft';
   owners.value = (contract?.owners ?? []).map((owner) => ({ ...owner })) as EntityRef[];
   description.value = contract?.description ?? '';
-  ownerError.value = '';
+  applyOwnerError(owners.value);
 }
 
 watch(
@@ -66,11 +75,13 @@ function onStatusChange(value: string): void {
 
 function onOwnersChange(value: EntityRef[]): void {
   owners.value = value;
-  ownerError.value = hasOwnerRuleViolation(value)
-    ? t('message.owner-multiple-users-or-single-team')
-    : '';
+  applyOwnerError(value);
   emit('change', { owners: value as EntityRefLike[] });
 }
+
+watch(entityRules, () => {
+  applyOwnerError(owners.value);
+});
 
 function onDescriptionChange(value: string): void {
   description.value = value;

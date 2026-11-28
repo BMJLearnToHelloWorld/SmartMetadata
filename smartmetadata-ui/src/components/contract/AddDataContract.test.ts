@@ -11,6 +11,16 @@ import AddDataContract from './AddDataContract.vue';
 const createContract = vi.fn();
 const updateContract = vi.fn();
 
+const getEntityRules = vi.fn().mockResolvedValue([]);
+
+vi.mock('@/api/system', async () => {
+  const actual = await vi.importActual<typeof import('@/api/system')>('@/api/system');
+  return {
+    ...actual,
+    getEntityRules: (...args: unknown[]) => getEntityRules(...args),
+  };
+});
+
 vi.mock('@/api/dataContracts', async () => {
   const actual = await vi.importActual<typeof import('@/api/dataContracts')>('@/api/dataContracts');
   return {
@@ -24,6 +34,7 @@ describe('AddDataContract official wizard', () => {
   beforeEach(() => {
     createContract.mockReset().mockResolvedValue({ id: 'c1', name: 'Orders' });
     updateContract.mockReset().mockResolvedValue({ id: 'c1', name: 'Orders' });
+    getEntityRules.mockReset().mockResolvedValue([]);
   });
 
   it('renders official table tabs and keeps Save disabled until a user edit', async () => {

@@ -25,6 +25,7 @@ import {
   testLoginValidateToken,
   updateSetting,
   validateSecurityConfiguration,
+  getEntityRules,
 } from './system';
 
 describe('system API', () => {
@@ -458,5 +459,52 @@ describe('system SSO API', () => {
       requiresCredentials: undefined,
       expiresAt: undefined,
     });
+  });
+});
+
+describe('getEntityRules official by-type settings', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('GETs /v1/system/settings/entityRulesSettings/{entityType} in lowercase', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toContain('/api/v1/system/settings/entityRulesSettings/table');
+        return new Response(
+          JSON.stringify([
+            {
+              name: 'Ownership Rule',
+              description: 'Multiple users or single team ownership',
+              rule: '{"multipleUsersOrSingleTeamOwnership":true}',
+              enabled: true,
+              ignoredEntities: [],
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const rules = await getEntityRules('TABLE');
+    expect(rules).toEqual([
+      {
+        name: 'Ownership Rule',
+        description: 'Multiple users or single team ownership',
+        rule: '{"multipleUsersOrSingleTeamOwnership":true}',
+        enabled: true,
+        ignoredEntities: [],
+        entityType: undefined,
+        inherited: undefined,
+        jsonTree: undefined,
+        provider: undefined,
+      },
+    ]);
   });
 });
