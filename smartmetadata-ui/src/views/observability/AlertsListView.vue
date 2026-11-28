@@ -363,8 +363,8 @@ const observabilityInitialLoading = computed(
         :open="Boolean(selectedAlert)"
         :entity-title="getEntityName(selectedAlert)"
         :message="
-          t('message.permanently-delete-common-message', {
-            entity: getEntityName(selectedAlert)?.toLowerCase?.() ?? '',
+          t('message.delete-entity-message', {
+            entity: getEntityName(selectedAlert) ?? '',
           })
         "
         :deleting="isDeleting"

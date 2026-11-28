@@ -340,7 +340,7 @@ describe('observability face (C chain)', () => {
     expect(wrapper.findComponent(AlertDeleteModal).props('open')).toBe(false);
   }, 10000);
 
-  it('toasts the delete failure without refreshing the limit or reloading, and shows the permanent-delete wording', async () => {
+  it('toasts the delete failure without refreshing the limit or reloading, and shows the official delete-entity-message', async () => {
     // The rejection targets the delete path (no list fetch runs between
     // mount and confirm).
     deleteEventSubscription.mockRejectedValueOnce(new ApiError(500, 'boom'));
@@ -348,7 +348,7 @@ describe('observability face (C chain)', () => {
     await wrapper.get('[data-testid="alert-delete-dq-alert"]').trigger('click');
     await waitForBodySelector('[data-testid="delete-modal"]');
     expect(document.body.querySelector('.alert-delete-modal__message')?.textContent).toBe(
-      "Delete this dq alert and all its metadata forever. This can't be undone.",
+      'Are you sure you want to delete DQ Alert? This action cannot be undone.',
     );
     const confirm = (await waitForBodySelector('[data-testid="confirm-button"]')) as HTMLElement;
     confirm.click();

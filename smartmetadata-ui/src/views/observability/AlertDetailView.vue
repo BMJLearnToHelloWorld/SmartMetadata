@@ -356,7 +356,7 @@ async function saveDescription(): Promise<void> {
     <AlertDeleteModal
       :open="details.showDeleteModal.value"
       :entity-title="getEntityName(details.alertDetails.value)"
-      :message="t('message.permanently-delete-common-message', { entity: getEntityName(details.alertDetails.value).toLowerCase() })"
+      :message="t('message.delete-entity-message', { entity: getEntityName(details.alertDetails.value) })"
       :deleting="isDeleting"
       @cancel="details.hideDeleteModal"
       @confirm="handleAlertHardDelete"
