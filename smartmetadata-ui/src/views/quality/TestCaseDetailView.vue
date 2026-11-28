@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
-import { useRouter } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
 import { AlignRightOutlined, SyncOutlined } from '@ant-design/icons-vue';
 import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-vue';
 import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
@@ -66,6 +66,7 @@ import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
+import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 import type { EntityRef } from '@/types/api';
 import type { TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
 
@@ -208,6 +209,50 @@ async function acknowledgeIncident(): Promise<void> {
 const assetEntity = computed(() =>
   testCase.value?.entityLink ? parseEntityLink(testCase.value.entityLink) : null,
 );
+
+const headerOwnersLabel = computed(() => {
+  const owners = testCase.value?.owners ?? [];
+  if (!owners.length) {
+    return '—';
+  }
+  return owners.map((owner) => owner.displayName || owner.name).filter(Boolean).join(', ') || '—';
+});
+
+const headerDomainsLabel = computed(() => {
+  const domains = testCase.value?.domains ?? [];
+  if (!domains.length) {
+    return '—';
+  }
+  return domains.map((domain) => domain.displayName || domain.name).filter(Boolean).join(', ') || '—';
+});
+
+const tableFqnForLink = computed(() => assetEntity.value?.fqn || testCase.value?.entityFQN || '');
+
+const tableShortName = computed(() => {
+  const fqn = tableFqnForLink.value;
+  if (!fqn) {
+    return '';
+  }
+  const parts = fqn.split('.');
+  return parts[parts.length - 1] || fqn;
+});
+
+const tableProfilerTo = computed(() => {
+  const fqn = tableFqnForLink.value;
+  if (!fqn) {
+    return undefined;
+  }
+  return getEntityDetailsPath('table', fqn, ENTITY_TAB_PROFILER, 'data-quality');
+});
+
+const testDefinitionHeaderName = computed(
+  () =>
+    testCase.value?.testDefinition?.displayName ||
+    testCase.value?.testDefinition?.name ||
+    '—',
+);
+
+const columnHeaderName = computed(() => assetEntity.value?.column || '—');
 
 const suitePipelines = ref<IngestionPipeline[]>([]);
 const pipelinesLoadError = ref(false);
@@ -654,26 +699,50 @@ onMounted(() => {
     </template>
     <template #meta>
       <Descriptions v-if="testCase" bordered :column="3" size="small" data-testid="test-case-header-meta">
+        <Descriptions.Item :label="t('label.domain')">
+          {{ headerDomainsLabel }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('label.owner-plural')">
+          {{ headerOwnersLabel }}
+        </Descriptions.Item>
+        <Descriptions.Item v-if="taskLinkInfo" :label="t('label.incident')">
+          <RouterLink :to="taskLinkInfo.path" data-testid="incident-task-link">
+            {{ taskLinkInfo.label }}
+          </RouterLink>
+        </Descriptions.Item>
         <Descriptions.Item :label="t('label.incident-status')">
           {{ latestIncident?.testCaseResolutionStatusType || t('label.no-entity', { entity: t('label.incident') }) }}
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.assignee')">
-          {{ latestIncident?.testCaseResolutionStatusDetails?.assignee?.displayName || latestIncident?.testCaseResolutionStatusDetails?.assignee?.name || '—' }}
+          <span data-testid="assignee">
+            {{
+              latestIncident?.testCaseResolutionStatusDetails?.assignee?.displayName ||
+              latestIncident?.testCaseResolutionStatusDetails?.assignee?.name ||
+              '—'
+            }}
+          </span>
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.severity')">
           {{ latestIncident?.severity || '—' }}
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.table')">
-          {{ assetEntity?.fqn || testCase.entityFQN || '—' }}
+          <RouterLink
+            v-if="tableProfilerTo"
+            :to="tableProfilerTo"
+            data-testid="table-name"
+          >
+            {{ tableShortName || tableFqnForLink }}
+          </RouterLink>
+          <span v-else>{{ tableFqnForLink || '—' }}</span>
         </Descriptions.Item>
-        <Descriptions.Item :label="t('label.dimension')">
-          {{ testCase.dimensionColumns?.join(', ') || '—' }}
+        <Descriptions.Item v-if="(testCase.dimensionColumns?.length ?? 0) > 0" :label="t('label.dimension')">
+          {{ testCase.dimensionColumns?.join(', ') }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('label.column')">
-          {{ assetEntity?.column || '—' }}
+        <Descriptions.Item v-if="columnHeaderName !== '—'" :label="t('label.column')">
+          <span data-testid="test-column-name">{{ columnHeaderName }}</span>
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.test-type')">
-          {{ testCase.testDefinition?.displayName || testCase.testDefinition?.name || '—' }}
+          <span data-testid="test-definition-name">{{ testDefinitionHeaderName }}</span>
         </Descriptions.Item>
       </Descriptions>
     </template>

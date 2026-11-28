@@ -193,6 +193,44 @@ describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCa
     wrapper.unmount();
   });
 
+  it('exposes IncidentManagerPageHeader meta fields and test ids on the detail header', async () => {
+    listTestIncidents.mockResolvedValue({
+      data: [
+        {
+          id: 'inc1',
+          testCaseResolutionStatusType: 'New',
+          severity: 'Severity1',
+          stateId: 'task-1',
+          timestamp: 1700000000000,
+        },
+      ],
+    });
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'amount_null',
+      fullyQualifiedName: 'svc.db.schema.orders.amount_null',
+      entityFQN: 'svc.db.schema.orders',
+      entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
+      owners: [{ id: 'u1', name: 'admin', displayName: 'Admin', type: 'user' }],
+      domains: [{ id: 'd1', name: 'Engineering', displayName: 'Engineering' }],
+      testDefinition: { id: 'td-null', name: 'columnValuesToBeNotNull', displayName: 'Column values not null' },
+      parameterValues: [],
+      testSuites: [],
+    });
+    const { wrapper, router } = await mountView();
+    expect(wrapper.find('[data-testid="test-case-header-meta"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="incident-task-link"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-name"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="table-name"]').text()).toContain('orders');
+    expect(wrapper.find('[data-testid="test-column-name"]').text()).toContain('amount');
+    expect(wrapper.find('[data-testid="test-definition-name"]').text()).toContain('Column values not null');
+    expect(wrapper.find('[data-testid="assignee"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="table-name"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/table/svc.db.schema.orders/profiler/data-quality');
+    wrapper.unmount();
+  });
+
   it('renders EntityHeaderTitle test ids and StatItem version-button with count', async () => {
     getTestCaseByName.mockResolvedValue({
       id: 'tc1',
