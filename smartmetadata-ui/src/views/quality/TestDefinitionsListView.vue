@@ -26,13 +26,14 @@ import {
   updateTestDefinition,
 } from '@/api/testDefinitions';
 import TestDefinitionFormDrawer from '@/components/quality/TestDefinitionFormDrawer.vue';
-import TestLibraryFilterDropdown from '@/components/quality/TestLibraryFilterDropdown.vue';
+import TestDefinitionFilterBar from '@/components/quality/TestDefinitionFilterBar.vue';
 import {
   TEST_LIBRARY_ENTITY_TYPES,
   TEST_LIBRARY_PAGE_SIZE,
   TEST_LIBRARY_PAGE_SIZE_OPTIONS,
   TEST_LIBRARY_PLATFORMS,
   formatTestPlatforms,
+  testLibraryEntityTypeLabel,
   isEnabledToggleDisabled,
   isSystemTestDefinition,
   pageCount,
@@ -48,6 +49,7 @@ const { t } = useI18n();
 const permissionStore = usePermissionStore();
 type PermState = 'loading' | 'denied' | 'error' | 'ready';
 const permState = ref<PermState>('loading');
+const createPermission = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const definitions = ref<TestDefinition[]>([]);
@@ -73,7 +75,7 @@ const togglingId = ref<string | undefined>();
 const entityTypeOptions = computed(() =>
   TEST_LIBRARY_ENTITY_TYPES.map((key) => ({
     key,
-    label: key,
+    label: testLibraryEntityTypeLabel(key, t),
   })),
 );
 const platformOptions = computed(() =>
@@ -298,12 +300,32 @@ async function checkViewPermission(): Promise<boolean> {
     const operations = await permissionStore.getResourcePermission('testDefinition');
     const flags = getDerivedPermissionFlags(operations, false);
     const allowed = permissionStore.isAdminUser || flags.hasViewAccess;
+    createPermission.value = permissionStore.isAdminUser || flags.canCreate;
     permState.value = allowed ? 'ready' : 'denied';
     return allowed;
   } catch {
     permState.value = 'error';
+    createPermission.value = false;
     return false;
   }
+}
+
+function clearAllFilters(): void {
+  searchInput.value = '';
+  searchQuery.value = '';
+  entityType.value = undefined;
+  testPlatform.value = undefined;
+  resetAndLoad();
+}
+
+function onEntityTypeChange(value: string | undefined): void {
+  entityType.value = value;
+  resetAndLoad();
+}
+
+function onTestPlatformChange(value: string | undefined): void {
+  testPlatform.value = value;
+  resetAndLoad();
 }
 
 onMounted(async () => {
@@ -329,39 +351,28 @@ onMounted(async () => {
           {{ t('message.page-sub-header-for-test-definitions') }}
         </Typography.Paragraph>
       </div>
-      <Button type="primary" data-testid="create-test-definition" @click="openCreate">
+      <Button
+        v-if="createPermission"
+        type="primary"
+        data-testid="create-test-definition"
+        @click="openCreate"
+      >
         {{ t('label.add-entity', { entity: t('label.test-definition') }) }}
       </Button>
     </div>
 
-    <div class="test-library-page__filters">
-      <Input
-        allow-clear
-        data-testid="test-definition-search"
-        class="test-library-page__search"
-        :placeholder="t('label.search-entity', { entity: t('label.test-definition-plural') })"
-        :value="searchInput"
-        @update:value="onSearchUpdate"
-        @pressEnter="onSearchPressEnter"
-        @keydown.enter="onSearchPressEnter"
-      />
-      <TestLibraryFilterDropdown
-        :label="t('label.entity-type')"
-        :search-placeholder="t('label.search-entity', { entity: t('label.entity-type') })"
-        :options="entityTypeOptions"
-        :model-value="entityType"
-        test-id="test-library-filter-entity"
-        @update:model-value="(value) => { entityType = value; resetAndLoad(); }"
-      />
-      <TestLibraryFilterDropdown
-        :label="t('label.test-platform-plural')"
-        :search-placeholder="t('label.search-entity', { entity: t('label.test-platform-plural') })"
-        :options="platformOptions"
-        :model-value="testPlatform"
-        test-id="test-library-filter-platform"
-        @update:model-value="(value) => { testPlatform = value; resetAndLoad(); }"
-      />
-    </div>
+    <TestDefinitionFilterBar
+      :search-input="searchInput"
+      :entity-type="entityType"
+      :test-platform="testPlatform"
+      :entity-type-options="entityTypeOptions"
+      :platform-options="platformOptions"
+      @update:search-input="onSearchUpdate"
+      @search-enter="onSearchPressEnter"
+      @update:entity-type="onEntityTypeChange"
+      @update:test-platform="onTestPlatformChange"
+      @clear-all="clearAllFilters"
+    />
 
     <p v-if="errorMessage" data-testid="test-library-error">{{ errorMessage }}</p>
 

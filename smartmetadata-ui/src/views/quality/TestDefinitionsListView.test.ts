@@ -58,7 +58,7 @@ describe('TestDefinitionsListView', () => {
   beforeEach(() => {
     localStorage.clear();
     permState.isAdmin = true;
-    permState.resourceOps = { ViewAll: true };
+    permState.resourceOps = { ViewAll: true, Create: true };
     permState.rejectResource = false;
     vi.stubGlobal(
       'fetch',
@@ -92,6 +92,15 @@ describe('TestDefinitionsListView', () => {
         }
         if (url.includes('/api/v1/dataQuality/dimensions')) {
           return jsonResponse({ data: [{ id: 'd1', name: 'Accuracy', displayName: 'Accuracy' }], paging: { total: 1 } });
+        }
+        if (url.includes('/api/v1/permissions/testDefinition')) {
+          return jsonResponse({
+            resource: 'testDefinition',
+            permissions: Object.entries(permState.resourceOps).map(([operation, access]) => ({
+              operation,
+              access: access ? 'allow' : 'deny',
+            })),
+          });
         }
         return new Response('not found', { status: 404 });
       }),
@@ -169,6 +178,28 @@ describe('TestDefinitionsListView', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('applies entity-type filter immediately and clears all filters (pin TestDefinitionFilterBar)', async () => {
+    const { wrapper } = await mountView();
+    vi.mocked(fetch).mockClear();
+    const bar = wrapper.findComponent({ name: 'TestDefinitionFilterBar' });
+    await bar.vm.$emit('update:entityType', 'TABLE');
+    await flushPromises();
+    await flushPromises();
+    const withEntity = vi.mocked(fetch).mock.calls.find((call) => String(call[0]).includes('testDefinitions'));
+    expect(decodeURIComponent(String(withEntity?.[0] ?? ''))).toContain('entityType=TABLE');
+    await wrapper.get('[data-testid="clear-all-filter-btn"]').trigger('click');
+    await flushPromises();
+    const afterClear = vi.mocked(fetch).mock.calls.findLast((call) => String(call[0]).includes('testDefinitions'));
+    expect(decodeURIComponent(String(afterClear?.[0] ?? ''))).not.toMatch(/entityType=/);
+  });
+
+  it('hides create CTA when Create is denied', async () => {
+    permState.isAdmin = false;
+    permState.resourceOps = { ViewAll: true };
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="create-test-definition"]').exists()).toBe(false);
   });
 
   it('shows PermissionPlaceholder without list fetch when ViewBasic/ViewAll are denied (pin viewPermission)', async () => {

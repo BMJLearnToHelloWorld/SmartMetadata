@@ -26,6 +26,20 @@ export type TestLibraryPlatform = (typeof TEST_LIBRARY_PLATFORMS)[number];
 /** Official EntityType filter options (TABLE / COLUMN). */
 export const TEST_LIBRARY_ENTITY_TYPES = ['TABLE', 'COLUMN'] as const;
 
+/** Official TEST_DEFINITION_FILTERS entity labels (label.table / label.column). */
+export function testLibraryEntityTypeLabel(
+  key: (typeof TEST_LIBRARY_ENTITY_TYPES)[number],
+  translate: (key: string) => string,
+): string {
+  if (key === 'TABLE') {
+    return translate('label.table');
+  }
+  if (key === 'COLUMN') {
+    return translate('label.column');
+  }
+  return key;
+}
+
 export type TestLibraryEntityType = (typeof TEST_LIBRARY_ENTITY_TYPES)[number];
 
 export const TEST_LIBRARY_DEFAULT_SORT_FIELD = 'displayName';
