@@ -29,6 +29,7 @@ import DescriptionCell from '@/components/shared/DescriptionCell.vue';
 import NextPrevious from '@/components/shared/NextPrevious.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import WidgetWorkflowHistoryCell from '@/components/shared/widgets/WidgetWorkflowHistoryCell.vue';
+import { getDerivedPermissionFlags, type OperationPermissions } from '@/api/permissions';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { joinRefNames } from '@/features/crud/paging';
 import { useAuthStore } from '@/stores/auth';
@@ -68,6 +69,13 @@ const props = withDefaults(
     glossary: Glossary;
     deleted?: boolean;
     refreshKey?: number;
+    /**
+     * Official GlossaryTermTab reads permissions from GenericContext.
+     * When this official override is provided (version view passes
+     * VERSION_VIEW_GLOSSARY_PERMISSION), it replaces the live
+     * permission fetch and admin OR so Create/Edit stay read-only.
+     */
+    permissions?: OperationPermissions;
   }>(),
   { deleted: false, refreshKey: 0 },
 );
@@ -87,16 +95,42 @@ const SEARCH_DEBOUNCE_MS = 500;
 const EXPAND_ALL_PAGE_CAP = 20;
 const STATUS_OPTIONS = ['Approved', 'Draft', 'InReview', 'Rejected'] as const;
 
+const hasPermissionOverride = computed(() => props.permissions !== undefined);
+const isDeleted = computed(() => props.deleted ?? props.glossary.deleted === true);
 const perms = useEntityPermissions(
   'glossary',
   () => props.glossary.fullyQualifiedName ?? props.glossary.name,
-  { deleted: () => props.deleted ?? props.glossary.deleted === true },
+  {
+    deleted: () => isDeleted.value,
+    enabled: () => !hasPermissionOverride.value,
+  },
 );
 const isAdminUser = computed(() => permissionStore.isAdminUser);
 const currentUserId = computed(() => authStore.user?.id);
-const canCreateRowActions = computed(() => isAdminUser.value || perms.canCreate.value);
-const canBulkEdit = computed(() => isAdminUser.value || perms.canEditAll.value);
-const canMove = computed(() => isAdminUser.value || perms.canEditAll.value);
+const overrideFlags = computed(() =>
+  hasPermissionOverride.value
+    ? getDerivedPermissionFlags(props.permissions ?? {}, isDeleted.value)
+    : undefined,
+);
+// Official GlossaryTermTab gates row add on raw permissions.Create and
+// bulk-edit / move on canEditAll, with no admin OR. The live product
+// widget still ORs isAdminUser; the official version-view override
+// must not.
+const canCreateRowActions = computed(() =>
+  hasPermissionOverride.value
+    ? Boolean(props.permissions?.Create)
+    : isAdminUser.value || perms.canCreate.value,
+);
+const canBulkEdit = computed(() =>
+  hasPermissionOverride.value
+    ? Boolean(overrideFlags.value?.canEditAll)
+    : isAdminUser.value || perms.canEditAll.value,
+);
+const canMove = computed(() =>
+  hasPermissionOverride.value
+    ? Boolean(overrideFlags.value?.canEditAll)
+    : isAdminUser.value || perms.canEditAll.value,
+);
 
 const rows = ref<TermTreeNode[]>([]);
 const loading = ref(false);

@@ -11,6 +11,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import Antd, { Select } from 'ant-design-vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { VERSION_VIEW_GLOSSARY_PERMISSION } from '@/composables/useEntityPermissions';
 import { createTestI18n } from '@/test/i18n';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
 import GlossaryTermsWidget from './GlossaryTermsWidget.vue';
@@ -292,6 +293,16 @@ describe('GlossaryTermsWidget', () => {
     const { wrapper } = await mountWidget();
     expect(wrapper.text()).toContain('No terms yet.');
     expect(wrapper.find('[data-testid="add-term"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides add and bulk-edit when official VERSION_VIEW_GLOSSARY_PERMISSION is passed, even if the live store would grant them', async () => {
+    const { wrapper } = await mountWidget({ permissions: VERSION_VIEW_GLOSSARY_PERMISSION });
+    expect(wrapper.find('[data-testid="add-term"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="bulk-edit-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-sub-term-a"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-term-b"]').exists()).toBe(false);
+    expect(getEntityPermissionByFqnMock).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });

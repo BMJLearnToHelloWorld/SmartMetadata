@@ -8,7 +8,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Tabs, Typography, message } from 'ant-design-vue';
+import { Button, Tabs, Tooltip, Typography, message } from 'ant-design-vue';
 import { mapChangeDescription, type ChangeDescription } from '@/api/entities';
 import { getGovernanceVersion, listGovernanceVersions } from '@/api/governanceVersions';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
@@ -33,6 +33,7 @@ import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
 import WidgetWorkflowHistoryCell from '@/components/shared/widgets/WidgetWorkflowHistoryCell.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { useCustomPages } from '@/composables/useCustomPages';
+import { VERSION_VIEW_GLOSSARY_PERMISSION } from '@/composables/useEntityPermissions';
 import { getEntityVersionByField } from '@/ingestion/versionDiff';
 import type { OwnerOption } from '@/governance/catalogOptions';
 import type { AssetTagOption, Domain, Glossary, TermReference } from '@/types/governance';
@@ -169,6 +170,11 @@ function onSelectVersion(version: string): void {
   void router.push(path);
 }
 
+const displayVersion = computed(() => {
+  const value = snapshot.value?.version ?? props.version;
+  return String(value);
+});
+
 function onBack(): void {
   void router.push(getGovernanceDetailPath(kind.value, props.id));
 }
@@ -187,9 +193,6 @@ watch(
     <div class="glossary-version">
       <div class="glossary-version__main">
         <PageHeader :header="pageTitle" />
-        <Button data-testid="exit-version-history" @click="onBack">
-          {{ t('label.exit-version-history') }}
-        </Button>
         <SmState
           v-if="loading || !snapshot"
           :state="loading ? 'loading' : 'empty'"
@@ -206,6 +209,13 @@ watch(
                 </span>
               </template>
             </Typography.Title>
+            <div class="glossary-version__header-actions">
+              <Tooltip :title="t('label.exit-version-history')">
+                <Button data-testid="version-button" @click="onBack">
+                  {{ displayVersion }}
+                </Button>
+              </Tooltip>
+            </div>
           </div>
           <Tabs :active-key="versionTab" data-testid="glossary-version-tabs">
             <Tabs.TabPane
@@ -220,7 +230,7 @@ watch(
                     <VersionDiffText :diff="descriptionDiff" />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.TERMS_TABLE && glossaryEntity.id" data-testid="widget-terms-table">
-                    <GlossaryTermsWidget :glossary="glossaryEntity" :deleted="glossaryEntity.deleted === true" />
+                    <GlossaryTermsWidget :glossary="glossaryEntity" :deleted="glossaryEntity.deleted === true" :permissions="VERSION_VIEW_GLOSSARY_PERMISSION" />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN" data-testid="widget-domain">
                     <WidgetDomainCell :domains="domains" :options="emptyDomains" :has-edit-access="false" :on-change="noop" />
@@ -311,6 +321,7 @@ watch(
       <ServiceVersionTimeline
         :versions="versions"
         :current-version="version"
+        entity-type="glossary"
         @select="onSelectVersion"
         @close="onBack"
       />

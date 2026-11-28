@@ -3,11 +3,12 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { CloseOutlined } from '@ant-design/icons-vue';
 import { Button, Tooltip } from 'ant-design-vue';
 import type { EntityVersion } from '@/api/entities';
+import { getLimitByResource } from '@/api/limits';
 import VersionButton from '@/components/ingestion/VersionButton.vue';
 import { partitionVersionTimeline } from '@/ingestion/versionDiff';
 
@@ -27,6 +28,12 @@ const props = defineProps<{
   versions: EntityVersion[];
   currentVersion: string | number;
   maxVersions?: number;
+  /**
+   * Official EntityVersionTimeLine entityType: used to fetch
+   * getResourceLimit / configuredLimit.maxVersions. Official
+   * GlossaryVersion always passes EntityType.GLOSSARY ('glossary').
+   */
+  entityType?: string;
 }>();
 
 const emit = defineEmits<{
@@ -36,7 +43,34 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-const partition = computed(() => partitionVersionTimeline(props.versions, props.maxVersions));
+// Official default when the limits store has no entry is maxVersions: -1
+// (render everything). A failed fetch is fail-open, same as service
+// version pages: leave the cap at -1 rather than inventing a lock-out.
+const fetchedMaxVersions = ref(-1);
+
+watch(
+  () => props.entityType,
+  async (entityType) => {
+    if (!entityType) {
+      fetchedMaxVersions.value = -1;
+      return;
+    }
+    try {
+      const limit = await getLimitByResource(entityType);
+      fetchedMaxVersions.value =
+        limit.featureLimitStatuses[0]?.configuredLimit.maxVersions ?? -1;
+    } catch {
+      fetchedMaxVersions.value = -1;
+    }
+  },
+  { immediate: true },
+);
+
+const resolvedMaxVersions = computed(() =>
+  props.maxVersions !== undefined ? props.maxVersions : fetchedMaxVersions.value,
+);
+
+const partition = computed(() => partitionVersionTimeline(props.versions, resolvedMaxVersions.value));
 
 function isSelected(version: number | string | undefined): boolean {
   return String(version) === String(props.currentVersion);
@@ -46,12 +80,12 @@ function isSelected(version: number | string | undefined): boolean {
 <template>
   <aside
     role="dialog"
-    :aria-label="t('settings.services.version.historyTitle')"
+    :aria-label="t('label.version-plural-history')"
     data-testid="versions-list-container"
   >
     <div class="service-version-timeline__header">
       <span class="service-version-timeline__title">
-        {{ t('settings.services.version.historyTitle') }}
+        {{ t('label.version-plural-history') }}
       </span>
       <Button type="text" size="small" data-testid="versions-list-close" @click="emit('close')">
         <CloseOutlined />

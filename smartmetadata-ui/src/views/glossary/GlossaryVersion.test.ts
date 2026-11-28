@@ -14,6 +14,10 @@ import GlossaryVersion from './GlossaryVersion.vue';
 const listGovernanceVersions = vi.fn();
 const getGovernanceVersion = vi.fn();
 
+vi.mock('@/api/limits', () => ({
+  getLimitByResource: vi.fn(async () => ({ featureLimitStatuses: [{ configuredLimit: { maxVersions: -1 } }] })),
+}));
+
 vi.mock('@/api/governanceVersions', () => ({
   listGovernanceVersions: (...args: unknown[]) => listGovernanceVersions(...args),
   getGovernanceVersion: (...args: unknown[]) => getGovernanceVersion(...args),
@@ -120,6 +124,15 @@ describe('official GlossaryVersion', () => {
     expect(wrapper.find('[data-testid="glossary-tab-overview"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="generic-tab"]').text()).toBe('Glossary');
     expect(wrapper.find('[data-testid="versions-list-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="versions-list-container"]').attributes('aria-label')).toBe(
+      'Versions History',
+    );
+    expect(wrapper.find('[data-testid="version-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="exit-version-history"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-new-tag-button-header"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="glossary-term-add-button-menu"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="manage-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="domain-mismatch-alert"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="widget-custom-properties"]').exists()).toBe(false);
     wrapper.unmount();
   });
@@ -157,7 +170,7 @@ describe('official GlossaryVersion', () => {
     await wrapper.get('[data-testid="version-selector-v0.1"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/glossary/g1/versions/0.1');
-    await wrapper.get('[data-testid="exit-version-history"]').trigger('click');
+    await wrapper.get('[data-testid="version-button"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/governance/glossaries/g1');
     wrapper.unmount();
@@ -170,7 +183,7 @@ describe('official GlossaryVersion', () => {
       id: 't1',
       version: '0.3',
     });
-    await wrapper.get('[data-testid="exit-version-history"]').trigger('click');
+    await wrapper.get('[data-testid="version-button"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/governance/terms/t1');
     wrapper.unmount();

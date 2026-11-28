@@ -2,17 +2,26 @@
  * Copyright 2026 SmartMetadata authors.
  * Licensed under the Apache License, Version 2.0.
  */
-import { mount, type VueWrapper } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import Antd, { Tooltip } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import { createI18n } from 'vue-i18n';
 import type { EntityVersion } from '@/api/entities';
 import ServiceVersionTimeline from './ServiceVersionTimeline.vue';
 
+const getLimitByResource = vi.fn();
+
+vi.mock('@/api/limits', () => ({
+  getLimitByResource: (...args: unknown[]) => getLimitByResource(...args),
+}));
+
 const MESSAGES = {
   'en-US': {
+    label: {
+      'version-plural-history': 'Versions History',
+    },
     settings: {
       services: {
         version: {
@@ -76,6 +85,13 @@ async function mountTimeline(props: Record<string, unknown>): Promise<VueWrapper
 }
 
 describe('ServiceVersionTimeline', () => {
+
+  beforeEach(() => {
+    getLimitByResource.mockReset().mockResolvedValue({
+      featureLimitStatuses: [{ configuredLimit: { maxVersions: -1 } }],
+    });
+  });
+
   it('renders the aside, title, entries, summaries, and user links', async () => {
     const wrapper = await mountTimeline({});
     const aside = wrapper.find('[data-testid="versions-list-container"]');
@@ -129,5 +145,23 @@ describe('ServiceVersionTimeline', () => {
   it('shows no prompt when the limit exceeds the list', async () => {
     const wrapper = await mountTimeline({ maxVersions: 5 });
     expect(wrapper.text()).not.toContain('Unlock all of your version history');
+  });
+
+  it('uses official label.version-plural-history and fetches maxVersions for entityType', async () => {
+    getLimitByResource.mockResolvedValue({
+      featureLimitStatuses: [{ configuredLimit: { maxVersions: 1 } }],
+    });
+    const wrapper = await mountTimeline({ entityType: 'glossary' });
+    await flushPromises();
+    expect(getLimitByResource).toHaveBeenCalledWith('glossary');
+    expect(wrapper.text()).toContain('Versions History');
+    expect(wrapper.find('[data-testid="versions-list-container"]').attributes('aria-label')).toBe(
+      'Versions History',
+    );
+    // Official maxAllowed > 0 truncates the visible list to one entry;
+    // hidden remainder stays in the +N more versions tooltip.
+    expect(wrapper.findAll('.service-version-timeline__body > [data-testid^="version-entry-"]').length).toBe(1);
+    expect(wrapper.find('.service-version-timeline__hidden').exists()).toBe(true);
+    wrapper.unmount();
   });
 });
