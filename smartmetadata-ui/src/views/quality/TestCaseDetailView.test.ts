@@ -65,15 +65,24 @@ const getTestCaseByName = vi.fn();
 const updateTestCase = vi.fn();
 const patchTestCase = vi.fn();
 const listTestCaseResults = vi.fn();
-const listTestIncidents = vi.fn();
+const getTestCaseIncidentByStateId = vi.fn();
 const getTestDefinition = vi.fn();
+const getTestCaseVersion = vi.fn();
+const listGovernanceVersions = vi.fn();
+const restoreTestCase = vi.fn();
 
 vi.mock('@/api/testCases', () => ({
   getTestCase: (...args: unknown[]) => getTestCase(...args),
   getTestCaseByName: (...args: unknown[]) => getTestCaseByName(...args),
+  getTestCaseVersion: (...args: unknown[]) => getTestCaseVersion(...args),
+  restoreTestCase: (...args: unknown[]) => restoreTestCase(...args),
   updateTestCase: (...args: unknown[]) => updateTestCase(...args),
   patchTestCase: (...args: unknown[]) => patchTestCase(...args),
   listTestCaseDimensionResults: vi.fn(async () => ({ data: [], paging: { total: 0 } })),
+}));
+vi.mock('@/api/governanceVersions', () => ({
+  listGovernanceVersions: (...args: unknown[]) => listGovernanceVersions(...args),
+  latestGovernanceVersionPath: vi.fn(() => '/entity/latest'),
 }));
 vi.mock('@/api/testDefinitions', () => ({
   getTestDefinition: (...args: unknown[]) => getTestDefinition(...args),
@@ -82,7 +91,7 @@ vi.mock('@/api/testCaseResults', () => ({
   listTestCaseResults: (...args: unknown[]) => listTestCaseResults(...args),
 }));
 vi.mock('@/api/testIncidents', () => ({
-  listTestIncidents: (...args: unknown[]) => listTestIncidents(...args),
+  getTestCaseIncidentByStateId: (...args: unknown[]) => getTestCaseIncidentByStateId(...args),
 }));
 vi.mock('@/api/system', () => ({
   getEntityRules: vi.fn(async () => []),
@@ -110,18 +119,37 @@ beforeEach(() => {
   listTasks.mockResolvedValue({ data: [], paging: { total: 0 } });
 });
 
-async function mountView(props: { id: string; tab?: string } = { id: 'tc1' }) {
+async function mountView(props: { id: string; tab?: string; version?: string } = { id: 'tc1' }) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: TestCaseDetailView, props: true },
+      {
+        path: '/quality/test-cases/:id/versions/:version',
+        name: 'quality-test-case-version',
+        component: TestCaseDetailView,
+        props: true,
+      },
+      {
+        path: '/quality/test-cases/:id/versions/:version/:tab',
+        name: 'quality-test-case-version-tab',
+        component: TestCaseDetailView,
+        props: true,
+      },
       { path: '/test-case/:fqn/:tab?', name: 'test-case-alias', component: { template: '<div />' } },
       { path: '/:entityType/:fqn/:tab?/:subTab?', name: 'asset', component: { template: '<div />' } },
     ],
   });
-  await router.push({ name: 'quality-test-case', params: { id: props.id } });
+  if (props.version) {
+    await router.push({
+      name: props.tab ? 'quality-test-case-version-tab' : 'quality-test-case-version',
+      params: { id: props.id, version: props.version, ...(props.tab ? { tab: props.tab } : {}) },
+    });
+  } else {
+    await router.push({ name: 'quality-test-case', params: { id: props.id } });
+  }
   await router.isReady();
   const wrapper = mount(TestCaseDetailView, {
     props,
@@ -136,8 +164,7 @@ describe('TestCaseDetailView results rail (official TestCaseResultTab)', () => {
     getTestCaseByName.mockReset();
     getTestDefinition.mockReset();
     listTestCaseResults.mockReset();
-    listTestIncidents.mockReset();
-    listTestIncidents.mockResolvedValue({ data: [] });
+    getTestCaseIncidentByStateId.mockReset();
     listTestCaseResults.mockResolvedValue({ data: [] });
     getTestDefinition.mockResolvedValue({
       id: 'def-between',
@@ -190,8 +217,7 @@ describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCa
     getTestCase.mockReset();
     getTestCaseByName.mockReset();
     listTestCaseResults.mockReset();
-    listTestIncidents.mockReset();
-    listTestIncidents.mockResolvedValue({ data: [] });
+    getTestCaseIncidentByStateId.mockReset();
     listTestCaseResults.mockResolvedValue({ data: [] });
   });
 
@@ -225,20 +251,17 @@ describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCa
   });
 
   it('exposes IncidentManagerPageHeader meta fields and test ids on the detail header', async () => {
-    listTestIncidents.mockResolvedValue({
-      data: [
-        {
-          id: 'inc1',
-          testCaseResolutionStatusType: 'New',
-          severity: 'Severity1',
-          stateId: 'task-1',
-          timestamp: 1700000000000,
-        },
-      ],
+    getTestCaseIncidentByStateId.mockResolvedValue({
+      id: 'inc1',
+      testCaseResolutionStatusType: 'New',
+      severity: 'Severity1',
+      stateId: 'task-1',
+      timestamp: 1700000000000,
     });
     getTestCaseByName.mockResolvedValue({
       id: 'tc1',
       name: 'amount_null',
+      incidentId: 'inc-state-1',
       fullyQualifiedName: 'svc.db.schema.orders.amount_null',
       entityFQN: 'svc.db.schema.orders',
       entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
@@ -311,8 +334,7 @@ describe('TestCaseDetailView results tab TestSummary', () => {
     getTestCase.mockReset();
     getTestCaseByName.mockReset();
     listTestCaseResults.mockReset();
-    listTestIncidents.mockReset();
-    listTestIncidents.mockResolvedValue({ data: [] });
+    getTestCaseIncidentByStateId.mockReset();
     const testCase = {
       id: 'tc1',
       name: 'row_count',
@@ -355,18 +377,26 @@ describe('TestCaseDetailView results tab TestSummary', () => {
     wrapper.unmount();
   });
 
-  it('loads incident header rows by test-case FQN and open task counts for the issues tab badge', async () => {
+  it('loads incident header by incidentId and open task counts for the issues tab badge', async () => {
     listTestCaseResults.mockResolvedValue({ data: [] });
-    listTestIncidents.mockResolvedValue({
-      data: [
-        { id: 'inc1', testCaseResolutionStatusType: 'New', severity: 'Critical', timestamp: 1700000000000 },
-      ],
+    getTestCaseIncidentByStateId.mockResolvedValue({
+      id: 'inc1',
+      testCaseResolutionStatusType: 'New',
+      severity: 'Critical',
+      stateId: 'task-2',
+      timestamp: 1700000000000,
+    });
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'row_count',
+      incidentId: 'inc-state-1',
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      parameterValues: [],
+      testSuites: [],
     });
     getTaskCounts.mockResolvedValue({ open: 2, completed: 1 });
     const { wrapper } = await mountView();
-    expect(listTestIncidents).toHaveBeenCalledWith({
-      testCaseFQN: 'svc.db.schema.orders.row_count',
-    });
+    expect(getTestCaseIncidentByStateId).toHaveBeenCalledWith('inc-state-1');
     expect(getTaskCounts).toHaveBeenCalledWith({
       aboutEntity: 'svc.db.schema.orders.row_count',
     });
@@ -455,9 +485,8 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
     updateTestCase.mockReset();
     patchTestCase.mockReset();
     listTestCaseResults.mockReset();
-    listTestIncidents.mockReset();
+    getTestCaseIncidentByStateId.mockReset();
     getTestDefinition.mockReset();
-    listTestIncidents.mockResolvedValue({ data: [] });
     getTestDefinition.mockResolvedValue(tableDiffDefinition);
     vi.stubGlobal(
       'fetch',
@@ -624,6 +653,84 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
     item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     expect(document.body.querySelector('[data-testid="test-case-form-drawer"], .ant-drawer')).not.toBeNull();
+    wrapper.unmount();
+  });
+});
+
+describe('TestCaseDetailView version page (official IncidentManagerDetailPage / useTestCaseDetailPage)', () => {
+  const testCaseId = '6f3a2f1a-2b4c-4d5e-8f9a-0b1c2d3e4f5a';
+
+  beforeEach(() => {
+    getTestCase.mockReset();
+    getTestCaseVersion.mockReset();
+    listGovernanceVersions.mockReset();
+    listTestCaseResults.mockReset();
+    getTestCaseIncidentByStateId.mockReset();
+    getTestDefinition.mockReset();
+    listTestCaseResults.mockResolvedValue({ data: [] });
+    listGovernanceVersions.mockResolvedValue([{ version: '0.2', updatedAt: 1 }]);
+    getTestCase.mockResolvedValue({
+      id: testCaseId,
+      name: 'row_count',
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      version: 2,
+      parameterValues: [],
+      testSuites: [],
+    });
+    getTestCaseVersion.mockResolvedValue({
+      id: testCaseId,
+      name: 'row_count',
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      version: 2,
+      inspectionQuery: 'SELECT 1',
+      changeDescription: { fieldsAdded: [{ name: 'description', newValue: 'x' }] },
+      parameterValues: [],
+      testSuites: [],
+    });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('loads a version snapshot, hides issues tab and manage actions, and shows SQL tab', async () => {
+    const { wrapper } = await mountView({ id: testCaseId, version: '0.2', tab: 'sql-query' });
+    expect(getTestCase).toHaveBeenCalledWith(testCaseId);
+    expect(listGovernanceVersions).toHaveBeenCalledWith('testCase', testCaseId);
+    expect(getTestCaseVersion).toHaveBeenCalledWith(testCaseId, '0.2');
+    expect(getTestCaseIncidentByStateId).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="incident"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="manage-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="run-test-case-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="versions-list-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-sql-query-version-diff"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('calls restoreTestCase when the restore modal confirms', async () => {
+    getTestCase.mockResolvedValue({
+      id: testCaseId,
+      name: 'row_count',
+      deleted: true,
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      parameterValues: [],
+      testSuites: [],
+    });
+    restoreTestCase.mockResolvedValue({
+      id: testCaseId,
+      name: 'row_count',
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      version: 3,
+      parameterValues: [],
+      testSuites: [],
+    });
+    const { wrapper } = await mountView({ id: testCaseId, version: undefined });
+    await wrapper.find('[data-testid="restore-test-case-button"]').trigger('click');
+    await flushPromises();
+    const ok = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    ok?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(restoreTestCase).toHaveBeenCalledWith(testCaseId);
     wrapper.unmount();
   });
 });

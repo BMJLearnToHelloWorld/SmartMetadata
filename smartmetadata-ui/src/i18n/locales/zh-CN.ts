@@ -169,6 +169,8 @@ const zhCN = {
     'security': '安全',
     'select-all': '全选',
     'select-all-entity': "选择全部 {entity}",
+    'select-all-count-test-cases': '选择全部 {count} 个测试用例',
+    'n-selected': '已选择 {count} 项',
     'select-entity': '选择{entity}',
     'select-schema-object': '选择架构对象',
     'select-test-type': '选择测试类型',

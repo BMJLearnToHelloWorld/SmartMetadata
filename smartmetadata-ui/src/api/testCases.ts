@@ -520,6 +520,11 @@ export type AddTestCaseListSubmitPayload = {
   filter?: AddTestCaseListFilter;
 };
 
+/** Pin AddTestCaseList.interface.ts AddTestCaseListChangePayload. */
+export type AddTestCaseListChangePayload = AddTestCaseListSubmitPayload & {
+  testCases: TestCase[];
+};
+
 /** Official addTestCasesToLogicalTestSuiteBulk (rest/testAPI.ts): PUT logicalTestCases/bulk. */
 function bulkAddFilter(filter?: AddTestCaseListFilter): AddTestCaseListFilter | undefined {
   if (!filter) {

@@ -57,7 +57,7 @@ import ServiceVersionTimeline from '@/components/ingestion/ServiceVersionTimelin
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import RestoreEntityModal from '@/features/crud/RestoreEntityModal.vue';
 import { getEntityVersionByField } from '@/ingestion/versionDiff';
-import { listTestIncidents } from '@/api/testIncidents';
+import { getTestCaseIncidentByStateId } from '@/api/testIncidents';
 import { getTask, getTaskCounts } from '@/api/tasks';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
 import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
@@ -105,7 +105,8 @@ const { entityRules, isRulesLoaded } = useEntityRules('testCase');
 const requireDomainForDataProduct = computed(
   () => !isRulesLoaded.value || entityRules.value.requireDomainForDataProduct,
 );
-const issues = ref<TestIncident[]>([]);
+/** Pin useTestCaseIncidentHeader: one row from incidentId / inline resolved status, not listTestIncidents. */
+const headerIncident = ref<TestIncident | undefined>();
 const openTaskCount = ref(0);
 // Official TestCasePageTabs default is TEST_CASE_RESULTS. Unknown tabs
 // land there; official has no overview fallback (t418u).
@@ -170,7 +171,7 @@ function toggleTabExpanded(): void {
   isTabExpanded.value = !isTabExpanded.value;
 }
 
-const latestIncident = computed(() => issues.value[0]);
+const latestIncident = computed(() => headerIncident.value);
 const nextRunTimestamp = ref<number | null | undefined>(undefined);
 const incidentTask = ref<CollaborationTask | null>(null);
 const incidentTaskLoaded = ref(false);
@@ -224,10 +225,33 @@ async function loadNextRunTimestamp(): Promise<void> {
   }
 }
 
+async function loadHeaderIncident(current: TestCase): Promise<void> {
+  headerIncident.value = undefined;
+  const inline = current.incidentStatus;
+  const resolved = inline?.testCaseResolutionStatusType === 'Resolved' ? inline : undefined;
+  const incidentId = current.incidentId;
+  const stateId = incidentId ?? resolved?.stateId;
+  if (!stateId) {
+    return;
+  }
+  try {
+    if (incidentId) {
+      headerIncident.value = await getTestCaseIncidentByStateId(incidentId);
+    } else {
+      headerIncident.value = resolved;
+    }
+  } catch {
+    headerIncident.value = inline;
+  }
+}
+
 async function loadIncidentTask(): Promise<void> {
   incidentTaskLoaded.value = false;
   incidentTask.value = null;
-  const stateId = latestIncident.value?.stateId;
+  const current = testCase.value;
+  const inline = current?.incidentStatus;
+  const resolved = inline?.testCaseResolutionStatusType === 'Resolved' ? inline : undefined;
+  const stateId = current?.incidentId ?? resolved?.stateId ?? latestIncident.value?.stateId;
   if (!stateId) {
     incidentTaskLoaded.value = true;
     return;
@@ -242,7 +266,7 @@ async function loadIncidentTask(): Promise<void> {
 }
 
 function replaceLatestIncident(latest: TestIncident): void {
-  issues.value = [latest, ...issues.value.filter((row) => row.id !== latest.id && row.stateId !== latest.stateId)];
+  headerIncident.value = latest;
 }
 
 async function submitHeaderIncidentStatus(
@@ -602,14 +626,9 @@ async function load(): Promise<void> {
     await loadTestDefinition(current?.testDefinition?.id);
     if (current?.fullyQualifiedName) {
       if (!isVersionPage.value) {
-        try {
-          const incidentPage = await listTestIncidents({ testCaseFQN: current.fullyQualifiedName });
-          issues.value = incidentPage.data;
-        } catch {
-          issues.value = [];
-        }
+        await loadHeaderIncident(current);
       } else {
-        issues.value = [];
+        headerIncident.value = undefined;
       }
       try {
         const counts = await getTaskCounts({ aboutEntity: current.fullyQualifiedName });
@@ -622,13 +641,13 @@ async function load(): Promise<void> {
         await Promise.all([loadNextRunTimestamp(), loadIncidentTask()]);
       }
     } else {
-      issues.value = [];
+      headerIncident.value = undefined;
       await loadSuitePipelines(undefined);
     }
   } catch (error) {
     testCase.value = null;
     testDefinitionDetail.value = undefined;
-    issues.value = [];
+    headerIncident.value = undefined;
     errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case') }));
   } finally {
     loading.value = false;

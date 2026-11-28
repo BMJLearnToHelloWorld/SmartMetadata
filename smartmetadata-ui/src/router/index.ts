@@ -101,7 +101,6 @@ const IncidentsListView = () => import('@/views/observability/IncidentsListView.
 const DataQualityLandingView = () => import('@/views/quality/DataQualityLandingView.vue');
 const TestCaseDetailView = () => import('@/views/quality/TestCaseDetailView.vue');
 const TestCaseDimensionsView = () => import('@/views/quality/TestCaseDimensionsView.vue');
-const TestDefinitionDetailView = () => import('@/views/quality/TestDefinitionDetailView.vue');
 const TestDefinitionsListView = () => import('@/views/quality/TestDefinitionsListView.vue');
 const TestSuiteDetailView = () => import('@/views/quality/TestSuiteDetailView.vue');
 const TestSuiteIngestionView = () => import('@/views/quality/TestSuiteIngestionView.vue');
@@ -918,8 +917,7 @@ export const router = createRouter({
         {
           path: 'quality/test-definitions/:id',
           name: 'quality-test-definition',
-          component: TestDefinitionDetailView,
-          props: true,
+          redirect: { name: 'quality-test-definitions' },
         },
         // G-02 (visual comparison): official DATA_QUALITY
         // '/data-quality'.

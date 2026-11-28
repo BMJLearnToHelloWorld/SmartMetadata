@@ -172,6 +172,8 @@ const enUS = {
     'security': 'Security',
     'select-all': 'Select All',
     'select-all-entity': "Select All {entity}",
+    'select-all-count-test-cases': 'Select all {count} test cases',
+    'n-selected': '{count} Selected',
     'select-entity': 'Select {entity}',
     'select-schema-object': 'Select Schema Object',
     'select-test-type': 'Select Test Type',
