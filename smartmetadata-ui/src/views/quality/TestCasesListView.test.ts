@@ -211,11 +211,13 @@ describe('TestCasesListView official list chrome', () => {
   });
   it('exports through the official CSV tray with no started toast and official manage labels', async () => {
     const success = vi.spyOn(message, 'success');
+    const exportUrls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes('/exportAsync')) {
+          exportUrls.push(url);
           return jsonResponse({ jobId: 'csv-job-test-cases' });
         }
         if (url.includes('/api/v1/dataQuality/testCases')) {
@@ -247,8 +249,36 @@ describe('TestCasesListView official list chrome', () => {
     await flushPromises();
     expect(isCsvJobOwned('csv-job-test-cases')).toBe(true);
     expect(success).not.toHaveBeenCalled();
+    expect(exportUrls.some((url) => url.includes('recursive=true'))).toBe(true);
     wrapper.unmount();
     success.mockRestore();
+  });
+
+  it('passes active list filters to exportAsync like official withTestCaseExportFilters', async () => {
+    const exportUrls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/exportAsync')) {
+          exportUrls.push(url);
+          return jsonResponse({ jobId: 'csv-job-filtered' });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView({ props: { status: 'Failed', preferSearch: true } });
+    await flushPromises();
+    await wrapper.get('[data-testid="test-cases-manage"]').trigger('click');
+    await flushPromises();
+    const exportItem = document.body.querySelector('[data-testid="test-cases-export"]');
+    (exportItem as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(exportUrls.some((url) => url.includes('testCaseStatus=Failed'))).toBe(true);
+    wrapper.unmount();
   });
 
 });

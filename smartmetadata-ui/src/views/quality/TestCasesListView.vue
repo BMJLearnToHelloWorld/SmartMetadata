@@ -60,6 +60,8 @@ import {
   parseTestCaseListRouteQuery,
   type TestCaseListRouteParams,
 } from '@/quality/testCaseListRouteParams';
+import { toEntityLink } from '@/quality/entityLink';
+import { getTestCaseExportFilters } from '@/quality/testCaseExport.utils';
 import { TEST_CASE_STATUSES, type TestCase } from '@/types/quality';
 
 const props = withDefaults(
@@ -486,9 +488,31 @@ function onManageMenu({ key }: { key: string | number }): void {
   }
 }
 
+function buildExportFilterParams(): ReturnType<typeof getTestCaseExportFilters> {
+  const tableFqn = tableFilter.value.trim() || props.entityFqn;
+  return getTestCaseExportFilters({
+    q: searchValue.value.trim() || undefined,
+    testCaseStatus: statusFilter.value,
+    testCaseType: typeFilter.value,
+    owner: props.ownerFqn,
+    tier: tierFilter.value || props.tier,
+    tags: tagFilter.value || props.tags,
+    dataProductFqn: dataProductFilter.value || props.dataProductFqn,
+    dataQualityDimension: dimensionFilter.value || props.dataQualityDimension,
+    entityLink: tableFqn ? toEntityLink('table', tableFqn) : undefined,
+    testPlatforms: platformFilter.value.length ? platformFilter.value : undefined,
+    serviceName: serviceFilter.value || undefined,
+    startTimestamp: startTimestamp.value,
+    endTimestamp: endTimestamp.value,
+  });
+}
+
 async function exportCases(): Promise<void> {
   try {
-    const result = await exportTestCasesInCSV('*', { recursive: true });
+    const result = await exportTestCasesInCSV('*', {
+      recursive: true,
+      ...buildExportFilterParams(),
+    });
     if (typeof result === 'string') {
       downloadCsv(result, `*_${new Date().toISOString().slice(0, 10)}.csv`);
       return;
