@@ -362,6 +362,23 @@ describe('TestCaseDetailView results tab TestSummary', () => {
     expect(wrapper.find('[data-testid="test-case-sql-query"]').exists()).toBe(false);
   });
 
+  it('renders official SqlQueryTab viewer when inspectionQuery is present', async () => {
+    listTestCaseResults.mockResolvedValue({ data: [] });
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'row_count',
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      parameterValues: [],
+      testSuites: [],
+      inspectionQuery: 'SELECT 1',
+    });
+    const { wrapper } = await mountView({ id: 'tc1', tab: 'sql-query' });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-case-sql-query"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="query-line"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it('loads by FQN name when the id is not a UUID (F-D-4 alias)', async () => {
     listTestCaseResults.mockResolvedValue({ data: [] });
     await mountView();

@@ -75,6 +75,7 @@ import type { CollaborationTask } from '@/types/collaboration';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import SmState from '@/components/shared/SmState.vue';
 import DimensionalityPanel from '@/features/quality/DimensionalityPanel.vue';
+import TestCaseSqlQueryTab from '@/components/quality/TestCaseSqlQueryTab.vue';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -1014,7 +1015,7 @@ onMounted(() => {
       />
     </template>
     <template #sql-query>
-      <pre data-testid="test-case-sql-query" class="entity-detail__sql-query">{{ testCase?.inspectionQuery }}</pre>
+      <TestCaseSqlQueryTab :test-case="testCase" />
     </template>
   </EntityDetailShell>
   </div>
@@ -1052,11 +1053,6 @@ onMounted(() => {
 .entity-detail__tab-lead {
   color: var(--sm-text-secondary);
   margin-bottom: 12px;
-}
-.entity-detail__sql-query {
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: var(--sm-font-mono, ui-monospace, monospace);
 }
 .test-case-last-run-banner-tab-container {
   padding: 16px 0 12px;
