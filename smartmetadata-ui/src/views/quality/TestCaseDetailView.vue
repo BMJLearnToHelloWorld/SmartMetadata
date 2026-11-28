@@ -7,7 +7,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
+import { SyncOutlined } from '@ant-design/icons-vue';
 import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-vue';
+import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
+import StatItem from '@/components/shared/StatItem.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, getTestCaseByName, patchTestCase } from '@/api/testCases';
@@ -150,6 +153,12 @@ const canRun = computed(
     !resourcePermsLoading.value &&
     canTrigger.value,
 );
+
+const showVersionControl = computed(
+  () => Boolean(testCase.value) && activeTab.value !== 'dimensionality',
+);
+
+const headerDisplayName = computed(() => testCase.value?.displayName?.trim() || '');
 
 async function loadResourceTriggerPermissions(): Promise<void> {
   resourcePermsLoading.value = true;
@@ -368,9 +377,6 @@ onMounted(() => {
 <template>
   <EntityDetailShell
     :title="entityLabel(testCase) || t('label.entity-detail-plural', { entity: t('label.test-case') })"
-    :name="testCase?.name"
-    :fqn="testCase?.fullyQualifiedName"
-    :lead="t('label.entity-detail-plural', { entity: t('label.test-case') })"
     :loading="loading"
     :error="errorMessage"
     :empty="!testCase && !loading && !errorMessage"
@@ -378,6 +384,23 @@ onMounted(() => {
     :tabs="testCase ? tabs : []"
     v-model:active-tab="activeTab"
   >
+    <template v-if="showVersionControl" #header-toolbar>
+      <StatItem
+        :icon="SyncOutlined"
+        :count="testCase?.version"
+        test-id="version-button"
+        :tooltip="t('label.version-plural-history')"
+        @click="onOpenVersions"
+      />
+    </template>
+    <template v-if="testCase" #header-title>
+      <EntityHeaderTitle
+        :name="testCase.name"
+        :display-name="headerDisplayName || undefined"
+        :deleted="testCaseDeleted"
+        service-name=""
+      />
+    </template>
     <template #actions>
       <template v-if="canRun">
         <Tooltip
@@ -414,7 +437,6 @@ onMounted(() => {
           {{ t(runButtonLabelKey) }}
         </Button>
       </template>
-      <Button data-testid="test-case-versions" :disabled="!testCase" @click="onOpenVersions">{{ t('label.version-plural-history') }}</Button>
       <EntityManageButton
         :entity-label="t('label.test-case')"
         :can-rename="editDisplayNamePermission"

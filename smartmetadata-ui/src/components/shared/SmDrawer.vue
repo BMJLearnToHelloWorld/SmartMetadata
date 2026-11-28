@@ -34,6 +34,8 @@ const props = withDefaults(
     widthKey?: DrawerWidthKey;
     testId?: string;
     okTestId?: string;
+    /** Secondary data-testid on a display:contents wrapper (legacy product ids). */
+    okTestIdLegacy?: string;
     cancelTestId?: string;
     maskClosable?: boolean;
     keyboard?: boolean;
@@ -47,6 +49,7 @@ const props = withDefaults(
     widthKey: 'form',
     testId: 'sm-drawer',
     okTestId: undefined,
+    okTestIdLegacy: undefined,
     cancelTestId: undefined,
     maskClosable: true,
     keyboard: true,
@@ -94,8 +97,23 @@ watch(
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
         <Button :data-testid="cancelTestId ?? `${testId}-cancel`" @click="close">{{ cancelText ?? t('crud.cancel') }}</Button>
+        <span
+          v-if="showOk && okTestIdLegacy"
+          :data-testid="okTestIdLegacy"
+          class="sm-drawer__ok-legacy"
+        >
+          <Button
+            type="primary"
+            :data-testid="okTestId ?? `${testId}-save`"
+            :loading="confirmLoading"
+            :disabled="okDisabled"
+            @click="emit('ok')"
+          >
+            {{ okText ?? t('crud.save') }}
+          </Button>
+        </span>
         <Button
-          v-if="showOk"
+          v-else-if="showOk"
           type="primary"
           :data-testid="okTestId ?? `${testId}-save`"
           :loading="confirmLoading"
@@ -123,5 +141,8 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sm-drawer__ok-legacy {
+  display: contents;
 }
 </style>

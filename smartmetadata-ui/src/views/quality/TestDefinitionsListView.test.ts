@@ -8,6 +8,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import TestDefinitionFormDrawer from '@/components/quality/TestDefinitionFormDrawer.vue';
 import TestDefinitionsListView from './TestDefinitionsListView.vue';
 
 const permState = vi.hoisted(() => ({
@@ -54,6 +55,7 @@ async function mountView() {
   await router.isReady();
   const wrapper = mount(TestDefinitionsListView, {
     global: { plugins: [pinia, router, Antd, createTestI18n('zh-CN')] },
+    attachTo: document.body,
   });
   await flushPromises();
   return { wrapper, router };
@@ -153,14 +155,24 @@ describe('TestDefinitionsListView', () => {
     const { wrapper } = await mountView();
     await wrapper.get('[data-testid="create-test-definition"]').trigger('click');
     await flushPromises();
-    const body = document.body;
-    expect(body.querySelector('[data-testid="test-definition-form-drawer"]')).not.toBeNull();
+    const formDrawer = wrapper.findComponent(TestDefinitionFormDrawer);
+    expect(formDrawer.props('open')).toBe(true);
+    let drawerRoot: Element | null = null;
+    await vi.waitFor(
+      () => {
+        drawerRoot = document.body.querySelector('.ant-drawer');
+        expect(drawerRoot).not.toBeNull();
+      },
+      { timeout: 3000 },
+    );
+    const body = drawerRoot ?? document.body;
     expect(body.querySelector('[data-testid="test-definition-form-body"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).toContain('Test Definition');
     expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).toContain('OpenMetadata');
     expect(body.querySelector('[data-testid="test-definition-help-panel"]')?.textContent).not.toContain('IQVIA');
     expect(body.querySelector('[data-testid="data-quality-dimension"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="add-parameter-button"]')).not.toBeNull();
+    expect(body.querySelector('[data-testid="save-test-definition"]')).not.toBeNull();
     expect(body.querySelector('[data-testid="test-definition-save"]')).not.toBeNull();
   });
 

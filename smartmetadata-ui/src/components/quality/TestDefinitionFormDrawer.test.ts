@@ -32,6 +32,8 @@ describe('TestDefinitionFormDrawer', () => {
     expect(document.body.querySelector('[data-testid="test-definition-help-panel"]')).toBeNull();
     const narrowed = document.body.querySelector('.ant-drawer-content-wrapper') as HTMLElement | null;
     expect(narrowed?.style.width || '').toContain('60vw');
+    expect(document.body.querySelector('[data-testid="save-test-definition"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="test-definition-save"]')).not.toBeNull();
     wrapper.unmount();
   });
 });

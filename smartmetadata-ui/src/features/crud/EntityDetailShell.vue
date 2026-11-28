@@ -99,21 +99,39 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
   <Card data-testid="entity-detail-shell">
     <Spin :spinning="loading">
       <Space direction="vertical" size="middle" style="width: 100%">
-        <Breadcrumb v-if="breadcrumbs.length" data-testid="entity-detail-breadcrumb">
-          <Breadcrumb.Item v-for="(item, index) in breadcrumbs" :key="`${item.label}-${index}`">
-            <a
-              v-if="item.to"
-              href="#"
-              :data-testid="`entity-detail-crumb-${index}`"
-              @click.prevent="onBreadcrumb(item)"
-            >
-              {{ item.label }}
-            </a>
-            <span v-else>{{ item.label }}</span>
-          </Breadcrumb.Item>
-        </Breadcrumb>
+        <div
+          v-if="breadcrumbs.length || $slots['header-toolbar']"
+          class="entity-detail__crumb-row"
+        >
+          <Breadcrumb v-if="breadcrumbs.length" data-testid="entity-detail-breadcrumb">
+            <Breadcrumb.Item v-for="(item, index) in breadcrumbs" :key="`${item.label}-${index}`">
+              <a
+                v-if="item.to"
+                href="#"
+                :data-testid="`entity-detail-crumb-${index}`"
+                @click.prevent="onBreadcrumb(item)"
+              >
+                {{ item.label }}
+              </a>
+              <span v-else>{{ item.label }}</span>
+            </Breadcrumb.Item>
+          </Breadcrumb>
+          <div v-if="$slots['header-toolbar']" class="entity-detail__toolbar">
+            <slot name="header-toolbar" />
+          </div>
+        </div>
         <div class="entity-detail__head">
+          <div v-if="$slots['header-title']" class="entity-detail__head-custom">
+            <slot name="header-title" />
+            <div v-if="lead || $slots.meta" class="entity-detail__head-below">
+              <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-detail-lead">
+                {{ lead }}
+              </Typography.Paragraph>
+              <slot name="meta" />
+            </div>
+          </div>
           <PageHeader
+            v-else
             :header="title"
             :sub-header="subtitleText || undefined"
             :is-beta="isBeta"
@@ -188,11 +206,33 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
 </template>
 
 <style scoped>
+.entity-detail__crumb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.entity-detail__toolbar {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .entity-detail__head {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+}
+
+.entity-detail__head-custom {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entity-detail__head-below {
+  margin-top: 8px;
 }
 
 .entity-detail__actions {

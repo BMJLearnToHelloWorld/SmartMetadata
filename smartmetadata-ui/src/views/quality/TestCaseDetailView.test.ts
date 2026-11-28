@@ -78,6 +78,60 @@ async function mountView(props: { id: string; tab?: string } = { id: 'tc1' }) {
   return { wrapper, router };
 }
 
+describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCaseHeaderTitle)', () => {
+  beforeEach(() => {
+    getTestCase.mockReset();
+    getTestCaseByName.mockReset();
+    listTestCaseResults.mockReset();
+    listTestIncidents.mockReset();
+    listTestIncidents.mockResolvedValue({ data: [] });
+    listTestCaseResults.mockResolvedValue({ data: [] });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders EntityHeaderTitle test ids and StatItem version-button with count', async () => {
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'customer_count_check',
+      displayName: 'Customer count check',
+      version: 3,
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      parameterValues: [],
+      testSuites: [],
+    });
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="entity-header-display-name"]').text()).toContain('Customer count check');
+    expect(wrapper.find('[data-testid="entity-header-name"]').text()).toContain('customer_count_check');
+    expect(wrapper.find('[data-testid="entity-header-copy-button"]').exists()).toBe(true);
+    const versionButton = wrapper.find('[data-testid="version-button"]');
+    expect(versionButton.exists()).toBe(true);
+    expect(versionButton.text()).toContain('3');
+    expect(wrapper.find('[data-testid="test-case-versions"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows deleted-badge and hides version-button on the dimensionality tab', async () => {
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'customer_count_check',
+      displayName: 'Customer count check',
+      deleted: true,
+      version: 1,
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
+      parameterValues: [],
+      testSuites: [],
+    });
+    const { wrapper } = await mountView({ id: 'tc1', tab: 'dimensionality' });
+    expect(wrapper.find('[data-testid="deleted-badge"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="version-button"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+
 describe('TestCaseDetailView results chart', () => {
   beforeEach(() => {
     getTestCase.mockReset();
