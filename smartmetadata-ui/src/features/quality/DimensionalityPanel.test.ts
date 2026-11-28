@@ -16,7 +16,13 @@ const mocks = vi.hoisted(() => ({
   listDimensionResultsMock: vi.fn(async (_fqn: string, _params: unknown) => ({
     data: [
       { dimensionValues: [{ value: 'US' }], testCaseStatus: 'Success', impactScore: 0.2, timestamp: 1700000000000 },
-      { dimensionValues: [{ value: 'US' }], testCaseStatus: 'Failed', impactScore: 0.9, timestamp: 1700100000000 },
+      {
+        dimensionValues: [{ value: 'US' }],
+        testCaseStatus: 'Failed',
+        impactScore: 0.9,
+        timestamp: 1700100000000,
+        excludedFromRollUp: true,
+      },
       { dimensionValues: [{ value: 'DE' }], testCaseStatus: 'Success', impactScore: 0.5, timestamp: 1700000000000 },
     ],
     paging: { total: 3 },
@@ -50,7 +56,13 @@ describe('DimensionalityPanel', () => {
     // US keeps the later Failed run (impact 0.9) ahead of DE (0.5); the
     // superseded US Success run must not appear as a second US row.
     expect(text).toContain('Failed');
-    expect(text.match(/US/g)?.length).toBe(1);
-    expect(text.indexOf('Failed')).toBeLessThan(text.indexOf('DE'));
+    expect(wrapper.findAll('.ant-table-tbody tr').length).toBe(2);
+    const tableRows = wrapper.findAll('.ant-table-tbody tr');
+    expect(tableRows[0]!.text()).toContain('US');
+    expect(tableRows[0]!.text()).toContain('Failed');
+    expect(tableRows[1]!.text()).toContain('DE');
+    expect(wrapper.find('[data-testid="dimensionality-heatmap"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dimension-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="excluded-from-roll-up-badge"]').exists()).toBe(true);
   });
 });

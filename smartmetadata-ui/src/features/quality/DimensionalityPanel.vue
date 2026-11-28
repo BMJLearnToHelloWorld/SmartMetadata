@@ -1,32 +1,20 @@
 <!--
   Copyright 2026 SmartMetadata authors.
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
+  Licensed under the Apache License, Version 2.0.
+  Official DimensionalityTab.tsx + DimensionalityHeatmap.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
-import { DatePicker, Select, Typography } from 'ant-design-vue';
+import { DatePicker, Select, Tag, Typography } from 'ant-design-vue';
 import dayjs, { type Dayjs } from 'dayjs';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmState from '@/components/shared/SmState.vue';
+import DimensionalityHeatmap from '@/components/quality/DimensionalityHeatmap.vue';
 import { listTestCaseDimensionResults } from '@/api/testCases';
 import type { TestCaseDimensionResult } from '@/types/quality';
 
-/**
- * Dimensionality tab (official DimensionalityTab.tsx + its heatmap table
- * columns: status / impactScore / dimensionValue / lastRun). The dimension
- * selector comes from the test case's dimensionColumns; the table keeps
- * the latest result per dimension value (official
- * getLatestResultPerDimension: latest date wins, ties broken by latest
- * timestamp), sorted by impactScore descending. The heatmap itself is
- * not built here — the table is the tab's data surface; a heatmap cell
- * grid would duplicate the same rows without new data.
- */
 const props = defineProps<{
   testCaseFqn: string;
   dimensionColumns: string[];
@@ -34,9 +22,6 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const selected = ref(props.dimensionColumns[0] ?? '');
-// Official DEFAULT_RANGE_DATA (profiler.constant.ts): last 7 days —
-// start of day 7 days ago through end of today. The picker starts on
-// this range; clearing it removes the bounds.
 const defaultRange: [Dayjs, Dayjs] = [dayjs().subtract(7, 'day').startOf('day'), dayjs().endOf('day')];
 const rangeValue = ref<[Dayjs, Dayjs] | null>(defaultRange);
 const startTs = ref<number | undefined>(defaultRange[0].valueOf());
@@ -60,7 +45,7 @@ const latestRows = computed(() => {
       byValue.set(value, row);
     }
   }
-  return [...byValue.entries()]
+  return Array.from(byValue.entries())
     .map(([value, result]) => ({ value, result }))
     .sort((a, b) => (b.result.impactScore ?? 0) - (a.result.impactScore ?? 0));
 });
@@ -98,8 +83,8 @@ function onDateRange(dates: unknown): void {
   const pair = dates as Array<{ valueOf: () => number } | null> | null;
   rangeValue.value =
     pair?.[0] && pair?.[1] ? [dayjs(pair[0].valueOf()), dayjs(pair[1].valueOf())] : null;
-  startTs.value = pair?.[0]?.valueOf();
-  endTs.value = pair?.[1]?.valueOf();
+  startTs.value = pair?.[0]?.valueOf() ?? startTs.value;
+  endTs.value = pair?.[1]?.valueOf() ?? endTs.value;
   void load();
 }
 
@@ -119,43 +104,85 @@ onMounted(() => {
       <Select
         v-model:value="selected"
         style="width: 240px"
-        data-testid="dimensionality-select"
+        data-testid="dimension-select"
         :options="dimensionColumns.map((column) => ({ value: column, label: column }))"
       />
       <DatePicker.RangePicker :value="rangeValue ?? undefined" data-testid="dimensionality-range" @change="onDateRange" />
     </div>
     <SmState v-if="errorMessage" state="error" test-id="dimensionality-error" :error-text="errorMessage" />
+    <template v-else-if="loading && rows.length === 0">
+      <DimensionalityHeatmap
+        :data="[]"
+        :start-ts="startTs ?? defaultRange[0].valueOf()"
+        :end-ts="endTs ?? defaultRange[1].valueOf()"
+        :loading="true"
+      />
+    </template>
     <SmState
-      v-else-if="!loading && latestRows.length === 0"
+      v-else-if="!loading && rows.length === 0"
       state="empty"
       test-id="dimensionality-empty"
       :empty-text="t('label.no-data')"
     />
-    <SmTable
-      v-else
-      row-key="value"
-      size="small"
-      :columns="columns"
-      :data-source="
-        latestRows.map((row) => ({
-          value: row.value,
-          status: row.result.testCaseStatus || '—',
-          impactScore: row.result.impactScore ?? '—',
-          timestamp: row.result.timestamp ? new Date(row.result.timestamp).toISOString() : '—',
-          excluded: row.result.excludedFromRollUp,
-        }))
-      "
-      :loading="loading"
-      :pagination="false"
-    >
-      <template #bodyCell="{ column, record }">
-        <span v-if="column.key === 'status'">
-          {{ (record as { status: string }).status }}
-          <Typography.Text v-if="(record as { excluded?: boolean }).excluded" type="secondary">
-            {{ t('quality.testCases.excludedFromRollUp') }}
-          </Typography.Text>
-        </span>
-      </template>
-    </SmTable>
+    <template v-else>
+      <div class="dimensionality-panel__heatmap-card">
+        <DimensionalityHeatmap
+          :data="rows"
+          :start-ts="startTs ?? defaultRange[0].valueOf()"
+          :end-ts="endTs ?? defaultRange[1].valueOf()"
+          :loading="loading && rows.length === 0"
+        />
+      </div>
+      <Typography.Title :level="5" class="dimensionality-panel__table-title">
+        {{ t('label.entity-text-table', { entityText: selected }) }}
+      </Typography.Title>
+      <SmTable
+        row-key="value"
+        size="small"
+        :columns="columns"
+        :data-source="
+          latestRows.map((row) => ({
+            value: row.value,
+            status: row.result.testCaseStatus || '—',
+            impactScore: row.result.impactScore ?? '—',
+            timestamp: row.result.timestamp ? new Date(row.result.timestamp).toISOString() : '—',
+            excluded: row.result.excludedFromRollUp,
+          }))
+        "
+        :loading="loading"
+        :pagination="false"
+      >
+        <template #bodyCell="{ column, record }">
+          <span v-if="column.key === 'status'" class="dimensionality-panel__status-cell">
+            {{ (record as { status: string }).status }}
+            <Tag
+              v-if="(record as { excluded?: boolean }).excluded"
+              data-testid="excluded-from-roll-up-badge"
+            >
+              {{ t('label.excluded-from-roll-up') }}
+            </Tag>
+          </span>
+        </template>
+      </SmTable>
+    </template>
   </div>
 </template>
+
+<style scoped>
+.dimensionality-panel__heatmap-card {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--sm-border-color, #e8e8e8);
+  border-radius: 10px;
+}
+.dimensionality-panel__table-title {
+  margin: 0 0 8px !important;
+  font-size: 14px !important;
+}
+.dimensionality-panel__status-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+</style>

@@ -126,12 +126,26 @@ describe('TestCasesListView official list chrome', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('testCaseIncidentStatus')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'inc1',
+                testCaseResolutionStatusType: 'New',
+                testCaseFqn: 'svc.db.schema.orders.row_count',
+                stateId: 'state-1',
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/dataQuality/testCases')) {
           return jsonResponse({
             data: [
               {
                 id: 'tc1',
                 name: 'row_count',
+                fullyQualifiedName: 'svc.db.schema.orders.row_count',
                 entityFQN: 'svc.db.schema.orders',
                 entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
                 testCaseResult: { testCaseStatus: 'Failed', result: 'expected 10 got 12', timestamp: 1 },
@@ -160,7 +174,7 @@ describe('TestCasesListView official list chrome', () => {
     expect(wrapper.find('[data-testid="test-cases-show-deleted"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-cases-manage"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('expected 10 got 12');
-    expect(wrapper.find('[data-testid="test-case-incident-tc1"]').text()).toContain('New');
+    expect(wrapper.find('[data-testid="test-case-list-incident-tc1"]').exists()).toBe(true);
   });
 
   it('opens the official add-test drawer instead of the thin create modal', async () => {

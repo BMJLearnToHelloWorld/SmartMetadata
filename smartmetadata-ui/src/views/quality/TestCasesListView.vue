@@ -18,6 +18,7 @@ import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
 import TestCaseDeleteModal from '@/components/quality/TestCaseDeleteModal.vue';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import TestCaseInsightDonuts from '@/components/quality/TestCaseInsightDonuts.vue';
+import TestCaseListIncidentCell from '@/components/quality/TestCaseListIncidentCell.vue';
 import TestCaseFilterAsyncSelect from '@/components/quality/TestCaseFilterAsyncSelect.vue';
 import {
   fetchDataProductFilterOptions,
@@ -219,8 +220,11 @@ function includeMode(): 'non-deleted' | 'deleted' {
   return showDeleted.value ? 'deleted' : 'non-deleted';
 }
 
-function incidentLabel(record: TestCase): string {
-  return record.incidentStatus || (record.incidentId ? 'New' : '');
+function onListIncidentUpdated(testCaseId: string, status?: string): void {
+  const row = cases.value.find((item) => item.id === testCaseId);
+  if (row && status) {
+    row.incidentStatus = status;
+  }
 }
 
 const visibleCases = computed(() =>
@@ -779,10 +783,10 @@ defineExpose({ openCreate, total });
         {{ (record as TestCase).testCaseResult?.result || '—' }}
       </template>
       <template v-else-if="column.key === 'incident'">
-        <span v-if="incidentLabel(record as TestCase)" :data-testid="`test-case-incident-${(record as TestCase).id}`">
-          {{ incidentLabel(record as TestCase) }}
-        </span>
-        <span v-else>—</span>
+        <TestCaseListIncidentCell
+          :test-case="record as TestCase"
+          @incident-updated="onListIncidentUpdated"
+        />
       </template>
       <template v-else-if="column.key === 'status'">
         {{
