@@ -39,9 +39,23 @@ async function mountView(options: { props?: Record<string, unknown> } = {}) {
   });
   await router.push('/quality/test-cases');
   await router.isReady();
+  const createActions = computed<DataQualityCreateActions>(() => ({
+    canCreateTestCase: true,
+    canCreateBundleSuite: true,
+    onAddTestCase: () => {},
+    onAddBundleSuite: () => {},
+  }));
   const wrapper = mount(TestCasesListView, {
-    props: options.props,
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    props: { embedded: true, preferSearch: true, ...options.props },
+    global: {
+      plugins: [pinia, router, Antd, createTestI18n()],
+      provide: {
+        [dataQualityContextKey as symbol]: computed(() => ({
+          isActive: true,
+          createActions: createActions.value,
+        })),
+      },
+    },
   });
   await flushPromises();
   return { wrapper, router };
@@ -86,7 +100,7 @@ describe('TestCasesListView', () => {
     expect(wrapper.text()).toContain('Success');
     expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-cases-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-test-case"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-cases-manage"]').exists()).toBe(true);
   });
 
   it('opens test case detail on name click', async () => {
@@ -176,11 +190,42 @@ describe('TestCasesListView official list chrome', () => {
     expect(wrapper.find('[data-testid="test-case-list-incident-tc1"]').exists()).toBe(true);
   });
 
-  it('opens the official add-test drawer instead of the thin create modal', async () => {
-    const { wrapper } = await mountView();
-    await wrapper.get('[data-testid="create-test-case"]').trigger('click');
+  it('routes empty-state create through landing createActions (DataQualityTab)', async () => {
+    const add = vi.fn();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/quality/test-cases', name: 'quality-test-cases', component: TestCasesListView }],
+    });
+    await router.push('/quality/test-cases');
+    await router.isReady();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ data: [], paging: { total: 0 } })),
+    );
+    const wrapper = mount(TestCasesListView, {
+      props: { embedded: true, preferSearch: true },
+      global: {
+        plugins: [pinia, router, Antd, createTestI18n()],
+        provide: {
+          [dataQualityContextKey as symbol]: computed(() => ({
+            isActive: true,
+            createActions: {
+              canCreateTestCase: true,
+              canCreateBundleSuite: false,
+              onAddTestCase: add,
+              onAddBundleSuite: () => {},
+            },
+          })),
+        },
+      },
+    });
     await flushPromises();
-    expect(wrapper.find('[data-testid="test-case-form-drawer"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="test-cases-empty-cta"]').trigger('click');
+    expect(add).toHaveBeenCalled();
+    wrapper.unmount();
+    vi.unstubAllGlobals();
   });
 
   it('navigates to the existing CSV import wizard from the manage menu', async () => {

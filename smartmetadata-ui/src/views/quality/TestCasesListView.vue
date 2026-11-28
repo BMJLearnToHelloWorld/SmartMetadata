@@ -92,7 +92,7 @@ const props = withDefaults(
     results?: StatusCounts | null;
   }>(),
   {
-    embedded: false,
+    embedded: true,
     preferSearch: false,
   },
 );
@@ -216,12 +216,8 @@ const bundlePresetCaseIds = ref<string[]>([]);
 const selectedTestCases = computed(() =>
   cases.value.filter((item) => item.id && selectedRowKeys.value.includes(item.id)),
 );
-const listTitle = computed(() =>
-  props.embedded ? t('label.test-case-insight-plural') : t('label.data-quality'),
-);
-const listLead = computed(() =>
-  props.embedded ? t('message.test-case-insight-description') : t('message.page-sub-header-for-data-quality'),
-);
+const listTitle = computed(() => t('label.test-case-insight-plural'));
+const listLead = computed(() => t('message.test-case-insight-description'));
 const rowSelection = computed(() => {
   if (!enableBulkActions.value) {
     return undefined;
@@ -468,17 +464,11 @@ function applyRouteParams(params: TestCaseListRouteParams, seedFromProps: boolea
 }
 
 function pushFiltersToRoute(): void {
-  if (!props.embedded) {
-    return;
-  }
   const query = mergeTestCaseListFiltersToQuery(route.query, snapshotRouteFilters());
   void router.replace({ path: route.path, query });
 }
 
 function hydrateFromRoute(seedFromProps: boolean): void {
-  if (!props.embedded) {
-    return;
-  }
   applyRouteParams(parseTestCaseListRouteQuery(route.query), seedFromProps);
 }
 
@@ -578,43 +568,8 @@ async function exportCases(): Promise<void> {
 }
 
 watch(
-  () =>
-    [
-      props.preferSearch,
-      props.ownerFqn,
-      props.tier,
-      props.tags,
-      props.dataProductFqn,
-      props.startTs,
-      props.endTs,
-    ].join('|'),
-  () => {
-    if (props.embedded) {
-      return;
-    }
-    resetPager();
-    void load();
-  },
-);
-
-watch(
-  () => [props.status, props.dataQualityDimension, props.entityFqn].join('|'),
-  () => {
-    if (props.embedded) {
-      return;
-    }
-    statusFilter.value = props.status;
-    resetPager();
-    void load();
-  },
-);
-
-watch(
   () => route.query,
   () => {
-    if (!props.embedded) {
-      return;
-    }
     hydrateFromRoute(false);
     resetPager();
     void load();
@@ -677,9 +632,7 @@ watch(showDeleted, () => {
 });
 
 onMounted(() => {
-  if (props.embedded) {
-    hydrateFromRoute(true);
-  }
+  hydrateFromRoute(true);
   void load();
 });
 
@@ -748,9 +701,6 @@ defineExpose({ openCreate, total });
     @delete="(record) => openDelete(record as TestCase)"
   >
     <template #actions>
-      <Button v-if="!embedded" type="primary" data-testid="create-test-case" @click="openCreate">
-        {{ t('label.new-entity', { entity: t('label.test-case') }) }}
-      </Button>
       <Dropdown :trigger="['click']">
         <Button data-testid="test-cases-manage">⋯</Button>
         <template #overlay>
@@ -887,7 +837,7 @@ defineExpose({ openCreate, total });
     </template>
     <template #emptyExtra>
       <Button
-        v-if="props.embedded ? showEmptyCreateCta : true"
+        v-if="showEmptyCreateCta"
         type="primary"
         data-testid="test-cases-empty-cta"
         @click="onEmptyCreate"

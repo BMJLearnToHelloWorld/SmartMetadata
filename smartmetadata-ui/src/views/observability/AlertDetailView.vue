@@ -9,7 +9,10 @@ You may obtain a copy of the License at
 -->
 <script setup lang="ts">
 import { BellOutlined, DeleteOutlined, EditOutlined, SyncOutlined } from '@ant-design/icons-vue';
-import { Button, message, Modal, Skeleton, Spin, Tooltip } from 'ant-design-vue';
+import { Button, message, Modal, Skeleton, Spin, Tabs, Tooltip, Typography } from 'ant-design-vue';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
@@ -48,8 +51,8 @@ import type { AlertSearchHooks } from '@/utils/notifications/alertSourceSearch';
 import { useAlertDetailsData } from './useAlertDetailsData';
 
 /**
- * Pin `AlertDetailsPage` + `AlertDetailsContent` (AlertDetailsPage.tsx:39-107,
- * AlertDetailsContent.tsx:52-246): the error split renders instead of the
+ * Pin go-forward `AlertDetailsPage.tsx` (components/observability/Alerts) +
+ * legacy settings `AlertDetailsContent`: the error split renders instead of the
  * shell — no view permission yields the permission placeholder with no
  * breadcrumb, while a missing alert yields the breadcrumb plus the 404 /
  * 403 / generic placeholder. Inside the shell, the owners row (hidden when
@@ -151,6 +154,8 @@ const showLoadError = computed(
 const loadErrorStatus = computed(() => details.alertDetailsError.value?.status);
 
 const isNotificationAlert = computed(() => face.value === 'Notification');
+const isObservabilityFace = computed(() => face.value === 'Observability');
+const observabilityErrorTitle = computed(() => getEntityName(details.alertDetails.value) || fqn.value);
 const hasOwners = computed(() => (details.alertDetails.value?.owners?.length ?? 0) > 0);
 const showOwners = computed(() => hasOwners.value || details.editOwnersPermission.value);
 const canShowActions = computed(
@@ -201,7 +206,44 @@ async function saveDescription(): Promise<void> {
     v-else-if="showLoadError"
     :document-title="t('label.alert-detail-plural')"
   >
-    <div class="alert-detail__error">
+    <ObservabilityPageShell
+      v-if="isObservabilityFace"
+      :page-title="observabilityErrorTitle"
+      shell-test-id="alert-details-ai-page"
+    >
+      <template #header>
+        <ObservabilityGradientPageHeader>
+          <template #breadcrumb>
+            <SmBreadcrumb :items="smBreadcrumbs" />
+          </template>
+          <PageHeader :header="observabilityErrorTitle" />
+          <Typography.Text
+            type="secondary"
+            class="alert-detail__fqn"
+            data-testid="alert-details-fqn"
+          >
+            {{ fqn }}
+          </Typography.Text>
+        </ObservabilityGradientPageHeader>
+      </template>
+      <div class="alert-detail__error-box">
+        <NoDataPlaceholder
+          v-if="loadErrorStatus === 404"
+          :icon="BellOutlined"
+          :title="t('label.alert-not-found')"
+          :description="t('message.alert-not-found-description')"
+        />
+        <PermissionPlaceholder
+          v-else-if="loadErrorStatus === 403"
+          :permission-value="t('label.view-entity', { entity: t('label.alert-detail-plural') })"
+        />
+        <SomethingWentWrongPlaceholder
+          v-else
+          :on-reload="details.fetchAlertDetails"
+        />
+      </div>
+    </ObservabilityPageShell>
+    <div v-else class="alert-detail__error">
       <SmBreadcrumb :items="smBreadcrumbs" />
       <div class="alert-detail__error-box">
         <NoDataPlaceholder
@@ -226,7 +268,7 @@ async function saveDescription(): Promise<void> {
       <Spin />
     </div>
     <EntityDetailShell
-      v-else-if="details.alertDetails.value"
+      v-else-if="details.alertDetails.value && isNotificationAlert"
       :title="getEntityName(details.alertDetails.value)"
       :name="details.alertDetails.value?.name ?? ''"
       :fqn="details.alertDetails.value?.fullyQualifiedName ?? ''"
@@ -353,6 +395,148 @@ async function saveDescription(): Promise<void> {
         />
       </template>
     </EntityDetailShell>
+    <ObservabilityPageShell
+      v-else-if="details.alertDetails.value && isObservabilityFace"
+      :page-title="getEntityName(details.alertDetails.value)"
+      shell-test-id="alert-details-ai-page"
+    >
+      <template #header>
+        <ObservabilityGradientPageHeader>
+          <template #breadcrumb>
+            <SmBreadcrumb :items="smBreadcrumbs" />
+          </template>
+          <PageHeader :header="getEntityName(details.alertDetails.value)" />
+          <Typography.Text
+            type="secondary"
+            class="alert-detail__fqn"
+            data-testid="alert-details-fqn"
+            :title="fqn"
+          >
+            {{ fqn }}
+          </Typography.Text>
+          <div class="alert-detail__meta-row">
+            <Skeleton.Button
+              v-if="details.ownerLoading.value"
+              active
+              :style="{ width: '80px', height: '40px' }"
+            />
+            <div v-else-if="showOwners" class="alert-detail__owners" data-testid="alert-owners">
+              <span class="alert-detail__owners-label">{{ t('label.owner-plural') }}</span>
+              <span v-if="hasOwners && !details.editOwnersPermission.value" class="alert-detail__owner-list">
+                <span
+                  v-for="owner in details.alertDetails.value?.owners ?? []"
+                  :key="owner.id || owner.name"
+                  class="alert-detail__owner"
+                >
+                  <SmProfilePicture :name="owner.name" :display-name="owner.displayName" />
+                  {{ getEntityName(owner) }}
+                </span>
+              </span>
+              <AlertOwnersEditor
+                v-if="details.editOwnersPermission.value"
+                :model-value="details.alertDetails.value?.owners ?? []"
+                @update:model-value="details.onOwnerUpdate"
+              />
+            </div>
+            <AlertExtraInfo
+              :loading="details.alertEventCountsLoading.value"
+              :counts="details.alertEventCounts.value"
+            />
+          </div>
+          <Tabs
+            class="alert-detail__header-tabs"
+            data-testid="alert-details-tabs"
+            :active-key="activeTab"
+            @change="(key) => details.handleTabChange(String(key))"
+          >
+            <Tabs.TabPane v-for="tabItem in tabs" :key="tabItem.key" :tab="tabItem.label" />
+          </Tabs>
+          <template #actions>
+            <Tooltip :title="t('label.sync-alert-offset', { entity: t('label.alert') })">
+              <span>
+                <Button
+                  type="text"
+                  size="large"
+                  data-testid="sync-button"
+                  :disabled="details.isSyncing.value"
+                  @click="details.handleAlertSync"
+                >
+                  <SyncOutlined />
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip
+              v-if="details.editPermission.value && canShowActions"
+              :title="t('label.edit-entity', { entity: t('label.alert') })"
+            >
+              <Button
+                type="text"
+                size="large"
+                data-testid="edit-button"
+                @click="details.handleAlertEdit"
+              >
+                <EditOutlined />
+              </Button>
+            </Tooltip>
+            <Tooltip
+              v-if="details.deletePermission.value && canShowActions"
+              :title="t('label.delete-entity', { entity: t('label.alert') })"
+            >
+              <Button
+                type="text"
+                size="large"
+                data-testid="delete-button"
+                @click="details.setShowDeleteModal(true)"
+              >
+                <DeleteOutlined />
+              </Button>
+            </Tooltip>
+          </template>
+        </ObservabilityGradientPageHeader>
+      </template>
+      <div v-if="activeTab === 'configuration'" class="alert-detail__description" data-testid="alert-description">
+        <span class="alert-detail__description-head">
+          <span>{{ t('label.description') }}</span>
+          <Button
+            v-if="details.editDescriptionPermission.value"
+            type="text"
+            size="small"
+            data-testid="edit-description"
+            :title="t('label.edit-entity', { entity: t('label.description') })"
+            :aria-label="t('label.edit-entity', { entity: t('label.description') })"
+            @click="openDescriptionEditor"
+          >
+            <EditOutlined />
+          </Button>
+        </span>
+        <SmMarkdown
+          v-if="!isDescriptionContentEmpty(details.alertDetails.value?.description)"
+          :markdown="details.alertDetails.value?.description ?? ''"
+        />
+        <span v-else class="alert-detail__no-description">
+          {{ t('label.no-description') }}
+        </span>
+      </div>
+      <AlertConfigDetails
+        v-if="visitedTabs.has('configuration')"
+        v-show="activeTab === 'configuration'"
+        :alert-details="details.alertDetails.value"
+        :is-notification-alert="false"
+        :hooks="hooks"
+      />
+      <AlertRecentEventsTab
+        v-if="visitedTabs.has('recentEvents')"
+        v-show="activeTab === 'recentEvents'"
+        :alert-details="details.alertDetails.value"
+        :hooks="hooks"
+      />
+      <AlertDiagnosticInfoTab
+        v-if="visitedTabs.has('diagnostic-info')"
+        v-show="activeTab === 'diagnostic-info'"
+        :fqn="fqn"
+        :hooks="hooks"
+      />
+    </ObservabilityPageShell>
     <AlertDeleteModal
       :open="details.showDeleteModal.value"
       :entity-title="getEntityName(details.alertDetails.value)"
@@ -450,5 +634,19 @@ async function saveDescription(): Promise<void> {
 
 .alert-detail__no-description {
   color: var(--sm-text-secondary);
+}
+
+.alert-detail__fqn {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.alert-detail__header-tabs :deep(.ant-tabs-content) {
+  display: none;
+}
+
+.alert-detail__header-tabs {
+  margin-top: 8px;
 }
 </style>

@@ -5,6 +5,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { Button, message, Spin } from 'ant-design-vue';
+import ObservabilityGradientPageHeader from '@/components/observability/ObservabilityGradientPageHeader.vue';
+import ObservabilityPageShell from '@/components/observability/ObservabilityPageShell.vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '@/api/client';
@@ -41,8 +43,8 @@ import { getEntityName, type TranslateFn } from '@/utils/notifications/alertUtil
 /**
  * Alert lists, both faces (D-N1): the settings face
  * (/settings/notifications/alerts, NotificationListPage) and the
- * observability face (/observability/alerts,
- * ObservabilityAlertsPage) share the table and differ in the fetch
+ * observability face (/observability/alerts, AlertsPage.tsx) share the
+ * table and differ in the fetch
  * chain, the permission sets, the empty-state mode, and the CTA
  * gates. The face comes from the route path; the router maps both
  * paths to this view.
@@ -345,20 +347,29 @@ const observabilityInitialLoading = computed(
         />
       </template>
 
-      <template v-else>
-        <SmBreadcrumb :items="observabilityBreadcrumbs" />
-        <div class="alerts-list-view__header">
-          <PageHeader
-            :header="t('label.observability-alert')"
-            :sub-header="t('message.alerts-description')"
-            learning-page-id="dataObservability"
-          />
-          <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
-            <Button type="primary" data-testid="add-alert-button" @click="handleAddAlert">
-              {{ t('label.add-entity', { entity: t('label.alert') }) }}
-            </Button>
-          </LimitWrapper>
-        </div>
+      <ObservabilityPageShell
+        v-else
+        :page-title="t('label.observability-alert')"
+      >
+        <template #header>
+          <ObservabilityGradientPageHeader>
+            <template #breadcrumb>
+              <SmBreadcrumb :items="observabilityBreadcrumbs" />
+            </template>
+            <PageHeader
+              :header="t('label.observability-alert')"
+              :sub-header="t('message.alerts-description')"
+              learning-page-id="dataObservability"
+            />
+            <template #actions>
+              <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
+                <Button type="primary" data-testid="add-alert-button" @click="handleAddAlert">
+                  {{ t('label.add-entity', { entity: t('label.alert') }) }}
+                </Button>
+              </LimitWrapper>
+            </template>
+          </ObservabilityGradientPageHeader>
+        </template>
         <AlertListTable
           :face="face"
           :alerts="items"
@@ -382,7 +393,7 @@ const observabilityInitialLoading = computed(
           @retry="fetchCurrentPage"
           @retry-permission="fetchAlertResourcePermission"
         />
-      </template>
+      </ObservabilityPageShell>
 
       <AlertDeleteModal
         :open="Boolean(selectedAlert)"
