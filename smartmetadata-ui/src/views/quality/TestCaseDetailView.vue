@@ -35,6 +35,8 @@ import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/cata
 import {
   dataProductsPatch,
   descriptionPatch,
+  domainsPatch,
+  ownersPatch,
   tagsPatch,
   type TagLabelInput,
 } from '@/governance/assetPatch';
@@ -45,7 +47,19 @@ import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestCaseResults } from '@/api/testCaseResults';
 import { listTestIncidents } from '@/api/testIncidents';
 import { getTask } from '@/api/tasks';
-import { submitIncidentStatusChange } from '@/features/quality/incidentManager';
+import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
+import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
+import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import {
+  assigneeDisplayName,
+  incidentStatusMenuOptions,
+  reopenResolvedIncident,
+  submitIncidentSeverity,
+  submitIncidentStatusChange,
+  type StatusChangeAdditionalData,
+} from '@/features/quality/incidentManager';
 import {
   fetchNextTestCaseRunTimestamp,
   getTestSuiteFqns,
@@ -68,7 +82,7 @@ import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/feat
 import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
 import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 import type { EntityRef } from '@/types/api';
-import type { TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
+import type { IncidentStatus, TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
 
 const props = defineProps<{ id: string; tab?: string }>();
 const router = useRouter();
@@ -145,6 +159,19 @@ const testSuiteFqns = computed(() => getTestSuiteFqns(testCase.value ?? undefine
 const hasEditStatusPermission = computed(
   () => !testCaseDeleted.value && testCasePerms.canEditStatus.value,
 );
+const canEditTestCaseOwners = computed(
+  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditOwners')),
+);
+const canEditTestCaseDomains = computed(
+  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditDomains')),
+);
+
+const incidentHeaderWriting = ref<'status' | 'severity' | 'assignee' | undefined>();
+const assigneeCandidates = ref<EntityRef[]>([]);
+
+const headerStatusMenuOptions = computed((): IncidentStatus[] =>
+  incidentStatusMenuOptions(latestIncident.value?.testCaseResolutionStatusType),
+);
 
 const taskLinkInfo = computed((): TaskLinkInfo | null => {
   if (!incidentTask.value || !testCase.value?.fullyQualifiedName) {
@@ -187,6 +214,115 @@ async function loadIncidentTask(): Promise<void> {
   }
 }
 
+function replaceLatestIncident(latest: TestIncident): void {
+  issues.value = [latest, ...issues.value.filter((row) => row.id !== latest.id && row.stateId !== latest.stateId)];
+}
+
+async function submitHeaderIncidentStatus(
+  target: IncidentStatus,
+  additional?: StatusChangeAdditionalData,
+): Promise<void> {
+  const record = latestIncident.value;
+  if (!record || incidentHeaderWriting.value !== undefined) {
+    return;
+  }
+  incidentHeaderWriting.value = 'status';
+  try {
+    const current = record.testCaseResolutionStatusType;
+    let latest: TestIncident | undefined;
+    if (current === 'Resolved') {
+      const fqn = testCase.value?.fullyQualifiedName;
+      if (!fqn) {
+        message.error(t('observability.incidents.missingFqn'));
+        return;
+      }
+      latest = await reopenResolvedIncident({
+        testCaseFqn: fqn,
+        testCaseName: testCase.value?.name,
+        targetStatus: target,
+        currentStateId: record.stateId,
+        details: additional,
+      });
+    } else {
+      latest = await submitIncidentStatusChange(record, target, additional);
+    }
+    if (latest) {
+      replaceLatestIncident(latest);
+      await loadIncidentTask();
+    }
+  } catch {
+    message.error(t('observability.incidents.updateFailed'));
+  } finally {
+    incidentHeaderWriting.value = undefined;
+  }
+}
+
+async function onHeaderSeverityChange(severity: string | undefined): Promise<void> {
+  const record = latestIncident.value;
+  if (!record || incidentHeaderWriting.value !== undefined || severity === record.severity) {
+    return;
+  }
+  incidentHeaderWriting.value = 'severity';
+  try {
+    const ok = await submitIncidentSeverity(record, severity);
+    if (!ok) {
+      message.error(t('observability.incidents.updateFailed'));
+      return;
+    }
+    replaceLatestIncident({ ...record, severity });
+  } finally {
+    incidentHeaderWriting.value = undefined;
+  }
+}
+
+async function onHeaderAssigneeChange(assignee: EntityRef | undefined): Promise<void> {
+  const record = latestIncident.value;
+  if (!record || incidentHeaderWriting.value !== undefined) {
+    return;
+  }
+  const current = record.testCaseResolutionStatusDetails?.assignee;
+  if ((current?.name ?? undefined) === (assignee?.name ?? undefined) && (current?.type ?? undefined) === (assignee?.type ?? undefined)) {
+    return;
+  }
+  incidentHeaderWriting.value = 'assignee';
+  try {
+    let latest: TestIncident | undefined;
+    if (assignee === undefined) {
+      latest = await submitIncidentStatusChange(record, record.testCaseResolutionStatusType, { assignee: undefined });
+    } else {
+      latest = await submitIncidentStatusChange(record, 'Assigned', { assignee });
+    }
+    if (latest) {
+      replaceLatestIncident(latest);
+    }
+  } catch {
+    message.error(t('observability.incidents.updateFailed'));
+  } finally {
+    incidentHeaderWriting.value = undefined;
+  }
+}
+
+async function onHeaderOwnersSave(owners: Array<{ id: string; type: string }>): Promise<void> {
+  if (!testCase.value?.id) {
+    return;
+  }
+  await patchTestCase(
+    testCase.value.id,
+    ownersPatch(testCase.value.owners, owners.map((owner) => ({ id: owner.id, type: owner.type }))),
+  );
+  message.success(t('server.update-entity-success', { entity: t('label.owner-plural') }));
+  await load();
+}
+
+async function onHeaderDomainsSave(domainIds: string[]): Promise<void> {
+  if (!testCase.value?.id) {
+    return;
+  }
+  await patchTestCase(testCase.value.id, domainsPatch(testCase.value.domains, domainIds));
+  message.success(t('server.update-entity-success', { entity: t('label.domain-plural') }));
+  await load();
+}
+
 async function acknowledgeIncident(): Promise<void> {
   const incident = latestIncident.value;
   if (!incident) {
@@ -195,10 +331,7 @@ async function acknowledgeIncident(): Promise<void> {
   try {
     const updated = await submitIncidentStatusChange(incident, 'Ack');
     if (updated) {
-      issues.value = [
-        updated,
-        ...issues.value.filter((row) => row.id !== updated.id),
-      ];
+      replaceLatestIncident(updated);
     }
     await loadIncidentTask();
     message.success(t('label.acknowledged'));
@@ -209,22 +342,6 @@ async function acknowledgeIncident(): Promise<void> {
 const assetEntity = computed(() =>
   testCase.value?.entityLink ? parseEntityLink(testCase.value.entityLink) : null,
 );
-
-const headerOwnersLabel = computed(() => {
-  const owners = testCase.value?.owners ?? [];
-  if (!owners.length) {
-    return '—';
-  }
-  return owners.map((owner) => owner.displayName || owner.name).filter(Boolean).join(', ') || '—';
-});
-
-const headerDomainsLabel = computed(() => {
-  const domains = testCase.value?.domains ?? [];
-  if (!domains.length) {
-    return '—';
-  }
-  return domains.map((domain) => domain.displayName || domain.name).filter(Boolean).join(', ') || '—';
-});
 
 const tableFqnForLink = computed(() => assetEntity.value?.fqn || testCase.value?.entityFQN || '');
 
@@ -610,6 +727,12 @@ onMounted(() => {
   void loadGovernanceCatalog()
     .then((catalog) => {
       governanceCatalog.value = catalog;
+      assigneeCandidates.value = catalog.owners.map((owner) => ({
+        id: owner.id,
+        name: owner.label,
+        displayName: owner.label,
+        type: owner.type,
+      }));
     })
     .catch(() => {
       governanceCatalog.value = { owners: [], tags: [], domains: [] };
@@ -700,10 +823,22 @@ onMounted(() => {
     <template #meta>
       <Descriptions v-if="testCase" bordered :column="3" size="small" data-testid="test-case-header-meta">
         <Descriptions.Item :label="t('label.domain')">
-          {{ headerDomainsLabel }}
+          <WidgetDomainCell
+            test-id="test-case-header-domain"
+            :domains="testCase.domains ?? []"
+            :options="governanceCatalog.domains"
+            :has-edit-access="canEditTestCaseDomains"
+            :on-change="onHeaderDomainsSave"
+          />
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.owner-plural')">
-          {{ headerOwnersLabel }}
+          <WidgetOwnersCell
+            test-id="test-case-header-owners"
+            :owners="testCase.owners ?? []"
+            :options="governanceCatalog.owners"
+            :has-edit-access="canEditTestCaseOwners"
+            :on-change="onHeaderOwnersSave"
+          />
         </Descriptions.Item>
         <Descriptions.Item v-if="taskLinkInfo" :label="t('label.incident')">
           <RouterLink :to="taskLinkInfo.path" data-testid="incident-task-link">
@@ -711,19 +846,49 @@ onMounted(() => {
           </RouterLink>
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.incident-status')">
-          {{ latestIncident?.testCaseResolutionStatusType || t('label.no-entity', { entity: t('label.incident') }) }}
+          <IncidentInlineStatus
+            v-if="latestIncident"
+            :record="latestIncident"
+            :editable="hasEditStatusPermission"
+            :loading="incidentHeaderWriting === 'status'"
+            :menu-options="headerStatusMenuOptions"
+            :assignee-candidates="assigneeCandidates"
+            test-id="test-case-header-incident-status"
+            @transition="(status, additional) => submitHeaderIncidentStatus(status, additional)"
+          />
+          <span v-else>{{ t('label.no-entity', { entity: t('label.incident') }) }}</span>
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.assignee')">
-          <span data-testid="assignee">
+          <div
+            v-if="latestIncident && hasEditStatusPermission"
+            data-testid="assignee"
+          >
+            <IncidentAssigneePicker
+              :model-value="latestIncident.testCaseResolutionStatusDetails?.assignee"
+              :candidates="assigneeCandidates"
+              :disabled="incidentHeaderWriting !== undefined"
+              :loading="incidentHeaderWriting === 'assignee'"
+              test-id="test-case-header-incident-assignee"
+              @change="onHeaderAssigneeChange"
+            />
+          </div>
+          <span v-else data-testid="assignee">
             {{
-              latestIncident?.testCaseResolutionStatusDetails?.assignee?.displayName ||
-              latestIncident?.testCaseResolutionStatusDetails?.assignee?.name ||
-              '—'
+              assigneeDisplayName(latestIncident?.testCaseResolutionStatusDetails?.assignee) ||
+              t('observability.incidents.noAssignee')
             }}
           </span>
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.severity')">
-          {{ latestIncident?.severity || '—' }}
+          <IncidentInlineSeverity
+            v-if="latestIncident"
+            :severity="latestIncident.severity"
+            :editable="hasEditStatusPermission"
+            :loading="incidentHeaderWriting === 'severity'"
+            test-id="test-case-header-incident-severity"
+            @change="onHeaderSeverityChange"
+          />
+          <span v-else>—</span>
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.table')">
           <RouterLink

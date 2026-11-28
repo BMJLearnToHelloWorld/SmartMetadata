@@ -52,6 +52,14 @@ watch(fqn, () => {
 <template>
   <PageLayout test-id="test-case-dimensions">
     <PageHeader :header="testCase?.displayName || testCase?.name || fqn" :sub-header="t('label.dimensionality')" />
+    <Typography.Text
+      v-if="dimensionKey"
+      data-testid="dimension-key"
+      class="test-case-dimensions__dimension-key"
+      type="secondary"
+    >
+      {{ dimensionKey }}
+    </Typography.Text>
     <Typography.Paragraph v-if="errorMessage" type="danger">{{ errorMessage }}</Typography.Paragraph>
     <Button
       v-if="testCase"

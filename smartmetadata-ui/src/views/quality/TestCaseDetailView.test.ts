@@ -18,14 +18,30 @@ import TestCaseDetailView from './TestCaseDetailView.vue';
 
 vi.mock('@/composables/useEntityPermissions', () => ({
   useEntityPermissions: () => ({
-    permissions: computed(() => ({ Trigger: true, Delete: true, EditDisplayName: true, EditAll: true, EditDescription: true, EditTags: true, EditGlossaryTerms: true })),
+    permissions: computed(() => ({
+      Trigger: true,
+      Delete: true,
+      EditDisplayName: true,
+      EditAll: true,
+      EditDescription: true,
+      EditTags: true,
+      EditGlossaryTerms: true,
+      EditOwners: true,
+      EditDomains: true,
+      EditStatus: true,
+    })),
     isLoading: computed(() => false),
     canDelete: computed(() => true),
     canEditDisplayName: computed(() => true),
     canEditAll: computed(() => true),
     canEditStatus: computed(() => true),
     canEditDescription: computed(() => true),
-    can: (operation: string) => operation === 'EditTags' || operation === 'EditGlossaryTerms',
+    can: (operation: string) =>
+      operation === 'EditTags' ||
+      operation === 'EditGlossaryTerms' ||
+      operation === 'EditOwners' ||
+      operation === 'EditDomains' ||
+      operation === 'EditStatus',
   }),
 }));
 
@@ -225,6 +241,10 @@ describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCa
     expect(wrapper.find('[data-testid="test-column-name"]').text()).toContain('amount');
     expect(wrapper.find('[data-testid="test-definition-name"]').text()).toContain('Column values not null');
     expect(wrapper.find('[data-testid="assignee"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-header-incident-status"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-header-incident-severity"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-header-domain"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-header-owners"]').exists()).toBe(true);
     await wrapper.get('[data-testid="table-name"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/table/svc.db.schema.orders/profiler/data-quality');
