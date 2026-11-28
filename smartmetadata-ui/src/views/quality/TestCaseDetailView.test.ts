@@ -18,19 +18,30 @@ import TestCaseDetailView from './TestCaseDetailView.vue';
 
 vi.mock('@/composables/useEntityPermissions', () => ({
   useEntityPermissions: () => ({
-    permissions: computed(() => ({ Trigger: true, Delete: true, EditDisplayName: true, EditAll: true })),
+    permissions: computed(() => ({ Trigger: true, Delete: true, EditDisplayName: true, EditAll: true, EditDescription: true, EditTags: true, EditGlossaryTerms: true })),
     isLoading: computed(() => false),
     canDelete: computed(() => true),
     canEditDisplayName: computed(() => true),
     canEditAll: computed(() => true),
     canEditStatus: computed(() => true),
+    canEditDescription: computed(() => true),
+    can: (operation: string) => operation === 'EditTags' || operation === 'EditGlossaryTerms',
   }),
 }));
 
 vi.mock('@/stores/permissions', () => ({
   usePermissionStore: () => ({
+    isAdminUser: true,
     getResourcePermission: vi.fn(async () => ({ Trigger: true, Delete: true, EditDisplayName: true, EditAll: true })),
   }),
+}));
+
+vi.mock('@/governance/catalogOptions', () => ({
+  loadGovernanceCatalog: vi.fn(async () => ({
+    owners: [],
+    tags: [{ tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification', label: 'Tier1' }],
+    domains: [],
+  })),
 }));
 
 const getTestCase = vi.fn();
@@ -88,6 +99,60 @@ async function mountView(props: { id: string; tab?: string } = { id: 'tc1' }) {
   await flushPromises();
   return { wrapper, router };
 }
+
+describe('TestCaseDetailView results rail (official TestCaseResultTab)', () => {
+  beforeEach(() => {
+    getTestCaseByName.mockReset();
+    getTestDefinition.mockReset();
+    listTestCaseResults.mockReset();
+    listTestIncidents.mockReset();
+    listTestIncidents.mockResolvedValue({ data: [] });
+    listTestCaseResults.mockResolvedValue({ data: [] });
+    getTestDefinition.mockResolvedValue({
+      id: 'def-between',
+      name: 'columnValuesToBeBetween',
+      testPlatforms: ['OpenMetadata'],
+      parameterDefinition: [
+        { name: 'minValue', displayName: 'Minimum', dataType: 'INT' },
+        { name: 'maxValue', displayName: 'Maximum', dataType: 'INT' },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders official test-case-rail widgets on the results tab', async () => {
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'amount_between',
+      displayName: 'Amount between',
+      fullyQualifiedName: 'svc.db.schema.orders.amount_between',
+      entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
+      description: 'Keeps amount in range',
+      parameterValues: [
+        { name: 'minValue', value: '1' },
+        { name: 'maxValue', value: '100' },
+      ],
+      testDefinition: { id: 'def-between', name: 'columnValuesToBeBetween' },
+      testSuites: [{ id: 'suite1', name: 'Suite One', fullyQualifiedName: 'suite.one' }],
+      tags: [{ tagFQN: 'Tier.Tier1', source: 'Classification', name: 'Tier1' }],
+      dataProducts: [],
+      domains: [],
+    });
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="test-case-rail"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-configuration-card"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="configuration-parameter-minValue"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="widget-description"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-suites-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="widget-tags-classification"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="widget-tags-glossary"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="widget-data-products-cell"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
 
 describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCaseHeaderTitle)', () => {
   beforeEach(() => {

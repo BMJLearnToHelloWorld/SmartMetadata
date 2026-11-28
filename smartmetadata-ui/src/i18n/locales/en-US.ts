@@ -182,6 +182,9 @@ const enUS = {
     'table-level': 'Table Level',
     'table-suite-plural': 'Table Suites',
     'table-type': 'Table Type',
+    'table-test': 'Table test',
+    'column-test-with-column': 'Column test · {column}',
+    'dynamic-assertion': 'Dynamic Assertion',
     'terms-of-service': 'Terms of Service',
     'test': 'Test',
     'test-applied-on-entity': 'Test applied on {entity}',
@@ -1106,6 +1109,7 @@ const enUS = {
     'no-bundle-suites-yet': 'No bundle suites yet',
     'no-bundle-suites-yet-description': 'Group related tests from multiple tables into one suite to monitor them together.',
     'no-configurable-parameters': 'No configurable parameters for this test type.',
+    'bounds-learned-automatically': 'Bounds learned automatically',
     'no-contract-description': "No contract has been defined for this entity.",
     'custom-property-empty-description':
       'Admins can create custom properties for {entity} to capture details specific to your organization.',

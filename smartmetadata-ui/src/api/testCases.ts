@@ -20,7 +20,7 @@ import type {
 import { ApiError, apiRequest } from './client';
 
 export const TEST_CASE_FIELDS =
-  'owners,testSuite,testDefinition,testSuites,incidentId,incidentStatus,testCaseResult';
+  'owners,tags,domains,dataProducts,testSuite,testDefinition,testSuites,incidentId,incidentStatus,testCaseResult,useDynamicAssertion,computePassedFailedRowCount,dataQualityDimension';
 
 export interface ListTestCasesQuery {
   limit?: number;
@@ -144,6 +144,12 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     incidentId: asString(raw.incidentId) || undefined,
     incidentStatus: asString(raw.incidentStatus) || undefined,
     owners: mapEntityRefs(raw.owners),
+    domains: mapEntityRefs(raw.domains),
+    dataProducts: mapEntityRefs(raw.dataProducts),
+    useDynamicAssertion: raw.useDynamicAssertion === true ? true : undefined,
+    computePassedFailedRowCount:
+      raw.computePassedFailedRowCount === true ? true : undefined,
+    dataQualityDimension: mapEntityRef(raw.dataQualityDimension),
     deleted: raw.deleted === true,
     topDimensions: asNumber(raw.topDimensions),
     dimensionColumns: Array.isArray(raw.dimensionColumns)

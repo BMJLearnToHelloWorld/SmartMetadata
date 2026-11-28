@@ -14,6 +14,7 @@ import StatItem from '@/components/shared/StatItem.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, getTestCaseByName, patchTestCase } from '@/api/testCases';
+import { getTestDefinition } from '@/api/testDefinitions';
 import { listIngestionPipelines, runIngestionPipelineForEntity } from '@/api/ingestionPipelines';
 import type { IngestionPipeline } from '@/types/ingestion';
 import { getDerivedPermissionFlags } from '@/api/permissions';
@@ -29,6 +30,14 @@ import {
   getTriggerPermissions,
 } from '@/quality/runTestCaseButton';
 import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
+import TestCaseResultRail from '@/components/quality/TestCaseResultRail.vue';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
+import {
+  dataProductsPatch,
+  descriptionPatch,
+  tagsPatch,
+  type TagLabelInput,
+} from '@/governance/assetPatch';
 import { compare } from 'fast-json-patch';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
@@ -57,7 +66,8 @@ import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
-import type { TestCase, TestCaseResult, TestIncident } from '@/types/quality';
+import type { EntityRef } from '@/types/api';
+import type { TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
 
 const props = defineProps<{ id: string; tab?: string }>();
 const router = useRouter();
@@ -88,6 +98,9 @@ const editForm = reactive({
   displayName: '',
 });
 const dimensionDrawerOpen = ref(false);
+const parameterEditOpen = ref(false);
+const testDefinitionDetail = ref<TestDefinition | undefined>();
+const governanceCatalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
 
 const resultSeries = computed(() => testResultsToTimeline(results.value));
 
@@ -209,6 +222,16 @@ const testCasePerms = useEntityPermissions('testCase', testCaseFqn, {
 });
 const hasDeletePermission = computed(() => !testCaseDeleted.value && testCasePerms.canDelete.value);
 const editDisplayNamePermission = computed(() => !testCaseDeleted.value && testCasePerms.canEditDisplayName.value);
+const canEditRailAll = computed(() => !testCaseDeleted.value && testCasePerms.canEditAll.value);
+const canEditRailDescription = computed(
+  () => !testCaseDeleted.value && testCasePerms.canEditDescription.value,
+);
+const canEditRailTags = computed(
+  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditTags')),
+);
+const canEditRailGlossary = computed(
+  () => !testCaseDeleted.value && (permissionStore.isAdminUser || testCasePerms.can('EditGlossaryTerms')),
+);
 const isColumnTest = computed(() => (testCase.value?.entityLink ?? '').includes('::columns::'));
 const canEditDimensions = computed(
   () => isColumnTest.value && !testCaseDeleted.value && testCasePerms.canEditAll.value,
@@ -348,6 +371,18 @@ function formatTs(value?: number): string {
   return new Date(millis).toISOString();
 }
 
+async function loadTestDefinition(definitionId?: string): Promise<void> {
+  if (!definitionId) {
+    testDefinitionDetail.value = undefined;
+    return;
+  }
+  try {
+    testDefinitionDetail.value = await getTestDefinition(definitionId);
+  } catch {
+    testDefinitionDetail.value = undefined;
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
@@ -359,6 +394,7 @@ async function load(): Promise<void> {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(props.id);
     const loaded = isUuid ? await getTestCase(props.id) : await getTestCaseByName(props.id);
     testCase.value = loaded;
+    await loadTestDefinition(loaded.testDefinition?.id);
     if (loaded.fullyQualifiedName) {
       const page = await listTestCaseResults(loaded.fullyQualifiedName);
       results.value = page.data;
@@ -379,12 +415,51 @@ async function load(): Promise<void> {
     }
   } catch (error) {
     testCase.value = null;
+    testDefinitionDetail.value = undefined;
     results.value = [];
     issues.value = [];
     errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case') }));
   } finally {
     loading.value = false;
   }
+}
+
+async function onRailDescriptionUpdate(description: string): Promise<void> {
+  if (!testCase.value?.id) {
+    return;
+  }
+  await patchTestCase(testCase.value.id, descriptionPatch(testCase.value.description, description));
+  message.success(t('server.update-entity-success', { entity: t('label.description') }));
+  await load();
+}
+
+async function onRailTagsChange(tags: TagLabelInput[]): Promise<void> {
+  if (!testCase.value?.id) {
+    return;
+  }
+  await patchTestCase(testCase.value.id, tagsPatch(testCase.value.tags, tags));
+  message.success(t('server.update-entity-success', { entity: t('label.tag-plural') }));
+  await load();
+}
+
+async function onRailDataProductsSave(products: EntityRef[]): Promise<void> {
+  if (!testCase.value?.id) {
+    return;
+  }
+  await patchTestCase(
+    testCase.value.id,
+    dataProductsPatch(
+      testCase.value.dataProducts,
+      products.map((product) => ({ id: product.id, type: product.type ?? 'dataProduct' })),
+    ),
+  );
+  message.success(t('server.update-entity-success', { entity: t('label.data-product-plural') }));
+  await load();
+}
+
+async function onParameterSubmitted(): Promise<void> {
+  parameterEditOpen.value = false;
+  await load();
 }
 
 async function onDeleteTestCase(): Promise<void> {
@@ -487,6 +562,13 @@ watch(latestIncident, () => {
 
 onMounted(() => {
   void loadResourceTriggerPermissions();
+  void loadGovernanceCatalog()
+    .then((catalog) => {
+      governanceCatalog.value = catalog;
+    })
+    .catch(() => {
+      governanceCatalog.value = { owners: [], tags: [], domains: [] };
+    });
   void load();
 });
 </script>
@@ -662,20 +744,24 @@ onMounted(() => {
             </template>
           </SmTable>
         </div>
-        <aside
+        <div
           v-if="isTabExpanded && isExpandViewSupported && testCase"
           class="test-case-results-layout__rail"
-          data-testid="test-case-rail"
         >
-          <p v-if="testCase.description" class="test-case-rail__block">
-            {{ testCase.description }}
-          </p>
-          <ul v-if="testCase.parameterValues?.length" class="test-case-rail__params">
-            <li v-for="param in testCase.parameterValues" :key="param.name">
-              {{ param.name }}: {{ param.value }}
-            </li>
-          </ul>
-        </aside>
+          <TestCaseResultRail
+            :test-case="testCase"
+            :test-definition="testDefinitionDetail"
+            :tag-options="governanceCatalog.tags"
+            :has-edit-permission="canEditRailAll"
+            :has-edit-description-permission="canEditRailDescription"
+            :has-edit-tags-permission="canEditRailTags"
+            :has-edit-glossary-terms-permission="canEditRailGlossary"
+            :on-description-update="onRailDescriptionUpdate"
+            :on-tags-change="onRailTagsChange"
+            :on-data-products-save="onRailDataProductsSave"
+            @edit-parameter="parameterEditOpen = true"
+          />
+        </div>
       </div>
     </template>
     <template #issues>
@@ -756,6 +842,12 @@ onMounted(() => {
     :test-case="testCase ?? undefined"
     @cancel="dimensionDrawerOpen = false"
     @submitted="onDimensionsSubmitted"
+  />
+  <TestCaseFormDrawer
+    :open="parameterEditOpen"
+    :test-case="testCase ?? undefined"
+    @cancel="parameterEditOpen = false"
+    @submitted="onParameterSubmitted"
   />
 </template>
 

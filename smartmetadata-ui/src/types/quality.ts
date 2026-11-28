@@ -146,7 +146,12 @@ export interface TestCase {
   /** Incident workflow state riding on the row (official fields list). */
   incidentStatus?: string;
   owners?: EntityRef[];
+  domains?: EntityRef[];
+  dataProducts?: EntityRef[];
   tags?: TagRef[];
+  useDynamicAssertion?: boolean;
+  computePassedFailedRowCount?: boolean;
+  dataQualityDimension?: EntityRef;
   deleted?: boolean;
   /** Official testCase.topDimensions (dimension-level tests). */
   topDimensions?: number;
