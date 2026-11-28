@@ -143,6 +143,7 @@ const GlossaryTermRelationSettingsView = () =>
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
 const OntologyStudioView = () => import('@/views/governance/OntologyStudioView.vue');
 const GovernanceVersionView = () => import('@/views/governance/GovernanceVersionView.vue');
+const GlossaryVersion = () => import('@/views/glossary/GlossaryVersion.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const WorkflowDetailView = () => import('@/views/governance/WorkflowDetailView.vue');
 const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
@@ -599,34 +600,58 @@ export const router = createRouter({
           }),
         },
         {
-          path: 'governance/glossaries/:id/versions/:version',
-          name: 'governance-glossary-version',
-          component: GovernanceVersionView,
+          path: 'glossary/:id/versions/:version',
+          name: 'glossary-version',
+          component: GlossaryVersion,
           props: (route) => ({
-            kind: 'glossary',
+            isGlossary: true,
             id: route.params.id as string,
             version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'glossary-term/:id/versions/:version',
+          name: 'glossary-term-version',
+          component: GlossaryVersion,
+          props: (route) => ({
+            isGlossary: false,
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'glossary-term/:id/versions/:version/:tab',
+          name: 'glossary-term-version-tab',
+          component: GlossaryVersion,
+          props: (route) => ({
+            isGlossary: false,
+            id: route.params.id as string,
+            version: route.params.version as string,
+            tab: route.params.tab as string,
+          }),
+        },
+        {
+          path: 'governance/glossaries/:id/versions/:version',
+          name: 'governance-glossary-version',
+          redirect: (to) => ({
+            name: 'glossary-version',
+            params: { id: to.params.id, version: to.params.version },
           }),
         },
         {
           path: 'governance/terms/:id/versions/:version',
           name: 'governance-term-version',
-          component: GovernanceVersionView,
-          props: (route) => ({
-            kind: 'term',
-            id: route.params.id as string,
-            version: route.params.version as string,
+          redirect: (to) => ({
+            name: 'glossary-term-version',
+            params: { id: to.params.id, version: to.params.version },
           }),
         },
         {
           path: 'governance/terms/:id/versions/:version/:tab',
           name: 'governance-term-version-tab',
-          component: GovernanceVersionView,
-          props: (route) => ({
-            kind: 'term',
-            id: route.params.id as string,
-            version: route.params.version as string,
-            tab: route.params.tab as string,
+          redirect: (to) => ({
+            name: 'glossary-term-version-tab',
+            params: { id: to.params.id, version: to.params.version, tab: to.params.tab },
           }),
         },
         {

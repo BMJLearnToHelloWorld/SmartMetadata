@@ -22,10 +22,10 @@ import {
 describe('versionPaths', () => {
   it('builds the official :version paths for each governance kind and test cases', () => {
     expect(getDomainVersionPath('d1', '0.2')).toBe('/governance/domains/d1/versions/0.2');
-    expect(getGlossaryVersionPath('g1', '1.0')).toBe('/governance/glossaries/g1/versions/1.0');
-    expect(getGlossaryTermVersionPath('t1', '0.3')).toBe('/governance/terms/t1/versions/0.3');
+    expect(getGlossaryVersionPath('g1', '1.0')).toBe('/glossary/g1/versions/1.0');
+    expect(getGlossaryTermVersionPath('t1', '0.3')).toBe('/glossary-term/t1/versions/0.3');
     expect(getGlossaryTermVersionPath('t1', '0.3', 'overview')).toBe(
-      '/governance/terms/t1/versions/0.3/overview',
+      '/glossary-term/t1/versions/0.3/overview',
     );
     expect(getClassificationVersionPath('c1', '0.1')).toBe(
       '/governance/classifications/c1/versions/0.1',

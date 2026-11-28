@@ -114,4 +114,28 @@ describe('governanceVersions API', () => {
     const path = await latestGovernanceVersionPath('tag', 't1', (version) => `/governance/tags/t1/versions/${version}`);
     expect(path).toBe('/governance/tags/t1/versions/0.2');
   });
+
+  it('parses official EntityHistory version JSON strings', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            entityType: 'glossary',
+            versions: [
+              '{"id":"g1","name":"Business_Glossary","version":0.2,"updatedAt":20,"updatedBy":"ada"}',
+              '{"id":"g1","name":"Business_Glossary","version":0.1,"updatedAt":10,"updatedBy":"ada"}',
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const versions = await listGovernanceVersions('glossary', 'g1');
+    expect(versions.map((item) => item.version)).toEqual([0.2, 0.1]);
+    expect(versions[0]?.updatedBy).toBe('ada');
+    expect(lastFetch().url).toContain('/api/v1/glossaries/g1/versions');
+    const path = await latestGovernanceVersionPath('glossary', 'g1', (version) => `/glossary/g1/versions/${version}`);
+    expect(path).toBe('/glossary/g1/versions/0.2');
+  });
 });

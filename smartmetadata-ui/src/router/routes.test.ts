@@ -277,6 +277,12 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/service/databaseServices/pg.warehouse/add-ingestion/metadata').name).toBe('ingestion-service-add-ingestion');
     expect(router.resolve('/service/databaseServices/pg.warehouse/edit-ingestion/pg.warehouse.meta/metadata').name).toBe('ingestion-service-edit-ingestion');
     expect(router.resolve('/service/databaseServices/pg.warehouse/versions/0.1').name).toBe('ingestion-service-version');
+    expect(router.resolve('/glossary/g1/versions/1.0').name).toBe('glossary-version');
+    expect(router.resolve('/glossary-term/t1/versions/0.3').name).toBe('glossary-term-version');
+    expect(router.resolve('/glossary-term/t1/versions/0.3/overview').name).toBe('glossary-term-version-tab');
+    expect(router.resolve('/governance/glossaries/g1/versions/1.0').name).toBe('governance-glossary-version');
+    expect(router.resolve('/governance/terms/t1/versions/0.3').name).toBe('governance-term-version');
+    expect(router.resolve('/governance/terms/t1/versions/0.3/overview').name).toBe('governance-term-version-tab');
     // D-17: the official `/:serviceCategory/add-service` form; the
     // retained `/ingestion/services/add` path is deleted with it.
     expect(router.resolve('/databaseServices/add-service').name).toBe('ingestion-service-add');
@@ -567,6 +573,9 @@ describe('settings sections faces', () => {
     ['/settings/members/teams', 'settings-members-team', { fqn: 'Organization' }],
     // The plural alerts detail redirects to the official singular detail.
     ['/observability/alerts/a1', 'observability-alert', { fqn: 'a1', tab: 'configuration' }],
+    ['/governance/glossaries/g1/versions/1.0', 'glossary-version', { id: 'g1', version: '1.0' }],
+    ['/governance/terms/t1/versions/0.3', 'glossary-term-version', { id: 't1', version: '0.3' }],
+    ['/governance/terms/t1/versions/0.3/overview', 'glossary-term-version-tab', { id: 't1', version: '0.3', tab: 'overview' }],
   ];
   it.each(redirectCases)('redirects %s to %s', (path, name, params) => {
     const resolved = resolveRedirect(path);
