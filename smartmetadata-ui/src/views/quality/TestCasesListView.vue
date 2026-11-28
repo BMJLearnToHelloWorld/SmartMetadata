@@ -53,6 +53,7 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import { filterCasesForSearch } from '@/quality/landing';
+import { useDataQualityContext } from '@/quality/dataQualityContext';
 import { TEST_CASE_STATUSES, type TestCase } from '@/types/quality';
 
 const props = withDefaults(
@@ -175,6 +176,14 @@ const hasActiveFilters = computed(() => {
 });
 const emptyText = computed(() =>
   hasActiveFilters.value ? t('message.no-matching-test-cases') : t('message.no-test-cases-yet'),
+);
+const dqContext = useDataQualityContext();
+const embeddedCreateActions = computed(() =>
+  props.embedded ? dqContext.createActions : undefined,
+);
+const showEmptyCreateCta = computed(
+  () =>
+  !showDeleted.value && Boolean(embeddedCreateActions.value?.canCreateTestCase),
 );
 const formOpen = ref(false);
 const editing = ref<TestCase | undefined>();
@@ -331,6 +340,15 @@ function onSearch(): void {
 function openCreate(): void {
   editing.value = undefined;
   formOpen.value = true;
+}
+
+function onEmptyCreate(): void {
+  const add = embeddedCreateActions.value?.onAddTestCase;
+  if (add) {
+    add();
+    return;
+  }
+  openCreate();
 }
 
 function openEdit(record: TestCase): void {
@@ -611,7 +629,12 @@ defineExpose({ openCreate, total });
       </span>
     </template>
     <template #emptyExtra>
-      <Button type="primary" data-testid="test-cases-empty-cta" @click="openCreate">
+      <Button
+        v-if="props.embedded ? showEmptyCreateCta : true"
+        type="primary"
+        data-testid="test-cases-empty-cta"
+        @click="onEmptyCreate"
+      >
         {{ t('label.new-entity', { entity: t('label.test-case') }) }}
       </Button>
     </template>

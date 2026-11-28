@@ -33,6 +33,7 @@ import {
   suiteTypeForSubTab,
   type DqSuiteSubTab,
 } from '@/quality/landing';
+import { useDataQualityContext } from '@/quality/dataQualityContext';
 import type { TestSuite } from '@/types/quality';
 
 const props = withDefaults(
@@ -105,6 +106,12 @@ const emptyText = computed(() =>
     : subTab.value === 'table-suites'
       ? t('message.no-table-suites-yet')
       : t('message.no-bundle-suites-yet'),
+);
+const dqContext = useDataQualityContext();
+const canCreateBundleFromContext = computed(() =>
+  props.embedded
+    ? Boolean(dqContext.createActions?.canCreateBundleSuite)
+    : subTab.value === 'bundle-suites',
 );
 
 function resetPager(): void {
@@ -206,6 +213,14 @@ function openCreate(): void {
   createOpen.value = true;
 }
 
+function onBundleCreatePress(): void {
+  if (props.embedded && dqContext.createActions?.onAddBundleSuite) {
+    dqContext.createActions.onAddBundleSuite();
+    return;
+  }
+  openCreate();
+}
+
 function onBundleCreated(): void {
   createOpen.value = false;
   resetPager();
@@ -284,10 +299,10 @@ defineExpose({ openCreate });
   >
     <template #actions>
       <Button
-        v-if="subTab === 'bundle-suites'"
+        v-if="subTab === 'bundle-suites' && (!embedded || canCreateBundleFromContext)"
         type="primary"
         data-testid="create-test-suite"
-        @click="openCreate"
+        @click="onBundleCreatePress"
       >
         {{ t('label.new-entity', { entity: t('label.bundle-suite') }) }}
       </Button>
@@ -308,10 +323,10 @@ defineExpose({ openCreate });
     </template>
     <template #emptyExtra>
       <Button
-        v-if="subTab === 'bundle-suites'"
+        v-if="subTab === 'bundle-suites' && (!embedded || canCreateBundleFromContext)"
         type="primary"
         data-testid="test-suites-empty-cta"
-        @click="openCreate"
+        @click="onBundleCreatePress"
       >
         {{ t('label.new-entity', { entity: t('label.bundle-suite') }) }}
       </Button>

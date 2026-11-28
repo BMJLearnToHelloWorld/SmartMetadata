@@ -7,7 +7,7 @@ import { computed, onMounted, provide, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import SmIcon from '@/components/shared/SmIcon.vue';
-import { Button, Dropdown, Menu, Tabs } from 'ant-design-vue';
+import { Button, Dropdown, Menu, Spin, Tabs } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import DqDashboardExportModal from '@/components/quality/DqDashboardExportModal.vue';
@@ -21,6 +21,8 @@ import {
 import { getCurrentIsoDateLabel, routeQueryToSearch, searchStringToQuery } from '@/quality/dqRouteSearch';
 import { parseDqTab, type DqLandingTab } from '@/quality/landing';
 import { useTabSearchMemory } from '@/quality/useTabSearchMemory';
+import { useDataQualityTestCaseSummary } from '@/quality/useDataQualityTestCaseSummary';
+import { getDerivedPermissionFlags } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
@@ -44,10 +46,19 @@ const isExportModalOpen = ref(false);
 const exportDefaultFileName = ref('');
 const canCreateTestSuite = ref(false);
 const canCreateTestCase = ref(true);
+const canViewTestCaseBasic = ref(true);
 
 const ownsTheUrl = computed(() => route.path.startsWith('/data-quality'));
 const routeSearch = computed(() => routeQueryToSearch(route));
 const getTabSearch = useTabSearchMemory(activeTab, routeSearch, ownsTheUrl);
+
+const { isTestCaseSummaryLoading, testCaseSummary, providerAggregations } =
+  useDataQualityTestCaseSummary({
+    activeTab,
+    ownsTheUrl,
+    route,
+    canViewTestCaseBasic,
+  });
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
@@ -153,7 +164,15 @@ const createActions = computed<DataQualityCreateActions>(() => ({
 const dataQualityContext = computed(() => ({
   createActions: createActions.value,
   isActive: ownsTheUrl.value,
+  activeTab: activeTab.value,
+  testCaseSummary: testCaseSummary.value,
+  isTestCaseSummaryLoading: isTestCaseSummaryLoading.value,
 }));
+const listTabSummaryLoading = computed(
+  () =>
+    activeTab.value !== 'dashboard' &&
+    isTestCaseSummaryLoading.value,
+);
 provide(dataQualityContextKey, dataQualityContext);
 
 async function loadResourcePermissions(): Promise<void> {
@@ -164,9 +183,11 @@ async function loadResourcePermissions(): Promise<void> {
     ]);
     canCreateTestSuite.value = Boolean(testSuiteOps.Create);
     canCreateTestCase.value = Boolean(testCaseOps.Create);
+    canViewTestCaseBasic.value = getDerivedPermissionFlags(testCaseOps).canViewBasic;
   } catch {
     canCreateTestSuite.value = false;
     canCreateTestCase.value = false;
+    canViewTestCaseBasic.value = false;
   }
 }
 
@@ -242,10 +263,15 @@ watch(
 
     <DataQualityDashboard v-if="activeTab === 'dashboard'" />
 
+    <Spin v-else-if="listTabSummaryLoading" class="dq-landing__tab-loader" size="large" />
+
     <TestCasesListView
-      v-if="activeTab === 'test-cases'"
+      v-else-if="activeTab === 'test-cases'"
       embedded
       :prefer-search="true"
+      :results="providerAggregations?.results ?? null"
+      :health="providerAggregations?.health ?? null"
+      :coverage="providerAggregations?.coverage ?? null"
       :tier="listDrill.tier"
       :tags="listDrill.tags"
       :data-product-fqn="listDrill.dataProductFqn"
@@ -257,7 +283,7 @@ watch(
     />
 
     <TestSuitesListView
-      v-if="activeTab === 'test-suites'"
+      v-else-if="activeTab === 'test-suites'"
       embedded
       :prefer-search="true"
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
@@ -295,5 +321,12 @@ watch(
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.dq-landing__tab-loader {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+  width: 100%;
 }
 </style>

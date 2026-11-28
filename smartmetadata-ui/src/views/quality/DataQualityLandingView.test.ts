@@ -43,7 +43,7 @@ vi.mock('@/stores/permissions', () => ({
         return { Create: permState.testSuiteCreate };
       }
       if (resource === 'testCase') {
-        return { Create: permState.testCaseCreate };
+        return { Create: permState.testCaseCreate, ViewBasic: true };
       }
       return {};
     }),
