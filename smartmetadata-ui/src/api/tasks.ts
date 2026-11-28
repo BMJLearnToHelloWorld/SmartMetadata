@@ -44,6 +44,25 @@ export interface ListTasksQuery {
   fields?: string;
 }
 
+/** Pin TaskCount schema (openmetadata-spec …/tasks/taskCount.json). */
+export interface TaskCount {
+  approved?: number;
+  completed?: number;
+  granted?: number;
+  inProgress?: number;
+  open?: number;
+  total?: number;
+}
+
+export interface GetTaskCountsQuery {
+  assignee?: string;
+  createdBy?: string;
+  aboutEntity?: string;
+  mentionedUser?: string;
+  view?: string;
+  domain?: string;
+}
+
 function mapComments(value: unknown): TaskComment[] {
   if (!Array.isArray(value)) {
     return [];
@@ -188,6 +207,11 @@ function requireTask(raw: Record<string, unknown>, action: string): Collaboratio
     throw new Error(`${action} succeeded but the response had no task`);
   }
   return mapped;
+}
+
+/** Official getTaskCounts (rest/tasksAPI.ts): GET /v1/tasks/count. */
+export function getTaskCounts(query: GetTaskCountsQuery = {}): Promise<TaskCount> {
+  return apiRequest<TaskCount>('/v1/tasks/count', { query });
 }
 
 export function listTasks(query: ListTasksQuery = {}): Promise<Paged<CollaborationTask>> {

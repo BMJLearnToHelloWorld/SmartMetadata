@@ -88,8 +88,13 @@ vi.mock('@/api/system', () => ({
   getEntityRules: vi.fn(async () => []),
 }));
 
+const getTaskCounts = vi.fn();
+const listTasks = vi.fn();
+
 vi.mock('@/api/tasks', () => ({
   getTask: vi.fn(async () => ({ id: 'task-1', name: 'TASK-00009', assignees: [], comments: [] })),
+  getTaskCounts: (...args: unknown[]) => getTaskCounts(...args),
+  listTasks: (...args: unknown[]) => listTasks(...args),
 }));
 
 vi.mock('@/quality/testCaseNextRun', () => ({
@@ -97,6 +102,13 @@ vi.mock('@/quality/testCaseNextRun', () => ({
   getTestSuiteFqns: vi.fn(() => ['suite.one']),
   shouldFetchNextRun: vi.fn(() => true),
 }));
+
+beforeEach(() => {
+  getTaskCounts.mockReset();
+  listTasks.mockReset();
+  getTaskCounts.mockResolvedValue({ open: 0, completed: 0 });
+  listTasks.mockResolvedValue({ data: [], paging: { total: 0 } });
+});
 
 async function mountView(props: { id: string; tab?: string } = { id: 'tc1' }) {
   const pinia = createPinia();
@@ -343,19 +355,21 @@ describe('TestCaseDetailView results tab TestSummary', () => {
     wrapper.unmount();
   });
 
-  it('lists incidents for the test case on the issues tab, by FQN not by id', async () => {
+  it('loads incident header rows by test-case FQN and open task counts for the issues tab badge', async () => {
     listTestCaseResults.mockResolvedValue({ data: [] });
     listTestIncidents.mockResolvedValue({
       data: [
         { id: 'inc1', testCaseResolutionStatusType: 'New', severity: 'Critical', timestamp: 1700000000000 },
       ],
     });
+    getTaskCounts.mockResolvedValue({ open: 2, completed: 1 });
     const { wrapper } = await mountView();
     expect(listTestIncidents).toHaveBeenCalledWith({
       testCaseFQN: 'svc.db.schema.orders.row_count',
     });
-    expect(wrapper.find('[data-testid="test-case-issues-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="test-case-issue-inc1"]').exists()).toBe(true);
+    expect(getTaskCounts).toHaveBeenCalledWith({
+      aboutEntity: 'svc.db.schema.orders.row_count',
+    });
     // Official SQL tab is shown only when inspectionQuery is present.
     expect(wrapper.find('[data-testid="dimensionality"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="test-case-sql-query-residual"]').exists()).toBe(false);
@@ -400,20 +414,22 @@ describe('TestCaseDetailView results tab TestSummary', () => {
     expect(wrapper.findComponent(Tabs).props('activeKey')).toBe('issues');
   });
 
-  it('links an issue row to the test-case alias issues path (F-D-5(a))', async () => {
+  it('shows official TestCaseIncidentTab on the issues tab (tasks, not incident history table)', async () => {
     listTestCaseResults.mockResolvedValue({ data: [] });
-    listTestIncidents.mockResolvedValue({
-      data: [
-        { id: 'inc1', testCaseResolutionStatusType: 'New', severity: 'Critical', timestamp: 1700000000000 },
-      ],
+    listTasks.mockResolvedValue({
+      data: [{ id: 'task-9', name: 'TASK-9', status: 'Open', createdAt: 1 }],
+      paging: { total: 1 },
     });
-    const { wrapper, router } = await mountView({ id: 'tc1', tab: 'issues' });
-    const link = wrapper.find('[data-testid="test-case-issue-inc1"]');
-    expect(link.exists()).toBe(true);
-    await link.trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.path).toBe('/test-case/svc.db.schema.orders.row_count/issues');
-    expect(router.currentRoute.value.name).toBe('test-case-alias');
+    const { wrapper } = await mountView({ id: 'tc1', tab: 'issues' });
+    expect(wrapper.find('[data-testid="issue-tab-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-issues-table"]').exists()).toBe(false);
+    expect(listTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aboutEntity: 'svc.db.schema.orders.row_count',
+        statusGroup: 'open',
+      }),
+    );
+    wrapper.unmount();
   });
 });
 

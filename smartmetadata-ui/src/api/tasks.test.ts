@@ -10,7 +10,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { addTaskComment, createTask, deleteTask, getTask, listDataAccessRequests, listMyAssignedTasks, listTasks, patchTask, resolveTask } from './tasks';
+import {
+  addTaskComment,
+  createTask,
+  deleteTask,
+  getTask,
+  getTaskCounts,
+  listDataAccessRequests,
+  listMyAssignedTasks,
+  listTasks,
+  patchTask,
+  resolveTask,
+} from './tasks';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -104,6 +115,25 @@ describe('tasks API', () => {
     expect(page.data[0]?.reviewPayload?.disputes).toHaveLength(1);
     expect(page.data[0]?.reviewPayload?.disputes[0]?.memory.id).toBe('m2');
     expect(page.data[1]?.reviewPayload).toBeUndefined();
+  });
+
+  it('loads task counts from GET /v1/tasks/count', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ open: 2, completed: 5 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const counts = await getTaskCounts({ aboutEntity: 'svc.db.schema.orders.row_count' });
+    expect(counts.open).toBe(2);
+    expect(counts.completed).toBe(5);
+    expect(lastFetch().url).toContain('/api/v1/tasks/count');
+    expect(lastFetch().url).toContain(
+      encodeURIComponent('svc.db.schema.orders.row_count'),
+    );
   });
 
   it('lists tasks from GET /v1/tasks', async () => {

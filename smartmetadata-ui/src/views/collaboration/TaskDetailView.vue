@@ -30,9 +30,16 @@ import SmDrawer from '@/components/shared/SmDrawer.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FeedbackApprovalTask from './FeedbackApprovalTask.vue';
 
-const props = defineProps<{ id: string }>();
+const props = defineProps<{ id: string; embedded?: boolean }>();
+const emit = defineEmits<{ afterClose: [] }>();
 const router = useRouter();
 const { t } = useI18n();
+
+function maybeEmitAfterClose(): void {
+  if (props.embedded && task.value && !isTaskActionable(task.value.status)) {
+    emit('afterClose');
+  }
+}
 
 const loading = ref(false);
 const saving = ref(false);
@@ -192,6 +199,7 @@ async function onClose(): Promise<void> {
   try {
     task.value = await closeTask(props.id, form.comment.trim() || undefined);
     message.success(t('collaboration.task.closed'));
+    maybeEmitAfterClose();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.closeFailed'));
   } finally {
@@ -216,7 +224,11 @@ async function onDelete(): Promise<void> {
   try {
     await deleteTask(props.id);
     message.success(t('collaboration.task.deleted'));
-    await router.replace({ name: 'tasks' });
+    if (props.embedded) {
+      emit('afterClose');
+    } else {
+      await router.replace({ name: 'tasks' });
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.deleteFailed'));
   } finally {
@@ -275,6 +287,7 @@ async function onAcceptSuggestion(): Promise<void> {
     };
     task.value = await resolveTask(props.id, body);
     message.success(t('collaboration.task.resolved'));
+    maybeEmitAfterClose();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
   } finally {
@@ -299,6 +312,7 @@ async function onFeedbackDecision(decision: 'approve' | 'reject'): Promise<void>
       buildFeedbackApprovalResolution(task.value, decision),
     );
     message.success(t('collaboration.task.resolved'));
+    maybeEmitAfterClose();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
   } finally {
@@ -337,6 +351,7 @@ async function onRunTransition(): Promise<void> {
       comment: form.comment.trim() || undefined,
     });
     message.success(t('collaboration.task.resolved'));
+    maybeEmitAfterClose();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
   } finally {
@@ -439,6 +454,7 @@ async function onResolve(): Promise<void> {
         ),
       );
       message.success(t('collaboration.task.resolved'));
+    maybeEmitAfterClose();
     } catch (error) {
       message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
     } finally {
@@ -453,6 +469,7 @@ async function onResolve(): Promise<void> {
       comment: form.comment.trim() || undefined,
     });
     message.success(t('collaboration.task.resolved'));
+    maybeEmitAfterClose();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
   } finally {
@@ -488,8 +505,8 @@ watch(
 
 <template>
   <Spin :spinning="loading">
-  <Card>
-    <PageHeader :header="title" />
+  <Card :bordered="!embedded" :class="{ 'entity-task-panel': embedded }">
+    <PageHeader v-if="!embedded" :header="title" />
     <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="collab-alert" />
     <template v-if="task">
       <Space class="collab-actions" wrap>

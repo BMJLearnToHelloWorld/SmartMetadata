@@ -145,6 +145,8 @@ const enUS = {
     'no-data': 'No data',
     'no-entity-selected': 'No {entity} Selected',
     'open-incident-plural': 'Open Incidents',
+    open: 'Open',
+    closed: 'Closed',
     'operator': 'Operator',
     parameter: 'Parameter',
     'parameter-description': "Parameter Description",

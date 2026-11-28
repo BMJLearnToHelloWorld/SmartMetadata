@@ -11,8 +11,8 @@ import { AlignRightOutlined, SyncOutlined } from '@ant-design/icons-vue';
 import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-vue';
 import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
 import StatItem from '@/components/shared/StatItem.vue';
-import SmTable from '@/components/shared/SmTable.vue';
 import TestCaseTestSummary from '@/components/quality/TestCaseTestSummary.vue';
+import TestCaseIncidentTab from '@/components/quality/TestCaseIncidentTab.vue';
 import { useEntityRules } from '@/composables/useEntityRules';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, getTestCaseByName, patchTestCase } from '@/api/testCases';
@@ -47,7 +47,7 @@ import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestIncidents } from '@/api/testIncidents';
-import { getTask } from '@/api/tasks';
+import { getTask, getTaskCounts } from '@/api/tasks';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
 import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
 import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
@@ -78,7 +78,7 @@ import DimensionalityPanel from '@/features/quality/DimensionalityPanel.vue';
 import TestCaseSqlQueryTab from '@/components/quality/TestCaseSqlQueryTab.vue';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
-import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
 import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
 import type { EntityRef } from '@/types/api';
@@ -95,7 +95,7 @@ const requireDomainForDataProduct = computed(
   () => !isRulesLoaded.value || entityRules.value.requireDomainForDataProduct,
 );
 const issues = ref<TestIncident[]>([]);
-const issuesError = ref('');
+const openTaskCount = ref(0);
 // Official TestCasePageTabs default is TEST_CASE_RESULTS. Unknown tabs
 // land there; official has no overview fallback (t418u).
 const DEFAULT_TEST_CASE_TAB = 'test-case-results';
@@ -141,7 +141,7 @@ const tabs = computed<EntityDetailTab[]>(() =>
       key: tab.key,
       label: t(tab.labelKey),
       testId: OFFICIAL_TAB_TEST_ID[tab.key] ?? `test-case-tab-${tab.key}`,
-      count: tab.key === 'issues' ? issues.value.length : undefined,
+      count: tab.key === 'issues' ? openTaskCount.value : undefined,
     })),
 );
 
@@ -512,18 +512,8 @@ async function runTestCase(): Promise<void> {
   }
 }
 
-const issueColumns = computed<EntityListColumn[]>(() => [
-  { title: t('label.status'), dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
-  { title: t('observability.incidents.severity'), dataIndex: 'severity', key: 'severity', width: 120 },
-  { title: t('observability.incidents.updated'), key: 'timestamp', width: 200 },
-]);
-
-function formatTs(value?: number): string {
-  if (!value) {
-    return '—';
-  }
-  const millis = value < 1e12 ? value * 1000 : value;
-  return new Date(millis).toISOString();
+function onIncidentTabCounts(payload: { open: number; closed: number }): void {
+  openTaskCount.value = payload.open;
 }
 
 async function loadTestDefinition(definitionId?: string): Promise<void> {
@@ -554,10 +544,14 @@ async function load(): Promise<void> {
       try {
         const incidentPage = await listTestIncidents({ testCaseFQN: loaded.fullyQualifiedName });
         issues.value = incidentPage.data;
-        issuesError.value = '';
       } catch {
         issues.value = [];
-        issuesError.value = t('server.entity-fetch-error', { entity: t('label.incident') });
+      }
+      try {
+        const counts = await getTaskCounts({ aboutEntity: loaded.fullyQualifiedName });
+        openTaskCount.value = counts.open ?? 0;
+      } catch {
+        openTaskCount.value = 0;
       }
       await loadSuitePipelines(loaded.testSuite?.fullyQualifiedName);
       await Promise.all([loadNextRunTimestamp(), loadIncidentTask()]);
@@ -962,44 +956,18 @@ onMounted(() => {
       </div>
     </template>
     <template #issues>
-      <SmState
-        v-if="issuesError"
-        state="error"
-        test-id="test-case-issues-error"
-        :error-text="issuesError"
+      <TestCaseIncidentTab
+        v-if="testCase?.fullyQualifiedName"
+        :test-case-fqn="testCase.fullyQualifiedName"
+        :owners="testCase.owners"
+        @counts-updated="onIncidentTabCounts"
       />
-      <SmTable
+      <SmState
         v-else
-        test-id="test-case-issues-table"
-        row-key="id"
-        size="small"
-        :columns="issueColumns"
-        :data-source="issues"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'timestamp'">
-            {{ formatTs((record as TestIncident).timestamp) }}
-          </template>
-          <template v-else-if="column.key === 'status'">
-            <a
-              href="#"
-              :data-testid="`test-case-issue-${(record as TestIncident).id}`"
-              @click.prevent="
-                router.push(
-                  `/test-case/${encodeURIComponent(
-                    testCase?.fullyQualifiedName ??
-                      (record as TestIncident).testCaseReference?.fullyQualifiedName ??
-                      '',
-                  )}/issues`,
-                )
-              "
-            >
-              {{ (record as TestIncident).testCaseResolutionStatusType || '—' }}
-            </a>
-          </template>
-        </template>
-      </SmTable>
+        state="empty"
+        test-id="test-case-issues-residual"
+        :empty-text="t('label.no-data')"
+      />
     </template>
     <template #dimensionality>
       <DimensionalityPanel

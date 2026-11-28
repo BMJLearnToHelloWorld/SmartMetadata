@@ -142,6 +142,8 @@ const zhCN = {
     'no-data': '无数据',
     'no-entity-selected': '未选择 {entity}',
     'open-incident-plural': '公开事件',
+    open: '打开',
+    closed: '已关闭',
     'operator': '运算符',
     parameter: '参数',
     'parameter-description': "参数说明",
