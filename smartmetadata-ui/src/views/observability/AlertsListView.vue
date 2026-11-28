@@ -139,6 +139,8 @@ async function fetchAllAlertsPermission(alerts: EventSubscription[]): Promise<vo
   }
 }
 
+const isObservabilityFace = resolveAlertFace(route.path) === 'Observability';
+
 const { items, paging, isLoading, page, pageSize, onPageChange, onPageSizeChange } =
   useCursorPagedList<EventSubscription>(
     async ({ after, before, limit }) => {
@@ -175,7 +177,11 @@ const { items, paging, isLoading, page, pageSize, onPageChange, onPageSizeChange
           );
         }
       },
-      persistence: { storage: localStorage, userName: () => authStore.user?.name },
+      // Official useObservabilityAlerts + usePaging: no localStorage persistence.
+      persistence:
+        isObservabilityFace
+          ? undefined
+          : { storage: localStorage, userName: () => authStore.user?.name },
       resetKey: () => resetKey.value,
     },
   );

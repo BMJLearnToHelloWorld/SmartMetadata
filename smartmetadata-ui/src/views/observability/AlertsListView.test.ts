@@ -18,6 +18,7 @@ import AlertDeleteModal from '@/components/notifications/AlertDeleteModal.vue';
 import { createTestI18n } from '@/test/i18n';
 import type { EventSubscription } from '@/types/quality';
 import AlertsListView from './AlertsListView.vue';
+import { USER_PREFERENCES_KEY } from '@/utils/userPageSizePreference';
 
 const getAllAlerts = vi.fn();
 const getAlertsFromName = vi.fn();
@@ -331,6 +332,20 @@ describe('observability face (C chain)', () => {
     expect(edit.element.closest('a')?.getAttribute('href')).toBe(
       '/observability/alerts/edit/dq-alert',
     );
+  });
+
+  it('does not persist page size in localStorage (pin usePaging)', async () => {
+    getAllAlerts.mockResolvedValue({
+      data: [alertFixture()],
+      after: 'c2',
+      before: undefined,
+      total: 30,
+    });
+    const { wrapper } = await mountView('/observability/alerts');
+    const table = wrapper.findComponent({ name: 'AlertListTable' });
+    table.props('onShowSizeChange')(25);
+    await settle(wrapper);
+    expect(localStorage.getItem(USER_PREFERENCES_KEY)).toBeNull();
   });
 });
 
