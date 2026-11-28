@@ -9,6 +9,7 @@
  */
 import { asNumber, asRecord, asString } from '@/api/json';
 import { ApiError, apiRequest } from './client';
+import type { EntityTag } from '@/utils/tags';
 
 /**
  * Official ContractExecutionStatus (generated/entity/data/dataContract.ts):
@@ -46,8 +47,10 @@ export interface ContractColumn {
   fullyQualifiedName?: string;
   displayName?: string;
   dataType?: string;
+  dataTypeDisplay?: string;
   description?: string;
   constraint?: string;
+  tags?: EntityTag[];
   children?: ContractColumn[];
 }
 

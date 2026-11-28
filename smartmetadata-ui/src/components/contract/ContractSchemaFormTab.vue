@@ -1,13 +1,15 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official ContractSchemaFormTab: paged columns, leaf-FQN-depth checkbox,
-  preserve selected + removed columns across pages.
+  Official ContractSchemaFormTab (ContractScehmaFormTab.tsx typo):
+  paged columns, leaf-FQN-depth checkbox, preserve selected + removed
+  columns across pages, official name/type/tags/glossary/constraint
+  columns (no description column).
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Table } from 'ant-design-vue';
+import { Table, Tag } from 'ant-design-vue';
 import type { ContractColumn, DataContract } from '@/api/dataContracts';
 import { getDataModelColumnsByFQN, getTableColumnsByFQN } from '@/api/columns';
 import { apiRequest } from '@/api/client';
@@ -15,7 +17,15 @@ import { splitFqn } from '@/catalog/fqn';
 import { SCHEMA_CHECKBOX_FQN_DEPTH } from '@/catalog/dataContractTabs';
 import { flattenColumns, pruneEmptyChildren } from '@/catalog/dataContractForm';
 import { getEncodedFqn } from '@/utils/fqnPaths';
+import { getEntityName } from '@/utils/dataContract';
+import {
+  NO_DATA_PLACEHOLDER,
+  getClassificationTags,
+  getGlossaryTags,
+  type EntityTag,
+} from '@/utils/tags';
 import ContractFormStep from '@/components/contract/ContractFormStep.vue';
+import TagsViewer from '@/components/shared/TagsViewer.vue';
 
 const props = defineProps<{
   entityType: string;
@@ -56,6 +66,31 @@ function uniqByFqn(items: ContractColumn[]): ContractColumn[] {
   });
 }
 
+function mapTags(raw: unknown): EntityTag[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw.flatMap((item) => {
+    const rec = item as Record<string, unknown>;
+    const tagFQN = String(rec?.tagFQN ?? '');
+    if (!tagFQN) {
+      return [];
+    }
+    const style = rec.style && typeof rec.style === 'object' ? (rec.style as Record<string, unknown>) : undefined;
+    return [{
+      tagFQN,
+      name: rec.name ? String(rec.name) : undefined,
+      displayName: rec.displayName ? String(rec.displayName) : undefined,
+      description: rec.description ? String(rec.description) : undefined,
+      source: rec.source ? String(rec.source) : undefined,
+      labelType: rec.labelType ? String(rec.labelType) : undefined,
+      style: style
+        ? { color: style.color ? String(style.color) : undefined, iconURL: style.iconURL ? String(style.iconURL) : undefined }
+        : undefined,
+    }];
+  });
+}
+
 function mapRawColumns(raw: unknown[]): ContractColumn[] {
   return raw.flatMap((item) => {
     const rec = item as Record<string, unknown>;
@@ -69,10 +104,18 @@ function mapRawColumns(raw: unknown[]): ContractColumn[] {
       fullyQualifiedName: rec.fullyQualifiedName ? String(rec.fullyQualifiedName) : undefined,
       displayName: rec.displayName ? String(rec.displayName) : undefined,
       dataType: rec.dataType ? String(rec.dataType) : undefined,
+      dataTypeDisplay: rec.dataTypeDisplay ? String(rec.dataTypeDisplay) : undefined,
       description: rec.description ? String(rec.description) : undefined,
+      constraint: rec.constraint ? String(rec.constraint) : undefined,
+      tags: mapTags(rec.tags),
       children,
     }];
   });
+}
+
+function typeDisplay(record: { dataTypeDisplay?: string; dataType?: string }): string {
+  const displayValue = record.dataTypeDisplay || record.dataType || '';
+  return displayValue || NO_DATA_PLACEHOLDER;
 }
 
 const oldRemovedColumns = computed(() => {
@@ -157,6 +200,19 @@ function onPageChange(page: number): void {
   void fetchColumns(page);
 }
 
+const tableColumns = computed(() => {
+  const columns = [
+    { title: t('label.name'), dataIndex: 'name', key: 'name' },
+    { title: t('label.type'), dataIndex: 'dataTypeDisplay', key: 'dataTypeDisplay' },
+    { title: t('label.tag-plural'), dataIndex: 'tags', key: 'tags' },
+    { title: t('label.glossary-term-plural'), dataIndex: 'tags', key: 'glossary' },
+  ];
+  if (props.entityType === 'table') {
+    columns.push({ title: t('label.constraint-plural'), dataIndex: 'constraint', key: 'constraint' });
+  }
+  return columns;
+});
+
 onMounted(() => {
   selectedKeys.value = (props.selectedSchema ?? []).map((item) => item.fullyQualifiedName ?? '');
   void fetchColumns(1);
@@ -180,12 +236,46 @@ onMounted(() => {
       :loading="loading"
       :pagination="entityType === 'table' || entityType === 'dashboardDataModel' ? { current: currentPage, pageSize, total, onChange: onPageChange } : false"
       :row-selection="{ selectedRowKeys: selectedKeys, preserveSelectedRowKeys: true, onChange: onSelectionChange, getCheckboxProps: checkboxProps }"
-      :columns="[
-        { title: t('label.name'), dataIndex: 'name', key: 'name' },
-        { title: t('label.type'), dataIndex: 'dataType', key: 'dataType' },
-        { title: t('label.description'), dataIndex: 'description', key: 'description' },
-      ]"
+      :columns="tableColumns"
       :default-expand-all-rows="true"
-    />
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">
+          <span class="schema-table-name">{{ getEntityName(record) }}</span>
+        </template>
+        <template v-else-if="column.key === 'dataTypeDisplay'">
+          <Tag v-if="typeDisplay(record) !== NO_DATA_PLACEHOLDER" color="purple" :title="typeDisplay(record)" class="schema-type-badge">
+            {{ typeDisplay(record) }}
+          </Tag>
+          <span v-else>{{ NO_DATA_PLACEHOLDER }}</span>
+        </template>
+        <template v-else-if="column.key === 'tags'">
+          <TagsViewer :size-cap="1" :tags="getClassificationTags(record.tags)" />
+        </template>
+        <template v-else-if="column.key === 'glossary'">
+          <TagsViewer :size-cap="1" :tags="getGlossaryTags(record.tags)" />
+        </template>
+        <template v-else-if="column.key === 'constraint'">
+          <Tag v-if="record.constraint" color="blue" :title="record.constraint" class="schema-constraint-badge">
+            {{ record.constraint }}
+          </Tag>
+          <span v-else>{{ NO_DATA_PLACEHOLDER }}</span>
+        </template>
+      </template>
+    </Table>
   </ContractFormStep>
 </template>
+
+<style scoped>
+.schema-table-name {
+  color: var(--sm-color-primary);
+}
+
+.schema-type-badge,
+.schema-constraint-badge {
+  margin-inline-end: 8px;
+  max-width: 100%;
+  white-space: normal;
+  font-weight: 500;
+}
+</style>
