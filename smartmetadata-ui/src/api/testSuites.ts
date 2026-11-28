@@ -10,6 +10,7 @@
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { CreateTestSuiteRequest, TestSuite, TestSummary } from '@/types/quality';
+import { UUID_REGEX } from '@/utils/notifications/alertSelection';
 import { ApiError, apiRequest } from './client';
 
 export const TEST_SUITE_FIELDS = 'owners,reviewers,tests,summary,domains';
@@ -118,6 +119,11 @@ export async function getTestSuite(id: string): Promise<TestSuite> {
     throw new Error('Test suite response was missing id and name');
   }
   return mapped;
+}
+
+/** Official TestSuiteDetailsPage: UUID → by id, FQN → getTestSuiteByName. */
+export async function getTestSuiteByRouteParam(idOrFqn: string): Promise<TestSuite> {
+  return UUID_REGEX.test(idOrFqn) ? getTestSuite(idOrFqn) : getTestSuiteByName(idOrFqn);
 }
 
 /**

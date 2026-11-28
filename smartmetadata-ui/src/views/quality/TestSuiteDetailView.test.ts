@@ -49,10 +49,17 @@ vi.mock('@/governance/catalogOptions', () => ({
 }));
 
 const getTestSuite = vi.fn();
+const getTestSuiteByName = vi.fn();
 const listTestCases = vi.fn();
 
 vi.mock('@/api/testSuites', () => ({
   getTestSuite: (...args: unknown[]) => getTestSuite(...args),
+  getTestSuiteByName: (...args: unknown[]) => getTestSuiteByName(...args),
+  getTestSuiteByRouteParam: async (idOrFqn: string) => {
+    const uuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrFqn);
+    return uuid ? getTestSuite(idOrFqn) : getTestSuiteByName(idOrFqn);
+  },
   updateTestSuite: vi.fn(),
   patchTestSuite: vi.fn(),
   deleteTestSuite: vi.fn(),
@@ -75,7 +82,18 @@ vi.mock('@/api/ingestionPipelines', () => ({
   listIngestionPipelines: vi.fn(async () => ({ data: [], total: 0 })),
 }));
 
-async function mountView(bundleSuite = false) {
+const suiteFixture = {
+  id: 'ts1',
+  name: 'orders_suite',
+  displayName: 'Orders suite',
+  fullyQualifiedName: 'svc.db.schema.orders.orders_suite',
+  basic: true,
+  tests: [] as unknown[],
+  owners: [] as unknown[],
+  domains: [] as unknown[],
+};
+
+async function mountView(bundleSuite = false, routeId = 'ts1') {
   const pinia = createPinia();
   setActivePinia(pinia);
   getTestSuite.mockResolvedValue({
@@ -88,18 +106,28 @@ async function mountView(bundleSuite = false) {
     owners: [],
     domains: [],
   });
+  getTestSuiteByName.mockResolvedValue({
+    ...suiteFixture,
+    basic: !bundleSuite,
+  });
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/quality/test-suites/:id', name: 'quality-test-suite', component: TestSuiteDetailView, props: true },
+      {
+        path: '/quality/test-suites/:id',
+        name: 'quality-test-suite',
+        component: TestSuiteDetailView,
+        props: true,
+        alias: '/test-suites/:id',
+      },
       { path: '/data-quality/:tab?', name: 'quality-data-quality-tab', component: { template: '<div />' } },
       { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
     ],
   });
-  await router.push({ name: 'quality-test-suite', params: { id: 'ts1' } });
+  await router.push({ path: `/test-suites/${routeId}` });
   await router.isReady();
   const wrapper = mount(TestSuiteDetailView, {
-    props: { id: 'ts1' },
+    props: { id: routeId },
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
     attachTo: document.body,
   });
@@ -110,6 +138,7 @@ async function mountView(bundleSuite = false) {
 describe('TestSuiteDetailView official parity', () => {
   beforeEach(() => {
     getTestSuite.mockReset();
+    getTestSuiteByName.mockReset();
     listTestCases.mockReset();
     listTestCases.mockResolvedValue({
       data: [
@@ -147,6 +176,20 @@ describe('TestSuiteDetailView official parity', () => {
     const wrapper = await mountView(true);
     expect(wrapper.find('[data-testid="add-tests-to-suite"]').exists()).toBe(true);
     wrapper.unmount();
+  });
+
+  it('loads by suite FQN on /test-suites/{fqn} (official TEST_SUITES_WITH_FQN)', async () => {
+    const fqn = 'svc.db.schema.orders.orders_suite';
+    await mountView(false, fqn);
+    expect(getTestSuiteByName).toHaveBeenCalledWith(fqn);
+    expect(getTestSuite).not.toHaveBeenCalled();
+  });
+
+  it('loads by UUID on quality-test-suite when id is a UUID', async () => {
+    const uuid = '123e4567-e89b-12d3-a456-426614174000';
+    await mountView(false, uuid);
+    expect(getTestSuite).toHaveBeenCalledWith(uuid);
+    expect(getTestSuiteByName).not.toHaveBeenCalled();
   });
 
   it('renders pipeline tab with drawer add entry (not legacy residual)', async () => {

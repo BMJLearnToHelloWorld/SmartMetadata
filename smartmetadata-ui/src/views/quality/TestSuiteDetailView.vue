@@ -8,7 +8,12 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { Button, Descriptions, Form, Input, message } from 'ant-design-vue';
-import { getTestSuite, patchTestSuite, updateTestSuite, deleteTestSuite } from '@/api/testSuites';
+import {
+  deleteTestSuite,
+  getTestSuiteByRouteParam,
+  patchTestSuite,
+  updateTestSuite,
+} from '@/api/testSuites';
 import {
   addTestCasesToLogicalTestSuiteBulk,
   type AddTestCaseListSubmitPayload,
@@ -112,7 +117,7 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    suite.value = await getTestSuite(props.id);
+    suite.value = await getTestSuiteByRouteParam(props.id);
   } catch (error) {
     suite.value = null;
     errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-suite') }));
