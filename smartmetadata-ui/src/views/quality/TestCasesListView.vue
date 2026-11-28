@@ -7,7 +7,13 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, Dropdown, Menu, Select, Switch, message } from 'ant-design-vue';
-import { deleteTestCase, exportTestCasesInCSV, listTestCases, listTestCasesBySearch } from '@/api/testCases';
+import {
+  deleteTestCase,
+  exportTestCasesInCSV,
+  listTestCases,
+  listTestCasesBySearch,
+  removeTestCaseFromTestSuite,
+} from '@/api/testCases';
 import { markCsvJobOwned, notifyCsvJobsRefresh } from '@/api/csvJobs';
 import { downloadCsv } from '@/features/csv/csv';
 import { getErrorText } from '@/views/admin/accessApiErrors';
@@ -56,6 +62,7 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import { filterCasesForSearch } from '@/quality/landing';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { useDataQualityContext } from '@/quality/dataQualityContext';
 import {
   mergeTestCaseListFiltersToQuery,
@@ -87,6 +94,11 @@ const props = withDefaults(
     dataQualityDimension?: string;
     /** Dashboard drill-down (pin getTestCaseListPath tableFqn): search-path entity scope. */
     entityFqn?: string;
+    /** Scope the list to a logical test suite (suite detail tab). */
+    testSuiteId?: string;
+    /** Hide dashboard donuts and list chrome; keep filters and columns. */
+    suiteDetailMode?: boolean;
+    removeFromSuite?: { suiteId: string; allowed: boolean };
     coverage?: CoverageCounts | null;
     health?: HealthCounts | null;
     results?: StatusCounts | null;
@@ -105,7 +117,9 @@ const errorMessage = ref('');
 const cases = ref<TestCase[]>([]);
 const listEntityPermissions = ref<Record<string, ResourcePermission>>({});
 const total = ref<number | undefined>();
-const emit = defineEmits<{ 'update:total': [total: number] }>();
+const emit = defineEmits<{ 'update:total': [total: number]; 'removed-from-suite': [] }>();
+const suiteDetailList = computed(() => props.suiteDetailMode === true);
+const canRemoveFromSuite = computed(() => props.removeFromSuite?.allowed === true && Boolean(props.removeFromSuite?.suiteId));
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref(0);
@@ -232,26 +246,30 @@ const rowSelection = computed(() => {
 const formOpen = ref(false);
 const editing = ref<TestCase | undefined>();
 const deleting = ref<TestCase | undefined>();
-const columns = computed<EntityListColumn[]>(() => [
-  { title: t('label.status'), key: 'status', width: 110 },
-  { title: t('label.failed-slash-aborted-reason'), key: 'failureReason', ellipsis: true },
-  {
-    title: t('label.last-run'),
-    key: 'lastRun',
-    width: 170,
-    sorter: (left, right) =>
-      ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
-  },
-  {
-    title: t('label.name'),
-    dataIndex: 'name',
-    key: 'name',
-    sorter: (left, right) => entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
-  },
-  { title: t('label.table'), key: 'entityFQN' },
-  { title: t('label.column'), key: 'column', width: 140 },
-  { title: t('label.incident'), key: 'incident', width: 120 },
-]);
+const columns = computed<EntityListColumn[]>(() => {
+  const base: EntityListColumn[] = [
+    { title: t('label.status'), key: 'status', width: 110 },
+    { title: t('label.failed-slash-aborted-reason'), key: 'failureReason', ellipsis: true },
+    {
+      title: t('label.last-run'),
+      key: 'lastRun',
+      width: 170,
+      sorter: (left, right) =>
+        ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
+    },
+    {
+      title: t('label.name'),
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (left, right) => entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
+    },
+    { title: t('label.incident'), key: 'incident', width: 120 },
+  ];
+  if (!props.testSuiteId) {
+    base.splice(4, 0, { title: t('label.table'), key: 'entityFQN' }, { title: t('label.column'), key: 'column', width: 140 });
+  }
+  return base;
+});
 
 function includeMode(): 'non-deleted' | 'deleted' {
   return showDeleted.value ? 'deleted' : 'non-deleted';
@@ -320,6 +338,7 @@ async function load(): Promise<void> {
           dataProductFqn: dataProductFilter.value || props.dataProductFqn,
           dataQualityDimension: dimensionFilter.value || props.dataQualityDimension,
           entityFQN: tableFilter.value.trim() || props.entityFqn,
+          testSuiteId: props.testSuiteId,
           include: includeMode(),
           startTimestamp: startTimestamp.value,
           endTimestamp: endTimestamp.value,
@@ -352,6 +371,7 @@ async function load(): Promise<void> {
       // No dimension parameter on the plain list endpoint: a dimension
       // drill-down only narrows the search path above.
       entityFQN: tableFilter.value.trim() || props.entityFqn,
+      testSuiteId: props.testSuiteId,
     });
     cases.value = page.data;
     total.value = page.total;
@@ -570,7 +590,18 @@ async function exportCases(): Promise<void> {
 watch(
   () => route.query,
   () => {
+    if (suiteDetailList.value) {
+      return;
+    }
     hydrateFromRoute(false);
+    resetPager();
+    void load();
+  },
+);
+
+watch(
+  () => props.testSuiteId,
+  () => {
     resetPager();
     void load();
   },
@@ -578,6 +609,38 @@ watch(
 
 function openDelete(record: TestCase): void {
   deleting.value = record;
+}
+
+function onRowDelete(record: TestCase): void {
+  if (canRemoveFromSuite.value) {
+    void onRemoveFromSuite(record);
+    return;
+  }
+  openDelete(record);
+}
+
+async function onRemoveFromSuite(record: TestCase): Promise<void> {
+  const suiteId = props.removeFromSuite?.suiteId;
+  if (!suiteId || !record.id) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('label.delete'),
+    content: t('message.delete-entity-message', { entity: entityLabel(record) }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await removeTestCaseFromTestSuite(suiteId, record.id);
+    message.success(t('server.entity-deleted-successfully', { entity: entityLabel(record) }));
+    emit('removed-from-suite');
+    await load();
+  } catch (error) {
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-suite') })));
+  }
 }
 
 async function onDeleteConfirm(mode: 'soft' | 'hard'): Promise<void> {
@@ -642,7 +705,7 @@ defineExpose({ openCreate, total });
 <template>
   <div>
     <TestCaseInsightDonuts
-      v-if="embedded && (results || health || coverage)"
+      v-if="embedded && !suiteDetailList && (results || health || coverage)"
       :results="results"
       :health="health"
       :coverage="coverage"
@@ -675,7 +738,7 @@ defineExpose({ openCreate, total });
   <EntityListShell
     :title="listTitle"
     :lead="listLead"
-    :hide-heading="false"
+    :hide-heading="suiteDetailList"
     :row-selection="rowSelection"
     :loading="loading"
     :error="errorMessage"
@@ -686,7 +749,8 @@ defineExpose({ openCreate, total });
     :search-value="searchValue"
     :search-placeholder="t('label.search-entity', { entity: t('label.test-case-lowercase') })"
     show-row-actions
-    show-edit-action
+    :show-edit-action="!suiteDetailList"
+    :show-delete-action="canRemoveFromSuite"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -698,9 +762,9 @@ defineExpose({ openCreate, total });
     @prev="onPrev"
     @view="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
     @edit="(record) => openEdit(record as TestCase)"
-    @delete="(record) => openDelete(record as TestCase)"
+    @delete="(record) => onRowDelete(record as TestCase)"
   >
-    <template #actions>
+    <template v-if="!suiteDetailList" #actions>
       <Dropdown :trigger="['click']">
         <Button data-testid="test-cases-manage">⋯</Button>
         <template #overlay>

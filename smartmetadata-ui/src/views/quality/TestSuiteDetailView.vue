@@ -5,39 +5,43 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
+import { getErrorText } from '@/views/admin/accessApiErrors';
 import { Button, Descriptions, Form, Input, message } from 'ant-design-vue';
-import SmTable from '@/components/shared/SmTable.vue';
-import { deleteTestSuite, getTestSuite, updateTestSuite } from '@/api/testSuites';
-import { listIngestionPipelines } from '@/api/ingestionPipelines';
-import type { IngestionPipeline } from '@/types/ingestion';
+import { getTestSuite, patchTestSuite, updateTestSuite, deleteTestSuite } from '@/api/testSuites';
 import {
   addTestCasesToLogicalTestSuiteBulk,
-  removeTestCaseFromTestSuite,
   type AddTestCaseListSubmitPayload,
 } from '@/api/testCases';
 import AddTestCaseList from '@/components/quality/AddTestCaseList.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { getDataQualityPagePath, getTestSuiteIngestionPath } from '@/utils/fqnPaths';
+import TestSuitePipelineTab from '@/components/quality/TestSuitePipelineTab.vue';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityManageButton from '@/components/quality/EntityManageButton.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
-import SmState from '@/components/shared/SmState.vue';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
+import { descriptionPatch, domainsPatch, ownersPatch } from '@/governance/assetPatch';
+import { usePermissionStore } from '@/stores/permissions';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
-import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import type { EntityRef } from '@/types/api';
+import type { EntityDetailTab } from '@/features/crud/types';
 import type { TestSuite } from '@/types/quality';
+import TestCasesListView from '@/views/quality/TestCasesListView.vue';
+import { buildTestSuiteDetailBreadcrumbs } from '@/utils/qualityDetailBreadcrumbs';
+import { getDataQualityPagePath } from '@/utils/fqnPaths';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const suite = ref<TestSuite | null>(null);
-// Official TestSuiteDetailsPage tabs: TEST_CASES, PIPELINE — no OVERVIEW (t418u).
 const activeTab = ref('test-cases');
 const suiteFqn = computed(() => suite.value?.fullyQualifiedName ?? '');
 const suiteDeleted = computed(() => suite.value?.deleted === true);
@@ -47,6 +51,20 @@ const suitePerms = useEntityPermissions('testSuite', suiteFqn, {
 });
 const hasDeletePermission = computed(() => !suiteDeleted.value && suitePerms.canDelete.value);
 const editDisplayNamePermission = computed(() => !suiteDeleted.value && suitePerms.canEditDisplayName.value);
+const canAddTestCases = computed(() => !suiteDeleted.value && suitePerms.can('EditTests'));
+const canEditSuiteOwners = computed(
+  () => !suiteDeleted.value && (permissionStore.isAdminUser || suitePerms.can('EditOwners')),
+);
+const canEditSuiteDomains = computed(
+  () => !suiteDeleted.value && (permissionStore.isAdminUser || suitePerms.can('EditDomains')),
+);
+const canEditDescription = computed(
+  () => !suiteDeleted.value && (permissionStore.isAdminUser || suitePerms.canEditDescription.value),
+);
+
+const testCaseTabCount = ref(0);
+const pipelineTabCount = ref(0);
+const governanceCatalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
 
 const editOpen = ref(false);
 const saving = ref(false);
@@ -55,24 +73,27 @@ const editForm = reactive({
   description: '',
 });
 
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('label.data-quality'), to: getDataQualityPagePath('test-suites') },
-  { label: entityLabel(suite.value) || t('label.entity-detail-plural', { entity: t('label.test-suite') }) },
-]);
+const breadcrumbs = computed(() =>
+  buildTestSuiteDetailBreadcrumbs(
+    t,
+    entityLabel(suite.value) || t('label.entity-detail-plural', { entity: t('label.test-suite') }),
+  ),
+);
 
 const tabs = computed<EntityDetailTab[]>(() =>
   QUALITY_PAGE_TABS.testSuite.map((tab) => ({
     key: tab.key,
     label: t(tab.labelKey),
     testId: `test-suite-tab-${tab.key}`,
+    count: tab.key === 'test-cases' ? testCaseTabCount.value : tab.key === 'pipeline' ? pipelineTabCount.value : undefined,
   })),
 );
 
-const testColumns = computed<EntityListColumn[]>(() => [
-  { title: t('label.name'), dataIndex: 'name', key: 'name' },
-  { title: t('label.fully-qualified-name'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-  { title: t('label.action-plural'), key: 'actions', width: 120 },
-]);
+const removeFromSuite = computed(() =>
+  suite.value?.id
+    ? { suiteId: suite.value.id, allowed: suitePerms.can('EditTests') }
+    : undefined,
+);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -103,7 +124,7 @@ async function onDeleteTestSuite(): Promise<void> {
   try {
     await deleteTestSuite(suite.value.id, { hardDelete: true });
     message.success(t('server.entity-deleted-successfully', { entity: entityLabel(suite.value) }));
-    await router.push({ name: 'quality-test-suites' });
+    await router.push(getDataQualityPagePath('test-suites'));
   } catch (error) {
     message.error(getErrorText(error, t('server.delete-entity-error', { entity: t('label.test-suite') })));
   }
@@ -139,58 +160,41 @@ async function onSave(): Promise<void> {
   }
 }
 
-const suitePipelines = ref<IngestionPipeline[]>([]);
-const pipelinesLoading = ref(false);
-const pipelinesError = ref('');
-const pipelinesLoaded = ref(false);
-
-const pipelineColumns = computed<EntityListColumn[]>(() => [
-  { title: t('label.name'), dataIndex: 'name', key: 'name' },
-  { title: t('label.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
-  { title: t('label.action-plural'), key: 'actions', width: 160 },
-]);
-
-async function loadPipelines(): Promise<void> {
-  if (!suite.value?.fullyQualifiedName || pipelinesLoaded.value) {
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!suite.value?.id) {
     return;
   }
-  pipelinesLoading.value = true;
-  pipelinesError.value = '';
-  try {
-    const page = await listIngestionPipelines({
-      service: suite.value.fullyQualifiedName,
-      pipelineType: 'TestSuite',
-      limit: 100,
-    });
-    suitePipelines.value = page.data;
-    pipelinesLoaded.value = true;
-  } catch {
-    suitePipelines.value = [];
-    pipelinesError.value = t('server.entity-fetch-error', { entity: t('label.pipeline-plural') });
-  } finally {
-    pipelinesLoading.value = false;
-  }
+  await patchTestSuite(suite.value.id, descriptionPatch(suite.value.description, description));
+  message.success(t('server.update-entity-success', { entity: t('label.description') }));
+  await load();
 }
 
-function openAddPipeline(): void {
-  const fqn = suite.value?.fullyQualifiedName;
-  if (!fqn) {
+async function onHeaderOwnersSave(owners: Array<{ id: string; type: string }>): Promise<void> {
+  if (!suite.value?.id) {
     return;
   }
-  void router.push(getTestSuiteIngestionPath(fqn));
+  await patchTestSuite(
+    suite.value.id,
+    ownersPatch(
+      suite.value.owners,
+      owners.map((owner) => ({ id: owner.id, type: owner.type })),
+    ),
+  );
+  message.success(t('server.update-entity-success', { entity: t('label.owner-plural') }));
+  await load();
 }
 
-function openEditPipeline(ingestionFqn: string): void {
-  const fqn = suite.value?.fullyQualifiedName;
-  if (!fqn || !ingestionFqn) {
+async function onHeaderDomainsSave(domainIds: string[]): Promise<void> {
+  if (!suite.value?.id) {
     return;
   }
-  void router.push(getTestSuiteIngestionPath(fqn, ingestionFqn));
+  await patchTestSuite(suite.value.id, domainsPatch(suite.value.domains, domainIds));
+  message.success(t('server.update-entity-success', { entity: t('label.domain-plural') }));
+  await load();
 }
 
 const addOpen = ref(false);
 const adding = ref(false);
-const isLogical = computed(() => suite.value !== null && suite.value.basic !== true);
 
 function openAddTests(): void {
   addOpen.value = true;
@@ -200,9 +204,7 @@ async function onAddTestsSubmit(payload: AddTestCaseListSubmitPayload): Promise<
   if (!suite.value) {
     return;
   }
-  const hasSelection = payload.selectAll
-    ? true
-    : payload.includeIds.length > 0;
+  const hasSelection = payload.selectAll ? true : payload.includeIds.length > 0;
   if (!hasSelection) {
     return;
   }
@@ -219,44 +221,17 @@ async function onAddTestsSubmit(payload: AddTestCaseListSubmitPayload): Promise<
   }
 }
 
-async function onRemoveTest(testCaseId: string, testCaseName: string): Promise<void> {
-  if (!suite.value) {
-    return;
-  }
-  const confirmed = await confirmDelete({
-    title: t('label.delete'),
-    content: t('message.delete-entity-message', { entity: testCaseName }),
-    okText: t('label.delete'),
-    cancelText: t('label.cancel'),
-  });
-  if (!confirmed) {
-    return;
-  }
-  try {
-    await removeTestCaseFromTestSuite(suite.value.id, testCaseId);
-    message.success(t('server.entity-deleted-successfully', { entity: testCaseName }));
-    await load();
-  } catch (error) {
-    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-suite') })));
-  }
-}
-
 watch(
   () => props.id,
   () => {
-    pipelinesLoaded.value = false;
-    suitePipelines.value = [];
     void load();
   },
 );
 
-watch(activeTab, (tab) => {
-  if (tab === 'pipeline') {
-    void loadPipelines();
-  }
-});
-
 onMounted(() => {
+  void loadGovernanceCatalog().then((catalog) => {
+    governanceCatalog.value = catalog;
+  });
   void load();
 });
 </script>
@@ -273,7 +248,17 @@ onMounted(() => {
     :breadcrumbs="breadcrumbs"
     :tabs="suite ? tabs : []"
     v-model:active-tab="activeTab"
+    header-container-test-id="test-suite-header-container"
+    entity-page-header-test-id="entity-page-header"
   >
+    <template v-if="suite" #header-title>
+      <EntityHeaderTitle
+        :name="suite.name"
+        :display-name="suite.displayName"
+        :deleted="suiteDeleted"
+        service-name="test-suite"
+      />
+    </template>
     <template #actions>
       <EntityManageButton
         :entity-label="t('label.test-suite')"
@@ -285,7 +270,12 @@ onMounted(() => {
         @rename="openEdit"
         @delete="onDeleteTestSuite"
       />
-      <Button v-if="isLogical" data-testid="add-tests-to-suite" :disabled="!suite" @click="openAddTests">
+      <Button
+        v-if="canAddTestCases"
+        data-testid="add-tests-to-suite"
+        :disabled="!suite"
+        @click="openAddTests"
+      >
         {{ t('label.add-entity', { entity: t('label.test-case-plural') }) }}
       </Button>
     </template>
@@ -294,82 +284,56 @@ onMounted(() => {
         <Descriptions.Item :label="t('label.type')">
           {{ suite.basic ? t('label.table-suite-plural') : t('label.bundle-suite') }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('label.description')">{{ suite.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.domain')">
+          <WidgetDomainCell
+            test-id="test-suite-header-domain"
+            :domains="suite.domains ?? []"
+            :options="governanceCatalog.domains"
+            :has-edit-access="canEditSuiteDomains"
+            :on-change="onHeaderDomainsSave"
+          />
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('label.owner-plural')">
+          <WidgetOwnersCell
+            test-id="test-suite-header-owners"
+            :owners="suite.owners ?? []"
+            :options="governanceCatalog.owners"
+            :has-edit-access="canEditSuiteOwners"
+            :on-change="onHeaderOwnersSave"
+          />
+        </Descriptions.Item>
       </Descriptions>
     </template>
-    <template #pipeline>
-      <Button
-        data-testid="add-test-suite-ingestion"
-        :disabled="!suite"
-        style="margin-bottom: 16px"
-        @click="openAddPipeline"
-      >
-        {{ t('label.add-entity', { entity: t('label.pipeline-plural') }) }}
-      </Button>
-      <SmState v-if="pipelinesError" state="error" test-id="test-suite-pipelines-error" :error-text="pipelinesError" />
-      <SmTable
-        v-else
-        row-key="id"
-        size="small"
-        :columns="pipelineColumns"
-        :data-source="suitePipelines"
-        :loading="pipelinesLoading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              href="#"
-              :data-testid="`test-suite-pipeline-${(record as IngestionPipeline).id}`"
-              @click.prevent="router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })"
-            >
-              {{ entityLabel(record as IngestionPipeline) }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'actions'">
-            <Button
-              type="link"
-              :data-testid="`edit-test-suite-pipeline-${(record as IngestionPipeline).id}`"
-              @click="openEditPipeline((record as IngestionPipeline).fullyQualifiedName ?? '')"
-            >
-              {{ t('label.edit') }}
-            </Button>
-          </template>
-        </template>
-      </SmTable>
-    </template>
     <template #test-cases>
-      <SmTable
-        row-key="id"
-        size="small"
-        :columns="testColumns"
-        :data-source="suite?.tests ?? []"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'actions'">
-            <Button
-              v-if="isLogical && (record as EntityRef).id"
-              type="link"
-              danger
-              :data-testid="`remove-test-${(record as EntityRef).id}`"
-              @click="onRemoveTest((record as EntityRef).id as string, entityLabel(record as EntityRef))"
-            >
-              {{ t('label.delete') }}
-            </Button>
-          </template>
-          <template v-else-if="column.key === 'name'">
-            <a
-              v-if="(record as EntityRef).id"
-              href="#"
-              @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as EntityRef).id } })"
-            >
-              {{ entityLabel(record as EntityRef) }}
-            </a>
-            <span v-else>{{ entityLabel(record as EntityRef) }}</span>
-          </template>
-        </template>
-      </SmTable>
+      <div class="test-suite-tab-stack">
+        <EntityDescriptionCell
+          v-if="suite"
+          :description="suite.description"
+          :entity-name="entityLabel(suite)"
+          :has-edit-access="canEditDescription"
+          :on-description-update="onDescriptionUpdate"
+        />
+        <TestCasesListView
+          v-if="suite?.id"
+          embedded
+          prefer-search
+          suite-detail-mode
+          :test-suite-id="suite.id"
+          :remove-from-suite="removeFromSuite"
+          data-testid="test-suite-embedded-cases"
+          @update:total="testCaseTabCount = $event"
+          @removed-from-suite="load"
+        />
+      </div>
+    </template>
+    <template #pipeline>
+      <TestSuitePipelineTab
+        v-if="suite?.fullyQualifiedName"
+        :test-suite-fqn="suite.fullyQualifiedName"
+        :test-suite-id="suite.id"
+        :deleted="suiteDeleted"
+        @update:total="pipelineTabCount = $event"
+      />
     </template>
   </EntityDetailShell>
   <FormModal
@@ -402,3 +366,11 @@ onMounted(() => {
     />
   </FormModal>
 </template>
+
+<style scoped>
+.test-suite-tab-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+</style>

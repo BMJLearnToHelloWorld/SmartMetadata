@@ -229,6 +229,7 @@ export interface TestSuite {
   tests: EntityRef[];
   summary?: TestSummary;
   owners: EntityRef[];
+  domains?: EntityRef[];
 }
 
 export interface CreateTestSuiteRequest {

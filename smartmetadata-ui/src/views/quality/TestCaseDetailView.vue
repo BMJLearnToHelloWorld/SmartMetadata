@@ -92,6 +92,10 @@ import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
 import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
+import {
+  buildTestCaseDetailBreadcrumbs,
+  type BreadcrumbLink,
+} from '@/utils/qualityDetailBreadcrumbs';
 import type { EntityRef } from '@/types/api';
 import type { IncidentStatus, TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
 
@@ -133,10 +137,20 @@ const testDefinitionDetail = ref<TestDefinition | undefined>();
 const governanceCatalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
 
 
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('label.data-quality'), to: { name: 'quality-test-cases' } },
-  { label: entityLabel(testCase.value) || t('label.entity-detail-plural', { entity: t('label.test-case') }) },
-]);
+function originBreadcrumbFromHistory(): BreadcrumbLink[] | undefined {
+  const state = window.history.state as { breadcrumbData?: BreadcrumbLink[] } | null | undefined;
+  return state?.breadcrumbData;
+}
+
+const breadcrumbs = computed<EntityBreadcrumb[]>(() =>
+  buildTestCaseDetailBreadcrumbs(t, {
+    testCaseName:
+      entityLabel(testCase.value) || t('label.entity-detail-plural', { entity: t('label.test-case') }),
+    entityLink: testCase.value?.entityLink,
+    originBreadcrumb: originBreadcrumbFromHistory(),
+    testCaseFqn: testCase.value?.fullyQualifiedName,
+  }),
+);
 
 const isVersionPage = computed(() => props.version !== undefined && props.version !== '');
 const versionList = ref<EntityVersion[]>([]);

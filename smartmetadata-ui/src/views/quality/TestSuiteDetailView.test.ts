@@ -10,34 +10,87 @@ import { createPinia, setActivePinia } from 'pinia';
 import { computed } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import TestSuiteDetailView from './TestSuiteDetailView.vue';
+import TestCasesListView from './TestCasesListView.vue';
 
-vi.mock('@/composables/useEntityPermissions', () => ({
-  useEntityPermissions: () => ({
-    permissions: computed(() => ({ Delete: true, EditDisplayName: true, EditAll: true })),
-    isLoading: computed(() => false),
-    canDelete: computed(() => true),
-    canEditDisplayName: computed(() => true),
-    canEditAll: computed(() => true),
-  }),
+vi.mock('@/composables/useEntityPermissions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/composables/useEntityPermissions')>();
+  return {
+    ...actual,
+    useEntityPermissions: () => ({
+      permissions: computed(() => ({
+        Delete: true,
+        EditDisplayName: true,
+        EditAll: true,
+        EditTests: true,
+        EditOwners: true,
+        EditDomains: true,
+        EditDescription: true,
+      })),
+      isLoading: computed(() => false),
+      canDelete: computed(() => true),
+      canEditDisplayName: computed(() => true),
+      canEditAll: computed(() => true),
+      canEditDescription: computed(() => true),
+      can: (operation: string) =>
+        operation === 'EditTests' || operation === 'EditOwners' || operation === 'EditDomains',
+    }),
+  };
+});
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({ isAdminUser: true }),
+}));
+
+vi.mock('@/governance/catalogOptions', () => ({
+  loadGovernanceCatalog: vi.fn(async () => ({ owners: [], tags: [], domains: [] })),
 }));
 
 const getTestSuite = vi.fn();
+const listTestCases = vi.fn();
 
 vi.mock('@/api/testSuites', () => ({
   getTestSuite: (...args: unknown[]) => getTestSuite(...args),
   updateTestSuite: vi.fn(),
+  patchTestSuite: vi.fn(),
+  deleteTestSuite: vi.fn(),
 }));
 
-async function mountView() {
+vi.mock('@/api/testCases', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/api/testCases')>();
+  return {
+    ...mod,
+    listTestCases: (...args: unknown[]) => listTestCases(...args),
+    listTestCasesBySearch: (...args: unknown[]) => listTestCases(...args),
+    addTestCasesToLogicalTestSuiteBulk: vi.fn(),
+    removeTestCaseFromTestSuite: vi.fn(),
+  };
+});
+
+vi.mock('@/api/ingestionPipelines', () => ({
+  INGESTION_PIPELINE_FIELDS: 'pipelineStatuses',
+  getOrchestratorStatus: vi.fn(async () => ({ platform: 'airflow', code: 200 })),
+  listIngestionPipelines: vi.fn(async () => ({ data: [], total: 0 })),
+}));
+
+async function mountView(bundleSuite = false) {
   const pinia = createPinia();
   setActivePinia(pinia);
+  getTestSuite.mockResolvedValue({
+    id: 'ts1',
+    name: 'orders_suite',
+    displayName: 'Orders suite',
+    fullyQualifiedName: 'svc.db.schema.orders.orders_suite',
+    basic: !bundleSuite,
+    tests: [],
+    owners: [],
+    domains: [],
+  });
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/quality/test-suites/:id', name: 'quality-test-suite', component: TestSuiteDetailView, props: true },
-      { path: '/test-suites/:fqn/add-ingestion', name: 'quality-test-suite-add-ingestion', component: { template: '<div />' } },
-      { path: '/test-suites/:fqn/edit-ingestion/:ingestionFqn', name: 'quality-test-suite-edit-ingestion', component: { template: '<div />' } },
-      { path: '/data-quality/:tab/:subTab?', name: 'quality-data-quality-tab', component: { template: '<div />' } },
+      { path: '/data-quality/:tab?', name: 'quality-data-quality-tab', component: { template: '<div />' } },
+      { path: '/ingestion/pipelines/:id', name: 'ingestion-pipeline', component: { template: '<div />' } },
     ],
   });
   await router.push({ name: 'quality-test-suite', params: { id: 'ts1' } });
@@ -45,20 +98,26 @@ async function mountView() {
   const wrapper = mount(TestSuiteDetailView, {
     props: { id: 'ts1' },
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    attachTo: document.body,
   });
   await flushPromises();
   return wrapper;
 }
 
-describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', () => {
+describe('TestSuiteDetailView official parity', () => {
   beforeEach(() => {
     getTestSuite.mockReset();
-    getTestSuite.mockResolvedValue({
-      id: 'ts1',
-      name: 'orders_suite',
-      fullyQualifiedName: 'svc.db.schema.orders.orders_suite',
-      basic: true,
-      tests: [],
+    listTestCases.mockReset();
+    listTestCases.mockResolvedValue({
+      data: [
+        {
+          id: 'tc1',
+          name: 'row_count',
+          testCaseResult: { testCaseStatus: 'Success', timestamp: 1 },
+        },
+      ],
+      total: 1,
+      entityPermissions: {},
     });
   });
 
@@ -66,25 +125,38 @@ describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', ()
     document.body.innerHTML = '';
   });
 
-  it('renders official test-cases and pipeline tabs with an add-ingestion entry', async () => {
+  it('renders observability breadcrumbs and embeds TestCasesListView scoped by suite', async () => {
     const wrapper = await mountView();
-    // Ant Tabs does not forward TabPane testids to the DOM; the force-rendered
-    // slot contents are the observable surface.
-    expect(wrapper.text()).toContain('orders_suite');
-    expect(wrapper.find('[data-testid="test-suite-pipeline-residual"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="add-test-suite-ingestion"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Pipeline');
+    expect(wrapper.text()).toContain('Orders suite');
+    const crumb = wrapper.find('[data-testid="entity-detail-crumb-1"]');
+    expect(crumb.exists()).toBe(true);
+    expect(crumb.text()).toContain('Data Quality');
+    const list = wrapper.findComponent(TestCasesListView);
+    expect(list.exists()).toBe(true);
+    expect(list.props('testSuiteId')).toBe('ts1');
+    expect(list.props('suiteDetailMode')).toBe(true);
+    const calls = listTestCases.mock.calls;
+    expect(calls.some((call) => call[0]?.testSuiteId === 'ts1')).toBe(true);
+    wrapper.unmount();
   });
 
-  it('navigates add-ingestion to the official /test-suites/:fqn/add-ingestion page', async () => {
+  it('shows Add test cases when EditTests is allowed for a bundle suite', async () => {
+    const wrapper = await mountView(true);
+    expect(wrapper.find('[data-testid="add-tests-to-suite"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('renders pipeline tab with drawer add entry (not legacy residual)', async () => {
     const wrapper = await mountView();
-    const router = wrapper.vm.$router;
-    await wrapper.find('[data-testid="add-test-suite-ingestion"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.path).toBe(
-      '/test-suites/svc.db.schema.orders.orders_suite/add-ingestion',
-    );
-    expect(router.currentRoute.value.query.tab).toBeUndefined();
+    expect(wrapper.find('[data-testid="test-suite-pipeline-residual"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-test-suite-ingestion"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-suite-pipeline-tab"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('exposes entity-header-copy-button via EntityHeaderTitle', async () => {
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="entity-header-copy-button"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

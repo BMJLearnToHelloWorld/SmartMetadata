@@ -12,7 +12,7 @@ import type { Paged } from '@/types/admin';
 import type { CreateTestSuiteRequest, TestSuite, TestSummary } from '@/types/quality';
 import { ApiError, apiRequest } from './client';
 
-export const TEST_SUITE_FIELDS = 'owners,reviewers,tests,summary';
+export const TEST_SUITE_FIELDS = 'owners,reviewers,tests,summary,domains';
 
 export interface ListTestSuitesQuery {
   limit?: number;
@@ -63,7 +63,25 @@ function mapTestSuite(raw: Record<string, unknown>): TestSuite | null {
     tests: mapEntityRefs(raw.tests),
     summary: mapSummary(raw.summary),
     owners: mapEntityRefs(raw.owners),
+    domains: mapEntityRefs(raw.domains),
   };
+}
+
+/** Official updateTestSuite patch (rest/testAPI.ts): PATCH /v1/dataQuality/testSuites/{id}. */
+export async function patchTestSuite(id: string, patch: unknown[]): Promise<TestSuite> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testSuites/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      json: patch,
+      contentType: 'application/json-patch+json',
+    },
+  );
+  const mapped = mapTestSuite(raw);
+  if (!mapped) {
+    throw new Error('Update test suite succeeded but the response had no test suite');
+  }
+  return mapped;
 }
 
 export function listTestSuites(query: ListTestSuitesQuery = {}): Promise<Paged<TestSuite>> {
