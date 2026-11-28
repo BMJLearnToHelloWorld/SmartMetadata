@@ -190,6 +190,21 @@ describe('AlertFormView', () => {
     expect(wrapper.find('[data-testid="cancel-button"]').exists()).toBe(true);
   });
 
+  it('surfaces official ObservabilityAlertFormFields destination and rule test ids once a source is selected', async () => {
+    const { wrapper } = await mountView('/observability/alerts/add');
+    await wrapper.findComponent(AlertFormSourceItem).vm.$emit('update:value', ['table']);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="connection-timeout"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="connection-timeout-input"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="read-timeout"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="destination-list"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-destination-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="filters-list"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="triggers-list"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-filters"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-trigger"]').exists()).toBe(true);
+  });
+
   it('lays out rule sections in a horizontal row with vertical dividers (ObservabilityAlertFormFields)', async () => {
     const { wrapper } = await mountView('/observability/alerts/add');
     const row = wrapper.get('[data-testid="alert-form-rule-row"]');

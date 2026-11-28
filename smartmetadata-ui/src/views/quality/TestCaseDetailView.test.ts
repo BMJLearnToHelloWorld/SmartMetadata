@@ -92,6 +92,31 @@ describe('TestCaseDetailView official header (IncidentManagerDetailPage / TestCa
     document.body.innerHTML = '';
   });
 
+  it('exposes official page chrome test ids and tab nav labels', async () => {
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc1',
+      name: 'customer_count_check',
+      displayName: 'Customer count check',
+      version: 3,
+      fullyQualifiedName: 'svc.db.schema.orders.row_count',
+      dimensionColumns: ['region'],
+      parameterValues: [],
+      testSuites: [],
+    });
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="test-case-detail-page"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-header-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-page-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="tabs"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-result"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dimensionality"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="incident"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="tab-expand-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-last-run-banner-tab-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-rail"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it('renders EntityHeaderTitle test ids and StatItem version-button with count', async () => {
     getTestCaseByName.mockResolvedValue({
       id: 'tc1',
@@ -187,7 +212,7 @@ describe('TestCaseDetailView results chart', () => {
     expect(wrapper.find('[data-testid="test-case-issues-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-case-issue-inc1"]').exists()).toBe(true);
     // Official SQL tab is shown only when inspectionQuery is present.
-    expect(wrapper.find('[data-testid="test-case-dimensionality"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dimensionality"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="test-case-sql-query-residual"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="test-case-sql-query"]').exists()).toBe(false);
   });

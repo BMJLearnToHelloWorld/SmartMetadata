@@ -7,7 +7,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
-import { SyncOutlined } from '@ant-design/icons-vue';
+import { AlignRightOutlined, SyncOutlined } from '@ant-design/icons-vue';
 import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-vue';
 import EntityHeaderTitle from '@/components/shared/EntityHeaderTitle.vue';
 import StatItem from '@/components/shared/StatItem.vue';
@@ -20,6 +20,7 @@ import { getDerivedPermissionFlags } from '@/api/permissions';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { usePermissionStore } from '@/stores/permissions';
 import EntityManageButton from '@/components/quality/EntityManageButton.vue';
+import TestCaseLastRunBanner from '@/components/quality/TestCaseLastRunBanner.vue';
 import {
   getActiveRunState,
   getRunButtonLabelKey,
@@ -57,8 +58,17 @@ const issuesError = ref('');
 // Official TestCasePageTabs default is TEST_CASE_RESULTS. Unknown tabs
 // land there; official has no overview fallback (t418u).
 const DEFAULT_TEST_CASE_TAB = 'test-case-results';
+/** Official TestCaseClassBase labelProps.id values (not route keys). */
+const OFFICIAL_TAB_TEST_ID: Record<string, string> = {
+  'test-case-results': 'test-case-result',
+  dimensionality: 'dimensionality',
+  issues: 'incident',
+  'sql-query': 'sql-query',
+};
 const tabKeys = new Set(QUALITY_PAGE_TABS.testCase.map((tab) => tab.key));
 const activeTab = ref(props.tab !== undefined && tabKeys.has(props.tab) ? props.tab : DEFAULT_TEST_CASE_TAB);
+/** Official useTestCase.store default is expanded on the results tab. */
+const isTabExpanded = ref(true);
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -75,13 +85,28 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
 
 const tabs = computed<EntityDetailTab[]>(() =>
   QUALITY_PAGE_TABS.testCase
-    .filter((tab) => tab.key !== 'sql-query' || Boolean(testCase.value?.inspectionQuery))
+    .filter((tab) => {
+      if (tab.key === 'sql-query') {
+        return Boolean(testCase.value?.inspectionQuery);
+      }
+      if (tab.key === 'dimensionality') {
+        return (testCase.value?.dimensionColumns?.length ?? 0) > 0;
+      }
+      return true;
+    })
     .map((tab) => ({
       key: tab.key,
       label: t(tab.labelKey),
-      testId: `test-case-tab-${tab.key}`,
+      testId: OFFICIAL_TAB_TEST_ID[tab.key] ?? `test-case-tab-${tab.key}`,
+      count: tab.key === 'issues' ? issues.value.length : undefined,
     })),
 );
+
+const isExpandViewSupported = computed(() => activeTab.value === DEFAULT_TEST_CASE_TAB);
+
+function toggleTabExpanded(): void {
+  isTabExpanded.value = !isTabExpanded.value;
+}
 
 const latestIncident = computed(() => issues.value[0]);
 const assetEntity = computed(() =>
@@ -375,6 +400,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <div data-testid="test-case-detail-page" class="test-case-detail-page">
   <EntityDetailShell
     :title="entityLabel(testCase) || t('label.entity-detail-plural', { entity: t('label.test-case') })"
     :loading="loading"
@@ -383,6 +409,9 @@ onMounted(() => {
     :breadcrumbs="breadcrumbs"
     :tabs="testCase ? tabs : []"
     v-model:active-tab="activeTab"
+    header-container-test-id="test-case-header-container"
+    entity-page-header-test-id="entity-page-header"
+    tabs-test-id="tabs"
   >
     <template v-if="showVersionControl" #header-toolbar>
       <StatItem
@@ -474,38 +503,82 @@ onMounted(() => {
         </Descriptions.Item>
       </Descriptions>
     </template>
+    <template v-if="isExpandViewSupported" #tab-bar-extra>
+      <Tooltip :title="isTabExpanded ? t('label.collapse') : t('label.expand')">
+        <Button
+          type="text"
+          data-testid="tab-expand-button"
+          :class="{ 'test-case-detail__expand--collapsed': !isTabExpanded }"
+          @click="toggleTabExpanded"
+        >
+          <AlignRightOutlined />
+        </Button>
+      </Tooltip>
+    </template>
     <template #test-case-results>
-      <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>
-      <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
-      <SmTable
-        test-id="test-case-results-table"
-        row-key="timestamp"
-        size="small"
-        style="margin-top: 16px"
-        :columns="resultColumns"
-        :data-source="results"
-        :pagination="false"
+      <div
+        v-if="testCase"
+        class="test-case-last-run-banner-tab-container"
+        data-testid="test-case-last-run-banner-tab-container"
       >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'timestamp'">
-            {{ formatTs((record as TestCaseResult).timestamp) }}
-          </template>
-          <template v-else-if="column.key === 'values'">
-            <div
-              v-if="(record as TestCaseResult).testResultValue?.length"
-              :data-testid="`test-case-result-values-${(record as TestCaseResult).timestamp}`"
-            >
-              <div
-                v-for="entry in (record as TestCaseResult).testResultValue"
-                :key="entry.name"
-              >
-                {{ entry.name }}: {{ entry.value }}
-              </div>
-            </div>
-            <span v-else>—</span>
-          </template>
-        </template>
-      </SmTable>
+        <TestCaseLastRunBanner
+          :test-case="testCase"
+          :test-case-result="testCase.testCaseResult"
+          :test-case-status="testCase.testCaseStatus"
+        />
+      </div>
+      <div
+        class="test-case-results-layout"
+        :class="{ 'test-case-results-layout--expanded': isTabExpanded && isExpandViewSupported }"
+      >
+        <div class="test-case-results-layout__main">
+          <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>
+          <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
+          <SmTable
+            test-id="test-case-results-table"
+            row-key="timestamp"
+            size="small"
+            style="margin-top: 16px"
+            :columns="resultColumns"
+            :data-source="results"
+            :pagination="false"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'timestamp'">
+                {{ formatTs((record as TestCaseResult).timestamp) }}
+              </template>
+              <template v-else-if="column.key === 'values'">
+                <div
+                  v-if="(record as TestCaseResult).testResultValue?.length"
+                  :data-testid="`test-case-result-values-${(record as TestCaseResult).timestamp}`"
+                >
+                  <div
+                    v-for="entry in (record as TestCaseResult).testResultValue"
+                    :key="entry.name"
+                  >
+                    {{ entry.name }}: {{ entry.value }}
+                  </div>
+                </div>
+                <span v-else>—</span>
+              </template>
+            </template>
+          </SmTable>
+        </div>
+        <aside
+          v-if="isTabExpanded && isExpandViewSupported && testCase"
+          class="test-case-results-layout__rail"
+          data-testid="test-case-rail"
+        >
+          <p v-if="testCase.description" class="test-case-rail__block">
+            {{ testCase.description }}
+          </p>
+          <ul v-if="testCase.parameterValues?.length" class="test-case-rail__params">
+            <li v-for="param in testCase.parameterValues" :key="param.name">
+              {{ param.name }}: {{ param.value }}
+            </li>
+          </ul>
+        </aside>
+      </div>
     </template>
     <template #issues>
       <SmState
@@ -564,6 +637,7 @@ onMounted(() => {
       <pre data-testid="test-case-sql-query" class="entity-detail__sql-query">{{ testCase?.inspectionQuery }}</pre>
     </template>
   </EntityDetailShell>
+  </div>
   <FormModal
     :open="editOpen"
     :title="t('label.edit-entity', { entity: t('label.display-name') })"
@@ -596,5 +670,40 @@ onMounted(() => {
   margin: 0;
   white-space: pre-wrap;
   font-family: var(--sm-font-mono, ui-monospace, monospace);
+}
+.test-case-last-run-banner-tab-container {
+  padding: 16px 0 12px;
+}
+.test-case-results-layout {
+  display: block;
+}
+.test-case-results-layout--expanded {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+.test-case-results-layout__main {
+  min-width: 0;
+}
+.test-case-results-layout__rail {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--sm-color-border, #d9d9d9);
+  border-radius: var(--sm-radius-md, 8px);
+  background: var(--sm-color-fill-quaternary, #fafafa);
+}
+.test-case-rail__block {
+  margin: 0 0 12px;
+  color: var(--sm-color-text-secondary, rgba(0, 0, 0, 0.45));
+  font-size: 13px;
+}
+.test-case-rail__params {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.test-case-detail__expand--collapsed :deep(.anticon) {
+  transform: rotate(180deg);
 }
 </style>

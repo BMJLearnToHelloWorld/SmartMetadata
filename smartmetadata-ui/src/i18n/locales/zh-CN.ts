@@ -1203,6 +1203,7 @@ const zhCN = {
     'test-case-name-validation': '名称不能包含双冒号(::)、引号(")或大于符号(>)。',
     'test-case-run-already-in-progress': "此测试用例所属套件的管道已在运行中。再次运行将启动另一次运行。",
     'test-case-run-queued': "运行已排队 — 正在等待摄取管道启动。",
+    'test-case-has-not-run': '此测试尚未运行。',
     'test-case-status-sub-header': '通过成功、失败和中止用例的明细分解，可视化您的数据验证测试的健康状况。',
     'test-cases-added-to-bundle-suite': "测试用例已成功添加到Bundle Suite。",
     'test-definition-parameters-description': "定义测试用例的可配置输入参数。每个参数包括名称、数据类型（字符串、整数、日期等）、显示名称和可选的验证规则。可以在 SQL 表达式中使用 {'{'}{'{'}paramName{'}'}{'}'} 语法引用参数，并允许用户在创建测试用例时自定义测试行为。",

@@ -1212,6 +1212,7 @@ const enUS = {
     'test-case-name-validation': 'Name cannot contain double colons (::), quotes ("), or greater-than symbols (>).',
     'test-case-run-already-in-progress': "A run of this test case's suite pipeline is already in progress. Running again will start another.",
     'test-case-run-queued': "Run queued — waiting for the ingestion pipeline to start.",
+    'test-case-has-not-run': 'This test has not run yet.',
     'test-case-status-sub-header': 'Visualize the health of your data validation tests with a breakdown of success, failure, and aborted cases.',
     'test-cases-added-to-bundle-suite': "Test cases were added to the Bundle Suite successfully.",
     'test-definition-parameters-description': "Defines configurable input parameters for test cases. Each parameter includes a name, data type (string, int, date, etc.), display name, and optional validation rules. Parameters can be referenced in SQL expressions using {'{'}{'{'}paramName{'}'}{'}'} syntax and allow users to customize test behavior when creating test cases.",
