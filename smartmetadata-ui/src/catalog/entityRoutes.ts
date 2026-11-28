@@ -21,7 +21,7 @@
  * the permission is known; `joins` is in the VIEW_BASIC group and is
  * requested unconditionally for tables.
  */
-import { getEntityDetailsPath } from '@/utils/fqnPaths';
+import { getEntityDetailsPath, getQueryPath } from '@/utils/fqnPaths';
 
 export const TABLE_USAGE_SUMMARY_FIELD = 'usageSummary';
 
@@ -243,12 +243,45 @@ export type SearchHitLocation =
  * the honest unwired marker — callers keep the hit selected (preview)
  * instead of navigating.
  */
+/**
+ * Official QueryPage is /query-view/{tableFqn}/{queryId} (getQueryPath).
+ * Official SearchClassBase.getEntityLink / getEntityLinkFromType has no
+ * QUERY builder, so a query hit without a table FQN and id is unwired
+ * rather than sent to the generic /query/{fqn} asset route (which official
+ * EntityRouter 404s). Table FQN comes from the hit's tableFqn or the first
+ * queryUsedIn table, matching QueryCard's datasetFQN + query.id.
+ */
+export function queryLocation(
+  hit: {
+    id?: string;
+    tableFqn?: string;
+    queryUsedIn?: Array<{ fullyQualifiedName?: string }>;
+  },
+): { path: string } | null {
+  const tableFqn =
+    hit.tableFqn ||
+    hit.queryUsedIn?.find((table) => table.fullyQualifiedName)?.fullyQualifiedName;
+  if (!hit.id || !tableFqn) {
+    return null;
+  }
+  return { path: getQueryPath(tableFqn, hit.id) };
+}
+
 export function detailLocationForHit(
-  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string; id?: string },
+  hit: {
+    entityType: string;
+    fullyQualifiedName: string;
+    tableFqn?: string;
+    id?: string;
+    queryUsedIn?: Array<{ fullyQualifiedName?: string }>;
+  },
 ): SearchHitLocation | null {
   const parent = parentTableLocation(hit.entityType, hit.tableFqn);
   if (parent) {
     return parent;
+  }
+  if (hit.entityType === 'query') {
+    return queryLocation(hit);
   }
   if (hit.entityType && hit.fullyQualifiedName && isDetailWired(hit.entityType)) {
     return assetLocation(hit.entityType, hit.fullyQualifiedName);
@@ -310,7 +343,13 @@ export function parentTableLocation(
  */
 export function openSearchHit(
   push: (to: SearchHitLocation) => unknown,
-  hit: { entityType: string; fullyQualifiedName: string; tableFqn?: string; id?: string },
+  hit: {
+    entityType: string;
+    fullyQualifiedName: string;
+    tableFqn?: string;
+    id?: string;
+    queryUsedIn?: Array<{ fullyQualifiedName?: string }>;
+  },
 ): boolean {
   const location = detailLocationForHit(hit);
   if (!location) {

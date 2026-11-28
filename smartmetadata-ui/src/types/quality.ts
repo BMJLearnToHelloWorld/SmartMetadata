@@ -179,6 +179,8 @@ export interface TestSuite {
   displayName?: string;
   description?: string;
   fullyQualifiedName?: string;
+  /** Official TestSuite.deleted: when true the entity has been soft deleted. */
+  deleted?: boolean;
   basic?: boolean;
   basicEntityReference?: string;
   tests: EntityRef[];

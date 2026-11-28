@@ -9,6 +9,13 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Dropdown, Menu } from 'ant-design-vue';
 
+export type ManageExtraItem = {
+  key: string;
+  label: string;
+  testId?: string;
+  onClick: () => void;
+};
+
 const props = defineProps<{
   entityLabel: string;
   deleted?: boolean;
@@ -16,6 +23,8 @@ const props = defineProps<{
   canRename?: boolean;
   renameTestId?: string;
   deleteTestId?: string;
+  /** Official ManageButton extraDropdownContent, inserted after rename. */
+  extraItems?: ManageExtraItem[];
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +42,14 @@ const items = computed(() => {
       label: t('label.rename'),
       testId: props.renameTestId ?? 'manage-rename-button',
       onClick: () => emit('rename'),
+    });
+  }
+  for (const extra of props.extraItems ?? []) {
+    result.push({
+      key: extra.key,
+      label: extra.label,
+      testId: extra.testId ?? extra.key,
+      onClick: extra.onClick,
     });
   }
   if (props.canDelete && !props.deleted) {

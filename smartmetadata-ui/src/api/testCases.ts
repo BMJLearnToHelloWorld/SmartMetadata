@@ -275,6 +275,23 @@ export async function createTestCase(body: CreateTestCaseRequest): Promise<TestC
   return mapped;
 }
 
+/** Official updateTestCase (rest/testAPI.ts): PATCH /v1/dataQuality/testCases/{id}. */
+export async function patchTestCase(id: string, patch: unknown[]): Promise<TestCase> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testCases/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      json: patch,
+      contentType: 'application/json-patch+json',
+    },
+  );
+  const mapped = mapTestCase(raw);
+  if (!mapped) {
+    throw new Error('Update test case succeeded but the response had no test case');
+  }
+  return mapped;
+}
+
 export async function updateTestCase(body: CreateTestCaseRequest): Promise<TestCase> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/dataQuality/testCases', {
     method: 'PUT',

@@ -2549,6 +2549,8 @@ onMounted(() => {
               :entity-id="asset.id"
               :entity-type="entityType"
               :entity-name="asset.name"
+              :entity-fqn="asset.fullyQualifiedName"
+              :entity-columns="asset.schemaRows"
             />
           </template>
       </template>

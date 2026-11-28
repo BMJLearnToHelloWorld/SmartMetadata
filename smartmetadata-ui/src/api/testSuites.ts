@@ -78,6 +78,19 @@ export function listTestSuites(query: ListTestSuitesQuery = {}): Promise<Paged<T
   }).then((payload) => parsePaged(payload, mapTestSuite));
 }
 
+/** Official getTestSuiteByName: GET /v1/dataQuality/testSuites/name/{fqn}. */
+export async function getTestSuiteByName(fqn: string): Promise<TestSuite> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testSuites/name/${encodeURIComponent(fqn)}`,
+    { query: { fields: TEST_SUITE_FIELDS } },
+  );
+  const mapped = mapTestSuite(raw);
+  if (!mapped) {
+    throw new Error('Test suite response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function getTestSuite(id: string): Promise<TestSuite> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/dataQuality/testSuites/${encodeURIComponent(id)}`, {
     query: { fields: TEST_SUITE_FIELDS },

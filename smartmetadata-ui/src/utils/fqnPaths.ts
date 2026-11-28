@@ -244,6 +244,66 @@ export function getEntityDetailsPath(
 export function getTestCaseDetailPagePath(fqn: string, tab = TEST_CASE_TAB_RESULTS): string {
   return `/test-case/${getEncodedFqn(fqn)}/${tab}`;
 }
+
+/** Official `getQueryPath` (RouterUtils.ts): /query-view/{tableFqn}/{queryId}. queryId is not FQN-encoded. */
+export function getQueryPath(tableFqn: string, queryId: string): string {
+  return `/query-view/${getEncodedFqn(tableFqn)}/${queryId}`;
+}
+
+/**
+ * Official `getDataQualityPagePath` (RouterUtils.ts):
+ *   /data-quality
+ *   /data-quality/{tab}
+ *   /data-quality/{tab}/{subTab}
+ */
+export function getDataQualityPagePath(tab?: string, subTab?: string): string {
+  if (tab && subTab) {
+    return `/data-quality/${tab}/${subTab}`;
+  }
+  if (tab) {
+    return `/data-quality/${tab}`;
+  }
+  return '/data-quality';
+}
+
+/** Official EntityTabs.AGENTS / ServiceAgentSubTabs.METADATA. */
+export const SERVICE_TAB_AGENTS = 'agents';
+export const SERVICE_AGENT_SUB_TAB_METADATA = 'metadata';
+export const SERVICE_CATEGORY_DATABASE_SERVICES = 'databaseServices';
+
+/**
+ * Official `getServiceDetailsPath` (RouterUtils.ts):
+ *   /service/{serviceCat}/{fqn}
+ *   /service/{serviceCat}/{fqn}/{tab}
+ *   /service/{serviceCat}/{fqn}/{tab}/{subTab}
+ */
+export function getServiceDetailsPath(
+  serviceFqn: string,
+  serviceCat: string,
+  tab?: string,
+  subTab?: string,
+): string {
+  let path = `/service/${serviceCat}/${getEncodedFqn(serviceFqn)}`;
+  if (tab) {
+    path = `/service/${serviceCat}/${getEncodedFqn(serviceFqn)}/${tab}`;
+  }
+  if (tab && subTab) {
+    path = `/service/${serviceCat}/${getEncodedFqn(serviceFqn)}/${tab}/${subTab}`;
+  }
+  return path;
+}
+
+/**
+ * Official `getTestSuiteIngestionPath` (RouterUtils.ts):
+ *   /test-suites/{fqn}/add-ingestion
+ *   /test-suites/{fqn}/edit-ingestion/{ingestionFqn}
+ */
+export function getTestSuiteIngestionPath(testSuiteFqn: string, ingestionFqn?: string): string {
+  if (ingestionFqn) {
+    return `/test-suites/${getEncodedFqn(testSuiteFqn)}/edit-ingestion/${getEncodedFqn(ingestionFqn)}`;
+  }
+  return `/test-suites/${getEncodedFqn(testSuiteFqn)}/add-ingestion`;
+}
 /**
  * Entity → constructor table (FQN-2). Views, list cells, breadcrumbs and
  * post-create navigation call this table; no path strings are handwritten

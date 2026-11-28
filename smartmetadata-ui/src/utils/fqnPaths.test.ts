@@ -29,6 +29,13 @@ import {
   getUserPath,
   getEntityDetailsPath,
   getTestCaseDetailPagePath,
+  getQueryPath,
+  getDataQualityPagePath,
+  getServiceDetailsPath,
+  getTestSuiteIngestionPath,
+  SERVICE_CATEGORY_DATABASE_SERVICES,
+  SERVICE_TAB_AGENTS,
+  SERVICE_AGENT_SUB_TAB_METADATA,
 } from './fqnPaths';
 
 describe('getEncodedFqn', () => {
@@ -170,6 +177,29 @@ describe('getEntityDetailsPath', () => {
     );
     expect(getTestCaseDetailPagePath('suite.case', 'sql-query')).toBe(
       '/test-case/suite.case/sql-query',
+    );
+  });
+
+  it('builds official query, data-quality, service, and test-suite ingestion paths', () => {
+    expect(getQueryPath('svc.db.schema.orders', 'q-1')).toBe(
+      '/query-view/svc.db.schema.orders/q-1',
+    );
+    expect(getDataQualityPagePath()).toBe('/data-quality');
+    expect(getDataQualityPagePath('test-cases')).toBe('/data-quality/test-cases');
+    expect(getDataQualityPagePath('test-suites', 'table-suites')).toBe(
+      '/data-quality/test-suites/table-suites',
+    );
+    expect(
+      getServiceDetailsPath(
+        'svc',
+        SERVICE_CATEGORY_DATABASE_SERVICES,
+        SERVICE_TAB_AGENTS,
+        SERVICE_AGENT_SUB_TAB_METADATA,
+      ),
+    ).toBe('/service/databaseServices/svc/agents/metadata');
+    expect(getTestSuiteIngestionPath('suite.fqn')).toBe('/test-suites/suite.fqn/add-ingestion');
+    expect(getTestSuiteIngestionPath('suite.fqn', 'suite.fqn.pipeline')).toBe(
+      '/test-suites/suite.fqn/edit-ingestion/suite.fqn.pipeline',
     );
   });
 });

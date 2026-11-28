@@ -108,13 +108,9 @@ async function createTestRouter(): Promise<Router> {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div>home</div>' } },
+      { path: '/data-quality/:tab/:subTab?', name: 'quality-data-quality-tab', component: { template: '<div>cases</div>' } },
       { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div>cases</div>' } },
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
-      {
-        path: '/quality/test-suites',
-        name: 'quality-test-suites',
-        redirect: (to) => ({ name: 'quality-test-cases', query: { ...to.query, tab: 'test-suites' } }),
-      },
       { path: '/observability/incidents', name: 'observability-incidents', component: { template: '<div>incidents</div>' } },
     ],
   });
@@ -292,8 +288,9 @@ describe('DataQualityDashboard', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[0].vm.$emit('segment-click', 0);
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-suites');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-suites');
+    expect(router.currentRoute.value.params.tab).toBe('test-suites');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
   });
 
   it('drills the coverage donut not-covered slice to explore (pin ROUTES.EXPLORE)', async () => {
@@ -309,8 +306,9 @@ describe('DataQualityDashboard', () => {
     const charts = wrapper.findAllComponents(SmChart);
     await charts[1].vm.$emit('segment-click', 0);
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.params.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.testCaseStatus).toEqual(['Success', 'Queued']);
     await charts[1].vm.$emit('segment-click', 1);
     await flushPromises();
@@ -338,8 +336,9 @@ describe('DataQualityDashboard', () => {
     });
     await wrapper.get('[data-testid="dq-dashboard-dimension-Completeness"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.params.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.dataQualityDimension).toBe('Completeness');
     expect(router.currentRoute.value.query.tags).toContain('PII.Sensitive');
   });
@@ -348,8 +347,9 @@ describe('DataQualityDashboard', () => {
     const { wrapper, router } = await mountDashboard();
     await wrapper.get('[data-testid="dq-dashboard-status-failed"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('quality-test-cases');
-    expect(router.currentRoute.value.query.tab).toBe('test-cases');
+    expect(router.currentRoute.value.path).toBe('/data-quality/test-cases');
+    expect(router.currentRoute.value.params.tab).toBe('test-cases');
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
     expect(router.currentRoute.value.query.testCaseStatus).toBe('Failed');
   });
 

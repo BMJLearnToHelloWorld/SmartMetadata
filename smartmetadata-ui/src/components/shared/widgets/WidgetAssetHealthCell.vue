@@ -27,7 +27,14 @@ import type { TestIncident, TestSummary } from '@/types/quality';
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { RouteLocationRaw } from 'vue-router';
-import { ENTITY_TAB_PROFILER, getEntityDetailsPath } from '@/utils/fqnPaths';
+import {
+  ENTITY_TAB_PROFILER,
+  getEntityDetailsPath,
+  getServiceDetailsPath,
+  SERVICE_AGENT_SUB_TAB_METADATA,
+  SERVICE_CATEGORY_DATABASE_SERVICES,
+  SERVICE_TAB_AGENTS,
+} from '@/utils/fqnPaths';
 
 /**
  * Official AssetHealth widget
@@ -110,11 +117,14 @@ async function load(): Promise<void> {
 
 function ctaTarget(type: AssetHealthCtaType): RouteLocationRaw | undefined {
   if (type === 'link-pipeline') {
-    return props.serviceId
+    return props.serviceFqn
       ? {
-          name: 'ingestion-service',
-          params: { kind: 'database', id: props.serviceId },
-          query: { tab: 'agents' },
+          path: getServiceDetailsPath(
+            props.serviceFqn,
+            SERVICE_CATEGORY_DATABASE_SERVICES,
+            SERVICE_TAB_AGENTS,
+            SERVICE_AGENT_SUB_TAB_METADATA,
+          ),
         }
       : undefined;
   }

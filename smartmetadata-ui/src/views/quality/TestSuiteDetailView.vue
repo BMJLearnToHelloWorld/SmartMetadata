@@ -6,11 +6,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { deleteTestSuite, getTestSuite, updateTestSuite } from '@/api/testSuites';
-import { getIngestionPipelineByFqn, listIngestionPipelines } from '@/api/ingestionPipelines';
+import { listIngestionPipelines } from '@/api/ingestionPipelines';
 import type { IngestionPipeline } from '@/types/ingestion';
 import {
   addTestCasesToLogicalTestSuite,
@@ -18,7 +18,7 @@ import {
   removeTestCaseFromTestSuite,
 } from '@/api/testCases';
 import FormModal from '@/components/shared/FormModal.vue';
-import TestSuitePipelineFormDrawer from '@/components/quality/TestSuitePipelineFormDrawer.vue';
+import { getDataQualityPagePath, getTestSuiteIngestionPath } from '@/utils/fqnPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityManageButton from '@/components/quality/EntityManageButton.vue';
@@ -32,15 +32,12 @@ import type { TestSuite } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
-const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const suite = ref<TestSuite | null>(null);
-// The add/edit ingestion routes redirect here with ?tab=pipeline; a
-// plain landing stays on the overview.
 // Official TestSuiteDetailsPage tabs: TEST_CASES, PIPELINE — no OVERVIEW (t418u).
-const activeTab = ref(route.query.tab === 'pipeline' ? 'pipeline' : 'test-cases');
+const activeTab = ref('test-cases');
 const suiteFqn = computed(() => suite.value?.fullyQualifiedName ?? '');
 const suiteDeleted = computed(() => suite.value?.deleted === true);
 const suitePerms = useEntityPermissions('testSuite', suiteFqn, {
@@ -52,17 +49,13 @@ const editDisplayNamePermission = computed(() => !suiteDeleted.value && suitePer
 
 const editOpen = ref(false);
 const saving = ref(false);
-// The add/edit pipeline drawer (P-22): mounted once, reset on every
-// open; `editingPipeline` is null for a new pipeline.
-const pipelineDrawerOpen = ref(false);
-const editingPipeline = ref<IngestionPipeline | null>(null);
 const editForm = reactive({
   displayName: '',
   description: '',
 });
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('label.data-quality'), to: { name: 'quality-test-cases', query: { tab: 'test-suites' } } },
+  { label: t('label.data-quality'), to: getDataQualityPagePath('test-suites') },
   { label: entityLabel(suite.value) || t('label.entity-detail-plural', { entity: t('label.test-suite') }) },
 ]);
 
@@ -179,24 +172,19 @@ async function loadPipelines(): Promise<void> {
 }
 
 function openAddPipeline(): void {
-  editingPipeline.value = null;
-  pipelineDrawerOpen.value = true;
-}
-
-async function openEditPipeline(fqn: string): Promise<void> {
-  try {
-    // The edit load is a direct GET by FQN (official EditIngestionPage),
-    // not a find in the listed page.
-    editingPipeline.value = await getIngestionPipelineByFqn(fqn);
-    pipelineDrawerOpen.value = true;
-  } catch (error) {
-    message.error(getErrorText(error, t('server.unexpected-error')));
+  const fqn = suite.value?.fullyQualifiedName;
+  if (!fqn) {
+    return;
   }
+  void router.push(getTestSuiteIngestionPath(fqn));
 }
 
-function onPipelineDrawerSuccess(): void {
-  pipelinesLoaded.value = false;
-  void loadPipelines();
+function openEditPipeline(ingestionFqn: string): void {
+  const fqn = suite.value?.fullyQualifiedName;
+  if (!fqn || !ingestionFqn) {
+    return;
+  }
+  void router.push(getTestSuiteIngestionPath(fqn, ingestionFqn));
 }
 
 const addOpen = ref(false);
@@ -389,13 +377,6 @@ onMounted(() => {
       </SmTable>
     </template>
   </EntityDetailShell>
-  <TestSuitePipelineFormDrawer
-    :open="pipelineDrawerOpen"
-    :suite="suite"
-    :ingestion-pipeline="editingPipeline"
-    @close="pipelineDrawerOpen = false"
-    @success="onPipelineDrawerSuccess"
-  />
   <FormModal
     :open="editOpen"
     :title="t('label.edit-entity', { entity: t('label.test-suite') })"

@@ -100,6 +100,9 @@ import { useMetadataAgents } from '@/ingestion/useMetadataAgents';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { getEntityFeedLink } from '@/utils/entityLink';
 import { SERVICE_DELETE_API, SERVICE_GET_API, SERVICE_RESTORE_API } from '@/ingestion/serviceApis';
+import { getServiceByFqn } from '@/api/serviceLookup';
+import { SERVICE_COLLECTION_BY_KIND, serviceKindFromCategory } from '@/api/serviceVersions';
+import { getServiceDetailsPath } from '@/utils/fqnPaths';
 import { waitForServiceDelete, type DeleteType } from '@/ingestion/serviceDelete';
 import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
 import type { EntityRef } from '@/types/api';
@@ -115,7 +118,15 @@ import type {
 import IngestionLogsModal from './IngestionLogsModal.vue';
 import KillPipelineModal from './KillPipelineModal.vue';
 
-const props = defineProps<{ kind: string; id: string }>();
+const props = defineProps<{
+  kind?: string;
+  id?: string;
+  serviceCategory?: string;
+  fqn?: string;
+  tab?: string;
+  subTab?: string;
+}>();
+const isOfficialServicePath = computed(() => Boolean(props.fqn || props.serviceCategory));
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
@@ -150,11 +161,12 @@ const gatedFlags = computed(() =>
   getDerivedPermissionFlags(servicePermission.value, service.value?.deleted ?? false),
 );
 
-const kind = computed<ServiceKind>(() =>
-  (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(props.kind as ServiceKind)
-    ? (props.kind as ServiceKind)
-    : 'database',
-);
+const kind = computed<ServiceKind>(() => {
+  if (props.kind && (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(props.kind as ServiceKind)) {
+    return props.kind as ServiceKind;
+  }
+  return serviceKindFromCategory(props.serviceCategory ?? '') ?? 'database';
+});
 /** Kind-specific service-type label for the delete/restore modals (pin: never a generic "Service"). */
 const serviceTypeLabel = computed(() => t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.value]));
 
@@ -253,6 +265,9 @@ const mainTabKey = computed(() => tabDefs.value.find((def) => def.kind === 'main
  * the URL. An empty tab set renders no tab rather than crashing.
  */
 const urlTab = computed(() => {
+  if (isOfficialServicePath.value) {
+    return typeof props.tab === 'string' && props.tab ? props.tab : undefined;
+  }
   const raw = route.query.tab;
   return typeof raw === 'string' ? raw : undefined;
 });
@@ -276,6 +291,14 @@ function activeTabHandler(key: string): void {
   // Switching tabs clears every other query param (pin navigation
   // semantics): paging, search, and show-deleted state do not leak
   // across tabs.
+  if (isOfficialServicePath.value) {
+    const fqn = props.fqn || service.value?.fullyQualifiedName;
+    const category = props.serviceCategory || SERVICE_COLLECTION_BY_KIND[kind.value];
+    if (fqn && category) {
+      void router.push(getServiceDetailsPath(fqn, category, key, key === 'agents' ? props.subTab || 'metadata' : undefined));
+      return;
+    }
+  }
   void router.push({ query: { tab: key } });
 }
 
@@ -1091,7 +1114,9 @@ async function load(): Promise<void> {
     // Include.All (pin ServiceDetailsPage): the server default is
     // non-deleted, so opening a soft-deleted service would 404 without
     // it (D-F9). The mapper carries the deleted flag to the shell badge.
-    service.value = await SERVICE_GET_API[kind.value](props.id, 'all');
+    service.value = props.fqn
+      ? await getServiceByFqn(kind.value, props.fqn, { include: 'all' })
+      : await SERVICE_GET_API[kind.value](props.id as string, 'all');
     pipelinesLoaded.value = false;
     servicePipelines.value = [];
     pipelinesTotal.value = 0;
@@ -1528,8 +1553,8 @@ onMounted(() => {
           :show-add-agent="showAddAgent"
           :supported-types="supportedTypes"
           :is-data-insight-exists="isDataInsightExists"
-          :service-kind="props.kind"
-          :service-id="props.id"
+          :service-kind="kind"
+          :service-id="props.id ?? service?.id ?? ''"
           @refresh="reloadPipelines"
           @action="onAgentAction"
           @logs="serviceRowActions.onLogs"

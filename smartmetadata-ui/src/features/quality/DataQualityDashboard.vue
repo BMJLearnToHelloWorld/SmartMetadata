@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getDataQualityPagePath } from '@/utils/fqnPaths';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Space, Spin, Typography } from 'ant-design-vue';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -220,13 +221,13 @@ function onRangeChange(dates: unknown): void {
  */
 function openTestCases(drill?: DqTestCaseListDrill): void {
   void router.push({
-    name: 'quality-test-cases',
-    query: { tab: 'test-cases', ...buildDqTestCaseListQuery(chartFilters.value, drill) },
+    path: getDataQualityPagePath('test-cases'),
+    query: { ...buildDqTestCaseListQuery(chartFilters.value, drill) },
   });
 }
 
 function openTestSuites(): void {
-  void router.push({ name: 'quality-test-suites' });
+  void router.push({ path: getDataQualityPagePath('test-suites') });
 }
 
 /** Pin DataAssetsCoveragePieChartWidget: not-covered → explore. */

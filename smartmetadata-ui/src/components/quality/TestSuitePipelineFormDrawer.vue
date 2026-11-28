@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch, withDefaults } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Checkbox, Drawer, Form, Input, Select, message } from 'ant-design-vue';
 import {
@@ -35,11 +35,16 @@ import type { TestSuite } from '@/types/quality';
  * list; a deploy failure is a toast, never a blocked close, and the
  * deploy is skipped entirely when Airflow is unavailable.
  */
-const props = defineProps<{
-  open: boolean;
-  suite: TestSuite | null;
-  ingestionPipeline?: IngestionPipeline | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    suite: TestSuite | null;
+    ingestionPipeline?: IngestionPipeline | null;
+    /** Official TestSuiteIngestion page uses the same form without a drawer. */
+    variant?: 'drawer' | 'page';
+  }>(),
+  { variant: 'drawer' },
+);
 const emit = defineEmits<{
   close: [];
   success: [];
@@ -258,12 +263,24 @@ function handleClose(): void {
 </script>
 
 <template>
-  <Drawer
-    :open="open"
-    :title="isEdit ? t('label.edit-entity', { entity: t('label.pipeline') }) : t('label.add-entity', { entity: t('label.pipeline') })"
-    width="560"
-    @close="handleClose"
+  <component
+    :is="variant === 'page' ? 'div' : Drawer"
+    v-bind="
+      variant === 'page'
+        ? { 'data-testid': 'test-suite-ingestion-page-form' }
+        : {
+            open,
+            title: isEdit
+              ? t('label.edit-entity', { entity: t('label.pipeline') })
+              : t('label.add-entity', { entity: t('label.pipeline') }),
+            width: 560,
+            onClose: handleClose,
+          }
+    "
   >
+    <h2 v-if="variant === 'page'" data-testid="test-suite-ingestion-title">
+      {{ isEdit ? t('label.edit-entity', { entity: t('label.ingestion') }) : t('label.add-entity', { entity: t('label.ingestion') }) }}
+    </h2>
     <Form layout="vertical">
       <Form.Item :label="t('label.name')">
         <Input v-model:value="form.name" data-testid="pipeline-name" />
@@ -322,5 +339,5 @@ function handleClose(): void {
         </Button>
       </div>
     </Form>
-  </Drawer>
+  </component>
 </template>

@@ -126,8 +126,7 @@ describe('WidgetAssetHealthCell', () => {
       .findAllComponents({ name: 'RouterLink' })
       .map((link) => link.props('to') as { name?: string; path?: string; query?: Record<string, string> });
     expect(targets).toHaveLength(4);
-    expect(targets[0].name).toBe('ingestion-service');
-    expect(targets[0].query?.tab).toBe('agents');
+    expect(targets[0].path).toBe('/service/databaseServices/svc/agents/metadata');
     expect(targets[1].path).toBe('/table/svc.db.schema.table/profiler');
     expect(targets[2].path).toBe('/table/svc.db.schema.table/profiler');
     expect(targets[3].path).toBe('/table/svc.db.schema.table/contract');

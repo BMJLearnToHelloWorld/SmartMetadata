@@ -10,7 +10,7 @@ import { useRouter } from 'vue-router';
 import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { deleteTestCase, getTestCase, getTestCaseByName, updateTestCase } from '@/api/testCases';
+import { deleteTestCase, getTestCase, getTestCaseByName, patchTestCase } from '@/api/testCases';
 import { listIngestionPipelines, runIngestionPipelineForEntity } from '@/api/ingestionPipelines';
 import type { IngestionPipeline } from '@/types/ingestion';
 import { getDerivedPermissionFlags } from '@/api/permissions';
@@ -24,7 +24,8 @@ import {
   getRunnablePipeline,
   getTriggerPermissions,
 } from '@/quality/runTestCaseButton';
-import { getTestDefinition } from '@/api/testDefinitions';
+import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
+import { compare } from 'fast-json-patch';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -39,9 +40,7 @@ import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
-import TableDiffFields from '@/features/quality/TableDiffFields.vue';
-import { TABLE2_PARAM, isTableDiffDefinition } from '@/features/quality/tableDiffParams';
-import type { TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
+import type { TestCase, TestCaseResult, TestIncident } from '@/types/quality';
 
 const props = defineProps<{ id: string; tab?: string }>();
 const router = useRouter();
@@ -49,7 +48,6 @@ const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const testCase = ref<TestCase | null>(null);
-const editDefinition = ref<TestDefinition | null>(null);
 const results = ref<TestCaseResult[]>([]);
 const issues = ref<TestIncident[]>([]);
 const issuesError = ref('');
@@ -62,25 +60,8 @@ const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
   displayName: '',
-  description: '',
-  parameterText: '',
-  /** tableDiff 编辑态的参数值（与创建表单同一份 modelValue 形态）。 */
-  parameterValues: {} as Record<string, string>,
 });
-
-const isTableDiff = computed(() =>
-  isTableDiffDefinition(
-    testCase.value?.testDefinition?.name,
-    testCase.value?.testDefinition?.fullyQualifiedName,
-  ),
-);
-
-const editEntity = computed(() => {
-  if (!testCase.value?.entityLink) {
-    return null;
-  }
-  return parseEntityLink(testCase.value.entityLink);
-});
+const dimensionDrawerOpen = ref(false);
 
 const resultSeries = computed(() => testResultsToTimeline(results.value));
 
@@ -117,6 +98,24 @@ const testCasePerms = useEntityPermissions('testCase', testCaseFqn, {
 });
 const hasDeletePermission = computed(() => !testCaseDeleted.value && testCasePerms.canDelete.value);
 const editDisplayNamePermission = computed(() => !testCaseDeleted.value && testCasePerms.canEditDisplayName.value);
+const isColumnTest = computed(() => (testCase.value?.entityLink ?? '').includes('::columns::'));
+const canEditDimensions = computed(
+  () => isColumnTest.value && !testCaseDeleted.value && testCasePerms.canEditAll.value,
+);
+const manageExtraItems = computed(() =>
+  canEditDimensions.value
+    ? [
+        {
+          key: 'edit-dimensions',
+          label: t('label.edit-entity', { entity: t('label.dimension-plural') }),
+          testId: 'edit-dimensions',
+          onClick: () => {
+            dimensionDrawerOpen.value = true;
+          },
+        },
+      ]
+    : [],
+);
 
 const pipelinesLoading = ref(false);
 const resourceIngestionPerms = ref(testCasePerms.permissions.value);
@@ -243,19 +242,6 @@ async function load(): Promise<void> {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(props.id);
     const loaded = isUuid ? await getTestCase(props.id) : await getTestCaseByName(props.id);
     testCase.value = loaded;
-    editDefinition.value = null;
-    if (
-      loaded.testDefinition?.id &&
-      isTableDiffDefinition(loaded.testDefinition.name, loaded.testDefinition.fullyQualifiedName)
-    ) {
-      // 编辑态需要定义的完整 parameterDefinition（不能只从已有参数值推导，
-      // 否则未填过的参数在编辑表单里直接消失）；取不到时回落到文本编辑。
-      try {
-        editDefinition.value = await getTestDefinition(loaded.testDefinition.id);
-      } catch {
-        editDefinition.value = null;
-      }
-    }
     if (loaded.fullyQualifiedName) {
       const page = await listTestCaseResults(loaded.fullyQualifiedName);
       results.value = page.data;
@@ -275,7 +261,6 @@ async function load(): Promise<void> {
     }
   } catch (error) {
     testCase.value = null;
-    editDefinition.value = null;
     results.value = [];
     issues.value = [];
     errorMessage.value = getErrorText(error, t('server.entity-fetch-error', { entity: t('label.test-case') }));
@@ -323,58 +308,41 @@ async function onOpenVersions(): Promise<void> {
   }
 }
 
-function openEdit(): void {
+function openRename(): void {
   if (!testCase.value) {
     return;
   }
   editForm.displayName = testCase.value.displayName || '';
-  editForm.description = testCase.value.description || '';
-  editForm.parameterText = testCase.value.parameterValues.map((item) => `${item.name}=${item.value}`).join('\n');
-  editForm.parameterValues = Object.fromEntries(
-    testCase.value.parameterValues.map((item) => [item.name, item.value]),
-  );
   editOpen.value = true;
 }
 
-async function onSave(): Promise<void> {
-  if (!testCase.value?.entityLink || !testCase.value.testDefinition) {
-    message.error(t('message.field-text-is-required', { field: t('label.test-case') }));
-    return;
-  }
-  if (isTableDiff.value && !(editForm.parameterValues[TABLE2_PARAM] ?? '').trim()) {
-    message.error(t('message.field-text-is-required', { field: t('label.table') }));
+async function onRenameSave(): Promise<void> {
+  if (!testCase.value) {
     return;
   }
   saving.value = true;
   try {
-    const parameterValues = isTableDiff.value
-      ? Object.entries(editForm.parameterValues)
-          .map(([name, value]) => ({ name, value: value.trim() }))
-          .filter((entry) => entry.value.length > 0)
-      : editForm.parameterText
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .flatMap((line) => {
-            const eq = line.indexOf('=');
-            return eq > 0 ? [{ name: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() }] : [];
-          });
-    await updateTestCase({
-      name: testCase.value.name,
-      testDefinition: testCase.value.testDefinition.fullyQualifiedName || testCase.value.testDefinition.name,
-      entityLink: testCase.value.entityLink,
-      description: editForm.description.trim() || undefined,
-      displayName: editForm.displayName.trim() || undefined,
-      parameterValues,
+    const nextDisplayName = editForm.displayName.trim();
+    const operations = compare(testCase.value, {
+      ...testCase.value,
+      displayName: nextDisplayName || undefined,
     });
+    if (operations.length > 0) {
+      await patchTestCase(testCase.value.id, operations);
+    }
     editOpen.value = false;
-    message.success(t('server.update-entity-success', { entity: t('label.test-case') }));
+    message.success(t('server.update-entity-success', { entity: t('label.display-name') }));
     await load();
   } catch (error) {
-    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.test-case') })));
+    message.error(getErrorText(error, t('server.update-entity-error', { entity: t('label.display-name') })));
   } finally {
     saving.value = false;
   }
+}
+
+async function onDimensionsSubmitted(): Promise<void> {
+  dimensionDrawerOpen.value = false;
+  await load();
 }
 
 watch(
@@ -452,9 +420,10 @@ onMounted(() => {
         :can-rename="editDisplayNamePermission"
         :can-delete="hasDeletePermission"
         :deleted="testCaseDeleted"
+        :extra-items="manageExtraItems"
         rename-test-id="edit-test-case"
         delete-test-id="delete-test-case"
-        @rename="openEdit"
+        @rename="openRename"
         @delete="onDeleteTestCase"
       />
     </template>
@@ -575,31 +544,25 @@ onMounted(() => {
   </EntityDetailShell>
   <FormModal
     :open="editOpen"
-    :title="t('label.edit-entity', { entity: t('label.test-case') })"
+    :title="t('label.edit-entity', { entity: t('label.display-name') })"
     :ok-text="t('label.update')"
     :cancel-text="t('label.cancel')"
     :confirm-loading="saving"
-    @ok="onSave" @cancel="editOpen = false">
+    @ok="onRenameSave"
+    @cancel="editOpen = false"
+  >
     <Form layout="vertical">
       <Form.Item :label="t('label.display-name')">
-        <Input v-model:value="editForm.displayName" />
-      </Form.Item>
-      <Form.Item :label="t('label.description')">
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
-      </Form.Item>
-      <TableDiffFields
-        v-if="isTableDiff && editDefinition"
-        :definitions="editDefinition.parameterDefinition"
-        :entity-fqn="editEntity?.fqn ?? testCase?.entityFQN ?? ''"
-        :entity-type="editEntity?.entityType ?? 'table'"
-        :model-value="editForm.parameterValues"
-        @update:model-value="editForm.parameterValues = $event"
-      />
-      <Form.Item v-else :label="t('label.parameter-plural')">
-        <Input.TextArea v-model:value="editForm.parameterText" :rows="3" />
+        <Input v-model:value="editForm.displayName" data-testid="display-name-input" />
       </Form.Item>
     </Form>
   </FormModal>
+  <TestCaseFormDrawer
+    :open="dimensionDrawerOpen"
+    :test-case="testCase ?? undefined"
+    @cancel="dimensionDrawerOpen = false"
+    @submitted="onDimensionsSubmitted"
+  />
 </template>
 
 <style scoped>

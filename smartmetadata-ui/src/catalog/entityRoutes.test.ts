@@ -307,4 +307,48 @@ describe('entityRoutes', () => {
     expect(isLineageCapable('table')).toBe(true);
     expect(isLineageCapable('directory')).toBe(true);
   });
+
+  it('routes query search hits to official /query-view/{tableFqn}/{queryId}', () => {
+    expect(
+      detailLocationForHit({
+        entityType: 'query',
+        fullyQualifiedName: 'svc.db.schema.orders.query_1',
+        id: 'q-1',
+        queryUsedIn: [{ fullyQualifiedName: 'svc.db.schema.orders' }],
+      }),
+    ).toEqual({ path: '/query-view/svc.db.schema.orders/q-1' });
+    expect(
+      detailLocationForHit({
+        entityType: 'query',
+        fullyQualifiedName: 'svc.db.schema.orders.query_1',
+        id: 'q-1',
+        tableFqn: 'svc.db.schema.orders',
+      }),
+    ).toEqual({ path: '/query-view/svc.db.schema.orders/q-1' });
+  });
+
+  it('leaves a query hit unwired when table FQN or id is missing', () => {
+    expect(
+      detailLocationForHit({
+        entityType: 'query',
+        fullyQualifiedName: 'svc.db.schema.orders.query_1',
+        id: 'q-1',
+      }),
+    ).toBeNull();
+    expect(
+      detailLocationForHit({
+        entityType: 'query',
+        fullyQualifiedName: 'svc.db.schema.orders.query_1',
+        queryUsedIn: [{ fullyQualifiedName: 'svc.db.schema.orders' }],
+      }),
+    ).toBeNull();
+    const pushed: unknown[] = [];
+    expect(
+      openSearchHit((to) => pushed.push(to), {
+        entityType: 'query',
+        fullyQualifiedName: 'svc.db.schema.orders.query_1',
+      }),
+    ).toBe(false);
+    expect(pushed).toEqual([]);
+  });
 });

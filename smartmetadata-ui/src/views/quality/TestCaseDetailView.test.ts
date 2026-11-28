@@ -35,6 +35,7 @@ vi.mock('@/stores/permissions', () => ({
 const getTestCase = vi.fn();
 const getTestCaseByName = vi.fn();
 const updateTestCase = vi.fn();
+const patchTestCase = vi.fn();
 const listTestCaseResults = vi.fn();
 const listTestIncidents = vi.fn();
 const getTestDefinition = vi.fn();
@@ -43,6 +44,7 @@ vi.mock('@/api/testCases', () => ({
   getTestCase: (...args: unknown[]) => getTestCase(...args),
   getTestCaseByName: (...args: unknown[]) => getTestCaseByName(...args),
   updateTestCase: (...args: unknown[]) => updateTestCase(...args),
+  patchTestCase: (...args: unknown[]) => patchTestCase(...args),
   listTestCaseDimensionResults: vi.fn(async () => ({ data: [], paging: { total: 0 } })),
 }));
 vi.mock('@/api/testDefinitions', () => ({
@@ -194,6 +196,7 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
   beforeEach(() => {
     getTestCase.mockReset();
     updateTestCase.mockReset();
+    patchTestCase.mockReset();
     listTestCaseResults.mockReset();
     listTestIncidents.mockReset();
     getTestDefinition.mockReset();
@@ -323,42 +326,22 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
     wrapper.unmount();
   });
 
-  it('opens the tableDiff fields in the edit modal and saves the merged parameter values', async () => {
-    // 'tc1' is not a UUID, so load() dispatches to getTestCaseByName, not
-    // getTestCase (see the beforeEach comment above).
+  it('renames a test case with a display-name-only modal and does not open parameter edit', async () => {
     getTestCaseByName.mockResolvedValue({
       id: 'tc1',
       name: 'orders_diff',
+      displayName: 'Orders Diff',
       fullyQualifiedName: 'svc.db.schema.orders.table_diff',
       entityFQN: 'svc.db.schema.orders',
       entityLink: '<#E::table::svc.db.schema.orders>',
       testDefinition: { id: 'td-diff', name: 'tableDiff', fullyQualifiedName: 'tableDiff' },
       parameterValues: [
         { name: 'table2', value: 'svc.db.schema.orders_copy' },
-        { name: 'keyColumns', value: '["id"]' },
       ],
       testSuites: [],
     });
     listTestCaseResults.mockResolvedValue({ data: [] });
-    updateTestCase.mockResolvedValue({});
-    // The edit modal renders TableDiffFields only once the definition is
-    // loaded (v-if="isTableDiff && editDefinition"); the definition's
-    // parameterDefinition is the official tableDiff.json list, in order.
-    getTestDefinition.mockResolvedValue({
-      id: 'td-diff',
-      name: 'tableDiff',
-      fullyQualifiedName: 'tableDiff',
-      parameterDefinition: [
-        { name: 'keyColumns', dataType: 'ARRAY' },
-        { name: 'table2', dataType: 'STRING', required: true },
-        { name: 'table2.keyColumns', dataType: 'ARRAY' },
-        { name: 'threshold', dataType: 'NUMBER' },
-        { name: 'useColumns', dataType: 'ARRAY' },
-        { name: 'where', dataType: 'STRING' },
-        { name: 'caseSensitiveColumns', dataType: 'BOOLEAN' },
-        { name: 'parallelQueries', dataType: 'NUMBER' },
-      ],
-    });
+    patchTestCase.mockResolvedValue({});
     const { wrapper } = await mountView();
     await wrapper.get('[data-testid="manage-button"]').trigger('click');
     await flushPromises();
@@ -370,31 +353,47 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
       bodyRename?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     }
     await flushPromises();
-    expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="table-diff-param-keyColumns"]')).not.toBeNull();
-    const whereInput = document.body.querySelector(
-      '[data-testid="table-diff-param-where"]',
-    ) as HTMLInputElement | null;
-    expect(whereInput).not.toBeNull();
-    whereInput?.focus();
-    if (whereInput) {
-      whereInput.value = 'id > 0';
-      whereInput.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="edit-dimensions"]')).toBeNull();
+    const input = document.body.querySelector('[data-testid="display-name-input"]') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    if (input) {
+      input.value = 'Orders Compared';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     }
     await flushPromises();
     const okButton = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
     expect(okButton).not.toBeNull();
     okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
-    expect(updateTestCase).toHaveBeenCalledWith(
-      expect.objectContaining({
-        parameterValues: [
-          { name: 'table2', value: 'svc.db.schema.orders_copy' },
-          { name: 'keyColumns', value: '["id"]' },
-          { name: 'where', value: 'id > 0' },
-        ],
-      }),
-    );
+    expect(updateTestCase).not.toHaveBeenCalled();
+    expect(patchTestCase).toHaveBeenCalledTimes(1);
+    expect(patchTestCase.mock.calls[0][0]).toBe('tc1');
+    const operations = patchTestCase.mock.calls[0][1] as Array<{ path: string; value?: unknown }>;
+    expect(operations.some((op) => op.path === '/displayName' && op.value === 'Orders Compared')).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('offers edit-dimensions only for column tests and opens the official form drawer', async () => {
+    getTestCaseByName.mockResolvedValue({
+      id: 'tc-col',
+      name: 'col_null',
+      fullyQualifiedName: 'svc.db.schema.orders.col_null',
+      entityFQN: 'svc.db.schema.orders',
+      entityLink: '<#E::table::svc.db.schema.orders::columns::amount>',
+      testDefinition: { id: 'td-null', name: 'columnValuesToBeNotNull', fullyQualifiedName: 'columnValuesToBeNotNull' },
+      parameterValues: [],
+      testSuites: [],
+    });
+    listTestCaseResults.mockResolvedValue({ data: [] });
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="manage-button"]').trigger('click');
+    await flushPromises();
+    const item = document.body.querySelector('[data-testid="edit-dimensions"]') as HTMLElement | null;
+    expect(item).not.toBeNull();
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="test-case-form-drawer"], .ant-drawer')).not.toBeNull();
     wrapper.unmount();
   });
 });

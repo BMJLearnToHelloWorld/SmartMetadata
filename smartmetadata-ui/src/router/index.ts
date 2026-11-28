@@ -104,6 +104,7 @@ const TestCaseDimensionsView = () => import('@/views/quality/TestCaseDimensionsV
 const TestDefinitionDetailView = () => import('@/views/quality/TestDefinitionDetailView.vue');
 const TestDefinitionsListView = () => import('@/views/quality/TestDefinitionsListView.vue');
 const TestSuiteDetailView = () => import('@/views/quality/TestSuiteDetailView.vue');
+const TestSuiteIngestionView = () => import('@/views/quality/TestSuiteIngestionView.vue');
 const EditPipelineView = () => import('@/views/ingestion/EditPipelineView.vue');
 const PipelineDetailView = () => import('@/views/ingestion/PipelineDetailView.vue');
 const AddServiceView = () => import('@/views/ingestion/AddServiceView.vue');
@@ -986,25 +987,21 @@ export const router = createRouter({
           props: true,
         },
         {
-          // P-22: the add/edit ingestion page is a drawer on the suite
-          // detail Pipelines Tab now (official TestSuiteIngestionRedirect);
-          // the old routes land there instead of a page.
-          path: 'quality/test-suites/:id/add-ingestion',
+          // Official TEST_SUITES_ADD_INGESTION / TEST_SUITES_EDIT_INGESTION
+          // (AuthenticatedAppRouter + TestSuiteIngestionPage). The prior
+          // product redirect to suite detail ?tab=pipeline is not official.
+          path: 'test-suites/:fqn/add-ingestion',
           name: 'quality-test-suite-add-ingestion',
-          redirect: (to) => ({
-            name: 'quality-test-suite',
-            params: { id: to.params.id },
-            query: { tab: 'pipeline' },
-          }),
+          component: TestSuiteIngestionView,
+          alias: 'quality/test-suites/:fqn/add-ingestion',
+          props: true,
         },
         {
-          path: 'quality/test-suites/:id/edit-ingestion/:ingestionFqn',
+          path: 'test-suites/:fqn/edit-ingestion/:ingestionFqn',
           name: 'quality-test-suite-edit-ingestion',
-          redirect: (to) => ({
-            name: 'quality-test-suite',
-            params: { id: to.params.id },
-            query: { tab: 'pipeline' },
-          }),
+          component: TestSuiteIngestionView,
+          alias: 'quality/test-suites/:fqn/edit-ingestion/:ingestionFqn',
+          props: true,
         },
         {
           path: 'query-view/:fqn/:queryId',
@@ -1136,6 +1133,13 @@ export const router = createRouter({
           path: 'ingestion/services/:kind/:id/add-ingestion/:ingestionType',
           name: 'ingestion-service-add-ingestion',
           component: AddServiceIngestionView,
+          props: true,
+        },
+        {
+          // Official SERVICE / SERVICE_WITH_TAB / SERVICE_WITH_SUB_TAB.
+          path: 'service/:serviceCategory/:fqn/:tab?/:subTab?',
+          name: 'service-detail',
+          component: ServiceDetailView,
           props: true,
         },
         {

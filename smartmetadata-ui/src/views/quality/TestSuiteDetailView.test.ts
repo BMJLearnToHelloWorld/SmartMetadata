@@ -35,7 +35,9 @@ async function mountView() {
     history: createMemoryHistory(),
     routes: [
       { path: '/quality/test-suites/:id', name: 'quality-test-suite', component: TestSuiteDetailView, props: true },
-      { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div />' } },
+      { path: '/test-suites/:fqn/add-ingestion', name: 'quality-test-suite-add-ingestion', component: { template: '<div />' } },
+      { path: '/test-suites/:fqn/edit-ingestion/:ingestionFqn', name: 'quality-test-suite-edit-ingestion', component: { template: '<div />' } },
+      { path: '/data-quality/:tab/:subTab?', name: 'quality-data-quality-tab', component: { template: '<div />' } },
     ],
   });
   await router.push({ name: 'quality-test-suite', params: { id: 'ts1' } });
@@ -74,46 +76,15 @@ describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', ()
     expect(wrapper.text()).toContain('Pipeline');
   });
 
-  it('lands on the Pipelines Tab with ?tab=pipeline and opens the add drawer (P-22)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/ingestionPipelines')) {
-          return new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        if (url.includes('/api/v1/dataQuality/testCases')) {
-          return new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/quality/test-suites/:id', name: 'quality-test-suite', component: TestSuiteDetailView, props: true },
-        { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div />' } },
-      ],
-    });
-    await router.push({ name: 'quality-test-suite', params: { id: 'ts1' }, query: { tab: 'pipeline' } });
-    await router.isReady();
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const wrapper = mount(TestSuiteDetailView, {
-      props: { id: 'ts1' },
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
+  it('navigates add-ingestion to the official /test-suites/:fqn/add-ingestion page', async () => {
+    const wrapper = await mountView();
+    const router = wrapper.vm.$router;
     await wrapper.find('[data-testid="add-test-suite-ingestion"]').trigger('click');
     await flushPromises();
-    // The Drawer teleports to document.body.
-    expect(document.body.textContent).toContain('Add Pipeline');
-    vi.unstubAllGlobals();
+    expect(router.currentRoute.value.path).toBe(
+      '/test-suites/svc.db.schema.orders.orders_suite/add-ingestion',
+    );
+    expect(router.currentRoute.value.query.tab).toBeUndefined();
+    wrapper.unmount();
   });
 });
