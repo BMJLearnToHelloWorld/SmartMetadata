@@ -7,6 +7,8 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Form, Input, Select, Switch } from 'ant-design-vue';
+import SmCodeEditor from '@/components/shared/SmCodeEditor.vue';
+import { CSMode } from '@/utils/codeMirrorUtils';
 import { listDataQualityDimensions } from '@/api/dataQualityDimensions';
 import { TEST_DEFINITION_ENTITY_TYPES, TEST_PLATFORMS } from '@/types/quality';
 import type { DataQualityDimension } from '@/types/admin';
@@ -105,12 +107,25 @@ function removeParameter(index: number): void {
       :label="t('label.sql-query')"
       :extra="t('message.test-definition-sql-query-help')"
     >
-      <Input.TextArea
-        v-model:value="form.sqlExpression"
-        :rows="8"
-        :disabled="providerFieldsLocked"
-        data-testid="sql-expression"
-      />
+      <div data-testid="sql-expression">
+        <SmCodeEditor
+          v-if="!providerFieldsLocked"
+          variant="code"
+          :mode="{ name: CSMode.SQL }"
+          :model-value="form.sqlExpression"
+          show-copy-button
+          class-name="custom-query-editor query-editor-h-200"
+          @update:model-value="(value) => (form.sqlExpression = value)"
+        />
+        <textarea
+          v-else
+          class="td-sql-readonly"
+          :aria-label="t('label.sql-query')"
+          disabled
+          rows="8"
+          :value="form.sqlExpression"
+        />
+      </div>
     </Form.Item>
     <Form.Item :label="t('label.entity-type')" required>
       <Select
@@ -301,5 +316,17 @@ function removeParameter(index: number): void {
 }
 .td-form-error {
   margin-bottom: 16px;
+}
+.td-sql-readonly {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  padding: 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: 8px;
+  background: var(--sm-bg-secondary, #f5f5f5);
+  color: var(--sm-text-secondary);
 }
 </style>

@@ -1,13 +1,14 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official Test Definition add/edit drawer: form on the left, English help
-  panel on the right (official en-US TestDefinitionForm.md), footer 取消 / 保存.
+  Official TestDefinitionForm drawer: ShowHintToggle, FORM_DRAWER_WIDTH_*,
+  form column + optional TestDefinitionForm.md help panel (no CCL copy).
 -->
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue';
-import { Button, Drawer, Space } from 'ant-design-vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
+import ShowHintToggle from '@/components/quality/ShowHintToggle.vue';
 import TestDefinitionFormFields from '@/components/quality/TestDefinitionFormFields.vue';
 import {
   createEmptyTestDefinitionForm,
@@ -36,6 +37,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const form = reactive<TestDefinitionFormValues>(createEmptyTestDefinitionForm());
+/** Official ShowHintToggle default is true (TestDefinitionForm.component.tsx). */
+const showHint = ref(true);
 
 const isEdit = computed(() => Boolean(props.definition));
 const readOnlyExceptDimension = computed(
@@ -50,11 +53,14 @@ const title = computed(() =>
     : t('label.add-entity', { entity: t('label.test-definition') }),
 );
 
+const drawerWidthKey = computed(() => (showHint.value ? 'formWithHint' : 'formWithoutHint'));
+
 watch(
   () => [props.open, props.definition] as const,
   ([open]) => {
     if (open) {
       Object.assign(form, formValuesFromDefinition(props.definition));
+      showHint.value = true;
     }
   },
 );
@@ -69,16 +75,24 @@ function save(): void {
 </script>
 
 <template>
-  <Drawer
+  <SmDrawer
     :open="open"
     :title="title"
-    placement="right"
-    :width="960"
-    destroy-on-close
-    data-testid="test-definition-form-drawer"
-    @close="close"
+    :width-key="drawerWidthKey"
+    :confirm-loading="saving"
+    test-id="test-definition-form-drawer"
+    ok-test-id="test-definition-save"
+    cancel-test-id="test-definition-cancel"
+    :ok-text="isEdit ? t('label.update') : t('label.create')"
+    :cancel-text="t('label.cancel')"
+    @update:open="(value) => emit('update:open', value)"
+    @ok="save"
+    @cancel="close"
   >
-    <div class="td-drawer" data-testid="test-definition-form-drawer">
+    <template #headerActions>
+      <ShowHintToggle v-model="showHint" />
+    </template>
+    <div class="td-drawer" :class="{ 'td-drawer--with-hint': showHint }">
       <div class="td-drawer__form">
         <TestDefinitionFormFields
           :form="form"
@@ -88,7 +102,7 @@ function save(): void {
           @dismiss-error="emit('dismiss-error')"
         />
       </div>
-      <aside class="td-drawer__help" data-testid="test-definition-help-panel">
+      <aside v-if="showHint" class="td-drawer__help" data-testid="test-definition-help-panel">
         <h2 class="td-drawer__help-title">Test Definition</h2>
         <p>{{ TEST_DEFINITION_HELP_INTRO }}</p>
         <section v-for="section in TEST_DEFINITION_HELP_SECTIONS" :key="section.id" :data-testid="`help-${section.id}`">
@@ -101,25 +115,17 @@ function save(): void {
         </section>
       </aside>
     </div>
-    <template #footer>
-      <Space>
-        <Button data-testid="test-definition-cancel" @click="close">
-          {{ t('label.cancel') }}
-        </Button>
-        <Button type="primary" :loading="saving" data-testid="test-definition-save" @click="save">
-          {{ isEdit ? t('label.update') : t('label.create') }}
-        </Button>
-      </Space>
-    </template>
-  </Drawer>
+  </SmDrawer>
 </template>
 
 <style scoped>
 .td-drawer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 24px;
   min-height: 100%;
+}
+.td-drawer--with-hint {
+  grid-template-columns: minmax(0, 1fr) 320px;
 }
 .td-drawer__help {
   border: 1px solid var(--sm-border-secondary);
@@ -144,7 +150,7 @@ function save(): void {
   color: var(--sm-text-secondary);
 }
 @media (max-width: 800px) {
-  .td-drawer {
+  .td-drawer--with-hint {
     grid-template-columns: 1fr;
   }
 }

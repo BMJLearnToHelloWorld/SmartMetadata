@@ -18,6 +18,16 @@ vi.mock('@/api/dataQualityDimensions', () => ({
   }),
 }));
 
+vi.mock('@/components/shared/SmCodeEditor.vue', () => ({
+  default: {
+    name: 'SmCodeEditor',
+    props: ['modelValue', 'mode', 'variant', 'showCopyButton'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea data-testid="code-editor" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
+
 describe('TestDefinitionFormFields', () => {
   it('shows the enabled toggle only in edit mode (official TestDefinitionFormBody)', () => {
     const form = createEmptyTestDefinitionForm();
@@ -64,6 +74,16 @@ describe('TestDefinitionFormFields', () => {
     });
     await flushPromises();
     expect(listDataQualityDimensions).toHaveBeenCalledWith({ limit: 1000 });
+  });
+
+  it('renders SmCodeEditor for SQL when fields are editable (official CodeEditor)', () => {
+    const form = reactive(createEmptyTestDefinitionForm());
+    const wrapper = mount(TestDefinitionFormFields, {
+      props: { form },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    expect(wrapper.find('[data-testid="code-editor"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sql-expression"]').exists()).toBe(true);
   });
 
   it('adds a parameter row when Add Parameter is clicked', async () => {
