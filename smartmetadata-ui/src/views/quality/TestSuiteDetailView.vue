@@ -32,7 +32,10 @@ import { entityLabel } from '@/features/crud/paging';
 import type { EntityDetailTab } from '@/features/crud/types';
 import type { TestSuite } from '@/types/quality';
 import TestCasesListView from '@/views/quality/TestCasesListView.vue';
-import { buildTestSuiteDetailBreadcrumbs } from '@/utils/qualityDetailBreadcrumbs';
+import {
+  buildTestCaseSuiteDetailOriginBreadcrumb,
+  buildTestSuiteDetailBreadcrumbs,
+} from '@/utils/qualityDetailBreadcrumbs';
 import { getDataQualityPagePath } from '@/utils/fqnPaths';
 
 const props = defineProps<{ id: string }>();
@@ -78,6 +81,16 @@ const breadcrumbs = computed(() =>
     t,
     entityLabel(suite.value) || t('label.entity-detail-plural', { entity: t('label.test-suite') }),
   ),
+);
+
+const embeddedCasesBreadcrumbData = computed(() =>
+  suite.value?.fullyQualifiedName
+    ? buildTestCaseSuiteDetailOriginBreadcrumb(
+        t,
+        entityLabel(suite.value) || suite.value.fullyQualifiedName,
+        suite.value.fullyQualifiedName,
+      )
+    : undefined,
 );
 
 const tabs = computed<EntityDetailTab[]>(() =>
@@ -319,6 +332,7 @@ onMounted(() => {
           prefer-search
           suite-detail-mode
           :test-suite-id="suite.id"
+          :breadcrumb-data="embeddedCasesBreadcrumbData"
           :remove-from-suite="removeFromSuite"
           data-testid="test-suite-embedded-cases"
           @update:total="testCaseTabCount = $event"

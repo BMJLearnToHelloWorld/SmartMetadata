@@ -76,6 +76,10 @@ import {
   inlineIncidentFromTestCase,
 } from '@/quality/testCaseListIncident.utils';
 import type { ResourcePermission } from '@/api/permissions';
+import {
+  buildTestCaseListOriginBreadcrumb,
+  type BreadcrumbLink,
+} from '@/utils/qualityDetailBreadcrumbs';
 import { TEST_CASE_STATUSES, type TestCase, type TestIncident, type TestSuite } from '@/types/quality';
 
 const props = withDefaults(
@@ -102,6 +106,8 @@ const props = withDefaults(
     coverage?: CoverageCounts | null;
     health?: HealthCounts | null;
     results?: StatusCounts | null;
+    /** Origin trail for test-case detail breadcrumbs (official DataQualityTab `breadcrumbData`). */
+    breadcrumbData?: BreadcrumbLink[];
   }>(),
   {
     embedded: true,
@@ -120,6 +126,25 @@ const total = ref<number | undefined>();
 const emit = defineEmits<{ 'update:total': [total: number]; 'removed-from-suite': [] }>();
 const suiteDetailList = computed(() => props.suiteDetailMode === true);
 const canRemoveFromSuite = computed(() => props.removeFromSuite?.allowed === true && Boolean(props.removeFromSuite?.suiteId));
+
+/** Trail written to router state when opening a test case (official DataQualityTab). */
+const navigationBreadcrumbData = computed((): BreadcrumbLink[] => {
+  if (props.breadcrumbData?.length) {
+    return props.breadcrumbData;
+  }
+  if (props.suiteDetailMode) {
+    return [];
+  }
+  return buildTestCaseListOriginBreadcrumb(t);
+});
+
+function openTestCaseDetail(testCase: TestCase): void {
+  void router.push({
+    name: 'quality-test-case',
+    params: { id: testCase.id },
+    state: { breadcrumbData: navigationBreadcrumbData.value },
+  });
+}
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref(0);
@@ -760,7 +785,7 @@ defineExpose({ openCreate, total });
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
-    @view="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
+    @view="(record) => openTestCaseDetail(record as TestCase)"
     @edit="(record) => openEdit(record as TestCase)"
     @delete="(record) => onRowDelete(record as TestCase)"
   >
@@ -914,7 +939,7 @@ defineExpose({ openCreate, total });
         <a
           href="#"
           :data-testid="`test-case-row-${(record as TestCase).id}`"
-          @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
+          @click.prevent="openTestCaseDetail(record as TestCase)"
         >
           {{ entityLabel(record as TestCase) }}
         </a>

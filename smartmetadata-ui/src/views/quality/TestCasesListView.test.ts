@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { dataQualityContextKey, type DataQualityCreateActions } from '@/quality/dataQualityContext';
 import TestCasesListView from './TestCasesListView.vue';
 
@@ -637,5 +638,37 @@ describe('TestCasesListView embedded bundle-suite bulk selection', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="add-to-bundle-suite-modal"]').exists()).toBe(true);
     wrapper.unmount();
+  });
+});
+
+describe('TestCasesListView test-case origin navigation', () => {
+  it('writes landing data-quality breadcrumbData when opening a case', async () => {
+    const { wrapper, router } = await mountView();
+    const pushSpy = vi.spyOn(router, 'push');
+    await wrapper.findComponent(EntityListShell).vm.$emit('view', { id: 'tc1', name: 'row_count' });
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: 'quality-test-case',
+      params: { id: 'tc1' },
+      state: {
+        breadcrumbData: [{ name: 'Data Quality', url: '/data-quality/test-cases' }],
+      },
+    });
+  });
+
+  it('writes suite-detail breadcrumbData from prop when opening a case', async () => {
+    const trail = [
+      { name: 'Test Suites', url: '/data-quality/test-suites/bundle-suites' },
+      { name: 'Suite A', url: '/test-suites/suite.fqn' },
+    ];
+    const { wrapper, router } = await mountView({
+      props: { suiteDetailMode: true, testSuiteId: 's1', breadcrumbData: trail },
+    });
+    const pushSpy = vi.spyOn(router, 'push');
+    await wrapper.findComponent(EntityListShell).vm.$emit('view', { id: 'tc1', name: 'row_count' });
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: 'quality-test-case',
+      params: { id: 'tc1' },
+      state: { breadcrumbData: trail },
+    });
   });
 });

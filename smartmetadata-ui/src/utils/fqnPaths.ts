@@ -371,6 +371,11 @@ export function getServiceVersionPath(
  *   /test-suites/{fqn}/add-ingestion
  *   /test-suites/{fqn}/edit-ingestion/{ingestionFqn}
  */
+/** Official `getTestSuitePath` (RouterUtils.ts): `/test-suites/{fqn}`. */
+export function getTestSuitePath(testSuiteFqn: string): string {
+  return `/test-suites/${getEncodedFqn(testSuiteFqn)}`;
+}
+
 export function getTestSuiteIngestionPath(testSuiteFqn: string, ingestionFqn?: string): string {
   if (ingestionFqn) {
     return `/test-suites/${getEncodedFqn(testSuiteFqn)}/edit-ingestion/${getEncodedFqn(ingestionFqn)}`;

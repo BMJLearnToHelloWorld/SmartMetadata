@@ -10,6 +10,7 @@ import {
   getDataQualityPagePath,
   getEntityDetailsPath,
   getServiceDetailsPath,
+  getTestSuitePath,
   SERVICE_CATEGORY_DATABASE_SERVICES,
 } from '@/utils/fqnPaths';
 import { observabilityChildBreadcrumb, observabilityRootBreadcrumbLabel } from '@/utils/observabilityBreadcrumbs';
@@ -17,6 +18,34 @@ import { observabilityChildBreadcrumb, observabilityRootBreadcrumbLabel } from '
 export interface BreadcrumbLink {
   name: string;
   url?: string;
+}
+
+/** Official TestCases / DataQualityTab landing list `breadcrumbData`. */
+export function buildTestCaseListOriginBreadcrumb(t: (key: string) => string): BreadcrumbLink[] {
+  return [
+    {
+      name: t('label.data-quality'),
+      url: getDataQualityPagePath('test-cases'),
+    },
+  ];
+}
+
+/** Official TestSuiteDetail `incidentUrlState` for embedded test-case list navigation. */
+export function buildTestCaseSuiteDetailOriginBreadcrumb(
+  t: (key: string) => string,
+  suiteLabel: string,
+  suiteFqn: string,
+): BreadcrumbLink[] {
+  return [
+    {
+      name: t('label.test-suite-plural'),
+      url: getDataQualityPagePath('test-suites', 'bundle-suites'),
+    },
+    {
+      name: suiteLabel,
+      url: getTestSuitePath(suiteFqn),
+    },
+  ];
 }
 
 /** Test suite detail: observability root → data quality (list) → suite name. */

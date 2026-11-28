@@ -40,6 +40,7 @@ import {
   getEditIngestionPath,
   getServiceVersionPath,
   getTestSuiteFQN,
+  getTestSuitePath,
   getTestSuiteIngestionPath,
   getSettingsPathFromPipelineType,
   DATA_INSIGHTS_APP_NAME,
@@ -208,6 +209,7 @@ describe('getEntityDetailsPath', () => {
         SERVICE_AGENT_SUB_TAB_METADATA,
       ),
     ).toBe('/service/databaseServices/svc/agents/metadata');
+    expect(getTestSuitePath('suite.fqn')).toBe('/test-suites/suite.fqn');
     expect(getTestSuiteIngestionPath('suite.fqn')).toBe('/test-suites/suite.fqn/add-ingestion');
     expect(getTestSuiteIngestionPath('suite.fqn', 'suite.fqn.pipeline')).toBe(
       '/test-suites/suite.fqn/edit-ingestion/suite.fqn.pipeline',
