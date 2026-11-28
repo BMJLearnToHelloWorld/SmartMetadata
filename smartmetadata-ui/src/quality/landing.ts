@@ -364,11 +364,8 @@ export function governanceFiltersActive(filters: DqGovernanceFilters): boolean {
  * nested testCase forms must not leak into it). Both builders append
  * `{ term: { deleted: false } }`.
  *
- * glossaryTerm has NO official dashboard-filter counterpart (neither
- * builder mentions glossary terms), so it is deliberately left out of the
- * aggregation query rather than invented as a field: it keeps affecting
- * only the search-list path, and the dashboard cards say so via the
- * existing filter residual when the search list is unavailable.
+ * Glossary terms are merged into the tag clauses like official
+ * DataQualityDashboard (glossaryTerms spread into tags for ES queries).
  */
 export type DqEsClause = Record<string, unknown>;
 
@@ -586,6 +583,11 @@ export function dqTableMustForValues(
   return must;
 }
 
+function governanceTags(filters: DqGovernanceFilters): string[] | undefined {
+  const merged = [...(filters.tag ? [filters.tag] : []), ...(filters.glossaryTerm ? [filters.glossaryTerm] : [])];
+  return merged.length ? merged : undefined;
+}
+
 export function dqDashboardMustFilters(
   filters: DqGovernanceFilters,
   range?: DqTimeRange,
@@ -594,7 +596,7 @@ export function dqDashboardMustFilters(
     {
       owner: filters.owner,
       certification: filters.certification ? [filters.certification] : undefined,
-      tags: filters.tag ? [filters.tag] : undefined,
+      tags: governanceTags(filters),
       tier: filters.tier ? [filters.tier] : undefined,
       dataProducts: filters.dataProduct ? [filters.dataProduct] : undefined,
     },
@@ -605,7 +607,7 @@ export function dqDashboardMustFilters(
 export function dqTableMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
   return dqTableMustForValues({
     owner: filters.owner,
-    tags: filters.tag ? [filters.tag] : undefined,
+    tags: governanceTags(filters),
     tier: filters.tier ? [filters.tier] : undefined,
     certification: filters.certification ? [filters.certification] : undefined,
     dataProducts: filters.dataProduct ? [filters.dataProduct] : undefined,

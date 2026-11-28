@@ -496,6 +496,7 @@ async function mountEmbeddedBulkList() {
     onAddTestCase: () => {},
     onAddBundleSuite: () => {},
   }));
+  // Official enableBulkActions gates on testSuite Create, not testCase Create.
   const dataQualityContext = computed(() => ({
     isActive: true,
     createActions: createActions.value,
@@ -543,6 +544,33 @@ describe('TestCasesListView embedded bundle-suite bulk selection', () => {
     const wrapper = await mountEmbeddedBulkList();
     expect(wrapper.text()).toContain('Test Case Insights');
     expect(wrapper.text()).toContain("dataset's health");
+    wrapper.unmount();
+  });
+
+  it('does not enable bulk selection without testSuite Create (pin getTestCaseListDisplayState)', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/data-quality', name: 'quality-data-quality-tab', component: TestCasesListView }],
+    });
+    await router.push('/data-quality');
+    await router.isReady();
+    const createActions = computed<DataQualityCreateActions>(() => ({
+      canCreateTestCase: true,
+      canCreateBundleSuite: false,
+      onAddTestCase: () => {},
+      onAddBundleSuite: () => {},
+    }));
+    const wrapper = mount(TestCasesListView, {
+      props: { embedded: true, preferSearch: true },
+      global: {
+        plugins: [pinia, router, Antd, createTestI18n()],
+        provide: { [dataQualityContextKey as symbol]: computed(() => ({ isActive: true, createActions: createActions.value })) },
+      },
+    });
+    await flushPromises();
+    expect(wrapper.find('.ant-table-selection-column input[type="checkbox"]').exists()).toBe(false);
     wrapper.unmount();
   });
 

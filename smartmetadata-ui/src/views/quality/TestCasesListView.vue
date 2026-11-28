@@ -69,7 +69,6 @@ import {
   inlineIncidentFromTestCase,
 } from '@/quality/testCaseListIncident.utils';
 import type { ResourcePermission } from '@/api/permissions';
-import { usePermissionStore } from '@/stores/permissions';
 import { TEST_CASE_STATUSES, type TestCase, type TestIncident, type TestSuite } from '@/types/quality';
 
 const props = withDefaults(
@@ -203,14 +202,12 @@ const showEmptyCreateCta = computed(
   () =>
   !showDeleted.value && Boolean(embeddedCreateActions.value?.canCreateTestCase),
 );
-const permissionStore = usePermissionStore();
-const standaloneCanCreateTestCase = ref(false);
+/** Official getTestCaseListDisplayState: bulk only when testSuite Create (DataQualityTab). */
 const enableBulkActions = computed(
   () =>
+    props.embedded &&
     !showDeleted.value &&
-    (props.embedded
-      ? Boolean(embeddedCreateActions.value?.canCreateTestCase)
-      : standaloneCanCreateTestCase.value),
+    Boolean(embeddedCreateActions.value?.canCreateBundleSuite),
 );
 const selectedRowKeys = ref<string[]>([]);
 const addToBundleModalOpen = ref(false);
@@ -647,18 +644,6 @@ watch(total, (value) => {
   emit('update:total', value ?? 0);
 }, { immediate: true });
 
-async function loadCreatePermission(): Promise<void> {
-  if (props.embedded) {
-    return;
-  }
-  try {
-    const ops = await permissionStore.getResourcePermission('testCase');
-    standaloneCanCreateTestCase.value = Boolean(ops.Create);
-  } catch {
-    standaloneCanCreateTestCase.value = false;
-  }
-}
-
 function clearBulkSelection(): void {
   selectedRowKeys.value = [];
 }
@@ -695,7 +680,6 @@ onMounted(() => {
   if (props.embedded) {
     hydrateFromRoute(true);
   }
-  void loadCreatePermission();
   void load();
 });
 
@@ -767,7 +751,7 @@ defineExpose({ openCreate, total });
       <Button v-if="!embedded" type="primary" data-testid="create-test-case" @click="openCreate">
         {{ t('label.new-entity', { entity: t('label.test-case') }) }}
       </Button>
-      <Dropdown v-if="!embedded" :trigger="['click']">
+      <Dropdown :trigger="['click']">
         <Button data-testid="test-cases-manage">⋯</Button>
         <template #overlay>
           <Menu @click="onManageMenu">

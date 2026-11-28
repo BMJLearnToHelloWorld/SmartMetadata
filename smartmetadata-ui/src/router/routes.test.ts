@@ -415,6 +415,14 @@ describe('guard declaration table (§10.2)', () => {
       'admin-app': { resource: 'APPLICATION', operation: 'view' },
       'observability-alerts': { resource: 'EVENT_SUBSCRIPTION', operation: 'view' },
       'observability-alert': { resource: 'EVENT_SUBSCRIPTION', operation: 'view' },
+      'quality-test-cases': { resource: 'TEST_SUITE', operation: 'view' },
+      'quality-data-quality-tab': { resource: 'TEST_SUITE', operation: 'view' },
+      'quality-test-case': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-case-version': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-case-version-tab': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-case-dimensions': { resource: 'TEST_CASE', operation: 'view' },
+      'observability-incidents': { resource: 'TEST_CASE', operation: 'view' },
+      'quality-test-definitions': { resource: 'TEST_DEFINITION', operation: 'view' },
     };
     for (const [name, declaration] of Object.entries(expected)) {
       expect(declarationOf(name)).toEqual(declaration);

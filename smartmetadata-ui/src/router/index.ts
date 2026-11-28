@@ -913,6 +913,7 @@ export const router = createRouter({
           name: 'quality-test-definitions',
           component: TestDefinitionsListView,
           alias: 'test-library',
+          meta: { guard: { resource: 'TEST_DEFINITION', operation: 'view' } },
         },
         {
           path: 'quality/test-definitions/:id',
@@ -921,11 +922,18 @@ export const router = createRouter({
         },
         // G-02 (visual comparison): official DATA_QUALITY
         // '/data-quality'.
-        { path: 'quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView, alias: 'data-quality' },
+        {
+          path: 'quality/test-cases',
+          name: 'quality-test-cases',
+          component: DataQualityLandingView,
+          alias: 'data-quality',
+          meta: { guard: { resource: 'TEST_SUITE', operation: 'view' } },
+        },
         {
           path: 'data-quality/:tab/:subTab?',
           name: 'quality-data-quality-tab',
           component: DataQualityLandingView,
+          meta: { guard: { resource: 'TEST_SUITE', operation: 'view' } },
         },
         {
           path: 'quality/test-cases/:id',
@@ -939,6 +947,7 @@ export const router = createRouter({
             id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
             tab: route.params.tab as string | undefined,
           }),
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'quality/test-cases/:id/versions/:version',
@@ -948,6 +957,7 @@ export const router = createRouter({
             id: route.params.id as string,
             version: route.params.version as string,
           }),
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'quality/test-cases/:id/versions/:version/:tab',
@@ -958,6 +968,7 @@ export const router = createRouter({
             version: route.params.version as string,
             tab: route.params.tab as string,
           }),
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'test-case/:fqn/versions/:version',
@@ -977,6 +988,7 @@ export const router = createRouter({
           path: 'test-case/:fqn/dimensions/:dimensionKey/:tab?',
           name: 'quality-test-case-dimensions',
           component: TestCaseDimensionsView,
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'quality/test-cases/:id/dimensions/:dimensionKey/:tab?',
@@ -1042,6 +1054,7 @@ export const router = createRouter({
           component: IncidentsListView,
           // Official /incident-manager path (F-D-1 classic list).
           alias: 'incident-manager',
+          meta: { guard: { resource: 'TEST_CASE', operation: 'view' } },
         },
         {
           path: 'observability/incidents/:id',
