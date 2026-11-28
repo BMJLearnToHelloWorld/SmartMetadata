@@ -440,11 +440,15 @@ describe('IncidentsListView (W2-2 classic list)', () => {
     expect(wrapper.text()).toContain('Bob');
   });
 
-  it('hides the inline editors when the row has no EditStatus', async () => {
+  it('renders read-only status/severity chips when the row has no EditStatus (pin inline chips)', async () => {
     permState.rowOps = {};
     const { wrapper } = await mountView();
-    expect(wrapper.find('[data-testid="incident-status-inc1"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="incident-severity-inc1"]').exists()).toBe(false);
+    const statusChip = wrapper.find('[data-testid="incident-status-inc1"]');
+    expect(statusChip.exists()).toBe(true);
+    expect(statusChip.classes()).not.toContain('incident-chip--editable');
+    const severityChip = wrapper.find('[data-testid="incident-severity-inc1"]');
+    expect(severityChip.exists()).toBe(true);
+    expect(severityChip.classes()).not.toContain('incident-chip--editable');
     expect(wrapper.find('[data-testid="incident-assignee-edit-inc1"]').exists()).toBe(false);
     expect(wrapper.text()).toContain('New');
   });

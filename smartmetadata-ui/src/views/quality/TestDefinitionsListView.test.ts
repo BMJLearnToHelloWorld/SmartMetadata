@@ -93,6 +93,9 @@ describe('TestDefinitionsListView', () => {
         if (url.includes('/api/v1/dataQuality/dimensions')) {
           return jsonResponse({ data: [{ id: 'd1', name: 'Accuracy', displayName: 'Accuracy' }], paging: { total: 1 } });
         }
+        if (url.includes('/api/v1/learningResources')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
         if (url.includes('/api/v1/permissions/testDefinition')) {
           return jsonResponse({
             resource: 'testDefinition',
@@ -233,6 +236,17 @@ describe('TestDefinitionsListView', () => {
     expect(wrapper.find('[data-testid="test-library-filtered-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(false);
     wrapper.unmount();
+  });
+
+  it('writes currentPage and cursor to the URL when paging forward (pin usePaging)', async () => {
+    const { wrapper, router } = await mountView();
+    vi.mocked(fetch).mockClear();
+    await wrapper.get('[data-testid="test-library-next"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    expect(router.currentRoute.value.query.currentPage).toBe('2');
+    expect(router.currentRoute.value.query.cursorType).toBe('after');
+    expect(router.currentRoute.value.query.cursorValue).toBe('c1');
   });
 
   it('hydrates filters from the URL like official useTableFilters', async () => {

@@ -24,8 +24,9 @@ import { searchIncidentTestCaseFilterOptions } from '@/features/quality/incident
 import { listTestCaseIncidentsFromSearch } from '@/api/testIncidents';
 import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import IncidentAssigneePicker from '@/components/observability/IncidentAssigneePicker.vue';
-import { INCIDENT_SEVERITY_OPTIONS, officialSeverityLabel } from '@/quality/incidentSeverity';
 import IncidentAssigneeFilterPicker from '@/components/observability/IncidentAssigneeFilterPicker.vue';
+import IncidentInlineSeverity from '@/components/observability/IncidentInlineSeverity.vue';
+import IncidentInlineStatus from '@/components/observability/IncidentInlineStatus.vue';
 import UserTeamPicker from '@/components/governance/workflowBuilder/forms/UserTeamPicker.vue';
 import CompactDateTimeDisplay from '@/components/shared/CompactDateTimeDisplay.vue';
 import FormModal from '@/components/shared/FormModal.vue';
@@ -615,9 +616,6 @@ function statusMenuOptions(record: TestIncident): IncidentStatus[] {
   return incidentStatusMenuOptions(record.testCaseResolutionStatusType);
 }
 
-function severityLabel(severity: string | undefined): string {
-  return officialSeverityLabel(severity, t('observability.incidents.noSeverity'));
-}
 </script>
 
 <template>
@@ -766,12 +764,18 @@ function severityLabel(severity: string | undefined): string {
 
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'testCase'">
-          <a
-            :data-testid="`incident-row-${record.id}`"
-            @click.prevent="openTestCase(record as TestIncident)"
+          <Tooltip
+            :title="testCaseFqnOf(record as TestIncident)"
+            placement="top"
           >
-            {{ entityLabel(record.testCaseReference) || testCaseNameOf(record as TestIncident) }}
-          </a>
+            <a
+              class="incidents-test-case-link"
+              :data-testid="`incident-row-${record.id}`"
+              @click.prevent="openTestCase(record as TestIncident)"
+            >
+              {{ entityLabel(record.testCaseReference) || testCaseNameOf(record as TestIncident) }}
+            </a>
+          </Tooltip>
         </template>
         <template v-else-if="column.key === 'table'">
           <Tooltip
@@ -799,35 +803,15 @@ function severityLabel(severity: string | undefined): string {
             :paragraph="false"
             :title="{ width: 72 }"
           />
-          <Dropdown
-            v-else-if="canEditRow(record as TestIncident)"
-            :trigger="['click']"
-            :disabled="writingById[record.id] !== undefined"
-          >
-            <Button
-              size="small"
-              :loading="writingById[record.id] === 'status'"
-              :data-testid="`incident-status-${record.id}`"
-            >
-              {{ incidentStatusLabel(t, record.testCaseResolutionStatusType) }}
-            </Button>
-            <template #overlay>
-              <Menu
-                @click="({ key }) => onStatusMenuSelect(record as TestIncident, key as IncidentStatus)"
-              >
-                <Menu.Item
-                  v-for="status in statusMenuOptions(record as TestIncident)"
-                  :key="status"
-                  :data-testid="`incident-status-option-${status}`"
-                >
-                  {{ incidentStatusLabel(t, status) }}
-                </Menu.Item>
-              </Menu>
-            </template>
-          </Dropdown>
-          <span v-else>
-            {{ incidentStatusLabel(t, record.testCaseResolutionStatusType) }}
-          </span>
+          <IncidentInlineStatus
+            v-else
+            :record="record as TestIncident"
+            :editable="canEditRow(record as TestIncident)"
+            :loading="writingById[record.id] === 'status'"
+            :menu-options="statusMenuOptions(record as TestIncident)"
+            :test-id="`incident-status-${record.id}`"
+            @select="(status) => onStatusMenuSelect(record as TestIncident, status)"
+          />
         </template>
         <template v-else-if="column.key === 'severity'">
           <Skeleton
@@ -836,41 +820,14 @@ function severityLabel(severity: string | undefined): string {
             :paragraph="false"
             :title="{ width: 72 }"
           />
-          <Dropdown
-            v-else-if="canEditRow(record as TestIncident)"
-            :trigger="['click']"
-            :disabled="writingById[record.id] !== undefined"
-          >
-            <Button
-              size="small"
-              :loading="writingById[record.id] === 'severity'"
-              :data-testid="`incident-severity-${record.id}`"
-            >
-              {{ severityLabel(record.severity) }}
-            </Button>
-            <template #overlay>
-              <Menu
-                @click="({ key }) => onSeveritySelect(record as TestIncident, key === 'none' ? undefined : String(key))"
-              >
-                <Menu.Item
-                  key="none"
-                  data-testid="incident-severity-option-none"
-                >
-                  {{ t('observability.incidents.noSeverity') }}
-                </Menu.Item>
-                <Menu.Item
-                  v-for="option in INCIDENT_SEVERITY_OPTIONS"
-                  :key="option"
-                  :data-testid="`incident-severity-option-${option}`"
-                >
-                  {{ severityLabel(option) }}
-                </Menu.Item>
-              </Menu>
-            </template>
-          </Dropdown>
-          <span v-else>
-            {{ severityLabel(record.severity) }}
-          </span>
+          <IncidentInlineSeverity
+            v-else
+            :severity="(record as TestIncident).severity"
+            :editable="canEditRow(record as TestIncident)"
+            :loading="writingById[record.id] === 'severity'"
+            :test-id="`incident-severity-${record.id}`"
+            @change="(value) => onSeveritySelect(record as TestIncident, value)"
+          />
         </template>
         <template v-else-if="column.key === 'assignee'">
           <Skeleton
@@ -964,6 +921,14 @@ function severityLabel(severity: string | undefined): string {
 </template>
 
 <style scoped>
+.incidents-test-case-link {
+  display: inline-block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 .incidents-table-link {
   display: inline-block;
   max-width: 13rem;

@@ -5,8 +5,8 @@
  */
 export const TEST_LIBRARY_PAGE_SIZE = 15;
 
-/** Official PAGE_SIZE, PAGE_SIZE_BASE, PAGE_SIZE_MEDIUM, PAGE_SIZE_LARGE. */
-export const TEST_LIBRARY_PAGE_SIZE_OPTIONS = [10, 15, 25, 50] as const;
+/** Official PAGE_SIZE_BASE, PAGE_SIZE_MEDIUM, PAGE_SIZE_LARGE (constants.ts). */
+export const TEST_LIBRARY_PAGE_SIZE_OPTIONS = [15, 25, 50] as const;
 
 /**
  * Official TestPlatform enum values, in generated enum order
@@ -50,6 +50,10 @@ export const TEST_LIBRARY_SORT_FIELD_BY_COLUMN: Record<string, string> = {
   entityType: 'entityType',
   testPlatforms: 'testPlatforms',
 };
+
+export const TEST_LIBRARY_COLUMN_BY_SORT_FIELD: Record<string, string> = Object.fromEntries(
+  Object.entries(TEST_LIBRARY_SORT_FIELD_BY_COLUMN).map(([column, field]) => [field, column]),
+);
 
 /** Official in-repo platform label. Live official may rebrand OpenMetadata; never copy that branding. */
 export function testPlatformLabel(platform: string): string {

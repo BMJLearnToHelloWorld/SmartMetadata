@@ -10,7 +10,11 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { getDerivedPermissionFlags } from '@/api/permissions';
 import { getErrorText } from '@/views/admin/accessApiErrors';
+import type { TableProps } from 'ant-design-vue';
 import { Button, Input, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
+import LearningIcon from '@/components/shared/LearningIcon.vue';
+import { createEmptyPaging } from '@/catalog/servicePaging';
+import { useCursorPaging } from '@/ingestion/useCursorPaging';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import { usePermissionStore } from '@/stores/permissions';
 import {
@@ -39,6 +43,8 @@ import {
   isEnabledToggleDisabled,
   isSystemTestDefinition,
   pageCount,
+  TEST_LIBRARY_COLUMN_BY_SORT_FIELD,
+  TEST_LIBRARY_SORT_FIELD_BY_COLUMN,
 } from '@/quality/testLibrary';
 import {
   mergeTestDefinitionListQuery,
@@ -61,14 +67,9 @@ const createPermission = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const definitions = ref<TestDefinition[]>([]);
-const total = ref(0);
-const pageAfter = ref<string | undefined>();
-const pageBefore = ref<string | undefined>();
-const cursorAfter = ref<string | undefined>();
-const cursorBefore = ref<string | undefined>();
-const currentPage = ref(1);
-const pageSize = ref(TEST_LIBRARY_PAGE_SIZE);
+const listPaging = useCursorPaging(TEST_LIBRARY_PAGE_SIZE, [...TEST_LIBRARY_PAGE_SIZE_OPTIONS]);
 const searchInput = ref('');
+let loadToken = 0;
 
 const listQuery = computed(() =>
   parseTestDefinitionListQuery(route.query as Record<string, unknown>),
@@ -99,31 +100,73 @@ const platformOptions = computed(() =>
   TEST_LIBRARY_PLATFORMS.map((key) => ({ key, label: key })),
 );
 
-const columns = computed(() => [
-  { title: t('label.name'), dataIndex: 'name', key: 'name' },
-  { title: t('label.description'), dataIndex: 'description', key: 'description' },
-  { title: t('label.entity-type'), dataIndex: 'entityType', key: 'entityType', width: 120 },
-  { title: t('label.test-platform-plural'), key: 'testPlatforms', width: 180 },
-  { title: t('label.enabled'), key: 'enabled', width: 90 },
-  { title: t('label.action-plural'), key: 'actions', width: 90 },
-]);
+const activeSortColumn = computed(
+  () => TEST_LIBRARY_COLUMN_BY_SORT_FIELD[listQuery.value.sortField] ?? 'name',
+);
 
-const totalPages = computed(() => pageCount(total.value, pageSize.value));
-const hasPrev = computed(() => currentPage.value > 1);
-const hasNext = computed(() => currentPage.value < totalPages.value || Boolean(pageAfter.value));
+const columns = computed<TableProps['columns']>(() => {
+  const sortOrder =
+    listQuery.value.sortOrder === 'desc'
+      ? ('descend' as const)
+      : ('ascend' as const);
+  return [
+    {
+      title: t('label.name'),
+      dataIndex: 'name',
+      key: 'name',
+      sorter: true,
+      sortOrder: activeSortColumn.value === 'name' ? sortOrder : undefined,
+    },
+    { title: t('label.description'), dataIndex: 'description', key: 'description' },
+    {
+      title: t('label.entity-type'),
+      dataIndex: 'entityType',
+      key: 'entityType',
+      width: 120,
+      sorter: true,
+      sortOrder: activeSortColumn.value === 'entityType' ? sortOrder : undefined,
+    },
+    {
+      title: t('label.test-platform-plural'),
+      key: 'testPlatforms',
+      width: 180,
+      sorter: true,
+      sortOrder: activeSortColumn.value === 'testPlatforms' ? sortOrder : undefined,
+    },
+    { title: t('label.enabled'), key: 'enabled', width: 90 },
+    { title: t('label.action-plural'), key: 'actions', width: 90 },
+  ];
+});
 
-function resetPagingState(): void {
-  currentPage.value = 1;
-  cursorAfter.value = undefined;
-  cursorBefore.value = undefined;
-}
+const totalPages = computed(() =>
+  pageCount(listPaging.paging.value.total, listPaging.pageSize.value),
+);
+const hasPrev = computed(
+  () => listPaging.currentPage.value > 1 || Boolean(listPaging.paging.value.before),
+);
+const hasNext = computed(() => Boolean(listPaging.paging.value.after));
 
 function applyListUrlPatch(
   patch: Record<string, string | number | boolean | string[] | null | undefined>,
 ): void {
-  resetPagingState();
   void router.replace({
     query: mergeTestDefinitionListQuery(route.query as Record<string, unknown>, patch),
+  });
+}
+
+function onTableChange(
+  _pagination: unknown,
+  _filters: unknown,
+  sorter: { columnKey?: string; field?: string; order?: 'ascend' | 'descend' | null },
+): void {
+  const columnKey = String(sorter.columnKey ?? sorter.field ?? '');
+  const sortField = TEST_LIBRARY_SORT_FIELD_BY_COLUMN[columnKey];
+  if (!sortField || sorter.order == null) {
+    return;
+  }
+  applyListUrlPatch({
+    sortField,
+    sortOrder: sorter.order === 'descend' ? 'desc' : 'asc',
   });
 }
 
@@ -138,35 +181,43 @@ watch(
 );
 
 async function load(): Promise<void> {
+  const token = ++loadToken;
   loading.value = true;
   errorMessage.value = '';
   try {
     const query = listQuery.value;
+    const cursor = listPaging.pagingCursor.value;
     const page = await listTestDefinitions({
-      limit: pageSize.value,
-      after: cursorBefore.value ? undefined : cursorAfter.value,
-      before: cursorBefore.value,
+      limit: listPaging.pageSize.value,
+      after: cursor.cursorType === 'after' ? cursor.cursorValue : undefined,
+      before: cursor.cursorType === 'before' ? cursor.cursorValue : undefined,
       entityType: query.entityType,
       testPlatform: query.testPlatform,
       q: query.q.trim() || undefined,
       sortField: query.sortField,
       sortOrder: query.sortOrder,
     });
+    if (token !== loadToken) {
+      return;
+    }
     definitions.value = page.data;
-    total.value = page.total ?? page.data.length;
-    pageAfter.value = page.after;
-    pageBefore.value = page.before;
+    listPaging.handlePagingChange({
+      total: page.total ?? page.data.length,
+      after: page.after ?? '',
+      before: page.before ?? '',
+    });
   } catch (error) {
+    if (token !== loadToken) {
+      return;
+    }
     definitions.value = [];
+    listPaging.handlePagingChange(createEmptyPaging());
     errorMessage.value = getErrorText(error, t('server.unexpected-error'));
   } finally {
-    loading.value = false;
+    if (token === loadToken) {
+      loading.value = false;
+    }
   }
-}
-
-function resetAndLoad(): void {
-  resetPagingState();
-  void load();
 }
 
 function applySearch(value: string, immediate = false): void {
@@ -198,42 +249,27 @@ onUnmounted(() => {
 });
 
 function onNext(): void {
-  if (!pageAfter.value) {
+  if (!listPaging.paging.value.after) {
     return;
   }
-  cursorBefore.value = undefined;
-  cursorAfter.value = pageAfter.value;
-  currentPage.value += 1;
-  void load();
+  listPaging.handlePageChange(listPaging.currentPage.value + 1, {
+    cursorType: 'after',
+    cursorValue: listPaging.paging.value.after,
+  });
 }
 
 function onPrev(): void {
-  if (!hasPrev.value) {
+  if (!hasPrev.value || !listPaging.paging.value.before) {
     return;
   }
-  cursorAfter.value = undefined;
-  if (pageBefore.value) {
-    cursorBefore.value = pageBefore.value;
-    currentPage.value -= 1;
-    void load();
-    return;
-  }
-  const target = currentPage.value - 1;
-  currentPage.value = 1;
-  cursorBefore.value = undefined;
-  void (async () => {
-    await load();
-    while (currentPage.value < target && pageAfter.value) {
-      cursorAfter.value = pageAfter.value;
-      currentPage.value += 1;
-      await load();
-    }
-  })();
+  listPaging.handlePageChange(listPaging.currentPage.value - 1, {
+    cursorType: 'before',
+    cursorValue: listPaging.paging.value.before,
+  });
 }
 
 function onPageSizeChange(size: number): void {
-  pageSize.value = size;
-  resetAndLoad();
+  listPaging.handlePageSizeChange(size);
 }
 
 function openCreate(): void {
@@ -366,7 +402,7 @@ function onTestPlatformChange(value: string | undefined): void {
 }
 
 watch(
-  () => route.query,
+  () => [listQuery.value, listPaging.pagingCursor.value, listPaging.pageSize.value] as const,
   () => {
     if (permState.value === 'ready') {
       void load();
@@ -390,9 +426,16 @@ onMounted(async () => {
   <div v-else-if="permState === 'ready'" class="test-library-page" data-testid="test-library-page">
     <div class="test-library-page__header">
       <div>
-        <Typography.Title :level="4" class="test-library-page__title">
-          {{ t('label.test-library') }}
-        </Typography.Title>
+        <div class="test-library-page__title-row">
+          <Typography.Title :level="4" class="test-library-page__title">
+            {{ t('label.test-library') }}
+          </Typography.Title>
+          <LearningIcon
+            page-id="testLibrary"
+            :title="t('label.test-library')"
+            data-testid="test-library-learning-icon"
+          />
+        </div>
         <Typography.Paragraph type="secondary" class="test-library-page__lead">
           {{ t('message.page-sub-header-for-test-definitions') }}
         </Typography.Paragraph>
@@ -436,6 +479,7 @@ onMounted(async () => {
       :pagination="false"
       row-key="id"
       data-testid="test-definitions-table"
+      @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
@@ -487,14 +531,14 @@ onMounted(async () => {
         {{ t('label.previous') }}
       </Button>
       <span data-testid="test-library-page-indicator">
-        {{ t('label.page') + ' ' + currentPage + ' ' + t('label.of') + ' ' + totalPages }}
+        {{ t('label.page') + ' ' + listPaging.currentPage.value + ' ' + t('label.of') + ' ' + totalPages }}
       </span>
       <Button type="link" :disabled="!hasNext" data-testid="test-library-next" @click="onNext">
         {{ t('label.next') }}
         <RightOutlined />
       </Button>
       <select
-        :value="pageSize"
+        :value="listPaging.pageSize.value"
         data-testid="test-library-page-size"
         @change="onPageSizeChange(Number(($event.target as HTMLSelectElement).value))"
       >
@@ -524,6 +568,11 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 16px;
+}
+.test-library-page__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .test-library-page__title {
   margin-bottom: 4px !important;
