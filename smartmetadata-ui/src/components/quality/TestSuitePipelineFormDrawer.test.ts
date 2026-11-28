@@ -121,9 +121,11 @@ describe('TestSuitePipelineFormDrawer', () => {
     // selectAll defaults false; choose "select all" so the save is valid.
     await new DOMWrapper(el('test-suite-ingestion-select-all')!).trigger('click');
     await new DOMWrapper(el('test-suite-ingestion-save')!).trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    // Official cronValidator (CronExpressionUtils.ts) dynamically imports cronstrue;
+    // flushPromises does not wait for that module load on a cold cache.
+    await vi.waitFor(() => {
+      expect(posts).toHaveLength(1);
+    }, { timeout: 5000 });
     const body = posts[0]!.body as {
       name: string;
       displayName: string;
@@ -162,9 +164,9 @@ describe('TestSuitePipelineFormDrawer', () => {
     expect(url.searchParams.get('includeAllTests')).toBe('true');
     await new DOMWrapper(el('test-suite-ingestion-select-all')!).trigger('click');
     await new DOMWrapper(el('test-suite-ingestion-save')!).trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => {
+      expect(posts).toHaveLength(1);
+    }, { timeout: 5000 });
     const body = posts[0]!.body as {
       sourceConfig: { config: { entityFullyQualifiedName?: string } };
     };
@@ -240,7 +242,7 @@ describe('TestSuitePipelineFormDrawer', () => {
     await new DOMWrapper(el('test-suite-ingestion-save')!).trigger('click');
     await flushPromises();
     expect(posts).toHaveLength(0);
-    expect(document.body.textContent).toContain('Select at least one test case');
+    expect(document.body.textContent).toContain('Test case is required');
     expect(wrapper.emitted('success')).toBeUndefined();
   });
 
@@ -264,8 +266,9 @@ describe('TestSuitePipelineFormDrawer', () => {
     expect((el('pipeline-name') as HTMLInputElement).value).toBe('Suite Pipe');
     await new DOMWrapper(el('pipeline-name')!).setValue('Suite Pipe v2');
     await new DOMWrapper(el('test-suite-ingestion-save')!).trigger('click');
-    await flushPromises();
-    await flushPromises();
+    await vi.waitFor(() => {
+      expect(patches).toHaveLength(1);
+    }, { timeout: 5000 });
     expect(posts).toHaveLength(0);
     expect(patches).toHaveLength(1);
     expect(patches[0]).toEqual([
@@ -281,9 +284,9 @@ describe('TestSuitePipelineFormDrawer', () => {
     await flushPromises();
     await new DOMWrapper(el('test-suite-ingestion-select-all')!).trigger('click');
     await new DOMWrapper(el('test-suite-ingestion-save')!).trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => {
+      expect(posts).toHaveLength(1);
+    }, { timeout: 5000 });
     expect(deploys).toHaveLength(0);
     expect(wrapper.emitted('success')).toHaveLength(1);
     expect(wrapper.emitted('close')).toHaveLength(1);

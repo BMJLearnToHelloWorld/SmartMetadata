@@ -7,11 +7,13 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Drawer, Form, Input, Select, Space, Switch, Typography } from 'ant-design-vue';
+import ScheduleIntervalField from '@/components/ingestion/ScheduleIntervalField.vue';
+import { DEFAULT_SCHEDULE_CRON_DAILY } from '@/ingestion/schedule';
 import { addTestCasesToLogicalTestSuite, listTestCasesBySearch } from '@/api/testCases';
 import { createIngestionPipeline, deployIngestionPipeline } from '@/api/ingestionPipelines';
 import { createTestSuite } from '@/api/testSuites';
 import { entityLabel } from '@/features/crud/paging';
-import { cronPreset, describeCron, TEST_CASE_TYPES } from '@/quality/testCaseForm';
+import { TEST_CASE_TYPES } from '@/quality/testCaseForm';
 import { TEST_CASE_STATUSES, type TestCase, type TestSuite } from '@/types/quality';
 
 const props = defineProps<{ open: boolean }>();
@@ -30,18 +32,9 @@ const cases = ref<TestCase[]>([]);
 const selectedIds = ref<string[]>([]);
 const createWorkflow = ref(false);
 const pipelineName = ref('');
-const scheduled = ref(true);
-const frequency = ref<'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom'>('daily');
-const customCron = ref('0 0 * * *');
-const hour = ref(0);
-const minute = ref(0);
+const cron = ref<string | undefined>(DEFAULT_SCHEDULE_CRON_DAILY);
 const enableDebugLog = ref(false);
 const raiseOnError = ref(true);
-
-const cron = computed(() =>
-  frequency.value === 'custom' ? customCron.value : cronPreset(frequency.value, hour.value, minute.value),
-);
-const cronSummary = computed(() => describeCron(scheduled.value ? cron.value : undefined, scheduled.value && createWorkflow.value));
 const allIds = computed(() => cases.value.map((item) => item.id).filter(Boolean));
 const allSelected = computed(() => allIds.value.length > 0 && allIds.value.every((id) => selectedIds.value.includes(id)));
 
@@ -75,7 +68,7 @@ function toggleOne(id: string, checked: boolean): void {
 async function onSubmit(): Promise<void> {
   errorMessage.value = '';
   if (!selectedIds.value.length) {
-    errorMessage.value = t('quality.testSuites.pickerRequired');
+    errorMessage.value = t('label.field-required', { field: t('label.test-case') });
     return;
   }
   saving.value = true;
@@ -94,7 +87,7 @@ async function onSubmit(): Promise<void> {
         raiseOnError: raiseOnError.value,
         loggerLevel: enableDebugLog.value ? 'DEBUG' : 'INFO',
         service: { id: suite.id, type: 'testSuite' },
-        airflowConfig: scheduled.value ? { scheduleInterval: cron.value } : {},
+        airflowConfig: cron.value ? { scheduleInterval: cron.value } : {},
         sourceConfig: {
           config: {
             type: 'TestSuite',
@@ -130,8 +123,7 @@ watch(
       selectedIds.value = [];
       createWorkflow.value = false;
       pipelineName.value = '';
-      scheduled.value = true;
-      frequency.value = 'daily';
+      cron.value = DEFAULT_SCHEDULE_CRON_DAILY;
       enableDebugLog.value = false;
       raiseOnError.value = true;
       void loadCases();
@@ -187,7 +179,7 @@ watch(
         </Space>
         <label class="bundle-suite__all">
           <input type="checkbox" :checked="allSelected" data-testid="bundle-suite-select-all" @change="toggleAll(($event.target as HTMLInputElement).checked)" />
-          {{ t('quality.testSuites.selectAll', { count: cases.length }) }}
+          {{ t('label.select-all-entity', { entity: t('label.test-case-plural') }) }}
         </label>
         <div class="bundle-suite__list" data-testid="bundle-suite-cases">
           <label v-for="item in cases" :key="item.id" class="bundle-suite__row">
@@ -208,48 +200,32 @@ watch(
         <div class="bundle-suite__workflow">
           <Switch v-model:checked="createWorkflow" data-testid="bundle-suite-workflow" />
           <div>
-            <div>{{ t('quality.testSuites.createWorkflow') }}</div>
-            <Typography.Text type="secondary">{{ t('quality.testSuites.createWorkflowHint') }}</Typography.Text>
+            <div>{{ t('label.create-entity', { entity: t('label.pipeline') }) }}</div>
+            <Typography.Text type="secondary">{{ t('message.pipeline-entity-description', { entity: t('label.bundle-suite') }) }}</Typography.Text>
           </div>
         </div>
       </Form.Item>
       <template v-if="createWorkflow">
-        <Form.Item :label="t('quality.testSuites.pipelineName')">
-          <Input v-model:value="pipelineName" data-testid="bundle-suite-pipeline-name" />
+        <Form.Item :label="t('label.name')">
+          <Input v-model:value="pipelineName" :placeholder="t('label.enter-entity', { entity: t('label.name') })" data-testid="bundle-suite-pipeline-name" />
         </Form.Item>
-        <Form.Item :label="t('quality.testSuites.schedule')">
-          <div class="bundle-suite__schedule">
-            <button type="button" class="bundle-suite__card" :class="{ 'is-active': scheduled }" data-testid="bundle-suite-scheduled" @click="scheduled = true">
-              <strong>{{ t('quality.testSuites.scheduled') }}</strong>
-              <div>{{ t('quality.testSuites.scheduledHint') }}</div>
-            </button>
-            <button type="button" class="bundle-suite__card" :class="{ 'is-active': !scheduled }" data-testid="bundle-suite-once" @click="scheduled = false">
-              <strong>{{ t('quality.testSuites.once') }}</strong>
-              <div>{{ t('quality.testSuites.onceHint') }}</div>
-            </button>
-          </div>
+        <Form.Item :label="t('label.schedule-interval')">
+          <ScheduleIntervalField v-model="cron" test-id-prefix="bundle-suite-schedule" />
         </Form.Item>
-        <Form.Item v-if="scheduled" :label="t('quality.testSuites.frequency')">
-          <Space wrap>
-            <Button v-for="item in (['hourly', 'daily', 'weekly', 'monthly', 'custom'] as const)" :key="item" :type="frequency === item ? 'primary' : 'default'" :data-testid="`bundle-suite-freq-${item}`" @click="frequency = item">
-              {{ t(`quality.testSuites.freq.${item}`) }}
-            </Button>
-          </Space>
-          <Input v-if="frequency === 'custom'" v-model:value="customCron" style="margin-top: 8px" data-testid="bundle-suite-cron" />
-        </Form.Item>
-        <Typography.Paragraph v-if="cronSummary" data-testid="bundle-suite-cron-summary">{{ t('quality.testSuites.cronSummary', { summary: cronSummary }) }}</Typography.Paragraph>
-        <Form.Item :label="t('quality.testSuites.debugLog')">
+        <Form.Item>
           <Switch v-model:checked="enableDebugLog" data-testid="bundle-suite-debug" />
+          {{ t('label.enable-debug-log') }}
         </Form.Item>
-        <Form.Item :label="t('quality.testSuites.raiseOnError')">
+        <Form.Item>
           <Switch v-model:checked="raiseOnError" data-testid="bundle-suite-raise" />
+          {{ t('label.raise-on-error') }}
         </Form.Item>
       </template>
     </Form>
     <template #footer>
       <Space style="display: flex; justify-content: flex-end; width: 100%">
         <Button data-testid="bundle-suite-cancel" @click="close">{{ t('label.cancel') }}</Button>
-        <Button type="primary" :loading="saving" data-testid="bundle-suite-submit" @click="onSubmit">{{ t('crud.create') }}</Button>
+        <Button type="primary" :loading="saving" data-testid="bundle-suite-submit" @click="onSubmit">{{ t('label.create') }}</Button>
       </Space>
     </template>
   </Drawer>

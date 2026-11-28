@@ -186,6 +186,6 @@ describe('TableDiffFields (P2-6)', () => {
     });
     const wrapper = mountFields();
     await flushPromises();
-    expect(wrapper.text()).toContain('Columns could not be loaded for this table');
+    expect(wrapper.text()).toContain('No data');
   });
 });

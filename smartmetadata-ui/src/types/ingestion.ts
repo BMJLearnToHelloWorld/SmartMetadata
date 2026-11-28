@@ -997,6 +997,8 @@ export interface AirflowConfig {
    * saved value via the JSON Patch.
    */
   startDate?: string;
+  /** Official airflowConfig.workflowTimeout (seconds). */
+  workflowTimeout?: number;
 }
 
 export interface IngestionPipeline {

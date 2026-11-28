@@ -37,13 +37,8 @@ const errorMessage = ref('');
 const suite = ref<TestSuite | null>(null);
 // The add/edit ingestion routes redirect here with ?tab=pipeline; a
 // plain landing stays on the overview.
-const activeTab = ref(
-  route.query.tab === 'pipeline' ||
-    route.query.tab === 'tests' ||
-    route.query.tab === 'overview'
-    ? String(route.query.tab)
-    : 'overview',
-);
+// Official TestSuiteDetailsPage tabs: TEST_CASES, PIPELINE — no OVERVIEW (t418u).
+const activeTab = ref(route.query.tab === 'pipeline' ? 'pipeline' : 'test-cases');
 const editOpen = ref(false);
 const saving = ref(false);
 // The add/edit pipeline drawer (P-22): mounted once, reset on every
@@ -292,22 +287,10 @@ onMounted(() => {
         {{ t('label.add-entity', { entity: t('label.test-case-plural') }) }}
       </Button>
     </template>
-    <template #overview>
-      <Descriptions v-if="suite" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('label.name')">{{ suite.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('label.fully-qualified-name')">{{ suite.fullyQualifiedName }}</Descriptions.Item>
+    <template #meta>
+      <Descriptions v-if="suite" bordered :column="2" size="small" data-testid="test-suite-header-meta">
         <Descriptions.Item :label="t('label.type')">
           {{ suite.basic ? t('label.table-suite-plural') : t('label.bundle-suite') }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('label.summary')">
-          {{
-            t('quality.testSuites.summaryValue', {
-              success: suite.summary?.success ?? '—',
-              failed: suite.summary?.failed ?? '—',
-              aborted: suite.summary?.aborted ?? '—',
-              queued: suite.summary?.queued ?? '—',
-            })
-          }}
         </Descriptions.Item>
         <Descriptions.Item :label="t('label.description')">{{ suite.description || '—' }}</Descriptions.Item>
       </Descriptions>
@@ -353,7 +336,7 @@ onMounted(() => {
         </template>
       </SmTable>
     </template>
-    <template #tests>
+    <template #test-cases>
       <SmTable
         row-key="id"
         size="small"
@@ -412,14 +395,13 @@ onMounted(() => {
   </FormModal>
   <FormModal
     :open="addOpen"
-    :title="t('label.add-entity', { entity: t('label.test-case-plural') })"
-    :ok-text="t('label.add-entity', { entity: t('label.test-case-plural') })"
+    :title="t('label.add-test-cases-to-bundle-suite')"
+    :ok-text="t('label.add')"
     :cancel-text="t('label.cancel')"
     :confirm-loading="adding"
     @ok="onAddTests"
     @cancel="addOpen = false"
   >
-    <p>{{ t('quality.testSuites.addTestsLead') }}</p>
     <Form layout="vertical">
       <Form.Item :label="t('label.test-case-plural')">
         <Select

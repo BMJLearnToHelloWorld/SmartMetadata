@@ -83,6 +83,7 @@ import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import AssetDataObservabilityTab from '@/components/quality/AssetDataObservabilityTab.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import AssetContractTab from '@/components/contract/AssetContractTab.vue';
 import { requiredField } from '@/features/crud/formRules';
 import TableQueries from '@/features/queries/TableQueries.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
@@ -2530,7 +2531,11 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('contract')" />
+            <AssetContractTab
+              :entity-id="asset.id"
+              :entity-type="entityType"
+              :entity-name="asset.name"
+            />
           </template>
       </template>
       <template v-if="asset" #config>

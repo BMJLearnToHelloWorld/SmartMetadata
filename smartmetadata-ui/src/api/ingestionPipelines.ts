@@ -390,6 +390,22 @@ function mapPipelineServiceClientResponse(raw: unknown): PipelineServiceClientRe
  * with the DEPLOY operation. Returns the client response verbatim — a
  * 200 with reason "Pipeline Client Disabled" is not a deploy.
  */
+
+/**
+ * Official runIngestionPipelineForEntity (rest/ingestionPipelineAPI.ts):
+ * POST /v1/services/ingestionPipelines/run with entityLink + pipelineType.
+ */
+export async function runIngestionPipelineForEntity(body: {
+  entityLink: string;
+  pipelineType: string;
+}): Promise<PipelineServiceClientResponse> {
+  const raw = await apiRequest<unknown>('/v1/services/ingestionPipelines/run', {
+    method: 'POST',
+    json: body,
+  });
+  return mapPipelineServiceClientResponse(raw);
+}
+
 export async function deployIngestionPipeline(id: string): Promise<PipelineServiceClientResponse> {
   const raw = await apiRequest<unknown>(
     `/v1/services/ingestionPipelines/deploy/${encodeURIComponent(id)}`,

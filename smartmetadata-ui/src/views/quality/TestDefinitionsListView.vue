@@ -67,7 +67,7 @@ const togglingId = ref<string | undefined>();
 const entityTypeOptions = computed(() =>
   TEST_LIBRARY_ENTITY_TYPES.map((key) => ({
     key,
-    label: t(`quality.testDefinitions.entityTypeOption.${key}`),
+    label: key,
   })),
 );
 const platformOptions = computed(() =>
@@ -393,13 +393,13 @@ onMounted(() => {
     <div class="test-library-page__pager" data-testid="test-library-pagination">
       <Button type="link" :disabled="!hasPrev" data-testid="test-library-prev" @click="onPrev">
         <LeftOutlined />
-        {{ t('quality.testDefinitions.prevPage') }}
+        {{ t('label.previous') }}
       </Button>
       <span data-testid="test-library-page-indicator">
-        {{ t('quality.testDefinitions.pageOf', { current: currentPage, total: totalPages }) }}
+        {{ t('label.page') + ' ' + currentPage + ' ' + t('label.of') + ' ' + totalPages }}
       </span>
       <Button type="link" :disabled="!hasNext" data-testid="test-library-next" @click="onNext">
-        {{ t('quality.testDefinitions.nextPage') }}
+        {{ t('label.next') }}
         <RightOutlined />
       </Button>
       <select
@@ -408,7 +408,7 @@ onMounted(() => {
         @change="onPageSizeChange(Number(($event.target as HTMLSelectElement).value))"
       >
         <option v-for="size in TEST_LIBRARY_PAGE_SIZE_OPTIONS" :key="size" :value="size">
-          {{ t('quality.testDefinitions.perPage', { size }) }}
+          {{ size + ' / ' + t('label.page') }}
         </option>
       </select>
     </div>

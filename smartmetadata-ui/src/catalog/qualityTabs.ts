@@ -39,30 +39,19 @@ export const QUALITY_PAGE_TABS: Record<QualityPage, QualityTab[]> = {
     { key: 'test-cases', labelKey: 'label.test-case-plural', supported: true },
     { key: 'test-suites', labelKey: 'label.test-suite-plural', supported: true },
   ],
+  // Official TestCasePageTabs (TestSuite.enum.ts): TEST_CASE_RESULTS,
+  // DIMENSIONALITY, ISSUES, SQL_QUERY — no OVERVIEW. The SQL tab is shown
+  // in the view only when inspectionQuery is present (useTestCaseDetailPage).
   testCase: [
-    { key: 'overview', labelKey: 'crud.overview', supported: true },
-    { key: 'results', labelKey: 'label.test-case-result', supported: true },
+    { key: 'test-case-results', labelKey: 'label.test-case-result', supported: true },
+    { key: 'dimensionality', labelKey: 'label.dimensionality', supported: true },
     { key: 'issues', labelKey: 'label.incident', supported: true },
-    {
-      key: 'dimensionality',
-      labelKey: 'label.dimensionality',
-      supported: true,
-    },
-    {
-      key: 'sql-query',
-      labelKey: 'label.sql-uppercase-query',
-      supported: false,
-      residualReason: 'quality.testCases.residualSqlQuery',
-    },
+    { key: 'sql-query', labelKey: 'label.sql-uppercase-query', supported: true },
   ],
+  // Official TestSuiteDetailsPage tabs: EntityTabs.TEST_CASES, EntityTabs.PIPELINE — no OVERVIEW.
   testSuite: [
-    { key: 'overview', labelKey: 'crud.overview', supported: true },
-    { key: 'tests', labelKey: 'label.test-case-plural', supported: true },
-    {
-      key: 'pipeline',
-      labelKey: 'label.pipeline-plural',
-      supported: true,
-    },
+    { key: 'test-cases', labelKey: 'label.test-case-plural', supported: true },
+    { key: 'pipeline', labelKey: 'label.pipeline-plural', supported: true },
   ],
   incident: [
     { key: 'overview', labelKey: 'crud.overview', supported: true },

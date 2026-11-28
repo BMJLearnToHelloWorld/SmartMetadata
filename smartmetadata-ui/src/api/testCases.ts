@@ -149,6 +149,7 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     dimensionColumns: Array.isArray(raw.dimensionColumns)
       ? raw.dimensionColumns.filter((item): item is string => typeof item === 'string')
       : undefined,
+    inspectionQuery: asString(raw.inspectionQuery) || undefined,
     tags: Array.isArray(raw.tags)
       ? raw.tags.flatMap((item) => {
           const rec = asRecord(item);

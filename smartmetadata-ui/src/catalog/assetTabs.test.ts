@@ -29,6 +29,7 @@ describe('assetTabKeys', () => {
       'executions',
       'lineage',
       'activity',
+      'contract',
       'customProperties',
     ]);
     expect(assetTabKeys('mlmodel')).toContain('features');
@@ -46,5 +47,8 @@ describe('assetTabKeys', () => {
     // quality lives under Data Observability / Profiler.
     expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
     expect(assetTabKeys('query')).toEqual(['overview', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('directory')).toEqual(['children', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('spreadsheet')).toEqual(['worksheets', 'lineage', 'activity', 'customProperties']);
+    expect(assetTabKeys('worksheet')).toEqual(['schema', 'lineage', 'activity', 'customProperties']);
   });
 });

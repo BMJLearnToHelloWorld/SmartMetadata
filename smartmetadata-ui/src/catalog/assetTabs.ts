@@ -13,20 +13,26 @@ export type AssetTabKey =
   | 'overview'
   | 'schema'
   | 'charts'
+  | 'children'
+  | 'worksheets'
   | 'features'
   | 'tasks'
   | 'executions'
   | 'code'
   | 'lineage'
   | 'activity'
-  | 'customProperties';
+  | 'customProperties'
+  | 'contract';
 
 const SHARED_TAIL: AssetTabKey[] = ['lineage', 'activity', 'customProperties'];
 
 export function assetTabKeys(entityType: string): AssetTabKey[] {
-  // Official Pipeline TabsIds (PipelineClassBase.getPipelineDetailPageTabsIds)
-  // have no OVERVIEW. Do not invent a product fallback overview tab.
-  const keys: AssetTabKey[] = entityType === 'pipeline' ? [] : ['overview'];
+  // Official TabsIds with no OVERVIEW: Pipeline, Directory, Spreadsheet,
+  // Worksheet (t418u). Chart keeps overview because it aliases official DETAILS.
+  // File keeps official OVERVIEW. Query stays on overview until official TabsIds
+  // are evidenced (QueryClassBase has none).
+  const noOverviewFallback = new Set(['pipeline', 'directory', 'spreadsheet', 'worksheet']);
+  const keys: AssetTabKey[] = noOverviewFallback.has(entityType) ? [] : ['overview'];
   switch (entityType) {
     case 'table':
     case 'topic':
@@ -44,6 +50,15 @@ export function assetTabKeys(entityType: string): AssetTabKey[] {
     case 'pipeline':
       keys.push('tasks', 'executions');
       break;
+    case 'directory':
+      keys.push('children');
+      break;
+    case 'spreadsheet':
+      keys.push('worksheets');
+      break;
+    case 'worksheet':
+      keys.push('schema');
+      break;
     case 'storedProcedure':
     case 'metric':
       keys.push('code');
@@ -52,5 +67,13 @@ export function assetTabKeys(entityType: string): AssetTabKey[] {
       break;
   }
   keys.push(...SHARED_TAIL);
+  if (entityType === 'pipeline') {
+    const customIdx = keys.indexOf('customProperties');
+    if (customIdx >= 0) {
+      keys.splice(customIdx, 0, 'contract');
+    } else {
+      keys.push('contract');
+    }
+  }
   return keys;
 }

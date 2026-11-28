@@ -141,6 +141,8 @@ export interface TestCase {
   topDimensions?: number;
   /** Columns to group results by dimensions (testCase.json dimensionColumns). */
   dimensionColumns?: string[];
+  /** Official testCase.inspectionQuery; gates the SQL query tab. */
+  inspectionQuery?: string;
 }
 
 /**

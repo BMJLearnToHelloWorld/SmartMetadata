@@ -185,7 +185,7 @@ async function onSave(): Promise<void> {
     return;
   }
   if (!form.selectAll && form.selectedCases.length === 0) {
-    casesError.value = t('quality.testSuites.testCasesRequired');
+    casesError.value = t('label.field-required', { field: t('label.test-case') });
     return;
   }
   const cronErrorKey = await cronValidator(form.cron ?? '');
@@ -281,17 +281,17 @@ function handleClose(): void {
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.debugLog" data-testid="test-suite-ingestion-debug">
-          {{ t('quality.testSuites.enableDebugLog') }}
+          {{ t('label.enable-debug-log') }}
         </Checkbox>
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.raiseOnError" data-testid="test-suite-ingestion-raise">
-          {{ t('quality.testSuites.raiseOnError') }}
+          {{ t('label.raise-on-error') }}
         </Checkbox>
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.selectAll" data-testid="test-suite-ingestion-select-all">
-          {{ t('quality.testSuites.selectAllTestCases') }}
+          {{ t('label.select-all-entity', { entity: t('label.test-case-plural') }) }}
         </Checkbox>
       </Form.Item>
       <Form.Item
@@ -315,7 +315,7 @@ function handleClose(): void {
       </Form.Item>
       <div style="display: flex; gap: 8px; margin-top: 16px">
         <Button type="primary" data-testid="test-suite-ingestion-save" :loading="saving" @click="onSave">
-          {{ isEdit ? t('crud.save') : t('crud.create') }}
+          {{ isEdit ? t('label.save') : t('label.create') }}
         </Button>
         <Button data-testid="test-suite-ingestion-cancel" @click="handleClose">
           {{ t('label.cancel') }}

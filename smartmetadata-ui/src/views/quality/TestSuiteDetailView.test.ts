@@ -50,7 +50,7 @@ describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', ()
     document.body.innerHTML = '';
   });
 
-  it('renders overview and tests tabs plus a wired pipeline tab with an add-ingestion entry', async () => {
+  it('renders official test-cases and pipeline tabs with an add-ingestion entry', async () => {
     const wrapper = await mountView();
     // Ant Tabs does not forward TabPane testids to the DOM; the force-rendered
     // slot contents are the observable surface.

@@ -32,7 +32,7 @@ const TABLE_TABS: EntityDetailTabDef[] = [
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
   { key: 'dbt', labelKey: 'dbt', slot: 'residual', residual: 'asset.tabResidual.dbt' },
   { key: 'view_definition', labelKey: 'viewDefinition', slot: 'residual', residual: 'asset.tabResidual.viewDefinition' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -42,7 +42,7 @@ const TOPIC_TABS: EntityDetailTabDef[] = [
   { key: 'sample_data', labelKey: 'sampleData', slot: 'sample' },
   { key: 'config', labelKey: 'config', slot: 'residual', residual: 'asset.tabResidual.config' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -50,7 +50,7 @@ const DASHBOARD_TABS: EntityDetailTabDef[] = [
   { key: 'details', labelKey: 'details', slot: 'details' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -58,7 +58,7 @@ const DASHBOARD_TABS: EntityDetailTabDef[] = [
 const DATABASE_TABS: EntityDetailTabDef[] = [
   { key: 'schemas', labelKey: 'schemas', slot: 'related' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -67,7 +67,7 @@ const DATABASE_SCHEMA_TABS: EntityDetailTabDef[] = [
   { key: 'table', labelKey: 'table', slot: 'related' },
   { key: 'stored_procedure', labelKey: 'storedProcedure', slot: 'residual', residual: 'asset.tabResidual.storedProcedure' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -78,7 +78,7 @@ const CONTAINER_TABS: EntityDetailTabDef[] = [
   { key: 'sample_data', labelKey: 'sampleData', slot: 'residual', residual: 'asset.tabResidual.sampleData' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -87,7 +87,7 @@ const DATA_MODEL_TABS: EntityDetailTabDef[] = [
   { key: 'model', labelKey: 'model', slot: 'schema' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -97,7 +97,7 @@ const MLMODEL_TABS: EntityDetailTabDef[] = [
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'details', labelKey: 'details', slot: 'details' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -107,7 +107,7 @@ const SEARCH_INDEX_TABS: EntityDetailTabDef[] = [
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'sample_data', labelKey: 'sampleData', slot: 'residual', residual: 'asset.tabResidual.sampleData' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'search_index_settings', labelKey: 'searchIndexSettings', slot: 'residual', residual: 'asset.tabResidual.searchIndexSettings' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
@@ -117,7 +117,7 @@ const STORED_PROCEDURE_TABS: EntityDetailTabDef[] = [
   { key: 'code', labelKey: 'code', slot: 'code' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -169,7 +169,7 @@ const DIRECTORY_TABS: EntityDetailTabDef[] = [
   { key: 'children', labelKey: 'children', slot: 'children' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -178,7 +178,7 @@ const FILE_TABS: EntityDetailTabDef[] = [
   { key: 'schema', labelKey: 'schema', slot: 'schema' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -186,7 +186,7 @@ const SPREADSHEET_TABS: EntityDetailTabDef[] = [
   { key: 'worksheets', labelKey: 'worksheets', slot: 'worksheets' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -194,7 +194,7 @@ const WORKSHEET_TABS: EntityDetailTabDef[] = [
   { key: 'schema', labelKey: 'schema', slot: 'schema' },
   { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
   { key: 'lineage', labelKey: 'lineage', slot: 'lineage' },
-  { key: 'contract', labelKey: 'contract', slot: 'residual', residual: 'asset.tabResidual.contract' },
+  { key: 'contract', labelKey: 'contract', slot: 'contract' },
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
@@ -255,13 +255,6 @@ export function preservedTabKeys(entityType: string, hasSplitDefs: boolean): str
     return entityType === 'apiCollection' || entityType === 'apiEndpoint' ? ['overview'] : [];
   }
   const keys: string[] = [];
-  if (
-    entityType === 'directory' ||
-    entityType === 'spreadsheet' ||
-    entityType === 'worksheet'
-  ) {
-    keys.push('overview');
-  }
   return keys;
 }
 

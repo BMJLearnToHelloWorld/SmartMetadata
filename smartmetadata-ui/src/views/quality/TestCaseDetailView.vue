@@ -7,10 +7,12 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { useRouter } from 'vue-router';
-import {Button, Descriptions, Form, Input, message} from 'ant-design-vue';
+import { Button, Descriptions, Form, Input, Tooltip, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, getTestCaseByName, updateTestCase } from '@/api/testCases';
+import { listIngestionPipelines, runIngestionPipelineForEntity } from '@/api/ingestionPipelines';
+import type { IngestionPipeline } from '@/types/ingestion';
 import { getTestDefinition } from '@/api/testDefinitions';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
@@ -25,7 +27,7 @@ import DimensionalityPanel from '@/features/quality/DimensionalityPanel.vue';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import { parseEntityLink } from '@/quality/entityLink';
+import { parseEntityLink, toEntityLink } from '@/quality/entityLink';
 import TableDiffFields from '@/features/quality/TableDiffFields.vue';
 import { TABLE2_PARAM, isTableDiffDefinition } from '@/features/quality/tableDiffParams';
 import type { TestCase, TestCaseResult, TestDefinition, TestIncident } from '@/types/quality';
@@ -40,11 +42,11 @@ const editDefinition = ref<TestDefinition | null>(null);
 const results = ref<TestCaseResult[]>([]);
 const issues = ref<TestIncident[]>([]);
 const issuesError = ref('');
-// The /test-case/:fqn/:tab alias carries the tab in the route; an unknown
-// tab falls back to 'overview'. The supported flag on qualityTabs.ts is
-// deliberately untouched (condition 16(ii) — P4 owns the dimensionality fix).
+// Official TestCasePageTabs default is TEST_CASE_RESULTS. Unknown tabs
+// land there; official has no overview fallback (t418u).
+const DEFAULT_TEST_CASE_TAB = 'test-case-results';
 const tabKeys = new Set(QUALITY_PAGE_TABS.testCase.map((tab) => tab.key));
-const activeTab = ref(props.tab !== undefined && tabKeys.has(props.tab) ? props.tab : 'overview');
+const activeTab = ref(props.tab !== undefined && tabKeys.has(props.tab) ? props.tab : DEFAULT_TEST_CASE_TAB);
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -77,12 +79,114 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
 ]);
 
 const tabs = computed<EntityDetailTab[]>(() =>
-  QUALITY_PAGE_TABS.testCase.map((tab) => ({
-    key: tab.key,
-    label: t(tab.labelKey),
-    testId: `test-case-tab-${tab.key}`,
-  })),
+  QUALITY_PAGE_TABS.testCase
+    .filter((tab) => tab.key !== 'sql-query' || Boolean(testCase.value?.inspectionQuery))
+    .map((tab) => ({
+      key: tab.key,
+      label: t(tab.labelKey),
+      testId: `test-case-tab-${tab.key}`,
+    })),
 );
+
+const latestIncident = computed(() => issues.value[0]);
+const assetEntity = computed(() =>
+  testCase.value?.entityLink ? parseEntityLink(testCase.value.entityLink) : null,
+);
+
+const suitePipelines = ref<IngestionPipeline[]>([]);
+const pipelinesLoadError = ref(false);
+const isTriggeringRun = ref(false);
+
+function getRunnablePipeline(pipelines: IngestionPipeline[]): IngestionPipeline | undefined {
+  return [...pipelines]
+    .filter((pipeline) => pipeline.enabled && pipeline.deployed)
+    .sort((left, right) => String(left.id).localeCompare(String(right.id)))[0];
+}
+
+function getActiveRunState(pipeline: IngestionPipeline | undefined): string | undefined {
+  if (!pipeline) {
+    return undefined;
+  }
+  const runningTimeoutMs = pipeline.airflowConfig?.workflowTimeout
+    ? pipeline.airflowConfig.workflowTimeout * 1000
+    : 60 * 60 * 1000;
+  const statuses = pipeline.pipelineStatuses ?? [];
+  const now = Date.now();
+  const isRunning = statuses.some((status) => {
+    const timestamp = status.timestamp;
+    return (
+      status.pipelineState === 'Running' &&
+      timestamp !== undefined &&
+      (timestamp < 1e12 ? timestamp * 1000 : timestamp) >= now - runningTimeoutMs
+    );
+  });
+  if (isRunning) {
+    return 'Running';
+  }
+  return statuses.some((status) => status.pipelineState === 'Queued') ? 'Queued' : undefined;
+}
+
+const runnablePipeline = computed(() => getRunnablePipeline(suitePipelines.value));
+const activeRunState = computed(() => getActiveRunState(runnablePipeline.value));
+const runInProgress = computed(() => Boolean(activeRunState.value));
+const runButtonLabelKey = computed(() =>
+  activeRunState.value === 'Queued'
+    ? 'label.queued'
+    : activeRunState.value === 'Running'
+      ? 'label.running'
+      : 'label.run-now',
+);
+const runDisabledReasonKey = computed(() => {
+  if (pipelinesLoadError.value) {
+    return 'message.pipelines-could-not-be-loaded';
+  }
+  if (suitePipelines.value.length === 0) {
+    return 'message.no-pipeline-linked';
+  }
+  return runnablePipeline.value ? undefined : 'message.pipeline-not-deployed';
+});
+const canRun = computed(() => Boolean(testCase.value) && !testCase.value?.deleted && !isTriggeringRun.value);
+
+async function loadSuitePipelines(testSuiteFqn?: string): Promise<void> {
+  if (!testSuiteFqn) {
+    suitePipelines.value = [];
+    pipelinesLoadError.value = false;
+    return;
+  }
+  try {
+    const page = await listIngestionPipelines({
+      testSuite: testSuiteFqn,
+      pipelineType: 'TestSuite',
+      fields: 'pipelineStatuses',
+    });
+    suitePipelines.value = page.data;
+    pipelinesLoadError.value = false;
+  } catch {
+    suitePipelines.value = [];
+    pipelinesLoadError.value = true;
+  }
+}
+
+async function runTestCase(): Promise<void> {
+  const fqn = testCase.value?.fullyQualifiedName;
+  if (!fqn || isTriggeringRun.value) {
+    return;
+  }
+  isTriggeringRun.value = true;
+  try {
+    await runIngestionPipelineForEntity({
+      entityLink: toEntityLink('testCase', fqn),
+      pipelineType: 'TestSuite',
+    });
+    message.success(t('message.test-case-run-queued'));
+    await loadSuitePipelines(testCase.value?.testSuite?.fullyQualifiedName);
+    await load();
+  } catch (error) {
+    message.error(getErrorText(error, t('server.unexpected-error')));
+  } finally {
+    isTriggeringRun.value = false;
+  }
+}
 
 const issueColumns = computed<EntityListColumn[]>(() => [
   { title: t('label.status'), dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
@@ -94,9 +198,9 @@ const resultColumns = computed<EntityListColumn[]>(() => [
   { title: t('label.status'), dataIndex: 'testCaseStatus', key: 'testCaseStatus', width: 120 },
   { title: t('label.last-run'), key: 'timestamp', width: 200 },
   { title: t('label.test-case-result'), dataIndex: 'result', key: 'result' },
-  // 只呈现运行实际算出的命名值（removedRows / addedRows / diffCount 等）；
-  // 未算出的字段不占位、不补假值。ADR:2026-11-08-data-diff-p2-5-p2-6-bindings-and-form
-  { title: t('quality.testCases.diffValues'), key: 'values', width: 220 },
+  // Official result values have no product "diff values" heading; keep the
+  // measured-value cells the API returned (no invented placeholder values).
+  { title: '', key: 'values', width: 220 },
 ]);
 
 function formatTs(value?: number): string {
@@ -142,9 +246,11 @@ async function load(): Promise<void> {
         issues.value = [];
         issuesError.value = t('server.entity-fetch-error', { entity: t('label.incident') });
       }
+      await loadSuitePipelines(loaded.testSuite?.fullyQualifiedName);
     } else {
       results.value = [];
       issues.value = [];
+      await loadSuitePipelines(undefined);
     }
   } catch (error) {
     testCase.value = null;
@@ -211,11 +317,11 @@ function openEdit(): void {
 
 async function onSave(): Promise<void> {
   if (!testCase.value?.entityLink || !testCase.value.testDefinition) {
-    message.error(t('quality.testCases.cannotUpdate'));
+    message.error(t('message.field-text-is-required', { field: t('label.test-case') }));
     return;
   }
   if (isTableDiff.value && !(editForm.parameterValues[TABLE2_PARAM] ?? '').trim()) {
-    message.error(t('quality.testCases.tableDiffTable2Required'));
+    message.error(t('message.field-text-is-required', { field: t('label.table') }));
     return;
   }
   saving.value = true;
@@ -250,24 +356,6 @@ async function onSave(): Promise<void> {
   }
 }
 
-function openAsset(): void {
-  const parsed = testCase.value?.entityLink ? parseEntityLink(testCase.value.entityLink) : null;
-  const entityType = parsed?.entityType || 'table';
-  const fqn = parsed?.fqn || testCase.value?.entityFQN;
-  if (!fqn) {
-    return;
-  }
-  void router.push({ name: 'asset', params: { entityType, fqn } });
-}
-
-function openDefinition(): void {
-  const id = testCase.value?.testDefinition?.id;
-  if (!id) {
-    return;
-  }
-  void router.push({ name: 'quality-test-definition', params: { id } });
-}
-
 watch(
   () => props.id,
   () => {
@@ -278,7 +366,7 @@ watch(
 watch(
   () => props.tab,
   (tab) => {
-    activeTab.value = tab !== undefined && tabKeys.has(tab) ? tab : 'overview';
+    activeTab.value = tab !== undefined && tabKeys.has(tab) ? tab : DEFAULT_TEST_CASE_TAB;
   },
 );
 
@@ -301,37 +389,71 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('label.edit') }}</Button>
-      <Button data-testid="test-case-versions" :disabled="!testCase" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('label.delete') }}</Button>
-      <Button :disabled="!testCase?.entityLink && !testCase?.entityFQN" @click="openAsset">
-        {{ t('quality.testCases.openAsset') }}
-      </Button>
-      <Button
-        data-testid="open-test-definition"
-        :disabled="!testCase?.testDefinition?.id"
-        @click="openDefinition"
+      <Tooltip
+        v-if="runDisabledReasonKey && !runInProgress"
+        :title="t(runDisabledReasonKey)"
       >
-        {{ t('quality.testCases.openDefinition') }}
+        <Button
+          data-testid="run-test-case-button"
+          :disabled="!canRun || Boolean(runDisabledReasonKey)"
+          :loading="isTriggeringRun"
+          @click="runTestCase"
+        >
+          {{ t(runButtonLabelKey) }}
+        </Button>
+      </Tooltip>
+      <Tooltip
+        v-else-if="runInProgress"
+        :title="t('message.test-case-run-already-in-progress')"
+      >
+        <Button
+          data-testid="run-test-case-button"
+          :disabled="!canRun"
+          :loading="isTriggeringRun"
+          @click="runTestCase"
+        >
+          {{ t(runButtonLabelKey) }}
+        </Button>
+      </Tooltip>
+      <Button
+        v-else
+        data-testid="run-test-case-button"
+        :disabled="!canRun"
+        :loading="isTriggeringRun"
+        @click="runTestCase"
+      >
+        {{ t(runButtonLabelKey) }}
       </Button>
+      <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('label.edit') }}</Button>
+      <Button data-testid="test-case-versions" :disabled="!testCase" @click="onOpenVersions">{{ t('label.version-plural-history') }}</Button>
+      <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('label.delete') }}</Button>
     </template>
-    <template #overview>
-      <Descriptions v-if="testCase" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('label.name')">{{ testCase.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('label.fully-qualified-name')">{{ testCase.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('quality.testCases.entityLink')">
-          {{ testCase.entityLink || '—' }}
+    <template #meta>
+      <Descriptions v-if="testCase" bordered :column="3" size="small" data-testid="test-case-header-meta">
+        <Descriptions.Item :label="t('label.incident-status')">
+          {{ latestIncident?.testCaseResolutionStatusType || t('label.no-entity', { entity: t('label.incident') }) }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('label.status')">
-          {{ testCase.testCaseResult?.testCaseStatus || testCase.testCaseStatus || '—' }}
+        <Descriptions.Item :label="t('label.assignee')">
+          {{ latestIncident?.testCaseResolutionStatusDetails?.assignee?.displayName || latestIncident?.testCaseResolutionStatusDetails?.assignee?.name || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('label.test-case-result')">
-          {{ testCase.testCaseResult?.result || '—' }}
+        <Descriptions.Item :label="t('label.severity')">
+          {{ latestIncident?.severity || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item :label="t('label.description')">{{ testCase.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('label.table')">
+          {{ assetEntity?.fqn || testCase.entityFQN || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('label.dimension')">
+          {{ testCase.dimensionColumns?.join(', ') || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('label.column')">
+          {{ assetEntity?.column || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('label.test-type')">
+          {{ testCase.testDefinition?.displayName || testCase.testDefinition?.name || '—' }}
+        </Descriptions.Item>
       </Descriptions>
     </template>
-    <template #results>
+    <template #test-case-results>
       <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>
       <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
       <SmTable
@@ -418,7 +540,7 @@ onMounted(() => {
       />
     </template>
     <template #sql-query>
-      <SmState state="empty" test-id="test-case-sql-query-residual" :empty-text="t('label.sql-uppercase-query')" />
+      <pre data-testid="test-case-sql-query" class="entity-detail__sql-query">{{ testCase?.inspectionQuery }}</pre>
     </template>
   </EntityDetailShell>
   <FormModal
@@ -454,5 +576,10 @@ onMounted(() => {
 .entity-detail__tab-lead {
   color: var(--sm-text-secondary);
   margin-bottom: 12px;
+}
+.entity-detail__sql-query {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--sm-font-mono, ui-monospace, monospace);
 }
 </style>

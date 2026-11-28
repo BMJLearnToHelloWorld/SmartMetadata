@@ -110,10 +110,10 @@ describe('TestCaseDetailView results chart', () => {
     });
     expect(wrapper.find('[data-testid="test-case-issues-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-case-issue-inc1"]').exists()).toBe(true);
-    // A15: the dimensionality tab is wired now — the panel renders instead
-    // of the residual, while the sql-query tab stays residual.
+    // Official SQL tab is shown only when inspectionQuery is present.
     expect(wrapper.find('[data-testid="test-case-dimensionality"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="test-case-sql-query-residual"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-sql-query-residual"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="test-case-sql-query"]').exists()).toBe(false);
   });
 
   it('loads by FQN name when the id is not a UUID (F-D-4 alias)', async () => {

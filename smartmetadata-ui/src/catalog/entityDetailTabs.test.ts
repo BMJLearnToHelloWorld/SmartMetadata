@@ -40,7 +40,8 @@ describe('entityDetailTabs', () => {
 
   it('marks tabs without a product API as residual with a reason key', () => {
     expect(entityDetailTabDef('topic', 'config')?.residual).toBe('asset.tabResidual.config');
-    expect(entityDetailTabDef('dashboard', 'contract')?.residual).toBe('asset.tabResidual.contract');
+    expect(entityDetailTabDef('dashboard', 'contract')?.residual).toBeUndefined();
+    expect(entityDetailTabDef('dashboard', 'contract')?.slot).toBe('contract');
     expect(entityDetailTabDef('table', 'schema')?.residual).toBeUndefined();
   });
 
@@ -197,7 +198,8 @@ describe('entityDetailTabs', () => {
       expect(lineage?.slot).toBe('lineage');
       expect(lineage?.labelKey).toBe('lineage');
     }
-    expect(entityDetailTabDef('directory', 'contract')?.residual).toBe('asset.tabResidual.contract');
+    expect(entityDetailTabDef('directory', 'contract')?.residual).toBeUndefined();
+    expect(entityDetailTabDef('directory', 'contract')?.slot).toBe('contract');
   });
 });
 
@@ -251,11 +253,11 @@ describe('preservedTabKeys (M-1)', () => {
   // D-TAB-2 (host lane): the drive fallback branches are retained policy
   // for unsplit states — they no longer fire through the view, so they
   // are locked by direct calls with hasSplitDefs false.
-  it('preserves overview only for unsplit drive fallbacks that official TabsIds do not name', () => {
-    expect(preservedTabKeys('directory', false)).toEqual(['overview']);
+  it('does not preserve a product-invented overview for unsplit drive fallbacks whose official TabsIds have no OVERVIEW', () => {
+    expect(preservedTabKeys('directory', false)).toEqual([]);
     expect(preservedTabKeys('file', false)).toEqual([]);
-    expect(preservedTabKeys('spreadsheet', false)).toEqual(['overview']);
-    expect(preservedTabKeys('worksheet', false)).toEqual(['overview']);
+    expect(preservedTabKeys('spreadsheet', false)).toEqual([]);
+    expect(preservedTabKeys('worksheet', false)).toEqual([]);
   });
 
   it('preserves nothing for query and unknown fallback types', () => {

@@ -34,7 +34,10 @@ export interface DataContractLatestResult {
 export interface DataContract {
   id: string;
   name: string;
+  displayName?: string;
+  description?: string;
   fullyQualifiedName?: string;
+  entityStatus?: string;
   latestResult?: DataContractLatestResult;
 }
 
@@ -80,7 +83,10 @@ export function mapDataContract(raw: unknown): DataContract | null {
   return {
     id,
     name,
+    displayName: asString(rec.displayName) || undefined,
+    description: asString(rec.description) || undefined,
     fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
+    entityStatus: asString(rec.entityStatus) || undefined,
     latestResult: mapLatestResult(rec.latestResult),
   };
 }
@@ -114,4 +120,29 @@ export async function getContractByEntityId(
     }
     throw error;
   }
+}
+
+export interface CreateDataContractRequest {
+  name: string;
+  displayName?: string;
+  description?: string;
+  entity: { id: string; type: string };
+  entityStatus?: string;
+}
+
+/** Official createContract (rest/contractAPI.ts): POST /v1/dataContracts. */
+export async function createContract(body: CreateDataContractRequest): Promise<DataContract> {
+  const raw = await apiRequest<unknown>('/v1/dataContracts', { method: 'POST', json: body });
+  const mapped = mapDataContract(raw);
+  if (!mapped) {
+    throw new Error('Create data contract succeeded but the response had no contract');
+  }
+  return mapped;
+}
+
+/** Official deleteContractById: DELETE /v1/dataContracts/{id}?hardDelete=true&recursive=true. */
+export function deleteContractById(id: string): Promise<void> {
+  return apiRequest<void>(`/v1/dataContracts/${encodeURIComponent(id)}?hardDelete=true&recursive=true`, {
+    method: 'DELETE',
+  });
 }
