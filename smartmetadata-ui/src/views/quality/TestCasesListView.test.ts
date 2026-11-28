@@ -14,6 +14,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import IncidentDateRangeFilter from '@/components/quality/IncidentDateRangeFilter.vue';
 import TestCasesListView from './TestCasesListView.vue';
 
 
@@ -360,6 +361,40 @@ describe('TestCasesListView official insight donuts and advanced filters', () =>
     expect(wrapper.find('[data-testid="test-cases-insight-all"]').text()).toContain('66.67%');
     expect(wrapper.find('[data-testid="test-cases-insight-health"]').text()).toContain('41.67%');
     expect(wrapper.find('[data-testid="test-cases-insight-coverage"]').text()).toContain('0.08%');
+    wrapper.unmount();
+  });
+
+  it('embedded tab writes searchValue and lastRunRange to the route (useTestCaseFilters)', async () => {
+    const { wrapper, router } = await mountView({
+      props: { embedded: true, preferSearch: true },
+    });
+    const shell = wrapper.findComponent({ name: 'EntityListShell' });
+    await shell.vm.$emit('update:searchValue', 'orders');
+    await shell.vm.$emit('search');
+    await flushPromises();
+    expect(router.currentRoute.value.query.searchValue).toBe('orders');
+
+    await wrapper.get('[data-testid="test-cases-advanced"]').trigger('click');
+    await flushPromises();
+    const lastRunItem = document.body.querySelector(
+      '[data-testid="test-cases-advanced-lastRunRange"]',
+    ) as HTMLElement | null;
+    expect(lastRunItem).not.toBeNull();
+    lastRunItem?.click();
+    await flushPromises();
+    const dateFilter = wrapper.findComponent(IncidentDateRangeFilter);
+    dateFilter.vm.$emit('apply', {
+      startTs: 100,
+      endTs: 200,
+      key: 'last7days',
+      title: 'Last 7 days',
+    });
+    await flushPromises();
+
+    const query = router.currentRoute.value.query;
+    expect(query['lastRunRange[key]']).toBe('last7days');
+    expect(query['lastRunRange[startTs]']).toBe('100');
+    expect(query.startTs).toBeUndefined();
     wrapper.unmount();
   });
 

@@ -345,6 +345,8 @@ function snapshotRouteFilters(): TestCaseListRouteParams {
     dataProductFqn: dataProductFilter.value || undefined,
     lastRunStartTs: lastRunStartTs.value,
     lastRunEndTs: lastRunEndTs.value,
+    lastRunKey: lastRunKey.value,
+    lastRunTitle: lastRunTitle.value,
   };
 }
 
@@ -400,6 +402,12 @@ function applyRouteParams(params: TestCaseListRouteParams, seedFromProps: boolea
     lastRunEndTs.value = params.lastRunEndTs;
   } else if (seedFromProps && props.endTs !== undefined) {
     lastRunEndTs.value = props.endTs;
+  }
+  if (params.lastRunKey !== undefined) {
+    lastRunKey.value = params.lastRunKey;
+  }
+  if (params.lastRunTitle !== undefined) {
+    lastRunTitle.value = params.lastRunTitle;
   }
 }
 

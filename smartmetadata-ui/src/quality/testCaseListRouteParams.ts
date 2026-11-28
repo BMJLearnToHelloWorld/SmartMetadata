@@ -25,6 +25,9 @@ export interface TestCaseListRouteParams {
   owner?: string;
   lastRunStartTs?: number;
   lastRunEndTs?: number;
+  /** Official useTestCaseFilters URL `lastRunRange.key` (filter bar, not dashboard drill). */
+  lastRunKey?: string;
+  lastRunTitle?: string;
 }
 
 function queryString(value: unknown): string | undefined {
@@ -64,7 +67,12 @@ function parseStatus(value: unknown): string | string[] | undefined {
   return queryString(value);
 }
 
-function parseLastRun(query: LocationQuery): { startTs?: number; endTs?: number } {
+function parseLastRun(query: LocationQuery): {
+  startTs?: number;
+  endTs?: number;
+  key?: string;
+  title?: string;
+} {
   const startDirect = queryNumber(query.startTs);
   const endDirect = queryNumber(query.endTs);
   if (startDirect !== undefined || endDirect !== undefined) {
@@ -76,12 +84,26 @@ function parseLastRun(query: LocationQuery): { startTs?: number; endTs?: number 
     return {
       startTs: queryNumber(rec.startTs),
       endTs: queryNumber(rec.endTs),
+      key: queryString(rec.key),
+      title: queryString(rec.title),
     };
   }
   return {
     startTs: queryNumber(query['lastRunRange[startTs]']),
     endTs: queryNumber(query['lastRunRange[endTs]']),
+    key: queryString(query['lastRunRange[key]']),
+    title: queryString(query['lastRunRange[title]']),
   };
+}
+
+function clearLastRunQueryKeys(next: LocationQueryRaw): void {
+  delete next.startTs;
+  delete next.endTs;
+  delete next.lastRunRange;
+  delete next['lastRunRange[startTs]'];
+  delete next['lastRunRange[endTs]'];
+  delete next['lastRunRange[key]'];
+  delete next['lastRunRange[title]'];
 }
 
 export function parseTestCaseListRouteQuery(query: LocationQuery): TestCaseListRouteParams {
@@ -136,6 +158,12 @@ export function parseTestCaseListRouteQuery(query: LocationQuery): TestCaseListR
   }
   if (lastRun.endTs !== undefined) {
     params.lastRunEndTs = lastRun.endTs;
+  }
+  if (lastRun.key) {
+    params.lastRunKey = lastRun.key;
+  }
+  if (lastRun.title) {
+    params.lastRunTitle = lastRun.title;
   }
   return params;
 }
@@ -273,9 +301,25 @@ export function mergeTestCaseListFiltersToQuery(
     next = testCaseListQueryPatch(next, key, filters[key]);
   }
   if (filters.lastRunStartTs === undefined && filters.lastRunEndTs === undefined) {
-    delete next.startTs;
-    delete next.endTs;
+    clearLastRunQueryKeys(next);
+  } else if (filters.lastRunKey !== undefined || filters.lastRunTitle !== undefined) {
+    // Official useTestCaseFilters → QueryString `lastRunRange[startTs]` keys
+    // (TestCases.test.tsx); nested objects are not reliable in vue-router.
+    clearLastRunQueryKeys(next);
+    if (filters.lastRunStartTs !== undefined) {
+      next['lastRunRange[startTs]'] = String(filters.lastRunStartTs);
+    }
+    if (filters.lastRunEndTs !== undefined) {
+      next['lastRunRange[endTs]'] = String(filters.lastRunEndTs);
+    }
+    if (filters.lastRunKey) {
+      next['lastRunRange[key]'] = filters.lastRunKey;
+    }
+    if (filters.lastRunTitle) {
+      next['lastRunRange[title]'] = filters.lastRunTitle;
+    }
   } else {
+    clearLastRunQueryKeys(next);
     if (filters.lastRunStartTs !== undefined) {
       next.startTs = String(filters.lastRunStartTs);
     }
@@ -283,5 +327,6 @@ export function mergeTestCaseListFiltersToQuery(
       next.endTs = String(filters.lastRunEndTs);
     }
   }
+  delete next.currentPage;
   return next;
 }

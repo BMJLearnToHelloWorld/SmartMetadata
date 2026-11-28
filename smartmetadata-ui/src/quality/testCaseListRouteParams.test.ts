@@ -82,4 +82,52 @@ describe('testCaseListRouteParams', () => {
     });
     expect(next.currentPage).toBeUndefined();
   });
+
+  it('parses official lastRunRange bracket query into route params', () => {
+    expect(
+      parseTestCaseListRouteQuery({
+        'lastRunRange[startTs]': '100',
+        'lastRunRange[endTs]': '200',
+        'lastRunRange[key]': 'customRange',
+        'lastRunRange[title]': 'Jul 14 -> Aug 13',
+      }),
+    ).toMatchObject({
+      lastRunStartTs: 100,
+      lastRunEndTs: 200,
+      lastRunKey: 'customRange',
+      lastRunTitle: 'Jul 14 -> Aug 13',
+    });
+  });
+
+  it('writes filter-bar last run as nested lastRunRange (useTestCaseFilters)', () => {
+    const next = mergeTestCaseListFiltersToQuery(
+      { tab: 'test-cases', startTs: '1', endTs: '2' },
+      {
+        lastRunStartTs: 100,
+        lastRunEndTs: 200,
+        lastRunKey: 'last7days',
+        lastRunTitle: 'Last 7 days',
+      },
+    );
+    expect(next.startTs).toBeUndefined();
+    expect(next.endTs).toBeUndefined();
+    expect(next['lastRunRange[startTs]']).toBe('100');
+    expect(next['lastRunRange[endTs]']).toBe('200');
+    expect(next['lastRunRange[key]']).toBe('last7days');
+    expect(next['lastRunRange[title]']).toBe('Last 7 days');
+  });
+
+  it('keeps dashboard drill timestamps as flat startTs/endTs', () => {
+    const next = mergeTestCaseListFiltersToQuery(
+      { tab: 'test-cases' },
+      { lastRunStartTs: 100, lastRunEndTs: 200 },
+    );
+    expect(next).toMatchObject({ startTs: '100', endTs: '200' });
+    expect(next.lastRunRange).toBeUndefined();
+  });
+
+  it('persists searchValue in the route query on merge', () => {
+    const next = mergeTestCaseListFiltersToQuery({}, { searchValue: 'orders' });
+    expect(next.searchValue).toBe('orders');
+  });
 });
