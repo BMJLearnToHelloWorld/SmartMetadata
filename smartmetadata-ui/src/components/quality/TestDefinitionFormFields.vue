@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Input, Select, Switch } from 'ant-design-vue';
+import { Alert, Button, Form, Input, Select, Switch } from 'ant-design-vue';
 import { listDataQualityDimensions } from '@/api/dataQualityDimensions';
 import { TEST_DEFINITION_ENTITY_TYPES, TEST_PLATFORMS } from '@/types/quality';
 import type { DataQualityDimension } from '@/types/admin';
@@ -22,6 +22,11 @@ const props = defineProps<{
   form: TestDefinitionFormValues;
   isEdit?: boolean;
   readOnlyExceptDimension?: boolean;
+  errorMessage?: string;
+}>();
+
+const emit = defineEmits<{
+  'dismiss-error': [];
 }>();
 
 const { t } = useI18n();
@@ -39,11 +44,13 @@ const dimensionOptions = computed(() => {
   return options;
 });
 
-const locked = computed(() => Boolean(props.readOnlyExceptDimension));
+/** Official isReadOnlyField: structural fields locked; display/description stay editable. */
+const providerFieldsLocked = computed(() => Boolean(props.readOnlyExceptDimension));
+const nameDisabled = computed(() => Boolean(props.isEdit) || providerFieldsLocked.value);
 
 onMounted(async () => {
   try {
-    const page = await listDataQualityDimensions({ limit: 100 });
+    const page = await listDataQualityDimensions({ limit: 1000 });
     dimensions.value = page.data;
   } catch {
     dimensions.value = [];
@@ -61,19 +68,28 @@ function removeParameter(index: number): void {
 
 <template>
   <Form layout="vertical" data-testid="test-definition-form-body">
+    <Alert
+      v-if="errorMessage"
+      type="error"
+      :message="t('label.error')"
+      :description="errorMessage"
+      closable
+      show-icon
+      class="td-form-error"
+      @close="emit('dismiss-error')"
+    />
     <Form.Item :label="t('label.name')" required>
       <Input
         v-model:value="form.name"
-        :disabled="isEdit || locked"
-        :placeholder="t('label.name')"
+        :disabled="nameDisabled"
+        :placeholder="t('label.enter-entity-name', { entity: t('label.test-definition') })"
         data-testid="test-definition-name"
       />
     </Form.Item>
     <Form.Item :label="t('label.display-name')">
       <Input
         v-model:value="form.displayName"
-        :disabled="locked"
-        :placeholder="t('label.display-name')"
+        :placeholder="t('label.enter-entity-name', { entity: t('label.display-name') })"
         data-testid="display-name"
       />
     </Form.Item>
@@ -81,27 +97,26 @@ function removeParameter(index: number): void {
       <Input.TextArea
         v-model:value="form.description"
         :rows="3"
-        :disabled="locked"
-        :placeholder="t('label.description')"
+        :placeholder="t('label.enter-entity-description', { entity: t('label.test-definition') })"
         data-testid="description"
       />
     </Form.Item>
     <Form.Item
-      :label="t('label.sql-expression')"
+      :label="t('label.sql-query')"
       :extra="t('message.test-definition-sql-query-help')"
     >
       <Input.TextArea
         v-model:value="form.sqlExpression"
-        :rows="6"
-        :disabled="locked"
+        :rows="8"
+        :disabled="providerFieldsLocked"
         data-testid="sql-expression"
       />
     </Form.Item>
     <Form.Item :label="t('label.entity-type')" required>
       <Select
         v-model:value="form.entityType"
-        :disabled="locked"
-        :placeholder="t('label.select-entity', { entity: t('label.entity-type') })"
+        :disabled="providerFieldsLocked"
+        :placeholder="t('label.select-field', { field: t('label.entity-type') })"
         data-testid="entity-type"
       >
         <Select.Option v-for="type in TEST_DEFINITION_ENTITY_TYPES" :key="type" :value="type">
@@ -113,8 +128,8 @@ function removeParameter(index: number): void {
       <Select
         v-model:value="form.testPlatforms"
         mode="multiple"
-        :disabled="locked"
-        :placeholder="t('label.select-entity', { entity: t('label.test-platform-plural') })"
+        :disabled="providerFieldsLocked"
+        :placeholder="t('label.select-field', { field: t('label.test-platform-plural') })"
         data-testid="test-platforms"
       >
         <Select.Option v-for="platform in TEST_PLATFORMS" :key="platform" :value="platform">
@@ -127,7 +142,7 @@ function removeParameter(index: number): void {
         v-model:value="form.dataQualityDimension"
         allow-clear
         :options="dimensionOptions"
-        :placeholder="t('label.select-entity', { entity: t('label.data-quality-dimension') })"
+        :placeholder="t('label.select-field', { field: t('label.data-quality-dimension') })"
         data-testid="data-quality-dimension"
       />
     </Form.Item>
@@ -139,7 +154,7 @@ function removeParameter(index: number): void {
         v-model:value="form.supportedServices"
         mode="multiple"
         allow-clear
-        :disabled="locked"
+        :disabled="providerFieldsLocked"
         :placeholder="t('message.empty-means-all-services')"
         data-testid="supported-services"
       >
@@ -156,7 +171,7 @@ function removeParameter(index: number): void {
         v-model:value="form.supportedDataTypes"
         mode="multiple"
         allow-clear
-        :disabled="locked"
+        :disabled="providerFieldsLocked"
         :placeholder="t('message.empty-means-all-data-types')"
         data-testid="supported-data-types"
       >
@@ -166,6 +181,12 @@ function removeParameter(index: number): void {
       </Select>
     </Form.Item>
     <div data-testid="parameter-definition">
+      <p class="td-param__section-label">
+        {{ t('label.parameter-plural') }}
+        <span class="td-param__section-hint" :title="t('message.test-definition-parameters-description')">
+          ⓘ
+        </span>
+      </p>
       <div
         v-for="(param, index) in form.parameterDefinition"
         :key="index"
@@ -173,11 +194,11 @@ function removeParameter(index: number): void {
         :data-testid="`parameter-card-${index}`"
       >
         <div class="td-param__head">
-          <strong>{{ t('quality.testDefinitions.parameterCard', { index: index + 1 }) }}</strong>
+          <strong>{{ t('label.parameter') }} {{ index + 1 }}</strong>
           <Button
+            v-if="!providerFieldsLocked"
             type="link"
             danger
-            :disabled="locked"
             :data-testid="`remove-parameter-${index}`"
             @click="removeParameter(index)"
           >
@@ -187,7 +208,7 @@ function removeParameter(index: number): void {
         <Form.Item :label="t('label.name')" required>
           <Input
             v-model:value="param.name"
-            :disabled="locked"
+            :disabled="providerFieldsLocked"
             :placeholder="t('label.parameter-name')"
             :data-testid="`parameter-name-${index}`"
           />
@@ -195,39 +216,46 @@ function removeParameter(index: number): void {
         <Form.Item :label="t('label.display-name')">
           <Input
             v-model:value="param.displayName"
-            :disabled="locked"
+            :disabled="providerFieldsLocked"
             :placeholder="t('label.parameter-display-name')"
             :data-testid="`parameter-display-name-${index}`"
           />
         </Form.Item>
         <Form.Item :label="t('label.description')">
-          <Input
+          <Input.TextArea
             v-model:value="param.description"
-            :disabled="locked"
+            :rows="3"
+            :disabled="providerFieldsLocked"
             :placeholder="t('label.parameter-description')"
             :data-testid="`parameter-description-${index}`"
           />
         </Form.Item>
-        <Form.Item :label="t('label.type')">
+        <Form.Item :label="t('label.data-type')">
           <Select
             v-model:value="param.dataType"
-            :disabled="locked"
+            :disabled="providerFieldsLocked"
             :placeholder="t('label.select-field', { field: t('label.data-type') })"
             :data-testid="`parameter-data-type-${index}`"
           >
             <Select.Option v-for="type in TEST_DATA_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('label.required')">
-          <Switch v-model:checked="param.required" :disabled="locked" :data-testid="`parameter-required-${index}`" />
+        <Form.Item :label="t('label.required')" class="td-param__required">
+          <Switch v-model:checked="param.required" :disabled="providerFieldsLocked" :data-testid="`parameter-required-${index}`" />
         </Form.Item>
       </div>
-      <Button :disabled="locked" data-testid="add-parameter-button" @click="addParameter">
+      <Button
+        v-if="!providerFieldsLocked"
+        block
+        class="td-param-add"
+        data-testid="add-parameter-button"
+        @click="addParameter"
+      >
         {{ t('label.add-entity', { entity: t('label.parameter') }) }}
       </Button>
     </div>
-    <Form.Item v-if="isEdit" :label="t('label.enabled')">
-      <Switch v-model:checked="form.enabled" :disabled="locked" data-testid="enabled-toggle" />
+    <Form.Item v-if="isEdit" :label="t('label.enabled')" class="td-enabled">
+      <Switch v-model:checked="form.enabled" :disabled="providerFieldsLocked" data-testid="enabled-toggle" />
     </Form.Item>
   </Form>
 </template>
@@ -244,5 +272,34 @@ function removeParameter(index: number): void {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+.td-param__section-label {
+  font-weight: 600;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.td-param__section-hint {
+  cursor: help;
+  font-weight: 400;
+  color: var(--sm-text-secondary);
+}
+.td-param-add {
+  border-style: dashed;
+  margin-top: 4px;
+}
+.td-param__required :deep(.ant-form-item-row) {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.td-enabled :deep(.ant-form-item-row) {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.td-form-error {
+  margin-bottom: 16px;
 }
 </style>

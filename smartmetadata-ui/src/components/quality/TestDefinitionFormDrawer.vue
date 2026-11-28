@@ -25,11 +25,13 @@ const props = defineProps<{
   open: boolean;
   definition?: TestDefinition;
   saving?: boolean;
+  errorMessage?: string;
 }>();
 
 const emit = defineEmits<{
   'update:open': [value: boolean];
   save: [values: TestDefinitionFormValues];
+  'dismiss-error': [];
 }>();
 
 const { t } = useI18n();
@@ -82,6 +84,8 @@ function save(): void {
           :form="form"
           :is-edit="isEdit"
           :read-only-except-dimension="readOnlyExceptDimension"
+          :error-message="errorMessage"
+          @dismiss-error="emit('dismiss-error')"
         />
       </div>
       <aside class="td-drawer__help" data-testid="test-definition-help-panel">

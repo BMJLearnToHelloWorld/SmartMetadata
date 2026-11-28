@@ -71,6 +71,7 @@ const permState = ref<PermState>('loading');
 const createPermission = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
+const formErrorMessage = ref('');
 const definitions = ref<TestDefinition[]>([]);
 const listPaging = useCursorPaging(TEST_LIBRARY_PAGE_SIZE, [...TEST_LIBRARY_PAGE_SIZE_OPTIONS]);
 const searchInput = ref('');
@@ -381,11 +382,13 @@ function deleteActionDisabled(definition: TestDefinition): boolean {
 
 function openCreate(): void {
   editing.value = undefined;
+  formErrorMessage.value = '';
   drawerOpen.value = true;
 }
 
 function openEdit(record: TestDefinition): void {
   editing.value = record;
+  formErrorMessage.value = '';
   drawerOpen.value = true;
 }
 
@@ -416,17 +419,17 @@ async function onSave(values: TestDefinitionFormValues): Promise<void> {
       const created = await createTestDefinition(toCreateTestDefinitionRequest(values));
       message.success(t('server.create-entity-success', { entity: t('label.test-definition') }));
     }
+    formErrorMessage.value = '';
     drawerOpen.value = false;
     Object.assign(values, createEmptyTestDefinitionForm());
     await load();
   } catch (error) {
-    message.error(
-      error instanceof Error
-        ? error.message
-        : t(
-            editing.value ? 'server.update-entity-error' : 'server.create-entity-error',
-            { entity: t('label.test-definition') },
-          ),
+    formErrorMessage.value = getErrorText(
+      error,
+      t(
+        editing.value ? 'server.update-entity-error' : 'server.create-entity-error',
+        { entity: t('label.test-definition') },
+      ),
     );
   } finally {
     saving.value = false;
@@ -690,7 +693,9 @@ onMounted(async () => {
       :open="drawerOpen"
       :definition="editing"
       :saving="saving"
+      :error-message="formErrorMessage"
       @update:open="(value) => { drawerOpen = value; }"
+      @dismiss-error="formErrorMessage = ''"
       @save="onSave"
     />
   </div>
