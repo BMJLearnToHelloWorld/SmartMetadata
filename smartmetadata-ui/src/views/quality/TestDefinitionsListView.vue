@@ -7,8 +7,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getDerivedPermissionFlags } from '@/api/permissions';
 import { getErrorText } from '@/views/admin/accessApiErrors';
 import { Button, Input, Modal, Switch, Table, Typography, message } from 'ant-design-vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import { usePermissionStore } from '@/stores/permissions';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -42,6 +45,9 @@ import {
 import type { TestDefinition } from '@/types/quality';
 
 const { t } = useI18n();
+const permissionStore = usePermissionStore();
+type PermState = 'loading' | 'denied' | 'error' | 'ready';
+const permState = ref<PermState>('loading');
 const loading = ref(false);
 const errorMessage = ref('');
 const definitions = ref<TestDefinition[]>([]);
@@ -286,13 +292,34 @@ function onDelete(record: TestDefinition): void {
   });
 }
 
-onMounted(() => {
-  void load();
+async function checkViewPermission(): Promise<boolean> {
+  permState.value = 'loading';
+  try {
+    const operations = await permissionStore.getResourcePermission('testDefinition');
+    const flags = getDerivedPermissionFlags(operations, false);
+    const allowed = permissionStore.isAdminUser || flags.hasViewAccess;
+    permState.value = allowed ? 'ready' : 'denied';
+    return allowed;
+  } catch {
+    permState.value = 'error';
+    return false;
+  }
+}
+
+onMounted(async () => {
+  if (await checkViewPermission()) {
+    void load();
+  }
 });
 </script>
 
 <template>
-  <div class="test-library-page" data-testid="test-library-page">
+  <PermissionPlaceholder
+    v-if="permState === 'denied'"
+    data-testid="permission-error-placeholder"
+    :permission-value="t('label.view-entity', { entity: t('label.test-definition') })"
+  />
+  <div v-else-if="permState === 'ready'" class="test-library-page" data-testid="test-library-page">
     <div class="test-library-page__header">
       <div>
         <Typography.Title :level="4" class="test-library-page__title">

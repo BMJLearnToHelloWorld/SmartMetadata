@@ -10,6 +10,24 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import TestDefinitionsListView from './TestDefinitionsListView.vue';
 
+const permState = vi.hoisted(() => ({
+  isAdmin: true,
+  resourceOps: { ViewAll: true } as Record<string, boolean>,
+  rejectResource: false,
+}));
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    isAdminUser: permState.isAdmin,
+    getResourcePermission: vi.fn(async () => {
+      if (permState.rejectResource) {
+        throw new Error('permission down');
+      }
+      return permState.resourceOps;
+    }),
+  }),
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -39,6 +57,9 @@ async function mountView() {
 describe('TestDefinitionsListView', () => {
   beforeEach(() => {
     localStorage.clear();
+    permState.isAdmin = true;
+    permState.resourceOps = { ViewAll: true };
+    permState.rejectResource = false;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -148,5 +169,16 @@ describe('TestDefinitionsListView', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows PermissionPlaceholder without list fetch when ViewBasic/ViewAll are denied (pin viewPermission)', async () => {
+    permState.isAdmin = false;
+    permState.resourceOps = {};
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockClear();
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(false);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/testDefinitions'))).toBe(false);
   });
 });
