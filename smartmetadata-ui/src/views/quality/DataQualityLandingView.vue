@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import SmIcon from '@/components/shared/SmIcon.vue';
@@ -11,6 +11,8 @@ import { Button, Dropdown, Menu, Tabs } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
+import TestCaseFormDrawer from '@/components/quality/TestCaseFormDrawer.vue';
+import LogicalTestSuiteDrawer from '@/components/quality/LogicalTestSuiteDrawer.vue';
 import { parseDqTab, type DqLandingTab } from '@/quality/landing';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
@@ -27,8 +29,8 @@ const route = useRoute();
 const router = useRouter();
 
 const activeTab = ref<DqLandingTab>(parseDqTab(route.params.tab ?? route.query.tab));
-const casesView = ref<{ openCreate: () => void } | null>(null);
-const suitesView = ref<{ openCreate: () => void } | null>(null);
+const isTestCaseModalOpen = ref(false);
+const isBundleSuiteModalOpen = ref(false);
 
 function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
@@ -100,16 +102,14 @@ function onTabChange(key: string | number): void {
   void router.replace({ path: dataQualityPagePath(tab), query: dqQueryWithoutTab() });
 }
 
-async function openCreateCase(): Promise<void> {
-  onTabChange('test-cases');
-  await nextTick();
-  casesView.value?.openCreate();
+/** Pin DataQualityPage: page-level TestCaseFormDrawer, no tab switch. */
+function openCreateCase(): void {
+  isTestCaseModalOpen.value = true;
 }
 
-async function openCreateSuite(): Promise<void> {
-  onTabChange('test-suites');
-  await nextTick();
-  suitesView.value?.openCreate();
+/** Pin BundleSuiteFormDrawer on the current tab. */
+function openCreateSuite(): void {
+  isBundleSuiteModalOpen.value = true;
 }
 
 watch(
@@ -125,7 +125,11 @@ watch(
   <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
     <div class="dq-landing__head">
       <div data-testid="dq-landing-title">
-        <PageHeader :header="t('label.data-quality')" :sub-header="t('message.page-sub-header-for-data-quality')" />
+        <PageHeader
+          :header="t('label.data-quality')"
+          :sub-header="t('message.page-sub-header-for-data-quality')"
+          learning-page-id="dataQuality"
+        />
       </div>
       <Dropdown v-if="activeTab === 'dashboard'" :trigger="['click']">
         <Button type="primary" data-testid="data-quality-add-button-menu">
@@ -167,7 +171,6 @@ watch(
 
     <TestCasesListView
       v-if="activeTab === 'test-cases'"
-      ref="casesView"
       embedded
       :prefer-search="true"
       :tier="listDrill.tier"
@@ -182,12 +185,21 @@ watch(
 
     <TestSuitesListView
       v-if="activeTab === 'test-suites'"
-      ref="suitesView"
       embedded
       :prefer-search="true"
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
     />
   </div>
+  <TestCaseFormDrawer
+    :open="isTestCaseModalOpen"
+    @cancel="isTestCaseModalOpen = false"
+    @submitted="isTestCaseModalOpen = false"
+  />
+  <LogicalTestSuiteDrawer
+    :open="isBundleSuiteModalOpen"
+    @cancel="isBundleSuiteModalOpen = false"
+    @submitted="isBundleSuiteModalOpen = false"
+  />
   </PageLayout>
 </template>
 

@@ -9,7 +9,7 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import EntityListShell from './EntityListShell.vue';
@@ -36,7 +36,17 @@ async function mountShell(props: Record<string, unknown> = {}, slots: Record<str
   return wrapper;
 }
 
+const getLearningResourcesByContext = vi.fn();
+
+vi.mock('@/api/learningResources', () => ({
+  getLearningResourcesByContext: (...args: unknown[]) => getLearningResourcesByContext(...args),
+}));
+
 describe('EntityListShell', () => {
+  beforeEach(() => {
+    getLearningResourcesByContext.mockReset().mockResolvedValue({ data: [{}], total: 1 });
+  });
+
   it('renders title, lead, empty state, and refresh', async () => {
     const wrapper = await mountShell();
     expect(wrapper.get('[data-testid="entity-list-heading"]').text()).toBe('Users');
@@ -57,7 +67,7 @@ describe('EntityListShell', () => {
       learningPageId: 'learning-page',
     });
     expect(wrapper.get('[data-testid="entity-list-beta"]').text()).toBe('Beta');
-    expect(wrapper.find('[aria-label="learning-page"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="learning-icon"]').exists()).toBe(true);
     // PageHeader's contract renders the Beta badge inside the h5, so the
     // heading text contains the title plus the badge; the badge itself is
     // asserted exactly above, and the title exactly in the plain test.
